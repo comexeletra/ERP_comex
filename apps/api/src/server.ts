@@ -1,8 +1,10 @@
 import Fastify from "fastify";
+import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import { timingSafeEqual } from "node:crypto";
 import { Pool } from "pg";
+import { registerAuthRoutes } from "./auth.js";
 
 const gatewayToken = process.env.GATEWAY_TOKEN;
 const connectionString = process.env.DATABASE_URL;
@@ -36,6 +38,7 @@ const app = Fastify({
 
 await app.register(helmet);
 await app.register(rateLimit, { max: 120, timeWindow: "1 minute" });
+await app.register(cookie);
 
 app.addHook("onRequest", async (request, reply) => {
   if (request.url === "/health/live") return;
@@ -51,6 +54,8 @@ app.addHook("onRequest", async (request, reply) => {
     return reply.code(401).send({ error: "Não autorizado." });
   }
 });
+
+await registerAuthRoutes(app, pool);
 
 app.get("/health/live", async () => ({ status: "ok" }));
 

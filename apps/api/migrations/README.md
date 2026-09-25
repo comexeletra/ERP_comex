@@ -7,6 +7,7 @@ applied in its own transaction and recorded with a SHA-256 checksum in
 runner. Line endings are normalized to LF before hashing and execution, so a
 Windows checkout and Linux release produce the same checksum. A PostgreSQL
 advisory lock prevents two runners from applying at once.
+`M007` adds short-lived OIDC login transactions and hashed server-side sessions.
 
 The API never runs migrations at startup. From `apps/api`, run `pnpm build`,
 then `pnpm migrate:status` to inspect the target database without creating the
