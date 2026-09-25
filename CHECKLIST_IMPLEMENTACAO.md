@@ -21,7 +21,7 @@ estado executável após a limpeza, use a tabela do incremento atual.
 
 ## Ponto de retomada obrigatório
 
-**Última atualização:** 2026-09-24
+**Última atualização:** 2026-09-25
 
 **Estado seguro atual:** Planilha, ZIP e banco SQLite locais foram preservados,
 mas continuam ignorados pelo Git. Os arquivos .NET/SQLite e Compose foram
@@ -29,20 +29,33 @@ retirados do snapshot ativo; as linhas históricas abaixo registram validações
 anteriores e não significam que esses recursos existam na API Node. A API
 Fastify ainda é scaffold. A URL de desenvolvimento encaminha para
 `localhost:4000`; `VPS_API_URL` ainda não foi configurada na Vercel.
-**Próximo incremento obrigatório:** implementar migrations Node com ledger,
-endpoints de negócio, OIDC e autorização conforme os contratos deste plano e a
-evidência histórica do checklist; instalar a API Fastify como serviço
-persistente na VPS Hostinger junto ao PostgreSQL. A Vercel Free hospeda Next.js;
-`proxy.ts` encaminha `/auth/*` e `/api/v1/*` por HTTPS com token server-only. A
+**Próximo incremento obrigatório:** validar o runner Node de migrations em
+PostgreSQL descartável, incluindo banco vazio, upgrade, checksum e concorrência;
+depois implementar endpoints de negócio, OIDC e autorização conforme os
+contratos deste plano e a evidência histórica do checklist; instalar a API
+Fastify como serviço persistente na VPS Hostinger junto ao PostgreSQL. A Vercel
+Free hospeda Next.js; `proxy.ts` encaminha `/auth/*` e `/api/v1/*` por HTTPS com token server-only. A
 API conecta a PostgreSQL local/privado; nenhuma conexão ou porta 5432 é exposta
 à Vercel ou ao browser. API, banco e reverse proxy/túnel iniciam automaticamente
 na VPS; o computador pessoal pode ficar desligado. OIDC/segredos não foram
 fornecidos e serão configurados depois. O MCP Vercel consta em
 `~/.codex/config.toml`, mas não está carregado como ferramenta neste processo;
 nenhum projeto/setting Vercel foi inspecionado. Esta escolha e documentação
-foram registradas em 2026-09-24; endpoints/auth e runner de migrations
-compatíveis, instalação na VPS e E2E continuam pendentes. A referência aceita
+foram registradas em 2026-09-24; endpoints/auth, validação do runner em
+PostgreSQL, instalação na VPS e E2E continuam pendentes. A referência aceita
 para a cópia de trabalho é 7.000 linhas no Pré e 195 no Pós.
+
+**Estado da validação em 2026-09-25:** `corepack pnpm install --frozen-lockfile`
+e `corepack pnpm build` passaram na API. Docker não faz parte da stack definida
+e não é dependência desta validação. Na VPS, foi criado o banco isolado
+`erp_po_totvs_test`, de propriedade da role `erp_po_totvs_migrator`; a conexão
+com essa role foi confirmada no `psql`. Nenhuma migration foi aplicada. O
+runner ainda precisa ser transferido e exercitado contra esse banco. O Node
+24.21.0 foi instalado em `/opt/node-v24` sem substituir o Node 20 do sistema;
+o checksum oficial do pacote foi validado. A firewall Hostinger bloqueia
+5432/6543/6379 externamente e mantém 22/80/443 acessíveis. Para concluir este
+bloco, transferir o pacote da API, executar status/up/reaplicação no banco de
+teste e registrar os resultados.
 
 ### Arquitetura de publicação escolhida
 
@@ -227,7 +240,7 @@ inclua aqui a nova seção ou subseção antes de implementar a mudança.
 | DEV02 | [-] | Desenvolvimento local reprodutível; Compose opcional | Docker Desktop instalado; containers Compose parados sem apagar volumes. SDK 10.0.301 local; restore NuGet, pnpm install travado e build Next.js passaram. Decisão atual: deploy Vercel não depende de Docker; VPS PostgreSQL será o banco de integração externo. | Manter Docker fora do deploy. Documentar perfil Node local e opcionalmente usar PostgreSQL local/teste para desenvolvimento/CI. |
 | DEV03 | [-] | OIDC, sessão e homologação | Implementação existente é ASP.NET Core/Keycloak local e ainda não foi portada para Route Handlers. Vercel exige callback HTTPS e sessão que sobreviva a invocações; nenhum issuer/cliente foi fornecido. | Portar OIDC/PKCE, sessão segura, CSRF e logout para Node; configurar issuer/client/callback quando credenciais forem disponibilizadas; validar E2E. |
 | DEV04 | [-] | Perfis e escopo por importador | A autorização `(issuer, subject)`, papéis e escopos existem no backend .NET/PostgreSQL legado. A nova API Node ainda precisa portar permissões, filtros server-side e respostas 401/403/404. | Portar identidade/grants e testar admin/restrito, CSRF e ocultação de PO fora do escopo via preview e Postgres segregado. |
-| DEV05 | [-] | Schemas e migrations executam em CI | Migrations SQLite M001–M006 verificadas; SQL PostgreSQL legado existe, mas ainda não foi aplicado/verificado contra a VPS nem adaptado para portabilidade Node. CI ainda não existe. | Inventariar versão PostgreSQL na VPS, criar/validar migrations versionadas para esquema Node e CI com Postgres de teste; aplicar no remoto somente após backup/ambiente aprovado. |
+| DEV05 | [-] | Schemas e migrations executam em CI | Runner explícito Node criado em `apps/api/src/migrate.ts`: ledger `migration.schema_migration`, SHA-256 contra edição de migração aplicada, advisory lock, transação por arquivo e comandos status/up; API não executa migrations no startup. A aplicação de produção exige credencial separada `MIGRATION_DATABASE_URL`. Instalação congelada e build passaram; banco de teste VPS e role dedicada foram provisionados, mas o runner ainda não foi exercitado contra PostgreSQL. | Executar status/up/reaplicação no banco isolado, cobrir upgrade/checksum/concorrência e integrar CI; qualquer alvo remoto requer autorização de ambiente e backup restaurável. |
 | DEV06 | [ ] | Cadastros e aliases | Não iniciado | Modelar cadastros oficiais e regras de alias |
 | DEV07 | [x] | Lote, hash, arquivo e linhas persistidos sem duplicidade | SQLite guarda lote, hash, linhas brutas e unicidade por aba/linha; staging inicial e repetido são validados automaticamente em banco temporário. | Manter a cobertura na CI. |
 | DEV08 | [x] | Leitura de valores Excel sem executar fórmulas | Fixture e check executados: fórmula fornece somente o valor salvo, e são cobertos IP cancelado, IP/PO ausentes e PO repetida. | Manter a regressão na CI. |
@@ -276,7 +289,7 @@ inclua aqui a nova seção ou subseção antes de implementar a mudança.
 
 | Status | Tema | Tratamento atual | Responsável para confirmar |
 |---|---|---|---|
-| [!] | PostgreSQL da VPS | Configurar `DATABASE_URL` somente na API Node da VPS, com role mínimo, pool limitado, backup e restore testado. Usuário não forneceu credenciais; manter PostgreSQL em loopback/rede privada e não publicar 5432. | Usuário / DevOps |
+| [!] | PostgreSQL da VPS | Banco isolado `erp_po_totvs_test` e role `erp_po_totvs_migrator` foram criados para validar migrations; não usar os bancos das aplicações existentes. A credencial e o banco operacional da API ainda não foram configurados. Manter a conexão da API em loopback/rede privada, role de runtime com privilégios mínimos, pool limitado e backup/restore testado; não publicar 5432. Firewall externa foi validada com 5432/6543/6379 bloqueadas. | Usuário / DevOps |
 | [!] | Acesso HTTPS da Vercel à API VPS | Publicar somente a API via HTTPS reverse proxy ou Cloudflare Tunnel e autenticar o proxy com `VPS_API_TOKEN`; esta topologia não exige Static IP da Vercel nem conexão direta Vercel→PostgreSQL. Escolher e configurar domínio/DNS e método de exposição. | Usuário / DevOps |
 | [!] | Provedor e credenciais OIDC | Configurar issuer/client/secret e callback HTTPS após escolher/provisionar provedor público; Keycloak local não é endpoint Vercel. | Usuário / TI |
 | [!] | Storage e jobs serverless | Selecionar object storage privado e mecanismo cron/queue para imports/outbox; filesystem e worker residente não são assumidos na Vercel. | Arquitetura / Usuário |
@@ -322,12 +335,18 @@ inclua aqui a nova seção ou subseção antes de implementar a mudança.
 | Item | Status | Evidência | Próximo passo |
 |---|---|---|---|
 | DEV01 | [-] | Lockfiles pnpm das aplicações Next.js e Fastify estão versionados; instruções .NET/Compose foram removidas do README ativo. | Validar instalação congelada em checkout limpo/CI. |
-| DEV02 | [-] | Docker/Compose não fazem parte da stack alvo. Builds Next.js e TypeScript Fastify passaram; a VPS não foi configurada. | Criar PostgreSQL de teste segregado e validar inicialização da API Node. |
+| DEV02 | [-] | Docker/Compose não fazem parte da stack alvo. Banco `erp_po_totvs_test` e role de migration foram criados na VPS; Node 24.21.0 está instalado isoladamente em `/opt/node-v24`. A firewall foi validada externamente: 22/80/443 acessíveis; 5432/6543/6379 bloqueadas. O runner ainda não foi transferido nem executado. | Transferir a API, validar o runner contra o banco de teste e depois configurar o serviço persistente da API. |
 | DEV03 | [-] | OIDC/Keycloak só existem como evidência histórica no checklist; o código anterior foi removido. API Node não implementa login/sessão/CSRF. | Reimplementar OIDC/PKCE, callback, sessão persistente, CSRF e logout no Fastify. |
 | DEV04 | [-] | M003 PostgreSQL foi mantida em `apps/api/migrations`; implementação anterior de grants foi removida. Nenhum endpoint Node aplica escopos/permissões. | Portar autorização server-side por `(issuer, subject)`, papéis e escopos; validar 401/403/404. |
 | DEV15 | [-] | Regras de workflow e ETag permanecem especificadas na seção 10 e nas evidências históricas; endpoints/repositórios foram removidos com a implementação .NET. | Reimplementar estados/transições no Node com autorização, evidências, atomicidade e concorrência PostgreSQL. |
 | DEV24 | [-] | SQL PostgreSQL de auditoria/outbox foi mantido; dispatcher, repositórios e checks .NET/SQLite foram removidos do snapshot. Evidência antiga não valida o runtime Node. | Portar gravação atômica, dispatcher/worker e inbox no Node; testar retry, leases e idempotência. |
-| Vercel/produção | [-] | Builds Next.js e TypeScript Fastify passaram. Proxy, health checks, modelos systemd/Nginx e migrations PostgreSQL estão versionados. Não há login, endpoints de negócio, runner Node ou deploy configurado. | Implementar e validar API, configurar VPS/TLS/OIDC e executar E2E antes da produção. |
+| Vercel/produção | [-] | Proxy, health checks, modelos systemd/Nginx, migrations PostgreSQL e runner Node explícito estão versionados. A VPS tem banco isolado de teste e Node 24.21.0; o runner ainda não foi transferido ou exercitado. Não há login, endpoints de negócio ou deploy configurado. | Validar runner em PostgreSQL de teste; implementar e validar API, configurar VPS/TLS/OIDC e executar E2E antes da produção. |
+
+### Incremento de 2026-09-25 — runner PostgreSQL para Node
+
+| Item | Status | Evidência | Próximo passo |
+|---|---|---|---|
+| DEV05 | [-] | Adicionado `apps/api/src/migrate.ts` com ledger versionado, verificação SHA-256, advisory lock PostgreSQL e transação individual por migration. `migrate:status` e `migrate:up` são explícitos e carregam `.env` se presente; o servidor não migra no startup. A aplicação de produção exige credencial separada. `corepack pnpm install --frozen-lockfile` e `corepack pnpm build` passaram. Na VPS, o banco isolado `erp_po_totvs_test` foi criado e a role `erp_po_totvs_migrator` conectou com sucesso; a migration ainda não foi executada. O Node 24.21.0 foi instalado em `/opt/node-v24` após validação do checksum oficial. A firewall bloqueia externamente 5432/6543/6379 e permite 22/80/443. | Transferir o pacote versionado para a VPS; compilar, executar `migrate:status`, aplicar migrations, repetir `migrate:up` e verificar ledger/checksums no banco isolado. Depois cobrir upgrade, checksum alterado e concorrência antes do aceite DEV05. |
 
 ## Modelo para o próximo incremento
 

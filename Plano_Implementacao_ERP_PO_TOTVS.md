@@ -200,7 +200,7 @@ Versões de referência verificadas na documentação oficial em setembro de 202
 
 Node 24 é o runtime do Next.js e da API Fastify. A implementação .NET foi retirada do snapshot para reduzir e alinhar o repositório; regras e evidências da implementação anterior permanecem registradas no checklist e na história Git. A versão PostgreSQL da VPS será confirmada antes de aplicar migrations. A API, banco e proxy/túnel iniciam automaticamente na VPS; não dependem do computador pessoal ligado.
 
-Browser e funções Vercel não abrem conexão ao PostgreSQL da VPS. A API Node na VPS acessa PostgreSQL por `DATABASE_URL` local, usa queries parametrizadas e pool limitado; Next `proxy.ts` envia o token gateway somente server-side. A API ainda não tem paridade nem writer funcional. Migrations PostgreSQL reutilizáveis foram mantidas em `apps/api/migrations`, sem runner Node nem validação contra a VPS; qualquer aplicação exige revisão, banco isolado e backup restaurável.
+Browser e funções Vercel não abrem conexão ao PostgreSQL da VPS. A API Node na VPS acessa PostgreSQL por `DATABASE_URL` local, usa queries parametrizadas e pool limitado; Next `proxy.ts` envia o token gateway somente server-side. A API ainda não tem paridade nem writer funcional. Migrations PostgreSQL reutilizáveis estão em `apps/api/migrations`; o runner explícito Node em `apps/api/src/migrate.ts` registra ledger e checksum, serializa execuções com advisory lock e aplica cada arquivo em transação. `pnpm build` passou. Um banco isolado de teste foi provisionado na VPS, mas o runner ainda não foi transferido nem exercitado contra ele. Qualquer aplicação exige banco isolado e backup restaurável, e produção exige credencial de migration separada.
 
 ## 6 Topologia e fronteiras
 
@@ -249,7 +249,7 @@ Cada módulo expõe casos de uso. Uma tela não escreve diretamente em tabelas d
 | `apps/web/proxy.ts` | Proxy same-origin e token server-only para a API VPS |
 | `apps/api` | API Fastify Node, OIDC, autorização, contratos e PostgreSQL na VPS |
 | `apps/api/src` | Rotas por feature, sessão, validação, comandos e consultas parametrizadas (em implementação) |
-| `apps/api/migrations` | SQL PostgreSQL reaproveitado; ainda sem runner ou validação operacional |
+| `apps/api/migrations` | SQL PostgreSQL reaproveitado; runner Node explícito compila; banco de teste VPS preparado, validação operacional pendente |
 | `tests/Unit` | Regras e transformações determinísticas |
 | `tests/Integration` | PostgreSQL, API, concorrência, storage e importação |
 | `tests/Architecture` | Restrições de dependência entre camadas |

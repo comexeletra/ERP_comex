@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "node --env-file=.env --watch src/server.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "migrate:status": "node --env-file-if-exists=.env dist/migrate.js status",
+    "migrate:up": "node --env-file-if-exists=.env dist/migrate.js up"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
