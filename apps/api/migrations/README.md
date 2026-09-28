@@ -8,6 +8,10 @@ runner. Line endings are normalized to LF before hashing and execution, so a
 Windows checkout and Linux release produce the same checksum. A PostgreSQL
 advisory lock prevents two runners from applying at once.
 `M007` adds short-lived OIDC login transactions and hashed server-side sessions.
+`M008` adds per-issue resolution evidence and actor-scoped idempotency to quality
+reviews. It is required by the Node `/api/v1/data-issues` routes and has not been
+applied to the isolated VPS database; validate it only against an isolated
+target, never the operational database.
 
 The API never runs migrations at startup. From `apps/api`, build the API, then
 set `MIGRATION_ENV=isolated` in the shell or `.env` before running
@@ -39,5 +43,8 @@ architecture. Historical validation results remain in
 parity. On 2026-09-25, the runner was exercised against the isolated VPS test
 database: status reported 0 applied/7 pending, `migrate:up` applied all seven,
 the next status reported 7 applied/0 pending, and reapplication applied zero.
-Checksum tampering, concurrent execution, upgrades, and production TLS still
-require validation before DEV05 acceptance.
+On 2026-09-28, checksum tampering was rejected and restored, and a temporary
+probe migration was applied once by two concurrent runners (the second applied
+zero); the probe table and ledger row were then removed, returning the isolated
+database to M001–M007 applied/zero pending. Those checks do not validate TLS or
+CI. The product migration M008 above is a separate file and has not been applied.

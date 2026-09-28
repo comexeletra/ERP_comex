@@ -129,10 +129,13 @@ nginx -t
 systemctl reload nginx
 ```
 
-Configure `VPS_API_URL` na Vercel como a origem HTTPS, por exemplo
-`https://api.seudominio.com`, sem caminho ou credenciais. Configure o mesmo
-`GATEWAY_TOKEN` no painel Vercel como `VPS_API_TOKEN`. Preview e Production
-devem usar tokens e issuer separados.
+Na Vercel Production, configure `VPS_API_URL` como a origem HTTPS real, sem
+caminho ou credenciais, e `VPS_API_TOKEN` como Secret com o mesmo valor de
+`GATEWAY_TOKEN` deste serviço. Não cadastre `DATABASE_URL` nem credenciais OIDC
+na Vercel. Mantenha Preview sem essas variáveis até instalar uma API de staging
+separada, ligada apenas a um banco isolado e a um cliente OIDC de teste. Não
+aponte Preview para a API/banco de produção. O app responde 503 para rotas da
+API quando as duas variáveis Vercel não estão presentes.
 
 ## Atualizações e disponibilidade
 
@@ -157,7 +160,7 @@ M001–M007 aplicadas. A validação TLS de produção e a execução da CI aind
 não foi validado contra issuer. A API carrega grants DEV04 pela identidade
 `(issuer, subject)` em cada chamada `/api/v1`, exige permissão e declaração de
 modo de escopo em cada rota (por importador; global apenas para `users.manage`),
-e fornece predicado SQL para aplicar o escopo antes da paginação e também em consultas por ID. `GET /api/v1/purchase-orders`, `GET /api/v1/purchase-orders/{id}/overview` e `GET /api/v1/purchase-orders/{id}/history-items` usam guards e escopo SQL, inclusive nos IPs vinculados; 404 oculta POs fora do escopo. O overview retorna somente dados existentes em M001–M007 e marca itens/saldo oficiais como desconhecidos. A tela mostra histórico com linhagem e custos no grão do IP. Escrita operacional e fila de qualidade seguem pendentes; campos ausentes no schema não são apresentados como zero.
+e fornece predicado SQL para aplicar o escopo antes da paginação e também em consultas por ID. `GET /api/v1/purchase-orders`, `GET /api/v1/purchase-orders/{id}/overview` e `GET /api/v1/purchase-orders/{id}/history-items` usam guards e escopo SQL, inclusive nos IPs vinculados; 404 oculta POs fora do escopo. O overview retorna somente dados existentes em M001–M007 e marca itens/saldo oficiais como desconhecidos. A tela mostra histórico com linhagem e custos no grão do IP. Escrita operacional segue parcial; a fila de qualidade tem endpoints Node, mas M008 e validacao integrada ainda pendem; campos ausentes no schema não são apresentados como zero.
 401 representa sessão ausente, 403 permissão
 insuficiente e uma consulta restrita sem correspondência responde 404. Não
 coloque a API em produção operacional até a checklist registrar paridade e

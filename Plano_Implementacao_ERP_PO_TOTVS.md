@@ -6,7 +6,7 @@ Este documento define o produto, a arquitetura de dados, a stack, os contratos t
 
 A **PO TOTVS é a entidade central de negócio e o ponto de entrada operacional**. O IP representa uma execução logística vinculada aos itens do pedido. Uma PO pode ser atendida por vários IPs; um IP pode reunir itens de várias POs. O desenho de telas, permissões, indicadores e rastreabilidade parte dessa relação.
 
-A arquitetura de aplicação escolhida pelo Product Owner em 24 de setembro de 2026 é **Next.js/React/TypeScript na Vercel Free**, com **API Fastify/Node.js + PostgreSQL privados na mesma VPS Hostinger**. Next.js usa `proxy.ts` para encaminhar `/auth/*` e `/api/v1/*` server-side para a API por HTTPS com token de gateway; a conexão do banco não sai da VPS e a porta PostgreSQL não é publicada. A API e o PostgreSQL serão serviços persistentes na VPS, independentes do computador pessoal. OIDC, storage de arquivos e processamento durável serão serviços configurados por ambiente. O código ASP.NET Core/SQLite/Compose foi removido do snapshot ativo; as regras, contratos e resultados históricos permanecem documentados neste plano e no checklist. A API Node ainda é scaffold e publicar apenas a interface vazia não atende ao aceite.
+A arquitetura de aplicação escolhida pelo Product Owner em 24 de setembro de 2026 é **Next.js/React/TypeScript na Vercel Free**, com **API Fastify/Node.js + PostgreSQL privados na mesma VPS Hostinger**. Next.js usa `proxy.ts` para encaminhar `/auth/*` e `/api/v1/*` server-side para a API por HTTPS com token de gateway; a conexão do banco não sai da VPS e a porta PostgreSQL não é publicada. A API e o PostgreSQL serão serviços persistentes na VPS, independentes do computador pessoal. OIDC, storage de arquivos e processamento durável serão serviços configurados por ambiente. O código ASP.NET Core/SQLite/Compose foi removido do snapshot ativo; as regras, contratos e resultados históricos permanecem documentados neste plano e no checklist. A API Node já contém autenticação OIDC/PKCE, grants de autorização, leitura de POs, workflow e fila de qualidade em diferentes níveis de validação; ainda não atende ao aceite de produção, pois faltam issuer real, integração/E2E autenticado, validação isolada de M008 e instalação/configuração do serviço.
 
 ## 1 Como utilizar este plano
 
@@ -660,7 +660,7 @@ Erros usam Problem Details com `type`, `title`, `status`, `detail`, `instance`, 
 | `/imports` | Receber arquivo e iniciar lote | 202 Accepted com jobId |
 | `/imports/{id}/preview`, `/imports/{id}/reconcile` | Conferir e reconciliar | Não promove sem permissão |
 | `/imports/{id}/commit`, `/imports/{id}/retry` | Promover/retomar | Idempotência e checkpoint |
-| `/data-issues`, `/data-issues/{id}/resolve` | Revisar pendências | Evidência e motivo obrigatórios |
+| `/data-issues`, `/data-issues/{id}/resolve` | Revisar pendências | Leitura e resolução sob escopo de importador; resolução exige evidência, motivo e `Idempotency-Key`; a origem preservada não é alterada |
 | `/dashboard`, `/reports`, `/exports` | Indicadores e exportações | Exportação grande assíncrona |
 | `/jobs/{id}` | Estado e progresso | Visível ao solicitante ou administrador |
 

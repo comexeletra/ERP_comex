@@ -4,8 +4,8 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api";
 
-type Review = { id: string; outcome: string; reviewer: string; notes: string; proposedPurchaseOrder?: string; proposedIpNumber?: string; recordedAt: string };
-type QualityItem = { sourceRowId: string; code: string; severity: string; message: string; columnName?: string; sheetName?: string; sourceRowNumber?: number; sourceValues: Record<string, string | null>; latestReview?: Review };
+type Review = { id: string; outcome: string; reviewer: string; notes: string; evidence: Record<string, unknown>; proposedPurchaseOrder?: string; proposedIpNumber?: string; recordedAt: string };
+type QualityItem = { id: string; sourceRowId: string; code: string; severity: string; status: string; evidence: Record<string, unknown>; fieldName?: string; sheetName?: string; sourceRowNumber?: number; sourceValues: Record<string, unknown>; latestReview?: Review };
 type QualityPageData = { page: number; pageSize: number; totalCount: number; openCount: number; resolvedCount: number; items: QualityItem[] };
 
 export default function QualityPage() {
@@ -14,11 +14,14 @@ export default function QualityPage() {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string>();
   const [reviewing, setReviewing] = useState<string>();
+  const [submitting, setSubmitting] = useState(false);
+  const [idempotencyKey, setIdempotencyKey] = useState<string>();
 
   const load = () => {
+    setError(undefined);
     const query = new URLSearchParams({ status, pageSize: "50" });
     if (code.trim()) query.set("code", code.trim());
-    return apiFetch(`/api/v1/quality-issues?${query}`)
+    return apiFetch(`/api/v1/data-issues?${query}`)
       .then(async response => {
         if (!response.ok) throw new Error("Não foi possível carregar a fila de qualidade.");
         setData(await response.json() as QualityPageData);
@@ -30,12 +33,28 @@ export default function QualityPage() {
   function applyFilter(event: FormEvent<HTMLFormElement>) { event.preventDefault(); void load(); }
   async function submitReview(item: QualityItem, form: HTMLFormElement) {
     const fields = new FormData(form);
-    const response = await apiFetch(`/api/v1/quality-issues/${item.sourceRowId}/reviews`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ code: item.code, outcome: fields.get("outcome"), reviewer: fields.get("reviewer"), notes: fields.get("notes"), proposedPurchaseOrder: fields.get("proposedPurchaseOrder") || null, proposedIpNumber: fields.get("proposedIpNumber") || null })
-    });
-    if (!response.ok) { setError("A revisão não foi registrada. Confira responsável, justificativa e tente novamente."); return; }
-    setReviewing(undefined); await load();
+    let evidence: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(String(fields.get("evidence") ?? ""));
+      if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") throw new Error();
+      evidence = parsed as Record<string, unknown>;
+    } catch {
+      setError("Informe a evidência em formato JSON válido.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const response = await apiFetch(`/api/v1/data-issues/${item.id}/resolve`, {
+        method: "POST", headers: { "content-type": "application/json", "idempotency-key": idempotencyKey ?? crypto.randomUUID() },
+        body: JSON.stringify({ evidence, reason: fields.get("reason"), proposedPurchaseOrder: fields.get("proposedPurchaseOrder") || null, proposedIpNumber: fields.get("proposedIpNumber") || null })
+      });
+      if (!response.ok) { setError("A resolução não foi registrada. Confira evidência e justificativa e tente novamente."); return; }
+      setReviewing(undefined); setIdempotencyKey(undefined); await load();
+    } catch {
+      setError("Não foi possível registrar a resolução. Tente novamente com a mesma operação.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return <main className="shell">
@@ -46,12 +65,13 @@ export default function QualityPage() {
     <section className="card"><form className="quality-filter" onSubmit={applyFilter}><label>Status<select value={status} onChange={event => setStatus(event.target.value)}><option value="open">Abertas</option><option value="resolved">Resolvidas</option><option value="all">Todas</option></select></label><label>Código<input value={code} onChange={event => setCode(event.target.value)} placeholder="EXCEL_ERROR" /></label><button className="button" type="submit">Filtrar</button></form></section>
     {!data && !error && <p>Carregando fila…</p>}
     {data?.items.length === 0 && <section className="card"><p>Nenhuma pendência encontrada para este filtro.</p></section>}
-    {data?.items.map(item => <article className="card quality-item" key={`${item.sourceRowId}-${item.code}`}>
-      <div className="quality-heading"><div><p className="eyebrow">{item.sheetName ?? "Origem indisponível"} · linha {item.sourceRowNumber ?? "—"}</p><h2>{item.code}</h2></div><span className={`quality-status ${item.latestReview?.outcome ?? "OPEN"}`}>{item.latestReview?.outcome ?? "OPEN"}</span></div>
-      <p>{item.message}</p>{item.columnName && <p className="muted">Campo de origem: <strong>{item.columnName}</strong></p>}
-      <details><summary>Ver valores preservados da origem</summary><dl className="source-values">{Object.entries(item.sourceValues).map(([name, value]) => <><dt key={`${name}-name`}>{name}</dt><dd key={`${name}-value`}>{value ?? "—"}</dd></>)}</dl></details>
+    {data?.items.map(item => <article className="card quality-item" key={item.id}>
+      <div className="quality-heading"><div><p className="eyebrow">{item.sheetName ?? "Origem indisponível"} · linha {item.sourceRowNumber ?? "—"}</p><h2>{item.code}</h2></div><span className={`quality-status ${item.status}`}>{item.status}</span></div>
+      <p>Severidade: <strong>{item.severity}</strong></p>{item.fieldName && <p className="muted">Campo de origem: <strong>{item.fieldName}</strong></p>}
+      <details><summary>Ver evidência original</summary><pre>{JSON.stringify(item.evidence, null, 2)}</pre></details>
+      <details><summary>Ver valores preservados da origem</summary><dl className="source-values">{Object.entries(item.sourceValues).map(([name, value]) => <><dt key={`${name}-name`}>{name}</dt><dd key={`${name}-value`}>{value == null ? "—" : typeof value === "string" ? value : JSON.stringify(value)}</dd></>)}</dl></details>
       {item.latestReview && <section className="review-history"><h3>Última revisão</h3><p><strong>{item.latestReview.outcome}</strong> por {item.latestReview.reviewer} em {new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.latestReview.recordedAt))}</p><p>{item.latestReview.notes}</p><p className="muted">PO proposta: {item.latestReview.proposedPurchaseOrder ?? "—"} · IP proposto: {item.latestReview.proposedIpNumber ?? "—"}</p></section>}
-      {reviewing === `${item.sourceRowId}-${item.code}` ? <form className="review-form" onSubmit={event => { event.preventDefault(); void submitReview(item, event.currentTarget); }}><label>Resultado<select name="outcome" defaultValue="Resolved"><option value="Resolved">Resolver sem alterar origem</option><option value="Escalated">Escalar para decisão</option></select></label><label>Responsável<input name="reviewer" required /></label><label>Justificativa<textarea name="notes" required /></label><label>PO proposta (opcional)<input name="proposedPurchaseOrder" /></label><label>IP proposto (opcional)<input name="proposedIpNumber" /></label><div><button className="button" type="submit">Registrar revisão</button><button className="button secondary" type="button" onClick={() => setReviewing(undefined)}>Cancelar</button></div></form> : <button className="button" type="button" onClick={() => setReviewing(`${item.sourceRowId}-${item.code}`)}>Revisar pendência</button>}
+      {reviewing === item.id ? <form className="review-form" onSubmit={event => { event.preventDefault(); void submitReview(item, event.currentTarget); }}><label>Evidência da resolução (objeto JSON)<textarea name="evidence" required placeholder='{"referencia":"documento ou evidência conferida"}' /></label><label>Justificativa<textarea name="reason" required /></label><label>PO proposta (opcional)<input name="proposedPurchaseOrder" /></label><label>IP proposto (opcional)<input name="proposedIpNumber" /></label><div><button className="button" type="submit" disabled={submitting}>{submitting ? "Registrando…" : "Resolver pendência"}</button><button className="button secondary" type="button" disabled={submitting} onClick={() => { setReviewing(undefined); setIdempotencyKey(undefined); }}>Cancelar</button></div></form> : item.status === "OPEN" && <button className="button" type="button" onClick={() => { setReviewing(item.id); setIdempotencyKey(crypto.randomUUID()); }}>Revisar pendência</button>}
     </article>)}
   </main>;
 }
