@@ -7,9 +7,11 @@
   "scripts": {
     "dev": "node --env-file=.env --watch src/server.ts",
     "build": "tsc -p tsconfig.json",
+    "test": "node test/authorization.test.mjs",
     "start": "node dist/server.js",
     "migrate:status": "node --env-file-if-exists=.env dist/migrate.js status",
-    "migrate:up": "node --env-file-if-exists=.env dist/migrate.js up"
+    "migrate:up": "node --env-file-if-exists=.env dist/migrate.js up",
+    "bootstrap:admin": "node --env-file-if-exists=.env dist/bootstrap-admin.js"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

@@ -1,4 +1,4 @@
-import { createHmac, createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHmac, createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   authorizationCodeGrant,
@@ -265,18 +265,11 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
         return reply.code(401).send({ error: "Identidade OIDC inválida." });
       }
 
-      const displayName = typeof claims.name === "string"
-        ? claims.name
-        : typeof claims.preferred_username === "string"
-          ? claims.preferred_username
-          : typeof claims.email === "string" ? claims.email : null;
       const identity = await pool.query<{ id: string; is_active: boolean }>(
-        `INSERT INTO identity.erp_user (id, issuer, subject, display_name)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (issuer, subject) DO UPDATE
-           SET display_name = COALESCE(EXCLUDED.display_name, identity.erp_user.display_name)
-         RETURNING id, is_active`,
-        [randomUUID(), issuer, subject, displayName],
+        `SELECT id, is_active
+         FROM identity.erp_user
+         WHERE issuer = $1 AND subject = $2`,
+        [issuer, subject],
       );
       const user = identity.rows[0];
       if (!user?.is_active) {

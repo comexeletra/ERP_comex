@@ -15,10 +15,12 @@
 
 O backend ASP.NET Core, SQLite, Compose e Keycloak/Azurite locais foram removidos
 do snapshot do repositório. As migrations PostgreSQL reaproveitáveis estão em
-`apps/api/migrations`. O scaffold Fastify atual valida o gateway e conecta ao
-PostgreSQL, mas ainda não implementa OIDC, sessões, migrations automáticas ou
-endpoints de negócio. Não publicar como aplicação operacional até a paridade e
-os fluxos de autenticação serem validados.
+`apps/api/migrations`. A API Fastify contém rotas OIDC/PKCE, sessão PostgreSQL,
+CSRF, logout, runner explícito de migrations e comando manual de bootstrap do
+primeiro administrador. Esses fluxos ainda não foram validados contra PostgreSQL
+ou issuer real. Autorização de negócio e endpoints operacionais seguem
+pendentes. Não publicar para uso operacional até completar e validar esses
+fluxos.
 
 ## Variáveis de ambiente
 

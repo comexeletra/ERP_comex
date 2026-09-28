@@ -21,43 +21,59 @@ estado executável após a limpeza, use a tabela do incremento atual.
 
 ## Ponto de retomada obrigatório
 
-**Última atualização:** 2026-09-25
+**Última atualização:** 2026-09-28
 
 **Estado seguro atual:** Planilha, ZIP e banco SQLite locais foram preservados,
 mas continuam ignorados pelo Git. Os arquivos .NET/SQLite e Compose foram
 retirados do snapshot ativo; as linhas históricas abaixo registram validações
 anteriores e não significam que esses recursos existam na API Node. A API
-Fastify ainda é scaffold. A URL de desenvolvimento encaminha para
+Fastify tem runner explícito de migrations PostgreSQL e implementação parcial
+de OIDC/PKCE, callback, sessão PostgreSQL, CSRF e logout. O HEAD local contém
+dois commits à frente de `origin/main`; o push aguarda a autenticação do Git
+Credential Manager no navegador. A URL de desenvolvimento encaminha para
 `localhost:4000`; `VPS_API_URL` ainda não foi configurada na Vercel.
-**Próximo incremento obrigatório:** validar as migrations Node M001–M007 no
-PostgreSQL descartável, incluindo banco vazio, reaplicação, checksum e
-concorrência; validar o fluxo OIDC com um issuer de teste; depois implementar
-autorização de negócio e endpoints conforme os contratos deste plano e a
-evidência histórica do checklist; instalar a API Fastify como serviço
-persistente na VPS Hostinger junto ao PostgreSQL. A Vercel
-Free hospeda Next.js; `proxy.ts` encaminha `/auth/*` e `/api/v1/*` por HTTPS com token server-only. A
-API conecta a PostgreSQL local/privado; nenhuma conexão ou porta 5432 é exposta
-à Vercel ou ao browser. API, banco e reverse proxy/túnel iniciam automaticamente
-na VPS; o computador pessoal pode ficar desligado. OIDC/segredos não foram
-fornecidos e serão configurados depois. O MCP Vercel consta em
+**Próximo incremento obrigatório:** validar DEV13 em PostgreSQL isolado e E2E autenticado. A API Node já fornece carteira, overview de leitura e histórico sob escopo; qualidade e escrita operacional seguem pendentes. DEV04 passou em testes locais; DEV03 e DEV05 permanecem parciais. M001–M007, checksum e concorrência/upgrade temporário foram validados apenas em `erp_po_totvs_test` (7 aplicadas/0 pendentes). Sem commit/push até nova orientação. A Vercel Free hospeda Next.js; `proxy.ts` encaminha `/auth/*` e `/api/v1/*` por HTTPS com token server-only.
+A API conecta a PostgreSQL local/privado; nenhuma conexão ou porta
+5432 é exposta à Vercel ou ao browser. API, banco e reverse proxy/túnel iniciam
+automaticamente na VPS; o computador pessoal pode ficar desligado. OIDC/segredos
+ainda não foram configurados ou validados. O MCP Vercel consta em
 `~/.codex/config.toml`, mas não está carregado como ferramenta neste processo;
 nenhum projeto/setting Vercel foi inspecionado. Esta escolha e documentação
-foram registradas em 2026-09-24; autorização e endpoints de negócio, validação
-PostgreSQL das migrations M001–M007, issuer de teste, instalação na VPS e E2E
-continuam pendentes. A referência aceita
+foram registradas em 2026-09-24; endpoints de negócio, issuer de teste,
+instalação persistente na VPS e E2E continuam pendentes. A referência aceita
 para a cópia de trabalho é 7.000 linhas no Pré e 195 no Pós.
 
 **Estado da validação em 2026-09-25:** `corepack pnpm install --frozen-lockfile`
 e `corepack pnpm build` passaram na API após o incremento OIDC. Docker não faz
-parte da stack definida e não é dependência desta validação. Na VPS, foi criado o banco isolado
-`erp_po_totvs_test`, de propriedade da role `erp_po_totvs_migrator`; a conexão
-com essa role foi confirmada no `psql`. Nenhuma migration foi aplicada. O
-runner e a migration M007 ainda precisam ser transferidos e exercitados contra esse banco. O Node
+parte da stack definida da API; o PostgreSQL da VPS é publicado pelo serviço
+Docker `postgres_postgres`. Na VPS, o pacote foi
+transferido para `/tmp/api-migration-validation`; o banco isolado
+`erp_po_totvs_test`, de propriedade da role `erp_po_totvs_migrator`, foi usado
+para validar o runner. `migrate:status` mostrou 0 aplicadas/7 pendentes;
+`migrate:up` aplicou M001–M007; o status seguinte mostrou 7 aplicadas/0
+pendentes; e a reaplicação concluiu com 0 migrations aplicadas. O Node
 24.21.0 foi instalado em `/opt/node-v24` sem substituir o Node 20 do sistema;
 o checksum oficial do pacote foi validado. A firewall Hostinger bloqueia
-5432/6543/6379 externamente e mantém 22/80/443 acessíveis. Para concluir este
-bloco, transferir o pacote da API, executar status/up/reaplicação no banco de
-teste e registrar os resultados.
+5432/6543/6379 externamente e mantém 22/80/443 acessíveis. A conexão isolada
+usou TLS com opção de compatibilidade por causa do certificado PostgreSQL
+self-signed sem SAN; isso não valida TLS de produção. Naquele registro,
+checksum alterado, concorrência e upgrade ainda estavam pendentes; os resultados
+executados em 2026-09-28 estão registrados abaixo.
+
+**Atualização da validação em 2026-09-28:** em cópia temporária no pacote da
+VPS, `migrate:status` rejeitou a alteração de M007 com `Checksum divergente`; o
+arquivo foi restaurado e status voltou a 7 aplicadas/0 pendentes. Para upgrade,
+foi criada somente no pacote temporário M008, com uma tabela de prova em
+`erp_po_totvs_test`. Duas execuções simultâneas de `migrate:up` terminaram sem
+erro: uma aplicou M008 e a outra aplicou zero; status confirmou 8/0. A tabela e
+a linha M008 do ledger foram removidas em transação; o arquivo M008 e os logs
+temporários foram apagados. Status final confirmou M001–M007 aplicadas e zero
+pendentes. A senha da role de teste foi redefinida interativamente; nenhum
+segredo foi registrado. O arquivo de ambiente temporário, criado com modo 0600,
+foi removido. A conexão usou `uselibpqcompat=true&sslmode=require`, sem validar
+identidade do servidor nem TLS de produção. DEV05 continua parcial até a
+validação de TLS de produção e integração de CI; issuer OIDC, bootstrap e E2E
+também continuam pendentes.
 
 ### Arquitetura de publicação escolhida
 
@@ -72,8 +88,8 @@ teste e registrar os resultados.
   obrigatórios. Static IP Vercel Pro/Enterprise (documentado em US$100/mês/projeto
   Pro + transferência regional) deixa de ser requisito desta topologia.
 - **Autenticação:** OIDC Authorization Code + PKCE na API Node da VPS, cookie
-  seguro mesmo-origin através do proxy, sessão persistida e CSRF; provider e
-  callback ainda pendentes.
+  seguro mesmo-origin através do proxy, sessão persistida e CSRF; issuer real e
+  callback autenticado ainda pendentes.
 - **Arquivos e tarefas longas:** filesystem da função não é armazenamento
   persistente. Imports XLSX e documentos precisam de object storage externo;
   tarefas duráveis/outbox exigem execução assíncrona gerenciada ou cron/queue.
@@ -81,8 +97,11 @@ teste e registrar os resultados.
   anterior foram removidos do snapshot ativo. Evidências e regras históricas
   permanecem neste checklist; os recursos precisam ser reimplementados na stack
   Node.
-- **Migrations:** migrations PostgreSQL reutilizáveis foram movidas para
-  `apps/api/migrations`; ainda não há runner Node nem validação contra a VPS.
+- **Migrations:** migrations PostgreSQL reutilizáveis estão em
+  `apps/api/migrations`; o runner Node aplicou M001–M007 no banco isolado da
+  VPS e passou status, aplicação inicial e reaplicação. Em 2026-09-28, checksum
+  divergente foi rejeitado, upgrade temporário M008 e concorrência passaram;
+  veja as evidências no incremento atual. TLS de produção e CI continuam pendentes.
 - **Dados locais:** ZIP, Excel, banco SQLite e SDK local ignorados foram
   preservados; não entram no Git e não foram apagados nesta limpeza.
 
@@ -119,15 +138,12 @@ da coluna **Condição para avançar** não podem ser ignorados.
 
 ### Sequência exata do próximo bloco
 
-1. Completar E2E autenticado da carteira/detalhe da PO, incluindo filtros,
-   paginação, conflito de edição e rastreabilidade até a origem (DEV13).
-2. Completar E2E OIDC e escopo por importador, incluindo 401/403/404, CSRF e
-   logout (DEV03/DEV04); a API já aplica os grants e filtros server-side.
-3. Validar pré-condições e permissões dos comandos de workflow; ligar as
-   evidências declaradas aos cadastros de itens, documentos, embarques e saldos
-   quando esses módulos forem implementados (DEV15).
-4. Implementar auditoria geral e outbox transacional (DEV24) antes de liberar
-   módulos de invoice, logística, fiscal, documentos, custos rateados ou BI.
+1. Validar carteira, overview, histórico e escopo em PostgreSQL isolado; depois executar E2E autenticado DEV13, incluindo paginação e rastreabilidade.
+2. Configurar issuer OIDC de homologação e fechar E2E de login, sessão, CSRF, logout e respostas 401/403/404 (DEV03/DEV04).
+3. Executar `.github/workflows/api-ci.yml` em CI e validar identidade TLS aprovada antes de fechar DEV05.
+4. Definir schema e regras aprovadas para dados operacionais antes de implementar edição, ETag/If-Match ou novos campos de negócio.
+5. Validar pré-condições e permissões dos comandos de workflow; ligar evidências a cadastros e saldos quando esses módulos existirem (DEV15).
+6. Implementar auditoria geral e outbox transacional (DEV24) antes de liberar módulos de invoice, logística, fiscal, documentos, custos rateados ou BI.
 
 > Se houver dúvida entre duas tarefas, execute primeiro a que protege a
 > integridade do dado ou torna a carga verificável; não avance para rateio,
@@ -306,6 +322,14 @@ inclua aqui a nova seção ou subseção antes de implementar a mudança.
 
 | Data | Incremento | Status | Evidência / observação |
 |---|---|---|---|
+| 2026-09-28 | DEV13 — overview de leitura e detalhe alinhado ao schema | [-] | Adicionado `GET /api/v1/purchase-orders/{id}/overview` com escopo, cobertura histórica, pendências ligadas à origem, IPs visíveis e custos no grão do IP. A tela usa overview/histórico paginado, mostra linhagem/desconhecidos e remove edição genérica e risco presumido. API build, 11 testes e build Next.js passaram. Sem conexão PostgreSQL, issuer ou E2E real. CI efêmera foi adicionada, ainda sem execução GitHub. | Validar integração PostgreSQL e E2E; executar workflow; schema de edição, TLS e issuer seguem pendentes. |
+| 2026-09-28 | DEV04 — autorização server-side Fastify | [x] | `apps/api/src/authorization.ts` consulta grants pela identidade `(issuer, subject)` em cada chamada protegida, mapeia papéis da matriz, nega por padrão rota sem política, produz predicado parametrizado de escopo e preserva 404 fora do escopo. A lista de POs e o histórico paginado usam o predicado nas consultas SQL antes da paginação/busca por ID. Dez testes locais cobrem 401/403/404, filtro antes da paginação, papel desconhecido, revogação imediata e administração global restrita. `M003_access_control.sql` permaneceu intacta; sem migration nova. |
+| 2026-09-25 | Runbooks alinhados à API Fastify atual | [-] | README, Vercel setup e runbook Hostinger agora descrevem OIDC/PKCE, sessão, CSRF, runner e bootstrap como implementações parciais, sem alegar validação. O runbook inclui o procedimento M001–M007 para banco isolado, com arquivo temporário de credencial em loopback; nada foi executado na VPS. |
+| 2026-09-25 | DEV03 — bootstrap explícito do primeiro administrador | [-] | Adicionado `pnpm bootstrap:admin`, comando manual que exige opt-in, credencial PostgreSQL própria em loopback, identidade OIDC exata e escopos de importador explícitos. Usa transação e advisory lock; recusa se já houver administrador ou se a identidade já existir. O pacote local contém o comando, mas ele ainda não foi compilado nem executado; depende das migrations M003+ e de provisionamento de issuer/conta. |
+| 2026-09-25 | DEV05 — ambiente de migration explícito | [-] | O runner agora exige `MIGRATION_ENV=isolated` ou `MIGRATION_ENV=production`; valores ausentes/inválidos encerram antes da conexão. Alvos remotos isolados continuam exigindo `ALLOW_REMOTE_MIGRATIONS=true`; produção continua exigindo `MIGRATION_DATABASE_URL` e `ALLOW_PRODUCTION_MIGRATIONS=true`. O pacote local foi atualizado; a alteração ainda não foi compilada ou exercitada. |
+| 2026-09-25 | DEV03 — negar provisionamento OIDC automático | [-] | O callback agora procura a identidade `(issuer, subject)` em `identity.erp_user` e só cria sessão se a conta estiver previamente cadastrada e ativa. Login OIDC não cria nem ativa usuários. O pacote local foi atualizado, mas a alteração ainda não foi compilada nem validada com PostgreSQL/issuer. |
+| 2026-09-28 | DEV05 — checksum, concorrência e upgrade isolados | [-] | `migrate:status` rejeitou checksum divergente em cópia temporária de M007; restauração foi confirmada e status voltou a 7/0. Duas execuções simultâneas de `migrate:up` com M008 temporária aplicaram a migration uma vez e zero vezes, respectivamente; status mostrou 8/0. A tabela e a linha M008 do ledger foram removidas em `erp_po_totvs_test`; arquivo/logs/env temporários foram removidos e o status final confirmou 7/0. A senha da role de teste foi redefinida sem registrar segredo. TLS self-signed com compatibilidade não valida produção; DEV03/DEV05 permanecem parciais. |
+| 2026-09-25 | Retomada do plano e reconciliação do checklist | [-] | Corrigidos resumos de estado que ainda descreviam a API como scaffold sem OIDC. Dois commits locais seguem à frente de `origin/main`; push depende da autenticação já solicitada pelo Git Credential Manager. O pacote local contém a API e M001–M007, sem `.env`, `node_modules` ou `dist`. Nenhuma migration foi executada e nenhum issuer OIDC foi configurado/validado; o conteúdo SQL de M001 não foi alterado e a diferença local é somente de fim de linha. Próximo passo: após confirmação da autenticação, push, transferência e validação status/aplicação/reaplicação no banco de teste. |
 | 2026-09-24 | Limpeza do snapshot da arquitetura anterior | [-] | Removidos projetos ASP.NET Core, SQLite, runner/migrations SQLite, Compose/Keycloak/Azurite e scripts .NET/Docker; migrations PostgreSQL reutilizáveis movidas a `apps/api/migrations`. `.gitignore` mantém ZIP, planilha, banco local e SDK fora do Git. API Node ainda sem paridade; o histórico Git anterior foi preservado, sem reescrita de histórico. |
 | 2026-09-24 | Preparação operacional da VPS e documentação de funcionamento sem PC | [-] | README, setup Vercel, plano e checklist alinhados em Vercel Free + Next proxy + API Fastify/PostgreSQL na VPS. Modelos `deploy/hostinger/import-erp-api.service` e `nginx-api.conf.example` mais roteiro de instalação adicionados. Build Next.js e `tsc` da API passaram. Endpoints de negócio/OIDC, migrations da API e instalação real continuam pendentes; MCP Vercel não está disponível como ferramenta nesta sessão. |
 | 2026-09-24 | Escolha e preparação da stack Vercel + PostgreSQL VPS | [-] | Product Owner escolheu Vercel Free para Next.js e API Node + PostgreSQL na VPS Hostinger. Documentada API persistente acessada por HTTPS reverse proxy/túnel e gateway token; banco/segredos ficam na VPS, sem porta 5432 pública. O PC pessoal pode ficar desligado após deploy e configuração de início automático dos serviços. Scaffold Node criado, mas endpoints de negócio/OIDC, migrations PostgreSQL, instalação na VPS e E2E seguem pendentes. MCP Vercel está em `~\\.codex\\config.toml`, mas não apareceu carregado como ferramenta nesta sessão; inspeção da conta pendente. |
@@ -337,25 +361,62 @@ inclua aqui a nova seção ou subseção antes de implementar a mudança.
 | Item | Status | Evidência | Próximo passo |
 |---|---|---|---|
 | DEV01 | [-] | Lockfiles pnpm das aplicações Next.js e Fastify estão versionados; instruções .NET/Compose foram removidas do README ativo. | Validar instalação congelada em checkout limpo/CI. |
-| DEV02 | [-] | Docker/Compose não fazem parte da stack alvo. Banco `erp_po_totvs_test` e role de migration foram criados na VPS; Node 24.21.0 está instalado isoladamente em `/opt/node-v24`. A firewall foi validada externamente: 22/80/443 acessíveis; 5432/6543/6379 bloqueadas. O runner ainda não foi transferido nem executado. | Transferir a API, validar o runner contra o banco de teste e depois configurar o serviço persistente da API. |
-| DEV03 | [-] | OIDC/Keycloak só existem como evidência histórica no checklist; o código anterior foi removido. API Node não implementa login/sessão/CSRF. | Reimplementar OIDC/PKCE, callback, sessão persistente, CSRF e logout no Fastify. |
-| DEV04 | [-] | M003 PostgreSQL foi mantida em `apps/api/migrations`; implementação anterior de grants foi removida. Nenhum endpoint Node aplica escopos/permissões. | Portar autorização server-side por `(issuer, subject)`, papéis e escopos; validar 401/403/404. |
+| DEV02 | [-] | Docker/Compose não fazem parte da stack alvo. Banco `erp_po_totvs_test` e role `erp_po_totvs_migrator` foram criados na VPS; a conexão psql foi confirmada. Node 24.21.0 está instalado isoladamente em `/opt/node-v24`. A firewall foi validada externamente: 22/80/443 acessíveis; 5432/6543/6379 bloqueadas. Pacote transferido para `/tmp/api-migration-validation`, instalado e compilado na VPS. Commits e push permanecem adiados por instrução do usuário. | Quando solicitado, fazer push; configurar serviço persistente da API após validações de OIDC, segurança e operação. |
+| DEV03 | [-] | Fastify implementa Authorization Code + PKCE, callback, sessão PostgreSQL, CSRF e logout; login exige identidade cadastrada e ativa. O comando `pnpm bootstrap:admin` provisiona administrador com escopos explícitos. Issuer/client, bootstrap e fluxo OIDC real/E2E ainda não foram configurados ou validados. | Configurar issuer/client de homologação, provisionar a conta autorizada e executar E2E de callback, sessão, CSRF e logout. |
+| DEV04 | [x] | Grants por `(issuer, subject)`, matriz de papéis, escopo por importador e negação por padrão implementados. Carteira, overview e histórico usam guardas e predicados SQL. Onze testes Fastify locais cobrem 401/403/404, escopo antes da paginação, papel desconhecido, revogação e desconhecidos preservados. Sem PostgreSQL ou issuer real. | Reutilizar guards/predicados em novos handlers e executar integração/E2E com PostgreSQL isolado e identidade real. |
+| DEV05 | [-] | Runner M001–M007 validado no banco isolado; checksum divergente foi rejeitado e concorrência/upgrade temporário passaram. `.github/workflows/api-ci.yml` adiciona build, testes e migrations em PostgreSQL efémero; CI GitHub e identidade TLS de produção ainda não foram validadas. | Executar workflow em PR/CI e validar TLS aprovado; manter migrations em alvos isolados. |
+| DEV13 | [-] | API Node com carteira paginada/filtros, overview de leitura conforme M001–M007, IPs/custos no grão do IP e histórico paginado com linhagem. Escopo aplicado na PO e nos IPs; itens e saldo oficiais permanecem desconhecidos. A tela remove edição arbitrária/risco presumido. API build e 11 testes passaram; build Next.js/TypeScript passou. Sem integração PostgreSQL/OIDC real. | Validar API em PostgreSQL isolado e E2E autenticado; decidir schema/whitelist antes de escrita e ETag. |
 | DEV15 | [-] | Regras de workflow e ETag permanecem especificadas na seção 10 e nas evidências históricas; endpoints/repositórios foram removidos com a implementação .NET. | Reimplementar estados/transições no Node com autorização, evidências, atomicidade e concorrência PostgreSQL. |
 | DEV24 | [-] | SQL PostgreSQL de auditoria/outbox foi mantido; dispatcher, repositórios e checks .NET/SQLite foram removidos do snapshot. Evidência antiga não valida o runtime Node. | Portar gravação atômica, dispatcher/worker e inbox no Node; testar retry, leases e idempotência. |
-| Vercel/produção | [-] | Proxy, health checks, modelos systemd/Nginx, runner PostgreSQL e rotas OIDC estão no código. A VPS tem banco isolado de teste e Node 24.21.0; runner/M007 ainda não foram transferidos ou exercitados. Issuer/login real, autorização de negócio, endpoints operacionais e deploy seguem pendentes. | Validar migrations e OIDC no banco/issuer de teste; portar autorização e endpoints; configurar VPS/TLS/OIDC e executar E2E antes da produção. |
+| Vercel/produção | [-] | Proxy, health checks, modelos systemd/Nginx, runner PostgreSQL e rotas OIDC estão no código. Na VPS, instalação congelada e build passaram; no banco isolado M001–M007 foram aplicadas e reaplicadas sem pendências. Issuer/login real, autorização de negócio, endpoints operacionais e deploy seguem pendentes. | Configurar issuer de teste; validar OIDC, autorização, endpoints e operação da VPS antes da produção. |
 
 ### Incremento de 2026-09-25 — runner PostgreSQL para Node
 
 | Item | Status | Evidência | Próximo passo |
 |---|---|---|---|
-| DEV05 | [-] | Adicionado `apps/api/src/migrate.ts` com ledger versionado, verificação SHA-256, advisory lock PostgreSQL e transação individual por migration. `migrate:status` e `migrate:up` são explícitos e carregam `.env` se presente; o servidor não migra no startup. A aplicação de produção exige credencial separada. `corepack pnpm install --frozen-lockfile` e `corepack pnpm build` passaram. Na VPS, o banco isolado `erp_po_totvs_test` foi criado e a role `erp_po_totvs_migrator` conectou com sucesso; a migration ainda não foi executada. O Node 24.21.0 foi instalado em `/opt/node-v24` após validação do checksum oficial. A firewall bloqueia externamente 5432/6543/6379 e permite 22/80/443. | Transferir o pacote versionado para a VPS; compilar, executar `migrate:status`, aplicar migrations, repetir `migrate:up` e verificar ledger/checksums no banco isolado. Depois cobrir upgrade, checksum alterado e concorrência antes do aceite DEV05. |
-| DEV05 | [-] | Adicionado `apps/api/src/migrate.ts` com ledger versionado, verificação SHA-256 normalizada entre Windows/Linux, advisory lock PostgreSQL e transação individual por migration. `migrate:status` e `migrate:up` são explícitos; o servidor não migra no startup. `corepack pnpm install --frozen-lockfile` e `corepack pnpm build` passaram. Na VPS, o banco isolado `erp_po_totvs_test` e a role dedicada conectaram com sucesso; nenhuma migration foi executada. O Node 24.21.0 está instalado em `/opt/node-v24` com checksum oficial validado; firewall externa bloqueia 5432/6543/6379. M007 foi adicionada para estado OIDC e sessões. | Transferir o pacote versionado para a VPS; executar status/up/reaplicação das migrations M001–M007 no banco isolado e verificar ledger/checksums. Cobrir upgrade, checksum alterado e concorrência antes do aceite DEV05. |
+| DEV05 | [-] | Adicionado `apps/api/src/migrate.ts` com ledger versionado, verificação SHA-256, advisory lock PostgreSQL e transação individual por migration. `migrate:status` mostrou 0 aplicadas/7 pendentes; `migrate:up` aplicou M001–M007; status confirmou 7 aplicadas/0 pendentes; reaplicação retornou 0 aplicadas. `corepack pnpm install --frozen-lockfile` e `corepack pnpm build` passaram na VPS. O Node 24.21.0 está em `/opt/node-v24` com checksum oficial validado; firewall externa bloqueia 5432/6543/6379. A conexão do teste usou TLS compatível com o certificado self-signed sem SAN e não comprova configuração TLS de produção. | Cobrir upgrade, checksum alterado e concorrência; documentar a execução do ledger/checksum e validar configuração TLS de produção antes do aceite DEV05. |
+| DEV05 | [-] | Adicionado `apps/api/src/migrate.ts` com ledger versionado, verificação SHA-256 normalizada entre Windows/Linux, advisory lock PostgreSQL e transação individual por migration. Status inicial reportou 0/7; aplicação executou M001–M007; status final reportou 7/0; reaplicação aplicou 0. O build também passou na VPS. M007 cria estado OIDC e sessões. | Cobrir upgrade, checksum alterado e concorrência antes do aceite DEV05. |
 
 ### Incremento de 2026-09-25 — OIDC e sessão Fastify (parcial)
 
 | Item | Status | Evidência | Próximo passo |
 |---|---|---|---|
-| DEV03 | [-] | Implementados Authorization Code + PKCE com `openid-client`, state/nonce/code_verifier persistidos e consumidos uma única vez, identidade `(issuer, subject)` vinculada a `identity.erp_user`, sessão opaca persistida (hash do token), cookie seguro, limite absoluto de 8h/inatividade de 30 min, `/auth/me`, token CSRF HMAC com validação de Origin e logout local. `M007_auth_sessions.sql` cria o armazenamento. `corepack pnpm build` passou. Nenhum issuer real foi configurado e M007/fluxo OIDC ainda não foram exercitados contra PostgreSQL. | Validar M001–M007 no banco de teste, registrar um issuer/client de homologação e executar E2E de callback, sessão, CSRF e logout; então portar autorização de negócio/escopo DEV04. |
+| DEV03 | [-] | Implementados Authorization Code + PKCE com `openid-client`, state/nonce/code_verifier persistidos e consumidos uma única vez, sessão opaca persistida (hash do token), cookie seguro, limite absoluto de 8h/inatividade de 30 min, `/auth/me`, token CSRF HMAC com validação de Origin e logout local. Callback só aceita conta `(issuer, subject)` previamente cadastrada e ativa em `identity.erp_user`; login não provisiona usuários. `M007_auth_sessions.sql` foi aplicada no banco isolado junto com M001–M006. O pacote compilou na VPS com sucesso. Nenhum issuer real foi configurado; bootstrap e fluxo OIDC real/E2E ainda não foram executados. | Configurar issuer de homologação, provisionar conta permitida via comando manual e executar E2E de callback, sessão, CSRF e logout; então portar autorização de negócio/escopo DEV04. |
+
+### Validação operacional em 2026-09-25 — migrations PostgreSQL na VPS
+
+| Item | Status | Evidência | Próximo passo |
+|---|---|---|---|
+| DEV05 / DEV03 | [-] | Pacote transferido e checksum conferido; instalação congelada e build TypeScript passaram na VPS. Em `erp_po_totvs_test`, status inicial: 0 aplicadas/7 pendentes; aplicação: 7 migrations; status final: 7 aplicadas/0 pendentes; reaplicação: 0 migrations aplicadas. O teste usou `sslmode=require` com `uselibpqcompat=true` devido ao certificado PostgreSQL self-signed sem SAN; validar TLS de produção separadamente. Arquivo temporário `/tmp/api-migration-validation.env` removido pelo usuário após o teste. Nenhum issuer foi configurado, nenhum login OIDC/bootstrap foi exercitado e o banco operacional não foi tocado. | Na retomada, recriar o arquivo temporário de ambiente com `umask 077`, sem compartilhar credenciais; testar que `migrate:status` rejeita checksum divergente numa cópia temporária de migration e restaurá-la; depois validar concorrência/upgrade e OIDC com issuer de homologação. |
+
+### Validação operacional em 2026-09-28 — checksum, concorrência e upgrade
+
+| Item | Status | Evidência | Próximo passo |
+|---|---|---|---|
+| DEV05 | [-] | Em `erp_po_totvs_test`, uma alteração de comentário somente na cópia temporária de M007 fez `migrate:status` falhar explicitamente com checksum divergente. `ARQUIVO_RESTAURADO` foi confirmado e status posterior voltou a 7/0. Para upgrade/concorrência, M008 temporária criou `public.migration_validation_upgrade_probe_20260928`; duas execuções simultâneas de `migrate:up` terminaram sem erro, uma aplicando M008 e outra zero. Status confirmou 8/0; `DROP TABLE`, remoção de uma linha do ledger e `COMMIT` limparam o banco de teste. M008 e logs temporários foram removidos; status final confirmou M001–M007 aplicadas e zero pendentes. O arquivo de ambiente modo 0600 foi removido após os testes; nenhum segredo foi registrado. A senha da role dedicada foi redefinida interativamente. O banco operacional não foi acessado. | Integrar checks à CI e validar TLS de produção antes do aceite DEV05; OIDC/bootstrap/E2E seguem pendentes para DEV03. |
+
+### Ponto de partida para a próxima sessão
+
+1. Não fazer commit nem push até nova orientação do usuário. Os dois commits
+   locais continuam à frente de `origin/main`; a autenticação do Git Credential
+   Manager ainda não foi concluída nesta sessão.
+2. A VPS permanece com o banco isolado `erp_po_totvs_test` contendo M001–M007
+   aplicadas. Checksums, concorrência e upgrade temporário foram validados; M008
+   e a tabela/ledger de prova foram removidos. Status final: 7 aplicadas/0
+   pendentes. Nenhuma operação foi feita no banco operacional.
+3. O pacote permanece em `/tmp/api-migration-validation`; o arquivo de ambiente
+   `/tmp/api-migration-validation.env` foi removido após os testes. A senha da
+   role `erp_po_totvs_migrator` foi redefinida interativamente e não foi
+   registrada. Se for necessário outro acesso, recrie o arquivo com `umask 077`
+   e não compartilhe credenciais.
+4. Próximo: validar endpoints Node DEV13 em PostgreSQL isolado; configurar issuer de homologação e executar E2E OIDC; rodar a workflow de CI em PR e validar TLS de produção. Comandos remotos, se necessários, devem ser enviados um por vez e aguardados antes do seguinte. Não marcar DEV03 ou DEV05 como concluídos até cumprir seus critérios.
+5. O certificado PostgreSQL observado na VPS é self-signed e não tem SAN. O
+   teste foi feito com `uselibpqcompat=true&sslmode=require`; isso não é
+   validação de identidade do servidor nem configuração aprovada para produção.
+6. Preservar `apps/api/migrations/M001_historical_core.sql`: a alteração local
+   observada é de fim de linha e não deve ser incluída nem modificada sem revisão.
+7. Preservar `hast.md` sem alterações; continua não rastreado.
+8. DEV04 está concluído em teste local. Ao portar rotas já previstas no plano, exigir `permissionConfig(...)` no `config`, usar `importerScopePredicate(...)` na própria consulta antes de `LIMIT/OFFSET` e na busca por ID, sem bypass para Administrador. Rotas globais devem usar escopo `global` somente para `users.manage`. Não adicionar endpoints fora dos contratos existentes.
 
 ## Modelo para o próximo incremento
 
@@ -369,10 +430,11 @@ Copie esta linha para a tabela de histórico e atualize os itens afetados acima:
 
 | Data | Status | Evidência | Próximo passo |
 |---|---|---|---|
+| 2026-09-28 | [-] | A API Node agora oferece carteira paginada, overview de leitura e hist?rico paginado sob escopo por importador. Overview inclui cobertura/pend?ncias hist?ricas e IPs/custos no gr?o do IP; itens/saldo oficiais continuam desconhecidos. A tela mostra linhagem, pagina hist?rico e n?o oferece escrita arbitr?ria nem risco presumido. Build API, 11 testes e build Next.js/TypeScript passaram. Sem PostgreSQL/OIDC E2E real. | Validar com PostgreSQL isolado e sess?o OIDC de teste; definir schema/whitelist antes de edi??o e ETag. |
 | 2026-09-24 | [-] | A implementação com filtros, paginação, linhagem e ETag existiu na API .NET removida. O frontend ainda espera esses contratos same-origin; a API Node atual não tem as rotas nem os repositórios. Os resultados de checks anteriores são evidência histórica, não validação da nova stack. | Portar contratos e escopo por importador para PostgreSQL/Node; validar filtros, paginação, ETag/If-Match e concorrência. Itens oficiais TOTVS e invoices continuam fora do escopo. |
 
 ## Evidência atual do DEV03
 
 | Data | Status | Evidência | Próximo passo |
 |---|---|---|---|
-| 2026-09-25 | [-] | A API Node implementa rotas `/auth/login`, `/auth/callback`, `/auth/me`, `/auth/csrf` e `/auth/logout`; M007 adiciona persistência transitória OIDC e sessões. State/nonce/PKCE são validados e a sessão guarda somente hash do token. Build passou; issuer/client não configurados, migrations não executadas e fluxo real não testado. | Aplicar M001–M007 em PostgreSQL de teste e validar com um issuer/client de homologação; depois completar testes negativos e OIDC Entra. |
+| 2026-09-25 | [-] | A API Node implementa rotas `/auth/login`, `/auth/callback`, `/auth/me`, `/auth/csrf` e `/auth/logout`; M007 adiciona persistência transitória OIDC e sessões. State/nonce/PKCE são validados e a sessão guarda somente hash do token. Build passou na VPS; M001–M007 foram aplicadas e reaplicadas no banco isolado. Issuer/client não configurados e fluxo real não testado. | Configurar issuer/client de homologação e validar callback, sessão, CSRF e logout; depois completar testes negativos e OIDC Entra. |

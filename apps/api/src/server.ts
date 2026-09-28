@@ -5,6 +5,8 @@ import rateLimit from "@fastify/rate-limit";
 import { timingSafeEqual } from "node:crypto";
 import { Pool } from "pg";
 import { registerAuthRoutes } from "./auth.js";
+import { registerAuthorization } from "./authorization.js";
+import { registerPurchaseOrderReadRoutes } from "./purchase-orders.js";
 
 const gatewayToken = process.env.GATEWAY_TOKEN;
 const connectionString = process.env.DATABASE_URL;
@@ -55,7 +57,9 @@ app.addHook("onRequest", async (request, reply) => {
   }
 });
 
+await registerAuthorization(app, pool);
 await registerAuthRoutes(app, pool);
+await registerPurchaseOrderReadRoutes(app, pool);
 
 app.get("/health/live", async () => ({ status: "ok" }));
 

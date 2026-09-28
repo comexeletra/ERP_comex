@@ -14,7 +14,10 @@ if (mode !== "status" && mode !== "up") {
 
 const parsedUrl = new URL(databaseUrl);
 const isLocal = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]).has(parsedUrl.hostname);
-const environment = process.env.MIGRATION_ENV ?? "isolated";
+const environment = process.env.MIGRATION_ENV;
+if (environment !== "isolated" && environment !== "production") {
+  throw new Error("MIGRATION_ENV deve ser definido explicitamente como isolated ou production.");
+}
 if (environment === "production") {
   if (!process.env.MIGRATION_DATABASE_URL) {
     throw new Error("Migrações de produção exigem a credencial dedicada MIGRATION_DATABASE_URL.");
@@ -23,7 +26,7 @@ if (environment === "production") {
     throw new Error("Migrações de produção exigem ALLOW_PRODUCTION_MIGRATIONS=true após backup restaurável.");
   }
 }
-if (environment !== "production" && !isLocal && process.env.ALLOW_REMOTE_MIGRATIONS !== "true") {
+if (environment === "isolated" && !isLocal && process.env.ALLOW_REMOTE_MIGRATIONS !== "true") {
   throw new Error("Banco remoto exige ALLOW_REMOTE_MIGRATIONS=true e deve ser isolado/teste.");
 }
 
