@@ -21,7 +21,28 @@ estado executável após a limpeza, use a tabela do incremento atual.
 
 ## Ponto de retomada obrigatório
 
-**Última atualização:** 2026-09-28
+**Estado mais recente — 2026-09-29:** O usuário escolheu `erp_po_totvs_test`
+como banco operacional. Antes de atualizar o schema, um backup foi restaurado
+com sucesso em banco temporário. M008 foi validada nessa cópia e aplicada no
+banco operacional; o ledger registra M001–M008, sem pendências. A API Node 24
+está ativa por `systemd` na VPS com role PostgreSQL de privilégio limitado e
+TLS com certificado fixado. O Traefik existente publicou
+`https://api.72-60-250-212.sslip.io`: `/health/live` respondeu 200 e
+`/health/ready` respondeu 200 com token e 401 sem token. O frontend em
+`fup-comex-eletra.vercel.app` ainda responde 404. Faltam identificar seu projeto
+Vercel, cadastrar `VPS_API_URL`/`VPS_API_TOKEN` em Production, fazer redeploy e
+configurar OIDC para validar o fluxo autenticado. O acesso ao banco pela Vercel
+ocorre exclusivamente pela API HTTPS; a porta 5432 segue bloqueada pela firewall
+da Hostinger.
+
+**Próximo passo atual:** confirmar o projeto Vercel que controla o hostname,
+publicar o frontend com as duas variáveis server-side, configurar provedor OIDC
+e validar o fluxo autenticado. A base foi escolhida para operação apesar do
+sufixo `_test`; não usá-la como banco descartável em testes futuros.
+
+### Registro anterior ao deploy na VPS
+
+**Última atualização:** 2026-09-29
 
 **Estado seguro atual:** Planilha, ZIP, banco SQLite local, `hast.md` e
 `api-migration-test.tar.gz` foram preservados; os arquivos locais continuam
@@ -35,8 +56,9 @@ inspecionado e configurado com Root Directory `apps/web` e framework Next.js;
 Production e Preview estão sem variáveis. Faltam o hostname HTTPS da API e o
 token correspondente para configurar `VPS_API_URL` e `VPS_API_TOKEN`.
 
-**Próximo incremento obrigatório:** validar M008 e DEV12 no PostgreSQL isolado,
-depois validar DEV13 e DEV12 por E2E autenticado. DEV04 está concluído em teste
+**Próximo incremento obrigatório:** concluir validação de M008 e DEV12 no
+PostgreSQL isolado (pendente de acesso seguro identificado), depois validar
+DEV13 e DEV12 por E2E autenticado. DEV04 está concluído em teste
 local; DEV03 e DEV05 permanecem parciais. M001–M007 estão aplicadas em
 `erp_po_totvs_test` (7 aplicadas/0 pendentes); checksum divergente e concorrência
 /upgrade temporário foram verificados nesse ambiente. `proxy.ts` encaminha
@@ -268,7 +290,7 @@ inclua aqui a nova seção ou subseção antes de implementar a mudança.
 | DEV09 | [-] | Normalização tipada de decimal, data, NCM e erros | Parser preserva o valor bruto; normalizador aplica Unicode/whitespace, caixa canônica para PO/IP/moeda/status e nomes conhecidos de importador. Separadores múltiplos em campos escalares viram `MIXED_SCALAR_VALUES` e bloqueiam vínculo automático. NCM ainda não recebe inferência de dígitos quando ambíguo. | Completar parsing decimal/data/NCM e validar a lista de sinônimos com Dados; regras sem confirmação continuam apenas mecânicas. |
 | DEV10 | [x] | Reconciliação Pré/Pós por IP sem multiplicar processos | Relatório da cópia de trabalho executado: 204 IPs (195 em ambas, 9 só no Pré, 0 só no Pós), 420 custos por moeda. Product Owner aceitou em 2026-09-24 a referência da cópia: Pré 7.000/Pós 195. | Manter a reconciliação por IP e moeda na CI; reabrir somente se a fonte mudar. |
 | DEV11 | [x] | Promoção retomável e idempotente | Check automatizado injeta falha antes do commit, confirma rollback de PO/IP/observação/custo, promove o mesmo lote na retomada e reinsere zero na reimportação. | Manter a cobertura na CI. |
-| DEV12 | [-] | Tela de qualidade auditável | Node implementa `/api/v1/data-issues` e `/api/v1/data-issues/{id}/resolve` com escopo por importador antes de contagem/paginação, revisor obtido da sessão, evidência e motivo obrigatórios, auditoria/outbox transacionais e idempotência por ator. `M008` acrescenta os campos necessários sem editar migrations aplicadas; a tela usa os contratos do plano. Build da API e `tsc --noEmit` do frontend passaram. O `next build` compilou o app, mas falhou ao iniciar subprocesso TypeScript (`spawn EPERM`). M008 ainda não foi aplicada nem houve E2E. | Disponibilizar acesso já configurado ao PostgreSQL isolado; aplicar M008 somente nele e validar permissões, 404 fora de escopo, retry idempotente, auditoria/outbox e fluxo autenticado antes de concluir DEV12. |
+| DEV12 | [-] | Tela de qualidade auditável | Revisão local de M003/M008 e handlers confirmou identidade `(issuer, subject)`/`userId` da sessão, permissões `quality.read`/`quality.resolve`, escopo dentro da CTE antes de contagens/paginação e na leitura bloqueada da issue, campos de evidência/motivo/`Idempotency-Key`, e gravação em transação de revisão/status/auditoria/outbox. Corrigida a ordem para ocultar issue fora do escopo como 404 antes de revelar conflito idempotente. Build API e `tsc --noEmit` web passaram; 11 testes de autorização e 5 testes locais do handler passaram (401/403/404, escopo, replay/conflito, identidade e rollback simulado de outbox). O serviço PostgreSQL local não está ativo/escutando em 5432; não há `.env` nem variáveis PG/MIGRATION no ambiente. M008 não foi aplicada e atomicidade PostgreSQL/E2E real não foram validados. | Disponibilizar sessão segura com alvo explicitamente confirmado como `erp_po_totvs_test` ou outro banco isolado descartável. Conferir status 7/0, aplicar M008, validar grants/escopo entre importadores, replay/conflito, rollback PostgreSQL e fluxo E2E autenticado antes de concluir DEV12. |
 | DEV13 | [-] | Carteira e detalhe centrados em PO | Filtros, paginação, linhagem, pendências abertas, ETag/If-Match e escopo por importador implementados; build da API, checks de migration e TypeScript passaram. Smoke sem autenticação confirma 401 na API. Dados oficiais TOTVS e E2E autenticado ainda pendem. | Executar E2E autenticado; itens oficiais TOTVS e invoices seguem fora do escopo atual. |
 | DEV14 | [-] | Solicitações e filas de pendência | A fila histórica inclui linhas de Pré Embarque sem PO e IP, inclusive lotes promovidos antes da regra explícita; não cria solicitação nem altera a origem. | Modelar solicitação nativa e sua regra de conversão após autenticação, perfis e workflow. |
 | DEV15 | [-] | Workflow e histórico de transições | Regras de PO e IP, rotas GET de estado/histórico e POST de transição implementadas; `If-Match`, escopo, grants explícitos, motivo, evidência obrigatória e journal append-only persistido em SQLite/PostgreSQL. Status histórico é mapeado sem inventar transições, com evento inicial e linhagem do XLSX. Build API sem warnings. | Validar E2E; vincular pré-condições às entidades oficiais de item, invoice, shipment, documento e saldo quando cada módulo existir; habilitar saltos simplificados somente com justificativa/permissão própria. |
@@ -373,7 +395,7 @@ inclua aqui a nova seção ou subseção antes de implementar a mudança.
 | DEV13 | [-] | API Node com carteira paginada/filtros, overview de leitura conforme M001–M007, IPs/custos no grão do IP e histórico paginado com linhagem. Escopo aplicado na PO e nos IPs; itens e saldo oficiais permanecem desconhecidos. A tela remove edição arbitrária/risco presumido. API build e 11 testes passaram; build Next.js/TypeScript passou. Sem integração PostgreSQL/OIDC real. | Validar API em PostgreSQL isolado e E2E autenticado; decidir schema/whitelist antes de escrita e ETag. |
 | DEV15 | [-] | Regras de workflow e ETag permanecem especificadas na seção 10 e nas evidências históricas; endpoints/repositórios foram removidos com a implementação .NET. | Reimplementar estados/transições no Node com autorização, evidências, atomicidade e concorrência PostgreSQL. |
 | DEV24 | [-] | SQL PostgreSQL de auditoria/outbox foi mantido; dispatcher, repositórios e checks .NET/SQLite foram removidos do snapshot. Evidência antiga não valida o runtime Node. | Portar gravação atômica, dispatcher/worker e inbox no Node; testar retry, leases e idempotência. |
-| Vercel/produção | [-] | Proxy, health checks, modelos systemd/Nginx, runner PostgreSQL e rotas OIDC estão no código. Na VPS, instalação congelada e build passaram; no banco isolado M001–M007 foram aplicadas e reaplicadas sem pendências. Projeto `erp-comex` ligado a `comexeletra/ERP_comex`; Root Directory `apps/web` e framework Next.js confirmados. Production e Preview continuam sem variáveis; os dois deployments Ready são anteriores à correção. O hostname HTTPS da API e o `GATEWAY_TOKEN` não estão disponíveis no checkout. | Configurar `VPS_API_URL`/`VPS_API_TOKEN` em Production e ambiente pareado da API por canal seguro, depois de validar API/OIDC. Preview só após staging segregado; fazer deploy e E2E com configuração pronta. |
+| Vercel/produção | [-] | Proxy, health checks, modelos systemd/Nginx, runner PostgreSQL e rotas OIDC estão no código. Na VPS, instalação congelada e build passaram; no banco isolado M001–M007 foram aplicadas e reaplicadas sem pendências. Projeto `erp-comex` ligado a `comexeletra/ERP_comex`; Root Directory `apps/web` e framework Next.js confirmados. GETs anônimos em 2026-09-29 para a raiz documentada `https://erp-comex.vercel.app/` e `/api/v1/data-issues` retornaram HTTP 404 (`X-Vercel-Error: NOT_FOUND`), sem alcançar API/VPS. Production e Preview foram registrados sem variáveis; dois deployments Ready são anteriores à correção. Falta URL de deployment ativo, hostname HTTPS da API e `GATEWAY_TOKEN`. | Confirmar URL pública do deployment ativo. Preparar API HTTPS e `VPS_API_URL`/`VPS_API_TOKEN` em Preview somente com staging e banco isolados; não ligar Preview ou Production ao banco operacional. Então validar o proxy e E2E autenticado. |
 
 ### Incremento de 2026-09-25 — runner PostgreSQL para Node
 
@@ -413,7 +435,7 @@ inclua aqui a nova seção ou subseção antes de implementar a mudança.
    role `erp_po_totvs_migrator` foi redefinida interativamente e não foi
    registrada. Se for necessário outro acesso, recrie o arquivo com `umask 077`
    e não compartilhe credenciais.
-4. DEV12 ganhou implementação Node alinhada ao contrato, mas segue parcial até aplicar M008 somente no PostgreSQL isolado e validar permissões, resolução idempotente, auditoria/outbox e E2E autenticado. Depois continuar a validação PostgreSQL/E2E de DEV13, configurar issuer de homologação, executar a workflow de CI e validar TLS de produção. Comandos remotos, se necessários, devem ser explicados e enviados um por vez, aguardando o resultado antes do seguinte. Não marcar DEV03 ou DEV05 como concluídos até cumprir seus critérios. Para Vercel, ainda faltam hostname HTTPS e token gateway; não cadastrar placeholders.
+4. DEV12 ganhou implementação Node alinhada ao contrato e 5 testes locais de handler, mas segue parcial: neste checkout não há serviço PostgreSQL local, `.env` ou variáveis PG/MIGRATION, então M008 não foi aplicada. O próximo passo é obter uma conexão segura já preparada e confirmar explicitamente o alvo `erp_po_totvs_test` (ou outro banco descartável isolado), verificar 7/0, aplicar M008 e executar integração PostgreSQL/E2E autenticado para auditoria/outbox e rollback real. Depois continuar DEV13. Comandos remotos, se necessários, devem ser explicados e enviados um por vez, aguardando o resultado antes do seguinte. Não marcar DEV03 ou DEV05 como concluídos até cumprir seus critérios. Para Vercel, ainda faltam hostname HTTPS e token gateway; não cadastrar placeholders.
 5. O certificado PostgreSQL observado na VPS é self-signed e não tem SAN. O
    teste foi feito com `uselibpqcompat=true&sslmode=require`; isso não é
    validação de identidade do servidor nem configuração aprovada para produção.
@@ -427,6 +449,12 @@ inclua aqui a nova seção ou subseção antes de implementar a mudança.
    observada é de fim de linha e não deve ser incluída nem modificada sem revisão.
 7. Preservar `hast.md` sem alterações; continua não rastreado.
 8. DEV04 está concluído em teste local. Ao portar rotas já previstas no plano, exigir `permissionConfig(...)` no `config`, usar `importerScopePredicate(...)` na própria consulta antes de `LIMIT/OFFSET` e na busca por ID, sem bypass para Administrador. Rotas globais devem usar escopo `global` somente para `users.manage`. Não adicionar endpoints fora dos contratos existentes.
+
+### Incremento de 2026-09-29 — revisão local de DEV12 (parcial)
+
+| Item | Status | Evidência | Próximo passo |
+|---|---|---|---|
+| DEV12 | [-] | M003 cria `identity.erp_user`, papéis e escopos por importador. M008 adiciona `resolution_evidence`, vínculo por issue, identidade de revisor, chave/hash e índice único por ator. A listagem limita issues visíveis numa CTE materializada antes das contagens/filtros/paginação; resolução exige evidência não vazia, justificativa e `Idempotency-Key`, verifica escopo no `SELECT ... FOR UPDATE` antes de tratar replay/conflito e grava revisão, status, audit log e outbox na mesma transação. A identidade usada é carregada da sessão OIDC e os grants são consultados em cada requisição. A tela `/quality` apresenta origem preservada, evidência, histórico e formulário com justificativa; não envia identidade do revisor. Corrigido vazamento de status: conflito idempotente agora é avaliado depois da consulta por escopo. `corepack pnpm build`, `corepack pnpm test` (11 testes existentes + 6 novos) e `corepack pnpm exec tsc --noEmit` em `apps/web` passaram. Testes locais cobrem 401/403/404, escopo antes de paginação, ator vindo da sessão, replay, conflito e rollback simulado em falha de outbox. Não há PostgreSQL escutando em `127.0.0.1:5432`, `.env` ou variáveis PG/MIGRATION neste ambiente; portanto M008 permanece não aplicada e nenhum contrato foi validado contra PostgreSQL. | Fornecer conexão segura e confirmar explicitamente alvo isolado `erp_po_totvs_test` ou outro descartável. Conferir ledger M001–M007 (7/0), aplicar M008 e validar integração PostgreSQL, isolamento entre importadores, replay/conflito, rollback real e E2E OIDC autenticado; só então reavaliar status DEV12. |
 
 ## Modelo para o próximo incremento
 

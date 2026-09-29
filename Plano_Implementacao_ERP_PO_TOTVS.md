@@ -1,5 +1,16 @@
 # Plano completo do ERP de acompanhamento de POs TOTVS e importações
 
+**Atualização operacional — 29/09/2026:** O usuário escolheu
+`erp_po_totvs_test` como banco operacional na VPS. Backup e restauração foram
+verificados; M001–M008 estão aplicadas. A API está ativa por `systemd`, usa
+PostgreSQL na própria VPS com TLS e atende por
+`https://api.72-60-250-212.sslip.io` via Traefik. A porta 5432 está publicada
+pelo Swarm, mas bloqueada externamente pela firewall da Hostinger. A Vercel
+ainda precisa de `VPS_API_URL`, `VPS_API_TOKEN` e novo deployment; o hostname
+`fup-comex-eletra.vercel.app` respondeu 404. Login depende de provedor OIDC.
+Esta atualização substitui as previsões de instalação ou M008 pendente abaixo;
+as demais seções preservam o histórico e o plano do produto.
+
 **Especificação para desenvolvimento — versão 1.1 — 24 de setembro de 2026**
 
 Este documento define o produto, a arquitetura de dados, a stack, os contratos técnicos e a sequência de implementação de um ERP de importações. É a referência de trabalho para produto, desenvolvimento, dados, qualidade e infraestrutura. A implementação será realizada no ambiente de desenvolvimento da equipe. Esta entrega é um plano técnico; não é uma aplicação implantada nem uma declaração de que os componentes já foram construídos.
@@ -200,7 +211,7 @@ Versões de referência verificadas na documentação oficial em setembro de 202
 
 Node 24 é o runtime do Next.js e da API Fastify. A implementação .NET foi retirada do snapshot para reduzir e alinhar o repositório; regras e evidências da implementação anterior permanecem registradas no checklist e na história Git. A versão PostgreSQL da VPS será confirmada antes de aplicar migrations. A API, banco e proxy/túnel iniciam automaticamente na VPS; não dependem do computador pessoal ligado.
 
-Browser e funções Vercel não abrem conexão ao PostgreSQL da VPS. A API Node na VPS acessa PostgreSQL por `DATABASE_URL` local, usa queries parametrizadas e pool limitado; Next `proxy.ts` envia o token gateway somente server-side. A API ainda não tem paridade nem writer funcional. Migrations PostgreSQL reutilizáveis estão em `apps/api/migrations`; o runner explícito Node em `apps/api/src/migrate.ts` registra ledger e checksum, serializa execuções com advisory lock e aplica cada arquivo em transação. `pnpm install --frozen-lockfile` e `pnpm build` passaram na VPS; M001–M007 também passaram por status inicial, aplicação e reaplicação no banco isolado. Permanecem pendentes provas de checksum alterado, concorrência, upgrade e configuração TLS de produção. Qualquer aplicação exige banco isolado e backup restaurável, e produção exige credencial de migration separada.
+Browser e funções Vercel não abrem conexão ao PostgreSQL da VPS. A API Node na VPS acessa PostgreSQL por `DATABASE_URL` local, usa queries parametrizadas e pool limitado; Next `proxy.ts` envia o token gateway somente server-side. A API ainda não tem paridade nem writer funcional. Migrations PostgreSQL reutilizáveis estão em `apps/api/migrations`; o runner explícito Node em `apps/api/src/migrate.ts` registra ledger e checksum, serializa execuções com advisory lock e aplica cada arquivo em transação. `pnpm install --frozen-lockfile` e `pnpm build` passaram na VPS; M001–M007 também passaram por status inicial, aplicação e reaplicação no banco isolado. Em 2026-09-28, checksum divergente foi rejeitado/restaurado e upgrade/concorrência foram validados por migration temporária, depois removida com a linha de ledger; o banco voltou a 7/0. CI e identidade TLS de produção seguem pendentes. Qualquer aplicação exige banco isolado e backup restaurável, e produção exige credencial de migration separada.
 
 ## 6 Topologia e fronteiras
 
@@ -249,7 +260,7 @@ Cada módulo expõe casos de uso. Uma tela não escreve diretamente em tabelas d
 | `apps/web/proxy.ts` | Proxy same-origin e token server-only para a API VPS |
 | `apps/api` | API Fastify Node, OIDC, autorização, contratos e PostgreSQL na VPS |
 | `apps/api/src` | Rotas por feature, sessão, validação, comandos e consultas parametrizadas (em implementação) |
-| `apps/api/migrations` | SQL PostgreSQL reaproveitado; runner Node compilado na VPS; M001–M007 aplicadas e reaplicadas no banco de teste; checksum, concorrência e upgrade pendentes |
+| `apps/api/migrations` | SQL PostgreSQL reaproveitado; runner Node compilado na VPS; M001–M007 aplicadas e reaplicadas no banco de teste; checksum divergente e upgrade concorrente validados em teste; CI/TLS de produção pendentes; M008 funcional ainda aguarda validação isolada |
 | `tests/Unit` | Regras e transformações determinísticas |
 | `tests/Integration` | PostgreSQL, API, concorrência, storage e importação |
 | `tests/Architecture` | Restrições de dependência entre camadas |
@@ -1072,6 +1083,28 @@ Pendências externas para V03/V06/V08/V09: dados do OIDC (issuer, client e callb
 versão/endereço/role TLS do PostgreSQL VPS, política de firewall/conectividade,
 plano Vercel e URL do projeto. Variáveis usam os nomes em `VERCEL_SETUP.md`; os
 valores devem ser cadastrados no painel Vercel e nunca nesta especificação.
+
+### 24.3 Evidência de DEV12 — revisão local de 2026-09-29
+
+O handler Node de `/api/v1/data-issues` e `/api/v1/data-issues/{id}/resolve`
+foi revisado contra M003, M005, M008 e a tela `/quality`. M003 fornece a
+identidade, papéis e escopos; M008 fornece evidência, issue, reviewer_user_id,
+chave/hash e unicidade idempotente. A lista aplica o predicado de importador
+dentro da CTE visível antes de contagem e paginação. A resolução verifica a
+visibilidade da issue com `SELECT ... FOR UPDATE`, exige objeto de evidência,
+motivo e `Idempotency-Key`, deriva o revisor da sessão OIDC e grava revisão,
+status, auditoria e outbox no mesmo bloco transacional. Um ajuste garante que
+issue oculta resulte em 404 antes de um possível conflito idempotente.
+
+Build da API, TypeScript do frontend e 17 testes locais (11 de autorização e 6
+de handler) passaram. Os testes locais cobrem 401/403/404, limite antes de
+contagens/paginação, identidade de sessão, replay, conflito e rollback simulado
+por falha no outbox. Esta evidência não demonstra execução SQL nem atomicidade
+real em PostgreSQL: no checkout revisado não há `.env`, variáveis de conexão ou
+serviço local escutando em `127.0.0.1:5432`. M008 segue pendente e DEV12 parcial.
+Próxima etapa: confirmar o alvo isolado `erp_po_totvs_test` (ou outro banco
+descartável), validar ledger 7/0, aplicar M008 e executar integração PostgreSQL
+e E2E autenticado, incluindo isolamento entre importadores e rollback real.
 
 ## 25 Responsabilidades
 

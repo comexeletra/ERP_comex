@@ -9,9 +9,17 @@ Windows checkout and Linux release produce the same checksum. A PostgreSQL
 advisory lock prevents two runners from applying at once.
 `M007` adds short-lived OIDC login transactions and hashed server-side sessions.
 `M008` adds per-issue resolution evidence and actor-scoped idempotency to quality
-reviews. It is required by the Node `/api/v1/data-issues` routes and has not been
-applied to the isolated VPS database; validate it only against an isolated
-target, never the operational database.
+reviews. It is required by the Node `/api/v1/data-issues` routes. On 2026-09-29,
+the user selected `erp_po_totvs_test` as the operational database. A restorable
+backup was verified, M008 was applied to a temporary restored copy, and then
+M008 was applied to that operational database. Its ledger now has M001–M008
+applied and zero pending.
+
+Local DEV12 review on 2026-09-29 confirmed the M008 dependencies and route
+contracts, and 6 handler tests passed for scope, 401/403/404, idempotent replay
+and conflict, session actor, and a simulated outbox failure. M008 execution was
+also verified against the restored PostgreSQL copy before the operational
+upgrade. The remaining end-to-end check depends on Vercel deployment and OIDC.
 
 The API never runs migrations at startup. From `apps/api`, build the API, then
 set `MIGRATION_ENV=isolated` in the shell or `.env` before running
@@ -47,4 +55,5 @@ On 2026-09-28, checksum tampering was rejected and restored, and a temporary
 probe migration was applied once by two concurrent runners (the second applied
 zero); the probe table and ledger row were then removed, returning the isolated
 database to M001–M007 applied/zero pending. Those checks do not validate TLS or
-CI. The product migration M008 above is a separate file and has not been applied.
+CI. The product migration M008 was applied later, on 2026-09-29, after backup
+and verification against a restored copy.

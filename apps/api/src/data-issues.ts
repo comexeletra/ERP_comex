@@ -181,11 +181,6 @@ export async function registerDataIssueRoutes(app: FastifyInstance, pool: Pool):
            LIMIT 1`,
           [identity.userId, idempotencyKey],
         );
-        if (previous.rowCount && previous.rows[0].payload_sha256.trim() !== payloadHash) {
-          await client.query("COMMIT");
-          return problem(reply, 409, "IDEMPOTENCY_KEY_REUSED", "A chave já foi usada com outro conteúdo.");
-        }
-
         const visibleIssue = await client.query<{
           id: string;
           batch_id: string;
@@ -205,6 +200,10 @@ export async function registerDataIssueRoutes(app: FastifyInstance, pool: Pool):
         if (!issue) {
           await client.query("ROLLBACK");
           return problem(reply, 404, "RESOURCE_NOT_FOUND", "A pendência não existe ou não está disponível no escopo autorizado.");
+        }
+        if (previous.rowCount && previous.rows[0].payload_sha256.trim() !== payloadHash) {
+          await client.query("COMMIT");
+          return problem(reply, 409, "IDEMPOTENCY_KEY_REUSED", "A chave já foi usada com outro conteúdo.");
         }
         if (previous.rowCount) {
           await client.query("COMMIT");

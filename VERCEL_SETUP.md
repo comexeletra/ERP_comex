@@ -1,74 +1,42 @@
-# Publicação: Vercel + API e PostgreSQL na Hostinger
+# Vercel + API e PostgreSQL na VPS
 
-## Arquitetura
+## Estado em 2026-09-29
 
-- **Vercel:** frontend Next.js/React, Root Directory **apps/web**, framework Next.js.
-- **VPS Hostinger:** API Fastify persistente e PostgreSQL privado. A API escuta em **127.0.0.1:4000** e acessa o PostgreSQL localmente.
-- **Conexão:** o proxy do Next encaminha **/auth/** e **/api/v1/** por HTTPS e acrescenta o header **x-import-erp-gateway-token**. A variável **DATABASE_URL** fica somente na API da VPS; a Vercel não conecta diretamente ao PostgreSQL. A porta 5432 permanece fechada externamente.
-- **Independência do computador:** frontend, API, banco e proxy HTTPS devem operar em serviços hospedados. Nenhum serviço de produção depende do computador de desenvolvimento.
+- Banco operacional escolhido pelo usuário: `erp_po_totvs_test`, apesar do nome. O backup foi restaurado em banco temporário antes da atualização. M001–M008 estão aplicadas; não há migration pendente.
+- A API Fastify roda como `import-erp-api.service` na VPS. Usa a role `import_erp_app` com privilégios limitados e TLS com certificado PostgreSQL fixado em `/etc/import-erp/postgres-root.crt`.
+- `DATABASE_URL`, `GATEWAY_TOKEN` e `AUTH_SESSION_SECRET` estão em `/etc/import-erp/api.env`, modo `0640`, proprietário `root:import-erp`. A API escuta em `172.18.0.1:4000`, interface privada `docker_gwbridge` da própria VPS.
+- O serviço Swarm `import_erp_edge`, na rede `matheuspronet`, é descoberto pelo Traefik existente. A origem da API é `https://api.72-60-250-212.sslip.io`. `/health/live` respondeu 200 por HTTPS; `/health/ready` sem token respondeu 401 e com token respondeu 200, alcançando o banco. O hostname usa DNS de terceiro porque ainda não há domínio próprio para a API.
+- A porta 5432 está publicada pelo Swarm, mas a firewall da Hostinger aceita só 22, 80 e 443 e descarta as demais conexões externas. Não adicionar regra pública para 5432.
+- A Vercel ainda precisa receber as variáveis de Production e publicar um deployment válido. `https://fup-comex-eletra.vercel.app/` retornou 404. Também faltam dados do provedor OIDC para validar o login.
 
-O projeto Vercel **erp-comex** já está configurado com Root Directory **apps/web** e framework Next.js. Production e Preview ainda não têm variáveis configuradas. Há dois deployments Production Ready anteriores à correção do Root Directory; ainda não houve redeploy. A API ainda precisa ser instalada/configurada na VPS, conectada ao banco adequado, publicada por hostname HTTPS e validada com OIDC.
+## Variáveis na Vercel
 
-A API Fastify já implementa OIDC/PKCE, sessão PostgreSQL, CSRF, logout, autorização por identidade/escopos, leitura de POs e fila de qualidade. O login real ainda depende de issuer e credenciais OIDC; M001–M007 foram validadas apenas no banco isolado **erp_po_totvs_test**. M008 está pendente de validação isolada. Não liberar para uso operacional até validar banco, API e identidade de produção.
+No projeto que realmente atende `fup-comex-eletra.vercel.app`, configure **somente em Production**:
 
-## Contrato de variáveis
+| Nome | Valor | Tipo |
+| --- | --- | --- |
+| `VPS_API_URL` | `https://api.72-60-250-212.sslip.io` | Config, server-side |
+| `VPS_API_TOKEN` | Valor de `GATEWAY_TOKEN` de `/etc/import-erp/api.env` | Secret, server-side |
 
-### Vercel Production
+Não use prefixo `NEXT_PUBLIC_`. Não configure `DATABASE_URL`, senha PostgreSQL ou segredo OIDC na Vercel. O navegador chama `/auth/*` e `/api/v1/*` na origem da Vercel; o proxy Next.js envia as chamadas à API com o token no servidor. Preview fica sem acesso ao banco operacional até existir um ambiente isolado.
 
-Cadastre somente estas variáveis server-side no projeto **erp-comex**:
+Depois de salvar as variáveis, faça um novo deployment Production: os deployments existentes não passam a usar valores novos automaticamente. Confirme no painel o projeto ligado ao hostname, Root Directory `apps/web`, framework Next.js, branch e repositório que contêm esta versão do código. O `.vercel/project.json` deste checkout aponta para `erp-comex`, o que ainda não comprova que ele controla `fup-comex-eletra.vercel.app`.
 
-| Nome | Tipo | Valor |
-|---|---|---|
-| **VPS_API_URL** | Texto server-side | Origem HTTPS real da API, sem caminho, query ou credenciais |
-| **VPS_API_TOKEN** | Secret | Igual ao **GATEWAY_TOKEN** da API de produção na VPS |
+## OIDC
 
-Não cadastre **DATABASE_URL**, segredos OIDC ou senha PostgreSQL na Vercel. Nunca use prefixo **NEXT_PUBLIC_** nessas variáveis. O browser chama a origem Vercel; o proxy server-side encaminha a chamada e injeta o token.
+Preencha `OIDC_ISSUER`, `OIDC_CLIENT_ID` e `OIDC_CLIENT_SECRET` somente no ambiente da API na VPS. Registre no provedor o callback `https://fup-comex-eletra.vercel.app/auth/callback`. Em seguida, faça o bootstrap de um administrador com o subject exato do provedor e escopos de importador conforme `apps/api/migrations/README.md`. O login não pode ser validado antes dessa configuração.
 
-O proxy valida que **VPS_API_URL** é HTTPS e uma origem sem caminho. Se **VPS_API_URL** ou **VPS_API_TOKEN** estiver ausente, retorna HTTP 503 para as rotas de API e autenticação; não existe fallback para localhost em produção.
+## Verificações
 
-### Serviço API de produção na VPS
+Na VPS, sem imprimir segredos:
 
-O arquivo **/etc/import-erp/api.env**, modo **0640** e proprietário **root:import-erp**, contém:
+```sh
+systemctl is-active import-erp-api
+docker service ps import_erp_edge
+curl --fail --silent --show-error https://api.72-60-250-212.sslip.io/health/live
+curl --silent --output /dev/null --write-out '%{http_code}\n' https://api.72-60-250-212.sslip.io/health/ready
+```
 
-| Nome | Valor/finalidade |
-|---|---|
-| **DATABASE_URL** | PostgreSQL de produção por loopback, com role de aplicação de menor privilégio |
-| **DATABASE_POOL_MAX** | Limite de conexões do pool da API |
-| **GATEWAY_TOKEN** | Mesmo valor de **VPS_API_TOKEN** da Vercel Production, com pelo menos 32 bytes |
-| **OIDC_ISSUER** | Issuer HTTPS corporativo |
-| **OIDC_CLIENT_ID** / **OIDC_CLIENT_SECRET** | Credenciais do cliente OIDC; o segredo fica somente na VPS |
-| **AUTH_SESSION_SECRET** | Segredo aleatório independente para sessões |
-| **APP_PUBLIC_ORIGIN** | **https://erp-comex.vercel.app**; registrar também callback **/auth/callback** no provedor |
-| **HOST** / **PORT** | **127.0.0.1** / **4000**, atrás de Nginx ou túnel HTTPS |
+O último comando deve retornar 401 sem o token. Após o deployment Vercel, a página inicial deve responder 200 e uma chamada anônima a `/api/v1/purchase-orders` deve ser tratada pelo fluxo de autenticação, não por 404 de deployment ou 503 de configuração.
 
-**MIGRATION_DATABASE_URL** e **MIGRATION_ENV** pertencem somente ao job manual de release, com role separada. Não devem permanecer no ambiente do serviço da API.
-
-Gere os segredos no servidor e transfira o token de gateway para a Vercel por sessão autenticada, marcando-o como Secret. Não imprima ou inclua segredos em terminal/logs, Git, documentação ou conversa.
-
-### Vercel Preview
-
-Deixe **VPS_API_URL** e **VPS_API_TOKEN** ausentes em Preview até instalar uma API de staging ligada a banco isolado, token próprio e cliente OIDC de teste. Não aponte Preview para a API ou banco de produção. Cada instância da API aceita um único **GATEWAY_TOKEN**, então reutilizar o serviço de produção para Preview quebra o isolamento dos segredos.
-
-## Configuração da VPS
-
-1. Confirmar domínio/hostname da API, DNS, certificado TLS válido, Node 24 e PostgreSQL.
-2. Confirmar qual banco será usado em produção, role da aplicação, backup e restauração.
-3. Revisar e aplicar migrations pelo job explícito de release. M001–M007 foram validadas no banco isolado; validar M008 isoladamente. Não aplicar DDL no startup da API.
-4. Instalar a API compilada como serviço persistente usando **deploy/hostinger/import-erp-api.service**.
-5. Criar **/etc/import-erp/api.env** na VPS com valores reais; não copiar placeholders sem substituí-los e revisar.
-6. Configurar Nginx com certificado válido ou Cloudflare Tunnel. Expor HTTPS da API; manter API em loopback e PostgreSQL privado.
-7. Configurar OIDC para a origem Vercel Production e callback **https://erp-comex.vercel.app/auth/callback**.
-8. Cadastrar **VPS_API_URL** e **VPS_API_TOKEN** somente em Vercel Production.
-
-O roteiro operacional está em **deploy/hostinger/README.md**. Use o projeto Vercel ligado ao GitHub para publicar a revisão validada; não dependa de execução local contínua.
-
-## Validação antes do uso operacional
-
-- [ ] API persistente ativa na VPS, acessível pelo hostname HTTPS escolhido.
-- [ ] PostgreSQL apropriado para produção escolhido e acessível localmente pela API.
-- [ ] Backup restaurável confirmado antes de migrations de produção.
-- [ ] OIDC de produção, callback, usuário autorizado e escopos provisionados.
-- [ ] Vercel Production contém **VPS_API_URL** e **VPS_API_TOKEN** como valores server-side.
-- [ ] Preview permanece sem acesso à produção até existir staging separado.
-- [ ] Build/deployment Vercel e smoke/E2E autenticado validados na URL publicada.
-- [ ] UAT concluído antes de liberar uso operacional.
+Os comandos de instalação e manutenção da VPS estão em `deploy/hostinger/README.md`.

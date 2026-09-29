@@ -1,7 +1,7 @@
 [Unit]
 Description=ERP Comex API
-After=network-online.target postgresql.service
-Wants=network-online.target
+After=network-online.target docker.service
+Wants=network-online.target docker.service
 
 [Service]
 Type=simple
@@ -10,7 +10,7 @@ Group=import-erp
 WorkingDirectory=/opt/import-erp/apps/api
 Environment=NODE_ENV=production
 EnvironmentFile=/etc/import-erp/api.env
-ExecStart=/usr/bin/node /opt/import-erp/apps/api/dist/server.js
+ExecStart=/opt/node-v24/bin/node /opt/import-erp/apps/api/dist/server.js
 Restart=always
 RestartSec=5
 TimeoutStopSec=30
