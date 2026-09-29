@@ -13,6 +13,8 @@ import {
   type Configuration,
 } from "openid-client";
 import type { Pool } from "pg";
+import { z } from "zod";
+import { hashPassword, verifyPassword } from "./password.js";
 
 const SESSION_COOKIE = "erp_session";
 const OIDC_STATE_COOKIE = "erp_oidc_state";
@@ -27,6 +29,7 @@ type AuthContext = {
   subject: string;
   displayName: string | null;
   sessionToken: string;
+  mustChangePassword: boolean;
 };
 
 declare module "fastify" {
@@ -35,51 +38,59 @@ declare module "fastify" {
   }
 }
 
-type OidcSettings = {
+type AuthSettings = {
+  appOrigin: string;
+  secureCookies: boolean;
+  sessionSecret: string;
+};
+
+type OidcSettings = AuthSettings & {
   issuer: string;
   clientId: string;
   clientSecret: string;
   redirectUri: string;
-  appOrigin: string;
-  secureCookies: boolean;
-  sessionSecret: string;
   clientAuthMethod: "client_secret_basic" | "client_secret_post";
 };
 
-function getOidcSettings(): OidcSettings | null {
-  const issuer = process.env.OIDC_ISSUER;
-  const clientId = process.env.OIDC_CLIENT_ID;
-  const clientSecret = process.env.OIDC_CLIENT_SECRET;
+function getAuthSettings(): AuthSettings | null {
   const sessionSecret = process.env.AUTH_SESSION_SECRET;
   const appOriginValue = process.env.APP_PUBLIC_ORIGIN;
-  if (!issuer || !clientId || !clientSecret || !sessionSecret || !appOriginValue) return null;
+  if (!sessionSecret || !appOriginValue) return null;
   if (Buffer.byteLength(sessionSecret) < 32) throw new Error("AUTH_SESSION_SECRET deve ter pelo menos 32 bytes.");
 
-  const issuerUrl = new URL(issuer);
   const appUrl = new URL(appOriginValue);
-  if (issuerUrl.username || issuerUrl.password || issuerUrl.search || issuerUrl.hash) {
-    throw new Error("OIDC_ISSUER deve ser o identificador do issuer, sem credenciais, query ou fragmento.");
-  }
-  const isLocal = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]).has(issuerUrl.hostname)
-    && new Set(["localhost", "127.0.0.1", "::1", "[::1]"]).has(appUrl.hostname);
-  if (issuerUrl.protocol !== "https:" && !isLocal) throw new Error("OIDC_ISSUER deve usar HTTPS.");
+  const isLocal = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]).has(appUrl.hostname);
   if (appUrl.protocol !== "https:" && !isLocal) throw new Error("APP_PUBLIC_ORIGIN deve usar HTTPS.");
   if (appUrl.username || appUrl.password || appUrl.pathname !== "/" || appUrl.search || appUrl.hash) {
     throw new Error("APP_PUBLIC_ORIGIN deve conter somente a origem pública.");
   }
+  return { appOrigin: appUrl.origin, secureCookies: appUrl.protocol === "https:", sessionSecret };
+}
+
+function getOidcSettings(): OidcSettings | null {
+  const auth = getAuthSettings();
+  const issuer = process.env.OIDC_ISSUER;
+  const clientId = process.env.OIDC_CLIENT_ID;
+  const clientSecret = process.env.OIDC_CLIENT_SECRET;
+  if (!auth || !issuer || !clientId || !clientSecret) return null;
+  const issuerUrl = new URL(issuer);
+  if (issuerUrl.username || issuerUrl.password || issuerUrl.search || issuerUrl.hash) {
+    throw new Error("OIDC_ISSUER deve ser o identificador do issuer, sem credenciais, query ou fragmento.");
+  }
+  const isLocal = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]).has(issuerUrl.hostname)
+    && !auth.secureCookies;
+  if (issuerUrl.protocol !== "https:" && !isLocal) throw new Error("OIDC_ISSUER deve usar HTTPS.");
   const clientAuthMethod = process.env.OIDC_CLIENT_AUTH_METHOD ?? "client_secret_basic";
   if (clientAuthMethod !== "client_secret_basic" && clientAuthMethod !== "client_secret_post") {
     throw new Error("OIDC_CLIENT_AUTH_METHOD deve ser client_secret_basic ou client_secret_post.");
   }
 
   return {
+    ...auth,
     issuer,
     clientId,
     clientSecret,
-    redirectUri: new URL(OIDC_CALLBACK_PATH, appUrl).href,
-    appOrigin: appUrl.origin,
-    secureCookies: appUrl.protocol === "https:",
-    sessionSecret,
+    redirectUri: new URL(OIDC_CALLBACK_PATH, auth.appOrigin).href,
     clientAuthMethod,
   };
 }
@@ -94,7 +105,7 @@ function safeEqual(left: string, right: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-function csrfToken(settings: OidcSettings, sessionToken: string): string {
+function csrfToken(settings: AuthSettings, sessionToken: string): string {
   return createHmac("sha256", settings.sessionSecret).update(`csrf:${sessionToken}`).digest("base64url");
 }
 
@@ -108,7 +119,41 @@ function isMutating(method: string): boolean {
 
 function requiresSession(path: string): boolean {
   return path === "/api/v1" || path.startsWith("/api/v1/")
-    || path === "/auth/me" || path === "/auth/csrf" || path === "/auth/logout";
+    || path === "/auth/me" || path === "/auth/csrf" || path === "/auth/logout"
+    || path === "/auth/local/password";
+}
+
+const loginBody = z.object({
+  email: z.email().trim().max(254).transform((value) => value.toLowerCase()),
+  password: z.string().min(1).max(1024),
+});
+
+const changePasswordBody = z.object({
+  currentPassword: z.string().min(1).max(1024),
+  newPassword: z.string().min(15).max(1024),
+});
+
+async function createSession(app: FastifyInstance, pool: Pool, reply: FastifyReply,
+  settings: AuthSettings, userId: string): Promise<void> {
+  const rawSessionToken = randomBytes(32).toString("base64url");
+  const sessionExpiresAt = new Date(Date.now() + SESSION_ABSOLUTE_TTL_SECONDS * 1000);
+  await pool.query(
+    `DELETE FROM identity.auth_session
+     WHERE expires_at <= now()
+        OR last_seen_at <= now() - ($1::int * interval '1 minute')
+        OR revoked_at IS NOT NULL`,
+    [SESSION_IDLE_TTL_MINUTES],
+  );
+  await pool.query(
+    `INSERT INTO identity.auth_session (token_hash, user_id, expires_at)
+     VALUES ($1, $2, $3)`,
+    [sha256(rawSessionToken), userId, sessionExpiresAt],
+  );
+  reply.setCookie(SESSION_COOKIE, rawSessionToken, {
+    path: "/", httpOnly: true, secure: settings.secureCookies,
+    sameSite: "lax", maxAge: SESSION_ABSOLUTE_TTL_SECONDS,
+  });
+  app.log.info({ userId }, "Sessão iniciada");
 }
 
 export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Promise<void> {
@@ -133,7 +178,7 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
     const path = request.url.split("?", 1)[0] ?? request.url;
     if (!requiresSession(path)) return;
 
-    const settings = getOidcSettings();
+    const settings = getAuthSettings();
     if (!settings) return reply.code(503).send({ error: "Autenticação indisponível." });
     const rawSessionToken = request.cookies[SESSION_COOKIE];
     if (!rawSessionToken) return reply.code(401).send({ error: "Sessão ausente ou expirada." });
@@ -143,17 +188,19 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
       issuer: string;
       subject: string;
       display_name: string | null;
+      must_change_password: boolean | null;
     }>(
       `UPDATE identity.auth_session AS s
        SET last_seen_at = now()
        FROM identity.erp_user AS u
+       LEFT JOIN identity.local_credential AS lc ON lc.user_id = u.id
        WHERE s.user_id = u.id
          AND s.token_hash = $1
          AND s.revoked_at IS NULL
          AND s.expires_at > now()
          AND s.last_seen_at > now() - ($2::int * interval '1 minute')
          AND u.is_active = true
-       RETURNING u.id, u.issuer, u.subject, u.display_name`,
+       RETURNING u.id, u.issuer, u.subject, u.display_name, lc.must_change_password`,
       [sha256(rawSessionToken), SESSION_IDLE_TTL_MINUTES],
     );
     const user = result.rows[0];
@@ -168,7 +215,13 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
       subject: user.subject,
       displayName: user.display_name,
       sessionToken: rawSessionToken,
+      mustChangePassword: user.must_change_password === true,
     };
+
+    if (user.must_change_password && path !== "/auth/me" && path !== "/auth/csrf"
+      && path !== "/auth/logout" && path !== "/auth/local/password") {
+      return reply.code(403).send({ error: "Troca de senha obrigatória." });
+    }
 
     if (isMutating(request.method)) {
       const origin = request.headers.origin;
@@ -180,10 +233,85 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
     }
   });
 
+  app.post("/auth/local/login", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      setNoStore(reply);
+      const settings = getAuthSettings();
+      if (!settings) return reply.code(503).send({ error: "Autenticação indisponível." });
+      if (request.headers.origin !== settings.appOrigin) {
+        return reply.code(403).send({ error: "Origem inválida." });
+      }
+      const parsed = loginBody.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send({ error: "Informe e-mail e senha válidos." });
+      const { email, password } = parsed.data;
+      const result = await pool.query<{
+        user_id: string; password_hash: string; must_change_password: boolean;
+        is_active: boolean; locked_until: Date | null;
+      }>(
+        `SELECT lc.user_id, lc.password_hash, lc.must_change_password,
+                lc.locked_until, u.is_active
+         FROM identity.local_credential AS lc
+         JOIN identity.erp_user AS u ON u.id = lc.user_id
+         WHERE lower(lc.email) = $1`, [email],
+      );
+      const credential = result.rows[0];
+      const passwordMatches = await verifyPassword(password, credential?.password_hash ?? null);
+      if (!credential || !credential.is_active || !passwordMatches
+        || (credential.locked_until !== null && credential.locked_until > new Date())) {
+        if (credential && !passwordMatches && credential.is_active) {
+          await pool.query(
+            `UPDATE identity.local_credential
+             SET failed_attempts = failed_attempts + 1,
+                 locked_until = CASE WHEN failed_attempts + 1 >= 5
+                   THEN now() + interval '15 minutes' ELSE locked_until END
+             WHERE user_id = $1 AND (locked_until IS NULL OR locked_until <= now())`,
+            [credential.user_id],
+          );
+        }
+        return reply.code(401).send({ error: "E-mail ou senha inválidos." });
+      }
+      await pool.query(
+        `UPDATE identity.local_credential
+         SET failed_attempts = 0, locked_until = NULL WHERE user_id = $1`,
+        [credential.user_id],
+      );
+      await createSession(app, pool, reply, settings, credential.user_id);
+      return { authenticated: true, mustChangePassword: credential.must_change_password };
+    });
+
+  app.post("/auth/local/password", async (request, reply) => {
+    setNoStore(reply);
+    const auth = request.authContext;
+    if (!auth) return reply.code(401).send({ error: "Sessão ausente ou expirada." });
+    const parsed = changePasswordBody.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "Senha inválida." });
+    const credential = await pool.query<{ password_hash: string }>(
+      "SELECT password_hash FROM identity.local_credential WHERE user_id = $1", [auth.userId],
+    );
+    if (!await verifyPassword(parsed.data.currentPassword, credential.rows[0]?.password_hash ?? null)) {
+      return reply.code(401).send({ error: "Senha atual inválida." });
+    }
+    if (parsed.data.currentPassword === parsed.data.newPassword) {
+      return reply.code(400).send({ error: "A nova senha deve ser diferente." });
+    }
+    const encoded = await hashPassword(parsed.data.newPassword);
+    await pool.query(
+      `UPDATE identity.local_credential
+       SET password_hash = $1, must_change_password = false, failed_attempts = 0,
+           locked_until = NULL, updated_at = now()
+       WHERE user_id = $2`, [encoded, auth.userId],
+    );
+    await pool.query(
+      "DELETE FROM identity.auth_session WHERE user_id = $1 AND token_hash <> $2",
+      [auth.userId, sha256(auth.sessionToken)],
+    );
+    return reply.code(204).send();
+  });
+
   app.get("/auth/login", async (_request, reply) => {
     setNoStore(reply);
     const settings = getOidcSettings();
-    if (!settings) return reply.code(503).send({ error: "Provedor OIDC não configurado." });
+    if (!settings) return reply.code(303).redirect("/login");
 
     const state = randomState();
     const nonce = randomNonce();
@@ -276,27 +404,7 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
         return reply.code(403).send({ error: "Acesso não autorizado." });
       }
 
-      const rawSessionToken = randomBytes(32).toString("base64url");
-      const sessionExpiresAt = new Date(Date.now() + SESSION_ABSOLUTE_TTL_SECONDS * 1000);
-      await pool.query(
-        `DELETE FROM identity.auth_session
-         WHERE expires_at <= now()
-            OR last_seen_at <= now() - ($1::int * interval '1 minute')
-            OR revoked_at IS NOT NULL`,
-        [SESSION_IDLE_TTL_MINUTES],
-      );
-      await pool.query(
-        `INSERT INTO identity.auth_session (token_hash, user_id, expires_at)
-         VALUES ($1, $2, $3)`,
-        [sha256(rawSessionToken), user.id, sessionExpiresAt],
-      );
-      reply.setCookie(SESSION_COOKIE, rawSessionToken, {
-        path: "/",
-        httpOnly: true,
-        secure: settings.secureCookies,
-        sameSite: "lax",
-        maxAge: SESSION_ABSOLUTE_TTL_SECONDS,
-      });
+      await createSession(app, pool, reply, settings, user.id);
       return reply.code(303).redirect(new URL("/", settings.appOrigin).href);
     } catch {
       return reply.code(303).redirect(new URL("/login?error=authentication_failed", settings.appOrigin).href);
@@ -318,6 +426,7 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
     return {
       authenticated: true,
       user: { id: auth.userId, issuer: auth.issuer, subject: auth.subject, displayName: auth.displayName },
+      mustChangePassword: auth.mustChangePassword,
       roles: [...new Set(grants.rows.flatMap((row) => row.role ? [row.role] : []))],
       importerScopes: [...new Set(grants.rows.flatMap((row) => row.importer_code ? [row.importer_code] : []))],
     };
@@ -325,7 +434,7 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
 
   app.get("/auth/csrf", async (request, reply) => {
     setNoStore(reply);
-    const settings = getOidcSettings();
+    const settings = getAuthSettings();
     const auth = request.authContext;
     if (!settings) return reply.code(503).send({ error: "Autenticação indisponível." });
     if (!auth) return reply.code(401).send({ error: "Sessão ausente ou expirada." });
@@ -334,7 +443,7 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
 
   app.post("/auth/logout", async (request, reply) => {
     setNoStore(reply);
-    const settings = getOidcSettings();
+    const settings = getAuthSettings();
     const auth = request.authContext;
     if (!settings) return reply.code(503).send({ error: "Autenticação indisponível." });
     if (auth) await pool.query("DELETE FROM identity.auth_session WHERE token_hash = $1", [sha256(auth.sessionToken)]);

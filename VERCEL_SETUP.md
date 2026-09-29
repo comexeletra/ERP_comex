@@ -2,12 +2,12 @@
 
 ## Estado em 2026-09-29
 
-- Banco operacional escolhido pelo usuário: `erp_po_totvs_test`, apesar do nome. O backup foi restaurado em banco temporário antes da atualização. M001–M008 estão aplicadas; não há migration pendente.
+- Banco operacional escolhido pelo usuário: `erp_po_totvs_test`, apesar do nome. M001–M009 estão aplicadas; não há migration pendente. M009 foi validada numa cópia restaurada antes de produção.
 - A API Fastify roda como `import-erp-api.service` na VPS. Usa a role `import_erp_app` com privilégios limitados e TLS com certificado PostgreSQL fixado em `/etc/import-erp/postgres-root.crt`.
 - `DATABASE_URL`, `GATEWAY_TOKEN` e `AUTH_SESSION_SECRET` estão em `/etc/import-erp/api.env`, modo `0640`, proprietário `root:import-erp`. A API escuta em `172.18.0.1:4000`, interface privada `docker_gwbridge` da própria VPS.
 - O serviço Swarm `import_erp_edge`, na rede `matheuspronet`, é descoberto pelo Traefik existente. A origem da API é `https://api.72-60-250-212.sslip.io`. `/health/live` respondeu 200 por HTTPS; `/health/ready` sem token respondeu 401 e com token respondeu 200, alcançando o banco. O hostname usa DNS de terceiro porque ainda não há domínio próprio para a API.
 - A porta 5432 está publicada pelo Swarm, mas a firewall da Hostinger aceita só 22, 80 e 443 e descarta as demais conexões externas. Não adicionar regra pública para 5432.
-- A Vercel ainda precisa receber as variáveis de Production e publicar um deployment válido. `https://fup-comex-eletra.vercel.app/` retornou 404. Também faltam dados do provedor OIDC para validar o login.
+- O projeto Vercel `erp-comex`, ligado ao GitHub `comexeletra/ERP_comex`, tem `VPS_API_URL` e `VPS_API_TOKEN` em Production. O frontend em `https://fup-comex-eletra.vercel.app/` responde 200. O login inicial usa contas locais; OIDC fica para uma etapa futura.
 
 ## Variáveis na Vercel
 
@@ -20,11 +20,11 @@ No projeto que realmente atende `fup-comex-eletra.vercel.app`, configure **somen
 
 Não use prefixo `NEXT_PUBLIC_`. Não configure `DATABASE_URL`, senha PostgreSQL ou segredo OIDC na Vercel. O navegador chama `/auth/*` e `/api/v1/*` na origem da Vercel; o proxy Next.js envia as chamadas à API com o token no servidor. Preview fica sem acesso ao banco operacional até existir um ambiente isolado.
 
-Depois de salvar as variáveis, faça um novo deployment Production: os deployments existentes não passam a usar valores novos automaticamente. Confirme no painel o projeto ligado ao hostname, Root Directory `apps/web`, framework Next.js, branch e repositório que contêm esta versão do código. O `.vercel/project.json` deste checkout aponta para `erp-comex`, o que ainda não comprova que ele controla `fup-comex-eletra.vercel.app`.
+Depois de alterar as variáveis, faça um novo deployment Production: os deployments existentes não passam a usar valores novos automaticamente. O projeto tem Root Directory `apps/web`, framework Next.js e branch `main`.
 
-## OIDC
+## Login local e OIDC futuro
 
-Preencha `OIDC_ISSUER`, `OIDC_CLIENT_ID` e `OIDC_CLIENT_SECRET` somente no ambiente da API na VPS. Registre no provedor o callback `https://fup-comex-eletra.vercel.app/auth/callback`. Em seguida, faça o bootstrap de um administrador com o subject exato do provedor e escopos de importador conforme `apps/api/migrations/README.md`. O login não pode ser validado antes dessa configuração.
+Os masters entram em `/login`, trocam a senha inicial e gerenciam outros usuários em `/admin/users`. OIDC não é necessário nesta fase. Quando um provedor for escolhido, mantenha `OIDC_ISSUER`, `OIDC_CLIENT_ID` e `OIDC_CLIENT_SECRET` somente na VPS e registre `https://fup-comex-eletra.vercel.app/auth/callback` como callback.
 
 ## Verificações
 

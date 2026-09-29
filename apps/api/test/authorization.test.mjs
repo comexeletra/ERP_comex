@@ -23,6 +23,7 @@ const identities = {
   noRole: [{ role: null, importer_code: "ELETRA MATRIZ" }],
   unknownRole: [{ role: "SuperUser", importer_code: "ELETRA MATRIZ" }],
   unscoped: [{ role: "Administrador", importer_code: null }],
+  master: [{ role: "Master", importer_code: null }],
 };
 
 async function createApp() {
@@ -31,6 +32,9 @@ async function createApp() {
   const pool = {
     async query(sql, parameters) {
       policyQueries += 1;
+      if (sql.includes("SELECT DISTINCT importer FROM procurement.purchase_order")) {
+        return { rows: [{ importer: "ELETRA MATRIZ" }, { importer: "ELETRA FOR" }] };
+      }
       assert.match(sql, /WHERE u\.issuer = \$1 AND u\.subject = \$2 AND u\.is_active = true/u);
       assert.deepEqual(parameters, [`issuer:${parameters[1]}`, parameters[1]]);
       return { rows: identities[parameters[1]] ?? [] };
@@ -139,14 +143,16 @@ test("hides an out-of-scope PO as 404 while allowing an in-scope PO", async (t) 
   assert.equal(hidden.statusCode, 404);
 });
 
-test("enforces role permissions and keeps global user management admin-only", async (t) => {
+test("enforces role permissions and keeps global user management master-only", async (t) => {
   const { app, counters } = await createApp();
   t.after(() => app.close());
   const deniedReview = await app.inject({ method: "GET", url: "/api/v1/test/resolve-quality", headers: { "x-test-subject": "reader" } });
   const deniedGlobal = await app.inject({ method: "GET", url: "/api/v1/users", headers: { "x-test-subject": "reader" } });
   assert.equal(deniedReview.statusCode, 403);
   assert.equal(deniedGlobal.statusCode, 403);
-  const allowedGlobal = await app.inject({ method: "GET", url: "/api/v1/users", headers: { "x-test-subject": "unscoped" } });
+  const deniedAdmin = await app.inject({ method: "GET", url: "/api/v1/users", headers: { "x-test-subject": "unscoped" } });
+  assert.equal(deniedAdmin.statusCode, 403);
+  const allowedGlobal = await app.inject({ method: "GET", url: "/api/v1/users", headers: { "x-test-subject": "master" } });
   assert.equal(allowedGlobal.statusCode, 200);
   assert.equal(counters().resourceQueries, 1);
 });

@@ -12,7 +12,9 @@
     "start": "node dist/server.js",
     "migrate:status": "node --env-file-if-exists=.env dist/migrate.js status",
     "migrate:up": "node --env-file-if-exists=.env dist/migrate.js up",
-    "bootstrap:admin": "node --env-file-if-exists=.env dist/bootstrap-admin.js"
+    "bootstrap:admin": "node --env-file-if-exists=.env dist/bootstrap-admin.js",
+    "bootstrap:masters": "node dist/bootstrap-masters.js",
+    "test:manual-auth": "node test/manual-auth.integration.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

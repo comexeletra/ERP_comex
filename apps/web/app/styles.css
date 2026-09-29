@@ -9,3 +9,12 @@ table { width: 100%; border-collapse: collapse; min-width: 720px; } th { color: 
 .pagination { align-items: center; display: flex; gap: 12px; justify-content: flex-end; margin: 18px 0 0; }.button:disabled { cursor: not-allowed; opacity: .55; }
 .session-bar { align-items: center; background: white; border-bottom: 1px solid #dce4eb; display: flex; gap: 12px; justify-content: flex-end; padding: 10px 24px; }.session-bar .button { padding: 6px 10px; }
 @media (max-width: 760px) { .shell { padding: 26px 14px; }.metric-grid { grid-template-columns: repeat(2, 1fr); }.field-form, .quality-filter { grid-template-columns: 1fr; }.quality-heading { display: block; }.quality-status { display: inline-block; margin-bottom: 10px; } }
+.auth-shell { max-width: 540px; padding-top: 10vh; }
+.auth-card { padding: 28px; }
+.stack-form { display: grid; gap: 16px; }
+.stack-form label { display: grid; gap: 6px; font-weight: 700; }
+.stack-form input:not([type="checkbox"]), .stack-form select { border: 1px solid #b7c5cf; border-radius: 7px; font: inherit; padding: 10px; width: 100%; }
+.scope-list { border: 1px solid #dce4eb; border-radius: 8px; display: grid; gap: 10px; padding: 16px; }
+.scope-list label { display: block; font-weight: 400; }
+.credential-notice { background: #fff4d6; color: #594300; margin-bottom: 20px; overflow-wrap: anywhere; }
+.credential-notice code { display: inline-block; font-size: 1.05rem; margin-left: 8px; }

@@ -9,10 +9,11 @@ export type Permission =
   | "quality.resolve"
   | "users.manage";
 
-type Role = "Administrador" | "Importação" | "Compras" | "Fiscal" | "Logística" | "Gestor" | "Consulta";
+type Role = "Master" | "Administrador" | "Importação" | "Compras" | "Fiscal" | "Logística" | "Gestor" | "Consulta";
 
 const rolePermissions: Readonly<Record<Role, ReadonlySet<Permission>>> = {
-  Administrador: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "users.manage"]),
+  Master: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "users.manage"]),
+  Administrador: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve"]),
   Importação: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve"]),
   Compras: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve"]),
   Fiscal: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve"]),
@@ -84,7 +85,14 @@ export async function registerAuthorization(app: FastifyInstance, pool: Pool): P
       [identity.issuer, identity.subject],
     );
     const roles = [...new Set(result.rows.flatMap((row) => row.role ? [row.role] : []))];
-    const importerScopes = [...new Set(result.rows.flatMap((row) => row.importer_code ? [row.importer_code] : []))];
+    let importerScopes = [...new Set(result.rows.flatMap((row) => row.importer_code ? [row.importer_code] : []))];
+    if (roles.includes("Master")) {
+      const allImporters = await pool.query<{ importer: string }>(
+        `SELECT DISTINCT importer FROM procurement.purchase_order WHERE importer IS NOT NULL
+         UNION SELECT DISTINCT importer FROM imports.import_process WHERE importer IS NOT NULL`,
+      );
+      importerScopes = allImporters.rows.map((row) => row.importer);
+    }
     const permissions = new Set<Permission>();
     for (const role of roles) {
       if (Object.hasOwn(rolePermissions, role)) {

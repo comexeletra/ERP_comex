@@ -19,7 +19,16 @@ Local DEV12 review on 2026-09-29 confirmed the M008 dependencies and route
 contracts, and 6 handler tests passed for scope, 401/403/404, idempotent replay
 and conflict, session actor, and a simulated outbox failure. M008 execution was
 also verified against the restored PostgreSQL copy before the operational
-upgrade. The remaining end-to-end check depends on Vercel deployment and OIDC.
+upgrade. The Vercel deployment was later confirmed ready. OIDC remains a future
+integration; local accounts provide the initial production login.
+
+`M009` adds local password credentials and administrative audit events. The two
+initial Master accounts were created on the VPS with random passwords kept in a
+root-only file. Only Master can provision other accounts; importer scopes and
+roles are assigned per user. Local login, forced password change, account
+creation, role isolation and session revocation passed against a restored VPS
+database copy before M009 was applied to the operational database. The ledger
+now has M001–M009 applied and zero pending. OIDC is optional for a future phase.
 
 The API never runs migrations at startup. From `apps/api`, build the API, then
 set `MIGRATION_ENV=isolated` in the shell or `.env` before running
@@ -33,7 +42,16 @@ test targets also require `ALLOW_REMOTE_MIGRATIONS=true`; production additionall
 backup, and a reviewed release remain required.
 Never point the runner at the operational database as a development shortcut.
 
-## First administrator
+## Initial Master accounts
+
+`bootstrap:masters` is a one-time VPS command after M009. It requires the
+dedicated migration credential, `ALLOW_MASTER_BOOTSTRAP=true`, exactly two
+`MASTER_EMAILS`, and a root-only `MASTER_CREDENTIAL_OUTPUT` path under
+`/root/.config/import-erp/`. It refuses to run if any Master exists and prints
+only the path to the initial passwords. Both Masters must change their password
+at first login. Remove the file after both have done so.
+
+## Future OIDC administrator
 
 `pnpm bootstrap:admin` is a separate, manual, one-time command. It requires
 `ALLOW_ADMIN_BOOTSTRAP=true`, `ADMIN_BOOTSTRAP_DATABASE_URL` for a PostgreSQL
