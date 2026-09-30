@@ -105,6 +105,14 @@ try {
     assert.equal(history.items.length, historicalCount);
     assert.equal(new Set(history.items.map(item => item.sourceValues.R).filter(Boolean)).size, suppliers);
     assert.ok(history.items.every(item => item.sourceSheetName && item.sourceRowNumber > 0 && item.sourceValues));
+    if (number === "18751") {
+      const product = history.items.find(item => item.productCode || item.productDescription);
+      assert.ok(product);
+      const productTerm = product.productCode || product.productDescription.slice(0, 12);
+      const filtered = await get(`/api/v1/purchase-orders?number=18751&product=${encodeURIComponent(productTerm)}`);
+      assert.equal(filtered.statusCode, 200);
+      assert.ok(filtered.json().items.some(item => item.id === row.id));
+    }
     if (number === "6817") {
       const shared = overview.processes.find(process => process.ipNumber === "NH-017/2025");
       assert.ok(shared);
@@ -120,6 +128,7 @@ try {
   assert.equal(ipFilter.json().totalCount, 4);
   const importerFilter = await get("/api/v1/purchase-orders?importer=matriz");
   assert.equal(importerFilter.statusCode, 200);
+  assert.ok(importerFilter.json().totalCount > 0);
   assert.ok(importerFilter.json().items.every(item => item.importer.toLowerCase().includes("matriz")));
 
   const largest = await client.query(

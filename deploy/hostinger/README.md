@@ -50,6 +50,10 @@ Em 2026-09-30, a alteração de leitura RF06 foi compilada e testada em
 alteração de dados. A prova de leitura usa `verify-rf06-read.sh` e
 `verify-rf06-read.sql`; o teste de rotas com transação PostgreSQL `READ ONLY`
 está em `apps/api/test/purchase-orders.real-read.mjs`.
+O commit `d6b4604` foi enviado a `comexeletra/ERP_comex`; a API da Vercel
+confirmou `dpl_38myVEUs8Wv8cLMEbo7aDVe74FXH` como `READY` e associado a
+`fup-comex-eletra.vercel.app`. A URL pública respondeu 200 e a carteira anônima
+401. `verify-vercel-deploy.py` consulta esse estado sem mostrar o token.
 
 ## Carga histórica de 2026
 

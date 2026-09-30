@@ -27,7 +27,8 @@ históricos e podem descrever estados que já foram superados. O banco operacion
 O computador corporativo não executa a aplicação, o banco nem testes integrados.
 
 - **Produção:** `https://fup-comex-eletra.vercel.app/` com deploy `READY` do
-  commit `9a1175e`. API Fastify ativa por `systemd` na VPS, PostgreSQL acessado
+  commit `d6b4604` (`dpl_38myVEUs8Wv8cLMEbo7aDVe74FXH`), com o alias público
+  confirmado pela API da Vercel. API Fastify ativa por `systemd` na VPS, PostgreSQL acessado
   somente pela API na rede da VPS, com M001–M009 aplicadas. O usuário confirmou
   que conseguiu entrar. Login local e gestão de acessos pelo Master funcionam;
   OIDC corporativo fica para a próxima fase.
@@ -39,17 +40,87 @@ O computador corporativo não executa a aplicação, o banco nem testes integrad
   144 linhas sem PO. Das observações com PO, 5.152 têm IP válido e 1.644 não.
   A carteira pagina **POs**, 50 por vez; as linhas históricas ficam no detalhe.
 - **Verificação:** carga aplicada antes em cópia restaurada, segunda execução
-  respondeu `ALREADY_PROMOTED`; 12 testes de autorização e 7 de qualidade
+  respondeu `ALREADY_PROMOTED`; 13 testes de autorização e 7 de qualidade
   passaram na VPS. Consultas reais na cópia e no banco operacional confirmaram
   336 POs, 6.796 observações e 144 pendências sem PO visíveis ao Master.
   O backup posterior `/var/backups/import-erp/erp_po_totvs_test_20260930T162926Z.dump`
   foi restaurado em banco temporário e conferiu 7.130 linhas de origem,
   336 POs, 6.796 observações, 200 IPs e 451 pendências. Chave SSH temporária
   de operação e banco de prova foram removidos.
-- **Próximo trabalho:** revisar e completar a **RF06/DEV13 — carteira e detalhe
-  da PO** usando as seções 2.2, 13.2, 14.2, 24.1, 30.1 e 31 do plano. O
-  [prompt da próxima sessão](PROMPT_PROXIMA_SESSAO.md) contém objetivo,
-  limites, casos de aceite e forma de atualizar este checklist.
+- **Incremento RF06 publicado (2026-09-30):** a carteira passou a
+  expor filtros por PO, importador, produto e IP, com critérios aplicados na URL,
+  total de páginas, estados de carregamento/vazio/erro e retorno do detalhe à
+  busca. O detalhe abre os valores brutos por célula/aba/linha, distingue erro
+  de carregamento e mostra quantas POs visíveis compartilham cada IP. A API
+  pesquisa importador por trecho e produto por código ou descrição.
+  `corepack pnpm build` passou na API e no web na VPS; 20 testes API passaram.
+  `verify-rf06-read.sql` confirmou 7.130 origens, 336 POs, 6.796 observações,
+  200 IPs, 449 vínculos, 422 custos e 451 pendências em transação `READ ONLY`.
+  `purchase-orders.real-read.mjs` conferiu 7 páginas (50/36 POs), histórico
+  completo de uma PO com 576 linhas, filtros, 18751/18223, IP compartilhado,
+  custo no IP, 401/403/404 e 404 fora do escopo com grant sintético aplicado
+  às consultas reais. Não havia usuário restrito ativo para provar um grant real;
+  o teste de login no navegador com conta de usuário segue para homologação.
+  A API foi instalada com reversão em
+  `/var/backups/import-erp/rf06-api-20260930T175932Z`; `systemd` está `active`
+  e `/health/ready` respondeu 200. A URL pública respondeu 200 e chamada anônima
+  à carteira respondeu 401. RF06/DEV13 seguem `[-]` pelos requisitos abaixo.
+- **Próximo trabalho:** homologar a carteira/detalhe com um usuário real na URL
+  pública; confirmar fonte oficial TOTVS, fornecedor e estados, modelar itens,
+  atendimento e alocações com saldo conhecido. O
+  [prompt da próxima sessão](PROMPT_PROXIMA_SESSAO.md) contém o escopo original.
+- **Acesso SSH para outras sessões:** o par está no checkout em
+  `.local-keys/rf06_ed25519` (privada) e `.local-keys/rf06_ed25519.pub`
+  (pública). Caminhos absolutos nesta máquina:
+  `C:\04_Portal_analytics\ERP_interno_Import\Import_eletra\.local-keys\rf06_ed25519`
+  e `C:\04_Portal_analytics\ERP_interno_Import\Import_eletra\.local-keys\rf06_ed25519.pub`.
+  Ambos são ignorados pelo Git e não estarão em outro clone. Fingerprint:
+  `SHA256:S5y5JFC6znJh9aId1V6GLzIjYsnQ9x963Pti7wL7ivs`. Destino:
+  `root@srv1054123.hstgr.cloud` (`72.60.250.212`, hostname confirmado
+  `matheusproserv`). Autenticação SSH funcionou; o usuário pediu para manter o
+  par local para rastreio. Nunca versionar ou colar a chave privada.
+- **Casos de prova preparados pela fonte aprovada:** SHA-256 local da planilha
+  confere com o registrado (`d2f025ce...6a486aa5f0d7f44`). Inspeção somente
+  de leitura encontrou 336 chaves PO e 6.796 observações, 76 POs com mais de um
+  IP e 91 IPs vinculados a mais de uma PO. A PO 6817 tem NH-016/2025 e
+  NH-017/2025; NH-017/2025 aparece em quatro POs e, na aba Pós Embarque linha 5,
+  tem frete 17.520 e armazenagem 545,45 no grão do IP. A PO 18751 tem oito
+  observações e três IPs; a PO 18223 tem duas observações sem IP. Em R, 18751
+  traz HEXING (2 linhas) e ZLINK (6), e 18223 traz ZLINK (1) e HEXING (1).
+  Esses valores são **observações da origem**, não fornecedor oficial nem custo
+  rateado. A consulta PostgreSQL `READ ONLY` confirmou os casos de PO/IP/custo.
+
+### Lacunas de negócio separadas do incremento de leitura
+
+- **Fonte oficial TOTVS:** confirmar cabeçalho, fornecedor, estado comercial,
+  linhas oficiais, quantidade pedida, moeda e preço antes de exibir esses dados
+  como oficiais ou calcular saldo. As POs 18751 e 18223 exigem revisão da
+  divergência de fornecedor na origem.
+- **Atendimento e alocação:** definir regra de associação das linhas oficiais
+  às observações históricas, quantidade atendida e saldo sob concorrência.
+  Vínculo legado PO–IP não comprova atendimento quantitativo.
+- **Custos compartilhados:** aprovar base e versão do rateio antes de atribuir
+  custo de IP a uma PO; o detalhe atual mostra custos no IP sem totalizá-los
+  como custo integral do pedido.
+- **Outros recursos da PO central:** invoices, documentos, marcos, timeline e
+  transições seguem sem fonte/modelo operacional completo. RF06 e DEV13 ficam
+  `[-]` até os critérios do plano serem implementados e aceitos.
+
+### Homologação de leitura na URL pública
+
+1. Entrar em `https://fup-comex-eletra.vercel.app/` com a conta já criada. Um
+   Master com todas as importadoras deve ver 336 POs e sete páginas de 50
+   (a última com 36); outro perfil vê somente seus importadores autorizados.
+2. Filtrar PO `18751`: abrir o detalhe, percorrer as oito observações e os três
+   IPs e abrir **Ver células** para conferir aba, linha e R da fonte. Filtrar PO
+   `18223`: duas observações, nenhum IP e duas observações distintas em R.
+   HEXING/ZLINK são dados de origem, sem confirmação de fornecedor oficial.
+3. Filtrar IP `NH-017/2025`: quatro POs associadas. No detalhe da PO `6817`,
+   conferir dois IPs. No NH-017/2025, frete 17.520 e armazenagem 545,45 aparecem
+   dentro do IP; não há total de custo atribuído a cada PO.
+4. Testar filtro de importador por parte do nome, produto por código ou
+   descrição, paginação, busca vazia e retorno do detalhe à busca preservada
+   na URL. Relatar qualquer diferença de permissão, contagem ou navegação.
 
 ### Cobertura atual das funcionalidades do MVP
 
@@ -63,7 +134,7 @@ completo de uma RF depende dos critérios do plano e da validação do usuário.
 | RF03 | Solicitações | `[ ]` Não há solicitação nativa nem fila operacional de itens sem IP | Criar fluxo e fila sem inventar IP |
 | RF04 | Execução logística por IP | `[ ]` IPs são consultáveis como vínculo da PO; não há operação própria de IP | Lista, detalhe, edição e transições autorizadas |
 | RF05 | Itens | `[-]` Observações históricas de item estão disponíveis no detalhe | Separar e cadastrar itens oficiais/operacionais |
-| RF06 | Carteira central de POs TOTVS | `[-]` 336 POs em lista paginada, detalhe histórico e IPs vinculados | Fornecedor/estados confirmados, itens oficiais, atendimento, alocações e navegação completa |
+| RF06 | Carteira central de POs TOTVS | `[-]` 336 POs em 7 páginas, filtros PO/importador/produto/IP publicados, detalhe histórico com linhagem e IPs/custos no grão correto; build, testes e leituras reais passaram na VPS | Homologar com usuário real; fornecedor/estados confirmados, itens oficiais, atendimento e alocações seguem pendentes |
 | RF07 | Invoices | `[ ]` Referências originais preservadas apenas no bruto | Cabeçalho, itens, associação e divergências |
 | RF08 | Logística | `[ ]` Marcos originais preservados apenas no bruto | Embarques, BL, portos e containers operacionais |
 | RF09 | Desembaraço | `[ ]` Dados originais preservados apenas no bruto | DUIMP, NF, marcos e entrega operacionais |
@@ -347,7 +418,7 @@ inclua aqui a nova seção ou subseção antes de implementar a mudança.
 | DEV10 | [x] | Reconciliação Pré/Pós por IP sem multiplicar processos | Relatório da cópia de trabalho executado: 204 IPs (195 em ambas, 9 só no Pré, 0 só no Pós), 420 custos por moeda. Product Owner aceitou em 2026-09-24 a referência da cópia: Pré 7.000/Pós 195. | Manter a reconciliação por IP e moeda na CI; reabrir somente se a fonte mudar. |
 | DEV11 | [x] | Promoção retomável e idempotente | Check automatizado injeta falha antes do commit, confirma rollback de PO/IP/observação/custo, promove o mesmo lote na retomada e reinsere zero na reimportação. | Manter a cobertura na CI. |
 | DEV12 | [-] | Tela de qualidade auditável | Revisão local de M003/M008 e handlers confirmou identidade `(issuer, subject)`/`userId` da sessão, permissões `quality.read`/`quality.resolve`, escopo dentro da CTE antes de contagens/paginação e na leitura bloqueada da issue, campos de evidência/motivo/`Idempotency-Key`, e gravação em transação de revisão/status/auditoria/outbox. Corrigida a ordem para ocultar issue fora do escopo como 404 antes de revelar conflito idempotente. Build API e `tsc --noEmit` web passaram; 11 testes de autorização e 5 testes locais do handler passaram (401/403/404, escopo, replay/conflito, identidade e rollback simulado de outbox). O serviço PostgreSQL local não está ativo/escutando em 5432; não há `.env` nem variáveis PG/MIGRATION no ambiente. M008 não foi aplicada e atomicidade PostgreSQL/E2E real não foram validados. | Disponibilizar sessão segura com alvo explicitamente confirmado como `erp_po_totvs_test` ou outro banco isolado descartável. Conferir status 7/0, aplicar M008, validar grants/escopo entre importadores, replay/conflito, rollback PostgreSQL e fluxo E2E autenticado antes de concluir DEV12. |
-| DEV13 | [-] | Carteira e detalhe centrados em PO | Filtros, paginação, linhagem, pendências abertas, ETag/If-Match e escopo por importador implementados; build da API, checks de migration e TypeScript passaram. Smoke sem autenticação confirma 401 na API. Dados oficiais TOTVS e E2E autenticado ainda pendem. | Executar E2E autenticado; itens oficiais TOTVS e invoices seguem fora do escopo atual. |
+| DEV13 | [-] | Carteira e detalhe centrados em PO | Filtros PO/importador/produto/IP, paginação de 50 POs com total de páginas, estados da tela, retorno à busca, células de origem e IP compartilhado publicados em `d6b4604`. Build API/web e 20 testes passaram na VPS; SQL e rotas `READ ONLY` sobre 336 POs/6.796 observações confirmaram 18751/18223, custos no IP e 401/403/404. Grant sintético testou 404 fora do escopo com dados reais; faltou usuário restrito ativo e E2E de login no navegador. Itens/saldo oficiais continuam desconhecidos. | Homologar uso com usuário real; confirmar fonte TOTVS, itens oficiais, atendimento/alocações, invoices e critérios restantes do plano. |
 | DEV14 | [-] | Solicitações e filas de pendência | A fila histórica inclui linhas de Pré Embarque sem PO e IP, inclusive lotes promovidos antes da regra explícita; não cria solicitação nem altera a origem. | Modelar solicitação nativa e sua regra de conversão após autenticação, perfis e workflow. |
 | DEV15 | [-] | Workflow e histórico de transições | Regras de PO e IP, rotas GET de estado/histórico e POST de transição implementadas; `If-Match`, escopo, grants explícitos, motivo, evidência obrigatória e journal append-only persistido em SQLite/PostgreSQL. Status histórico é mapeado sem inventar transições, com evento inicial e linhagem do XLSX. Build API sem warnings. | Validar E2E; vincular pré-condições às entidades oficiais de item, invoice, shipment, documento e saldo quando cada módulo existir; habilitar saltos simplificados somente com justificativa/permissão própria. |
 | DEV16 | [ ] | Alocações de PO por processo | Não iniciado; não há rateio automático | Definir saldo, quantidade e validações |
@@ -403,6 +474,7 @@ inclua aqui a nova seção ou subseção antes de implementar a mudança.
 
 | Data | Incremento | Status | Evidência / observação |
 |---|---|---|---|
+| 2026-09-30 | RF06/DEV13 — filtros e navegação de leitura | [-] | Commit `d6b4604` publicado em `comexeletra/ERP_comex` e deployment Vercel `dpl_38myVEUs8Wv8cLMEbo7aDVe74FXH` em `READY`, alias `fup-comex-eletra.vercel.app`. API instalada na VPS com backup `/var/backups/import-erp/rf06-api-20260930T175932Z`, serviço `active` e ready 200. Build API/web e 20 testes passaram na VPS. SQL `READ ONLY` confirmou 7.130 origens, 336 POs, 6.796 observações, 200 IPs, 449 vínculos, 422 custos, 451 issues, PO 18751 com 8 observações/3 IPs, PO 18223 com 2/0 e NH-017/2025 em 4 POs com custos 17.520 e 545,45 uma vez no IP. Teste de rotas `READ ONLY` confirmou páginas 1/7 (50/36), 576 linhas históricas alcançáveis na maior PO, filtros, 401/403/404 e 404 fora do escopo com grant sintético. Public URL 200 e chamada anônima 401. Faltam homologação no navegador com usuário real e os dados/regras oficiais do plano. | Homologar filtros e detalhe na URL pública; obter fonte TOTVS e decisões de negócio para itens oficiais, saldo, atendimento e rateio. |
 | 2026-09-30 | Carga histórica na VPS e retomada funcional RF06 | [-] | Commit `9a1175e` em Production/`READY`; importação idempotente de 7.130 linhas de origem, 336 POs, 6.796 observações, 200 IPs, 449 vínculos, 422 custos históricos e 451 pendências. Cópia restaurada validou carga e reexecução; API real confirmou carteira, detalhes, 5.152 linhas com IP válido, 1.644 sem IP e 144 pendências sem PO visíveis ao Master. Backup posterior restaurado e contagens conferidas. Usuário confirmou login. RF06 permanece parcial: faltam itens oficiais, atendimento/alocações, navegação e testes de uso. Prompt da próxima sessão em `PROMPT_PROXIMA_SESSAO.md`. |
 | 2026-09-28 | DEV12 — fila e resolução de qualidade na API Node | [-] | `apps/api/src/data-issues.ts` implementa listagem filtrada/paginada e resolução por ID, aplica escopo por importador nas consultas antes da contagem/paginação, oculta registros sem vínculo autorizado e persiste revisor da sessão, evidência, justificativa, revisão, auditoria e outbox em transação. A resolução exige `Idempotency-Key` e trata replay/conflito. `apps/web/app/quality/page.tsx` usa esses contratos e não aceita identidade do revisor do browser. `M008_quality_resolution_idempotency.sql` adiciona campos/índices necessários, mas ainda não foi aplicada. Build API e `tsc --noEmit` web passaram; `next build` compilou, mas o subprocesso TypeScript falhou com `spawn EPERM`. | Aplicar M008 somente no banco isolado e executar integração/E2E de autorização, escopo, idempotência, auditoria e outbox. |
 | 2026-09-28 | Configuração e inspeção do projeto Vercel | [-] | Login da CLI concluído pelo usuário; projeto `erp-comex` no escopo `eletra-comex` ligado ao repositório GitHub `comexeletra/ERP_comex`. Root Directory corrigido de `.` para `apps/web`, framework Next.js confirmado. Production/Preview sem variáveis; dois deployments Production Ready são anteriores à correção e não houve redeploy. Checkout vinculado ao projeto via `.vercel` ignorado. Nenhum segredo foi cadastrado ou documentado. | Obter hostname HTTPS da API e configurar token pareado com `GATEWAY_TOKEN` por canal seguro; publicar somente depois da API/OIDC e validações. |

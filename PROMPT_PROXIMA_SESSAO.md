@@ -1,5 +1,12 @@
 # Prompt para a próxima sessão — RF06 / DEV13
 
+> **Executado em 2026-09-30:** o incremento de leitura foi publicado no commit
+> `d6b4604` e passou build/testes na VPS e validação com a carga real. A Vercel
+> marcou o deployment `dpl_38myVEUs8Wv8cLMEbo7aDVe74FXH` como `READY` para
+> `fup-comex-eletra.vercel.app`. RF06/DEV13 continuam parciais; para retomar,
+> leia primeiro **Estado atual — 2026-09-30** em `CHECKLIST_IMPLEMENTACAO.md`.
+> O próximo passo é homologação por usuário real e fonte/regras oficiais TOTVS.
+
 Continue o desenvolvimento do ERP Comex a partir do estado real do repositório.
 Leia primeiro a seção **Estado atual — 2026-09-30** de
 `CHECKLIST_IMPLEMENTACAO.md` e, no
@@ -29,6 +36,12 @@ oficiais TOTVS, confirmação de fornecedor, saldo ou regras de alocação.
 - O backup posterior à carga é
   `/var/backups/import-erp/erp_po_totvs_test_20260930T162926Z.dump` e foi
   restaurado e conferido. A chave SSH temporária anterior foi removida.
+- Para este incremento foi criado novo par SSH local em
+  `.local-keys/rf06_ed25519` e `.local-keys/rf06_ed25519.pub` (ignorados pelo
+  Git), fingerprint `SHA256:S5y5JFC6znJh9aId1V6GLzIjYsnQ9x963Pti7wL7ivs`.
+  Destino `root@srv1054123.hstgr.cloud`. A pública foi cadastrada pelo usuário
+  e a conexão funcionou; o par local foi conservado a pedido para outras sessões.
+  Nunca versionar nem mostrar o conteúdo da privada.
 - A planilha `Follow Up Import 2026.xlsx` é ignorada pelo Git. O computador
   corporativo serve para editar e inspecionar; execução da aplicação, build,
   testes integrados e banco ficam na VPS. Preserve `hast.md` e
