@@ -18,3 +18,11 @@ table { width: 100%; border-collapse: collapse; min-width: 720px; } th { color: 
 .scope-list label { display: block; font-weight: 400; }
 .credential-notice { background: #fff4d6; color: #594300; margin-bottom: 20px; overflow-wrap: anywhere; }
 .credential-notice code { display: inline-block; font-size: 1.05rem; margin-left: 8px; }
+.portfolio-filter { display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(150px, 1fr)) auto auto; align-items: end; }
+.portfolio-filter label { color: #526371; display: grid; font-size: .85rem; font-weight: 700; gap: 6px; }
+.portfolio-filter input { border: 1px solid #b7c5cf; border-radius: 7px; font: inherit; min-width: 0; padding: 9px; width: 100%; }
+.portfolio-filter .secondary { margin-left: 0; }
+.table-scroll { overflow-x: auto; }
+button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid #e88415; outline-offset: 2px; }
+@media (max-width: 1100px) { .portfolio-filter { grid-template-columns: repeat(2, minmax(180px, 1fr)); } }
+@media (max-width: 760px) { .portfolio-filter { grid-template-columns: 1fr; } }

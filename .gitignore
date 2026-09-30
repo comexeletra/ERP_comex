@@ -12,6 +12,7 @@ dist/
 .next/
 coverage/
 .vercel/
+.local-keys/
 *.tsbuildinfo
 *.zip
 

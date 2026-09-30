@@ -76,11 +76,12 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
          FROM procurement.purchase_order AS po
          WHERE ${scoped.sql}
            AND ($2::text IS NULL OR strpos(po.normalized_number, upper($2)) > 0)
-           AND ($3::text IS NULL OR po.importer = $3)
+           AND ($3::text IS NULL OR strpos(lower(po.importer), lower($3)) > 0)
            AND ($4::text IS NULL OR EXISTS (
              SELECT 1 FROM procurement.po_line_observation AS obs
              WHERE obs.purchase_order_id = po.id
-               AND strpos(lower(coalesce(obs.product_code_snapshot, '')), lower($4)) > 0
+               AND (strpos(lower(coalesce(obs.product_code_snapshot, '')), lower($4)) > 0
+                    OR strpos(lower(coalesce(obs.description_snapshot, '')), lower($4)) > 0)
            ))
            AND ($5::text IS NULL OR EXISTS (
              SELECT 1
@@ -180,6 +181,12 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
                'logisticsStatus', process.logistics_status,
                'qualityStatus', process.quality_status,
                'linkSource', link.source_kind,
+               'linkedPurchaseOrderCount', (
+                 SELECT count(*)::int
+                 FROM procurement.process_purchase_order AS other_link
+                 JOIN procurement.purchase_order AS other_po ON other_po.id = other_link.purchase_order_id
+                 WHERE other_link.process_id = process.id AND other_po.importer = ANY($2::text[])
+               ),
                'costs', coalesce((
                  SELECT jsonb_agg(jsonb_build_object(
                    'type', cost.cost_type,

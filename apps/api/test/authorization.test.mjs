@@ -239,6 +239,36 @@ test("production PO list applies the grant scope in SQL before its limit and off
   assert.deepEqual(response.json().items, [{ id: "po-visible", importer: "ELETRA MATRIZ" }]);
 });
 
+test("production PO list passes all four filters with pagination inside the importer scope", async (t) => {
+  const queries = [];
+  const pool = {
+    async query(sql, values) {
+      queries.push({ sql, values });
+      if (sql.includes("identity.erp_user_role")) {
+        return { rows: [{ role: "Consulta", importer_code: "ELETRA MATRIZ" }] };
+      }
+      assert.match(sql, /WHERE po\.importer = ANY\(\$1::text\[\]\)/u);
+      assert.match(sql, /strpos\(lower\(po\.importer\), lower\(\$3\)\) > 0/u);
+      assert.match(sql, /strpos\(lower\(coalesce\(obs\.description_snapshot, ''\)\), lower\(\$4\)\) > 0/u);
+      assert.match(sql, /process\.importer = ANY\(\$1::text\[\]\)/u);
+      assert.deepEqual(values, [["ELETRA MATRIZ"], "18751", "eletra", "motor", "IP-20", 50, 50]);
+      return { rows: [{ total_count: 75, items: [{ id: "po-visible" }] }] };
+    },
+  };
+  const app = Fastify();
+  app.decorateRequest("authContext", null);
+  await registerAuthorization(app, pool);
+  app.addHook("onRequest", async request => {
+    request.authContext = { issuer: "issuer:reader", subject: "reader", userId: "u1", displayName: null, sessionToken: "test" };
+  });
+  await registerPurchaseOrderReadRoutes(app, pool);
+  t.after(() => app.close());
+  const response = await app.inject({ method: "GET", url: "/api/v1/purchase-orders?page=2&pageSize=50&number=18751&importer=eletra&product=motor&ipNumber=IP-20" });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().totalCount, 75);
+  assert.equal(queries.length, 2);
+});
+
 test("production history lookup applies PO scope in the ID query and returns 404 when hidden", async (t) => {
   const queries = [];
   const visibleId = "00000000-0000-4000-8000-000000000001";
@@ -288,6 +318,8 @@ test("production PO overview scopes the PO before reading linked processes and p
       }
       assert.match(sql, /WHERE po\.id = \$1 AND po\.importer = ANY\(\$2::text\[\]\)/u);
       assert.match(sql, /process\.importer = ANY\(\$2::text\[\]\)/u);
+      assert.match(sql, /other_po\.importer = ANY\(\$2::text\[\]\)/u);
+      assert.match(sql, /FROM costs\.process_cost AS cost WHERE cost\.process_id = process\.id/u);
       assert.deepEqual(values, [values[0], ["ELETRA MATRIZ"]]);
       if (values[0] === hiddenId) return { rowCount: 0, rows: [] };
       return {

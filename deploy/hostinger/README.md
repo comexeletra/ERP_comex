@@ -12,6 +12,20 @@ O provedor Hostinger permite 22, 80 e 443 e bloqueia as outras portas públicas.
 
 ## Ambiente e credenciais
 
+### Acesso SSH temporário para RF06 (2026-09-30)
+
+No checkout local deste repositório, o par temporário está em
+`.local-keys/rf06_ed25519` (privada) e `.local-keys/rf06_ed25519.pub` (pública).
+A pasta inteira está no `.gitignore` e **não** entra no pacote de release nem
+no Git. Fingerprint da pública: `SHA256:S5y5JFC6znJh9aId1V6GLzIjYsnQ9x963Pti7wL7ivs`.
+O host conhecido é `srv1054123.hstgr.cloud` (`72.60.250.212`), usuário `root`.
+Use o OpenSSH com `-i .local-keys/rf06_ed25519 -o IdentitiesOnly=yes` a partir
+da raiz do checkout. Em 2026-09-30, a conexão autenticada confirmou o host
+`matheusproserv`. O usuário pediu para conservar o par local para sessões
+futuras; ele deve permanecer ignorado pelo Git e não ser copiado para artefatos
+de release. A revogação na VPS fica para quando esse acesso deixar de ser
+necessário.
+
 `/etc/import-erp/api.env` contém `DATABASE_URL`, `DATABASE_POOL_MAX`, `GATEWAY_TOKEN`, `AUTH_SESSION_SECRET`, `APP_PUBLIC_ORIGIN`, `HOST` e `PORT`; ele pertence a `root:import-erp` com modo `0640`. A URL do PostgreSQL usa `127.0.0.1` **da VPS** e TLS verificado pelo certificado fixado em `/etc/import-erp/postgres-root.crt`. O serviço não lê a credencial de migrations.
 
 `/etc/import-erp/migration-release.env` contém a URL da role de migrations, pertence a `root:root` e tem modo `0600`. Não envie o conteúdo desses arquivos a chats, logs ou ao Git. No painel Vercel Production, `VPS_API_URL=https://api.72-60-250-212.sslip.io` e `VPS_API_TOKEN` deve ter o mesmo valor do `GATEWAY_TOKEN`. O token deve ser do tipo Secret. Não configure `DATABASE_URL` na Vercel.
@@ -27,6 +41,15 @@ Antes de aplicar M008, foi criado `/var/backups/import-erp/erp_po_totvs_test_202
 Antes de M009, foi criado e restaurado `/var/backups/import-erp/erp_po_totvs_test_20260929T201031Z.dump`, SHA256 `a6728676fd546afa40cbe195e3958da4626c67af17d710a3cc57b6a661974d7a`. O login, a troca de senha, a criação de usuário, o isolamento de papel e a revogação foram exercitados na cópia temporária; ela foi removida. M009 foi aplicada ao banco operacional e o ledger registra M001–M009, sem pendências.
 
 Para um novo release, inspecione o estado, faça backup restaurável e use o runner explícito de `apps/api`; a API lê credenciais diferentes das migrations. Os scripts deste diretório registram a sequência executada para este release. `publish-api-traefik.sh` cria a rota HTTPS somente uma vez e recusa alterar um serviço `import_erp_edge` existente.
+
+Em 2026-09-30, a alteração de leitura RF06 foi compilada e testada em
+`/tmp/rf06-validation-20260930`. `install-rf06-api.sh` instalou apenas
+`src/purchase-orders.ts` e `dist/purchase-orders.js`, com cópias de reversão em
+`/var/backups/import-erp/rf06-api-20260930T175932Z`. O serviço voltou a
+`active` e `/health/ready` respondeu 200 via HTTPS. Não houve migration nem
+alteração de dados. A prova de leitura usa `verify-rf06-read.sh` e
+`verify-rf06-read.sql`; o teste de rotas com transação PostgreSQL `READ ONLY`
+está em `apps/api/test/purchase-orders.real-read.mjs`.
 
 ## Carga histórica de 2026
 
