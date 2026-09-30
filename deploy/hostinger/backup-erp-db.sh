@@ -9,6 +9,11 @@ if [[ -z ${container} ]]; then
 fi
 backup_dir=/var/backups/import-erp
 install -d -o root -g root -m 0700 "$backup_dir"
+expected_migrations=$(docker exec "$container" sh -lc 'psql -U "${POSTGRES_USER:-postgres}" -d erp_po_totvs_test -Atc "SELECT count(*) FROM migration.schema_migration"')
+if [[ ! ${expected_migrations} =~ ^[0-9]+$ ]] || (( expected_migrations < 9 )); then
+  echo "Unexpected migration ledger before backup: ${expected_migrations}." >&2
+  exit 1
+fi
 backup="$backup_dir/erp_po_totvs_test_$(date -u +%Y%m%dT%H%M%SZ).dump"
 temporary_file=$(mktemp "$backup_dir/.dump.XXXXXX")
 restore_db="erp_restorecheck_$(date -u +%Y%m%d%H%M%S)_$$"
@@ -31,12 +36,12 @@ docker exec "$container" sh -lc 'createdb -U "${POSTGRES_USER:-postgres}" "$1"' 
 restore_created=true
 docker exec -i "$container" sh -lc 'exec pg_restore -U "${POSTGRES_USER:-postgres}" -d "$1" --no-owner --no-acl' sh "$restore_db" < "$backup"
 migration_count=$(docker exec "$container" sh -lc 'psql -U "${POSTGRES_USER:-postgres}" -d "$1" -Atc "SELECT count(*) FROM migration.schema_migration"' sh "$restore_db")
-if [[ ${migration_count} != 7 ]]; then
-  echo "Restore check expected 7 migrations, found ${migration_count}." >&2
+if [[ ${migration_count} != ${expected_migrations} ]]; then
+  echo "Restore check expected ${expected_migrations} migrations, found ${migration_count}." >&2
   exit 1
 fi
 printf 'Backup: %s\n' "$backup"
 printf 'SHA256: '
 sha256sum "$backup" | cut -d ' ' -f 1
-printf 'Restore check: 7 migrations found in temporary database.\n'
+printf 'Restore check: %s migrations found in temporary database.\n' "$migration_count"
 exit 0

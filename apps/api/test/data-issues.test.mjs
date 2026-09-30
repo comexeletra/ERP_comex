@@ -10,6 +10,7 @@ const issueIds = {
   hidden: "00000000-0000-4000-8000-000000000002",
 };
 const scopesBySubject = {
+  master: [{ role: "Master", importer_code: null }],
   buyerA: [{ role: "Compras", importer_code: "ELETRA MATRIZ" }],
   buyerB: [{ role: "Compras", importer_code: "ELETRA FOR" }],
   reader: [{ role: "Consulta", importer_code: "ELETRA MATRIZ" }],
@@ -50,6 +51,9 @@ async function createApp({ failOutbox = false } = {}) {
         const subject = values[1];
         return { rows: scopesBySubject[subject] ?? [] };
       }
+      if (sql.includes("SELECT DISTINCT importer FROM procurement.purchase_order")) {
+        return { rows: [{ importer: "ELETRA MATRIZ" }] };
+      }
       state.listSql = sql;
       return { rows: [{ total_count: 1, open_count: 1, resolved_count: 0, items: [{ id: issue.id }] }] };
     },
@@ -65,6 +69,10 @@ async function createApp({ failOutbox = false } = {}) {
             return { rowCount: review ? 1 : 0, rows: review ? [review] : [] };
           }
           if (sql.includes("FROM migration.data_issue AS issue")) {
+            if (sql.includes("AND (TRUE)")) {
+              return { rowCount: values[0] === issue.id ? 1 : 0,
+                rows: values[0] === issue.id ? [{ ...issue, status: state.issueStatus }] : [] };
+            }
             assert.match(sql, /po\.importer = ANY\(\$2::text\[\]\)/u);
             assert.match(sql, /process\.importer = ANY\(\$3::text\[\]\)/u);
             const allowed = [...values[1], ...values[2]].includes("ELETRA MATRIZ");
@@ -133,6 +141,18 @@ test("quality list scopes before counts and pagination", async (t) => {
   assert.ok(state.listSql.indexOf("WHERE (EXISTS (") < state.listSql.indexOf("LIMIT $5 OFFSET $6"));
   assert.match(state.listSql, /SELECT count\(\*\)::int FROM filtered/u);
   assert.deepEqual(response.json().items, [{ id: issueIds.visible }]);
+});
+
+test("master can see and resolve historical issues without a PO or IP", async (t) => {
+  const { app, state } = await createApp();
+  t.after(() => app.close());
+  const list = await app.inject({ method: "GET", url: "/api/v1/data-issues", headers: { "x-test-subject": "master" } });
+  assert.equal(list.statusCode, 200);
+  assert.match(state.listSql, /WHERE \(TRUE\)/u);
+  const resolve = await app.inject({ method: "POST", url: `/api/v1/data-issues/${issueIds.visible}/resolve`,
+    headers: headers("master", "master-unlinked-key"), payload: baseBody });
+  assert.equal(resolve.statusCode, 201);
+  assert.ok(state.queries.some(({ sql }) => sql.includes("AND (TRUE)")));
 });
 
 test("quality resolve returns 401/403 before opening a write transaction", async (t) => {

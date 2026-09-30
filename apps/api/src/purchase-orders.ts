@@ -54,11 +54,15 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
                 (SELECT count(*)::int
                  FROM procurement.po_line_observation AS obs
                  WHERE obs.purchase_order_id = po.id
-                   AND NULLIF(btrim(obs.source_ip_text), '') IS NOT NULL) AS historical_items_with_ip,
+                   AND NULLIF(btrim(obs.source_ip_text), '') IS NOT NULL
+                   AND upper(btrim(obs.source_ip_text)) NOT IN ('CANCELLED', 'CANCELED')
+                   AND left(btrim(obs.source_ip_text), 1) <> '#') AS historical_items_with_ip,
                 (SELECT count(*)::int
                  FROM procurement.po_line_observation AS obs
                  WHERE obs.purchase_order_id = po.id
-                   AND NULLIF(btrim(obs.source_ip_text), '') IS NULL) AS historical_items_without_ip,
+                   AND (NULLIF(btrim(obs.source_ip_text), '') IS NULL
+                        OR upper(btrim(obs.source_ip_text)) IN ('CANCELLED', 'CANCELED')
+                        OR left(btrim(obs.source_ip_text), 1) = '#')) AS historical_items_without_ip,
                 (SELECT count(*)::int
                  FROM procurement.process_purchase_order AS link
                  JOIN imports.import_process AS process ON process.id = link.process_id
@@ -158,11 +162,15 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
                SELECT count(*)::int FROM procurement.po_line_observation AS obs
                WHERE obs.purchase_order_id = po.id
                  AND NULLIF(btrim(obs.source_ip_text), '') IS NOT NULL
+                 AND upper(btrim(obs.source_ip_text)) NOT IN ('CANCELLED', 'CANCELED')
+                 AND left(btrim(obs.source_ip_text), 1) <> '#'
              ),
              'linesWithoutIp', (
                SELECT count(*)::int FROM procurement.po_line_observation AS obs
                WHERE obs.purchase_order_id = po.id
-                 AND NULLIF(btrim(obs.source_ip_text), '') IS NULL
+                 AND (NULLIF(btrim(obs.source_ip_text), '') IS NULL
+                      OR upper(btrim(obs.source_ip_text)) IN ('CANCELLED', 'CANCELED')
+                      OR left(btrim(obs.source_ip_text), 1) = '#')
              )
            ),
            'processes', coalesce((

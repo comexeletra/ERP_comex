@@ -28,6 +28,35 @@ Antes de M009, foi criado e restaurado `/var/backups/import-erp/erp_po_totvs_tes
 
 Para um novo release, inspecione o estado, faça backup restaurável e use o runner explícito de `apps/api`; a API lê credenciais diferentes das migrations. Os scripts deste diretório registram a sequência executada para este release. `publish-api-traefik.sh` cria a rota HTTPS somente uma vez e recusa alterar um serviço `import_erp_edge` existente.
 
+## Carga histórica de 2026
+
+`import-historical-workbook.py` importa exclusivamente a planilha aprovada com
+SHA-256 `d2f025ce6dc53a15574126217cf2148fb875fbb41408f266d6a486aa5f0d7f44`.
+O XLSX é transferido diretamente para a VPS e permanece fora do Git e da Vercel.
+O script exige as versões de `openpyxl` e `psycopg[binary]` fixadas em
+`requirements-historical-import.txt` em um ambiente Python da VPS.
+Sem `--apply`, faz somente a reconciliação da planilha. Com `--apply`, usa a role
+de migração e uma transação única; a mesma planilha e versão de mapeamento
+podem ser reapresentadas sem duplicar dados. Antes da primeira aplicação, exige
+as tabelas históricas vazias. Faça `backup-erp-db.sh` e teste a carga em uma
+cópia restaurada antes de executar no banco em uso.
+
+```sh
+/root/.config/import-erp/historical-import/venv/bin/python \
+  /root/.config/import-erp/historical-import/import-historical-workbook.py \
+  --workbook /root/.config/import-erp/historical-import/workbook.xlsx
+
+/root/.config/import-erp/historical-import/venv/bin/python \
+  /root/.config/import-erp/historical-import/import-historical-workbook.py \
+  --workbook /root/.config/import-erp/historical-import/workbook.xlsx --apply
+```
+
+O arquivo aprovado tem 6.940 linhas de Pré Embarque e 190 de Pós Embarque:
+7.130 linhas de origem, 336 POs distintas, 6.796 observações com PO, 200 IPs
+e 449 vínculos PO–IP. As 144 linhas sem PO ficam na origem e na fila de
+qualidade para o Master. A carteira mostra uma linha por PO e pagina 50 POs por
+vez; o detalhe da PO pagina suas observações históricas.
+
 ## Verificação rápida
 
 ```sh

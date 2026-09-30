@@ -39,7 +39,8 @@ function canonicalJson(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 
-function visibleIssueSql(scopes: readonly string[], priorParameterCount = 0) {
+function visibleIssueSql(scopes: readonly string[], priorParameterCount = 0, master = false) {
+  if (master) return { sql: "TRUE", values: [] };
   const poScope = importerScopePredicate("po.importer", priorParameterCount + 1, scopes);
   const processScope = importerScopePredicate("process.importer", priorParameterCount + 2, scopes);
   return {
@@ -66,7 +67,7 @@ export async function registerDataIssueRoutes(app: FastifyInstance, pool: Pool):
       const { status, page, pageSize } = parsed.data;
       const code = parsed.data.code || null;
       const scopes = request.authorizationContext?.importerScopes ?? [];
-      const visible = visibleIssueSql(scopes);
+      const visible = visibleIssueSql(scopes, 0, request.authorizationContext?.roles.includes("Master") ?? false);
       const offset = (page - 1) * pageSize;
       const result = await pool.query<{
         total_count: number | string;
@@ -164,7 +165,7 @@ export async function registerDataIssueRoutes(app: FastifyInstance, pool: Pool):
         proposedIpNumber: body.data.proposedIpNumber ?? null,
       };
       const payloadHash = createHash("sha256").update(canonicalJson(normalized)).digest("hex");
-      const scopeForIssue = visibleIssueSql(authorization.importerScopes, 1);
+      const scopeForIssue = visibleIssueSql(authorization.importerScopes, 1, authorization.roles.includes("Master"));
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
