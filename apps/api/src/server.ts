@@ -7,6 +7,7 @@ import { Pool } from "pg";
 import { registerAuthRoutes } from "./auth.js";
 import { registerAuthorization } from "./authorization.js";
 import { registerPurchaseOrderReadRoutes } from "./purchase-orders.js";
+import { registerProcessReadRoutes } from "./processes.js";
 import { registerDataIssueRoutes } from "./data-issues.js";
 import { registerAdminUserRoutes } from "./admin-users.js";
 
@@ -62,6 +63,7 @@ app.addHook("onRequest", async (request, reply) => {
 await registerAuthorization(app, pool);
 await registerAuthRoutes(app, pool);
 await registerPurchaseOrderReadRoutes(app, pool);
+await registerProcessReadRoutes(app, pool);
 await registerDataIssueRoutes(app, pool);
 await registerAdminUserRoutes(app, pool);
 

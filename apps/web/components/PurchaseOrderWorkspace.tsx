@@ -131,7 +131,7 @@ export default function PurchaseOrderWorkspace({ id, returnPath }: { id: string;
         {data.processes.length === 0 && <p>Nenhum IP vinculado disponível no escopo desta PO.</p>}
         {data.processes.map(process => <article className="process" key={process.id}><h3>{process.ipNumber} <span>{process.logisticsStatus ?? "Status logístico não informado"}</span></h3>
           <p className="muted">Qualidade do IP: {process.qualityStatus}. Vínculo: {process.linkSource}. POs visíveis vinculadas a este IP: {process.linkedPurchaseOrderCount}.</p>
-          <Link className="text-link" href={`/?ipNumber=${encodeURIComponent(process.ipNumber)}`}>Ver POs deste IP →</Link>
+          <Link className="text-link" href={`/processes/${process.id}`}>Abrir detalhe do IP →</Link>
           {process.costs.length > 0 ? <ul>{process.costs.map((cost, index) => <li key={`${cost.type}-${cost.currency}-${index}`}>{cost.type}: {formatDecimal(cost.amount)} {cost.currency} · {cost.status}</li>)}</ul> : <p>Nenhum custo histórico registrado.</p>}
         </article>)}
       </section>
