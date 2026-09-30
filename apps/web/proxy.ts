@@ -26,6 +26,11 @@ export function proxy(request: NextRequest) {
   const headers = new Headers(request.headers);
   headers.set(gatewayHeader, gatewayToken);
   headers.delete("host");
+  // A same-origin browser request can lose Origin at an intermediary. Restore
+  // it only when Fetch Metadata confirms that it came from this hostname.
+  if (!headers.has("origin") && request.headers.get("sec-fetch-site") === "same-origin") {
+    headers.set("origin", request.nextUrl.origin);
+  }
   return NextResponse.rewrite(upstream, { request: { headers } });
 }
 

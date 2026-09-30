@@ -19,6 +19,10 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string>();
 
   useEffect(() => {
+    if (pathname === "/login") {
+      setLoading(false);
+      return;
+    }
     apiFetch("/auth/me")
       .then(async (response) => {
         if (response.status === 401) return;
@@ -27,7 +31,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Erro inesperado."))
       .finally(() => setLoading(false));
-  }, []);
+  }, [pathname]);
 
   async function logout() {
     try {

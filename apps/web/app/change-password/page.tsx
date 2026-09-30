@@ -19,7 +19,18 @@ export default function ChangePasswordPage() {
         body: JSON.stringify({ currentPassword, newPassword }),
       });
       if (!response.ok) {
-        setError(response.status === 401 ? "Senha atual inválida." : "Não foi possível trocar a senha.");
+        const payload = await response.json().catch(() => null) as { error?: string } | null;
+        if (response.status === 401 && payload?.error === "Senha atual inválida.") {
+          setError("Senha atual inválida. Use a mesma senha com que entrou nesta conta.");
+        } else if (response.status === 401) {
+          setError("Sua sessão expirou. Entre novamente antes de trocar a senha.");
+        } else if (response.status === 403) {
+          setError("A verificação de segurança recusou a solicitação. Atualize a página e tente novamente.");
+        } else if (response.status === 400 && payload?.error === "A nova senha deve ser diferente.") {
+          setError(payload.error);
+        } else {
+          setError("Não foi possível trocar a senha.");
+        }
         return;
       }
       window.location.assign("/");

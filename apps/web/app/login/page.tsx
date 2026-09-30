@@ -21,7 +21,13 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
       if (!response.ok) {
-        setError(response.status === 429 ? "Muitas tentativas. Aguarde e tente novamente." : "E-mail ou senha inválidos.");
+        if (response.status === 403) {
+          setError("A verificação de origem recusou o acesso. Atualize a página e tente novamente.");
+        } else if (response.status === 429) {
+          setError("Muitas tentativas. Aguarde e tente novamente.");
+        } else {
+          setError("E-mail ou senha inválidos.");
+        }
         return;
       }
       const session = await response.json() as { mustChangePassword: boolean };
