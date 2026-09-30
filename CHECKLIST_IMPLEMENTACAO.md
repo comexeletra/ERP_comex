@@ -65,10 +65,29 @@ O computador corporativo não executa a aplicação, o banco nem testes integrad
   `/var/backups/import-erp/rf06-api-20260930T175932Z`; `systemd` está `active`
   e `/health/ready` respondeu 200. A URL pública respondeu 200 e chamada anônima
   à carteira respondeu 401. RF06/DEV13 seguem `[-]` pelos requisitos abaixo.
-- **Próximo trabalho:** homologar a carteira/detalhe com um usuário real na URL
-  pública; confirmar fonte oficial TOTVS, fornecedor e estados, modelar itens,
-  atendimento e alocações com saldo conhecido. O
-  [prompt da próxima sessão](PROMPT_PROXIMA_SESSAO.md) contém o escopo original.
+- **Incremento RF04/DEV14 publicado (2026-09-30):** commit `50b27f9` no
+  repositório de produção e deployment Vercel `dpl_DHivfZpKwMJ61zqw3HcQGQLkhWJF`
+  `READY`, com alias `fup-comex-eletra.vercel.app`. `/processes` lista 200 IPs
+  com busca/filtros/paginação; o detalhe mostra POs vinculadas, observações
+  históricas paginadas, custos históricos somente no IP e navegação PO ↔ IP.
+  `/pending-import-items` e `/unassigned-po-items` mostram as filas de origem
+  sem duplicar `source_row`, com importador, referências, motivo e células.
+  Não houve migration ou escrita operacional. Instalação congelada e build API/web
+  passaram na VPS; os 20 testes existentes e `processes.real-read.mjs` passaram.
+  A prova `READ ONLY` no banco operacional confirmou 200 IPs, 1.772 linhas sem
+  IP, 144 sem PO, 128 em ambas, NH-016/2025 e NH-017/2025 ligados à PO 6817,
+  NH-017/2025 em quatro POs e custos de 17.520/545,45 uma única vez no IP.
+  Conferiu 401/403/404 e escopo restrito sintético aplicado às consultas reais.
+  API instalada com reversão em `/var/backups/import-erp/rf04-api-50b27f9`;
+  `systemd` `active`, ready autenticado 200 e anônimo 401. As três páginas novas
+  responderam 200 na URL pública; a API anônima de IP retornou 401.
+- **Próximo trabalho:** RF02/DEV06 e RF05, começando por cadastros e itens
+  operacionais com origem explícita. RF03/DEV14 e RF04 continuam parciais:
+  associação auditada das linhas de legado, solicitação nativa, edição e
+  workflow do IP dependem de regras/autorização de negócio e modelo operacional.
+  A homologação com usuário real e a fonte oficial TOTVS seguem pendentes. O
+  [prompt da próxima sessão](PROMPT_PROXIMA_SESSAO.md) traz o próximo incremento
+  e a sequência das demais funcionalidades do MVP.
 - **Acesso SSH para outras sessões:** o par está no checkout em
   `.local-keys/rf06_ed25519` (privada) e `.local-keys/rf06_ed25519.pub`
   (pública). Caminhos absolutos nesta máquina:
@@ -131,8 +150,8 @@ completo de uma RF depende dos critérios do plano e da validação do usuário.
 |---|---|---|---|
 | RF01 | Autenticação e autorização | `[-]` Login local, sessões, papéis, escopo por importador e dois Masters; usuário confirmou acesso | Validar fluxos completos e integrar provedor corporativo depois |
 | RF02 | Cadastros | `[ ]` Importadoras aparecem a partir da carga, sem CRUD de fornecedor/produto/NCM | Modelar cadastros e histórico |
-| RF03 | Solicitações | `[ ]` Não há solicitação nativa nem fila operacional de itens sem IP | Criar fluxo e fila sem inventar IP |
-| RF04 | Execução logística por IP | `[ ]` IPs são consultáveis como vínculo da PO; não há operação própria de IP | Lista, detalhe, edição e transições autorizadas |
+| RF03 | Solicitações | `[-]` Filas de leitura sem IP/sem PO publicadas, com origem, escopo e sobreposição; ainda sem solicitação nativa ou associação | Confirmar regra de associação auditada e criar solicitação operacional |
+| RF04 | Execução logística por IP | `[-]` Lista/detalhe próprios publicados para 200 IPs, com POs, observações e custos históricos no IP; sem escrita operacional | Definir campos editáveis, versão, transições autorizadas e homologar com usuário real |
 | RF05 | Itens | `[-]` Observações históricas de item estão disponíveis no detalhe | Separar e cadastrar itens oficiais/operacionais |
 | RF06 | Carteira central de POs TOTVS | `[-]` 336 POs em 7 páginas, filtros PO/importador/produto/IP publicados, detalhe histórico com linhagem e IPs/custos no grão correto; build, testes e leituras reais passaram na VPS | Homologar com usuário real; fornecedor/estados confirmados, itens oficiais, atendimento e alocações seguem pendentes |
 | RF07 | Invoices | `[ ]` Referências originais preservadas apenas no bruto | Cabeçalho, itens, associação e divergências |
@@ -474,6 +493,8 @@ inclua aqui a nova seção ou subseção antes de implementar a mudança.
 
 | Data | Incremento | Status | Evidência / observação |
 |---|---|---|---|
+| 2026-09-30 | RF04/DEV14 — IPs e filas de legado em leitura | [-] | Commit `50b27f9` publicado em `comexeletra/ERP_comex`; Vercel `dpl_DHivfZpKwMJ61zqw3HcQGQLkhWJF` `READY` com alias público. API instalada na VPS com backup reversível `/var/backups/import-erp/rf04-api-50b27f9`; serviço `active`, live 200, ready autenticado 200/anônimo 401. `pnpm install --frozen-lockfile`, build API/web e 20 testes API passaram na VPS. `processes.real-read.mjs` em transação `READ ONLY` confirmou 200 IPs, 1.772 sem IP, 144 sem PO, interseção 128, PO 6817 em NH-016/2025 e NH-017/2025, último IP em quatro POs e custos 17.520/545,45 somente no IP. Conferiu 401/403/404 e escopo restrito sintético; não havia sessão real restrita para homologação de navegador. `/processes`, `/pending-import-items` e `/unassigned-po-items` responderam 200 na URL pública, API anônima 401. Sem migration. Associação de source row a PO/IP/solicitação permanece bloqueada até definir prova da identidade destino, tratamento de linhas com status histórico entregue/cancelado, permissão de comando e invariantes concorrentes; não se cria entidade fictícia nem se altera origem bruta. RF03/RF04 permanecem parciais por solicitação nativa, edição, workflow e aceite humano. |
+| 2026-09-30 | Planejamento da próxima sessão — demais funcionalidades | [-] | `PROMPT_PROXIMA_SESSAO.md` atualizado para priorizar RF04/DEV14: lista e detalhe de IPs, navegação PO ↔ IP e filas de legado sem IP/sem PO. Registrada a sequência de RF02/RF05, workflow, alocações, invoices, documentos, logística, fiscal, custos e relatórios conforme dependências do plano. Nenhuma dessas funcionalidades foi implementada nesta revisão do prompt. |
 | 2026-09-30 | RF06/DEV13 — filtros e navegação de leitura | [-] | Commit `d6b4604` publicado em `comexeletra/ERP_comex` e deployment Vercel `dpl_38myVEUs8Wv8cLMEbo7aDVe74FXH` em `READY`, alias `fup-comex-eletra.vercel.app`. API instalada na VPS com backup `/var/backups/import-erp/rf06-api-20260930T175932Z`, serviço `active` e ready 200. Build API/web e 20 testes passaram na VPS. SQL `READ ONLY` confirmou 7.130 origens, 336 POs, 6.796 observações, 200 IPs, 449 vínculos, 422 custos, 451 issues, PO 18751 com 8 observações/3 IPs, PO 18223 com 2/0 e NH-017/2025 em 4 POs com custos 17.520 e 545,45 uma vez no IP. Teste de rotas `READ ONLY` confirmou páginas 1/7 (50/36), 576 linhas históricas alcançáveis na maior PO, filtros, 401/403/404 e 404 fora do escopo com grant sintético. Public URL 200 e chamada anônima 401. Faltam homologação no navegador com usuário real e os dados/regras oficiais do plano. | Homologar filtros e detalhe na URL pública; obter fonte TOTVS e decisões de negócio para itens oficiais, saldo, atendimento e rateio. |
 | 2026-09-30 | Carga histórica na VPS e retomada funcional RF06 | [-] | Commit `9a1175e` em Production/`READY`; importação idempotente de 7.130 linhas de origem, 336 POs, 6.796 observações, 200 IPs, 449 vínculos, 422 custos históricos e 451 pendências. Cópia restaurada validou carga e reexecução; API real confirmou carteira, detalhes, 5.152 linhas com IP válido, 1.644 sem IP e 144 pendências sem PO visíveis ao Master. Backup posterior restaurado e contagens conferidas. Usuário confirmou login. RF06 permanece parcial: faltam itens oficiais, atendimento/alocações, navegação e testes de uso. Prompt da próxima sessão em `PROMPT_PROXIMA_SESSAO.md`. |
 | 2026-09-28 | DEV12 — fila e resolução de qualidade na API Node | [-] | `apps/api/src/data-issues.ts` implementa listagem filtrada/paginada e resolução por ID, aplica escopo por importador nas consultas antes da contagem/paginação, oculta registros sem vínculo autorizado e persiste revisor da sessão, evidência, justificativa, revisão, auditoria e outbox em transação. A resolução exige `Idempotency-Key` e trata replay/conflito. `apps/web/app/quality/page.tsx` usa esses contratos e não aceita identidade do revisor do browser. `M008_quality_resolution_idempotency.sql` adiciona campos/índices necessários, mas ainda não foi aplicada. Build API e `tsc --noEmit` web passaram; `next build` compilou, mas o subprocesso TypeScript falhou com `spawn EPERM`. | Aplicar M008 somente no banco isolado e executar integração/E2E de autorização, escopo, idempotência, auditoria e outbox. |
