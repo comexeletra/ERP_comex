@@ -19,7 +19,63 @@ incremento atual** registram a implementação histórica, que foi removida do
 snapshot. Eles não comprovam implementação nem aceite na API Node. Para o
 estado executável após a limpeza, use a tabela do incremento atual.
 
-## Ponto de retomada obrigatório
+## Estado atual — 2026-09-30
+
+Esta seção é o ponto de retomada vigente. Os registros datados abaixo são
+históricos e podem descrever estados que já foram superados. O banco operacional
+é `erp_po_totvs_test` **apesar do sufixo `_test`**; nunca o trate como descartável.
+O computador corporativo não executa a aplicação, o banco nem testes integrados.
+
+- **Produção:** `https://fup-comex-eletra.vercel.app/` com deploy `READY` do
+  commit `9a1175e`. API Fastify ativa por `systemd` na VPS, PostgreSQL acessado
+  somente pela API na rede da VPS, com M001–M009 aplicadas. O usuário confirmou
+  que conseguiu entrar. Login local e gestão de acessos pelo Master funcionam;
+  OIDC corporativo fica para a próxima fase.
+- **Carga histórica:** planilha `Follow Up Import 2026.xlsx`, SHA-256
+  `d2f025ce6dc53a15574126217cf2148fb875fbb41408f266d6a486aa5f0d7f44`.
+  Importação idempotente na VPS: 7.130 linhas de origem (6.940 Pré + 190 Pós),
+  336 POs, 6.796 observações vinculadas, 200 IPs, 449 relações PO–IP,
+  422 custos históricos no grão do IP e 451 pendências de qualidade, inclusive
+  144 linhas sem PO. Das observações com PO, 5.152 têm IP válido e 1.644 não.
+  A carteira pagina **POs**, 50 por vez; as linhas históricas ficam no detalhe.
+- **Verificação:** carga aplicada antes em cópia restaurada, segunda execução
+  respondeu `ALREADY_PROMOTED`; 12 testes de autorização e 7 de qualidade
+  passaram na VPS. Consultas reais na cópia e no banco operacional confirmaram
+  336 POs, 6.796 observações e 144 pendências sem PO visíveis ao Master.
+  O backup posterior `/var/backups/import-erp/erp_po_totvs_test_20260930T162926Z.dump`
+  foi restaurado em banco temporário e conferiu 7.130 linhas de origem,
+  336 POs, 6.796 observações, 200 IPs e 451 pendências. Chave SSH temporária
+  de operação e banco de prova foram removidos.
+- **Próximo trabalho:** revisar e completar a **RF06/DEV13 — carteira e detalhe
+  da PO** usando as seções 2.2, 13.2, 14.2, 24.1, 30.1 e 31 do plano. O
+  [prompt da próxima sessão](PROMPT_PROXIMA_SESSAO.md) contém objetivo,
+  limites, casos de aceite e forma de atualizar este checklist.
+
+### Cobertura atual das funcionalidades do MVP
+
+`[-]` significa entrega parcial, inclusive quando a tela já existe. O aceite
+completo de uma RF depende dos critérios do plano e da validação do usuário.
+
+| RF | Funcionalidade | Estado atual verificável | Próximo aceite |
+|---|---|---|---|
+| RF01 | Autenticação e autorização | `[-]` Login local, sessões, papéis, escopo por importador e dois Masters; usuário confirmou acesso | Validar fluxos completos e integrar provedor corporativo depois |
+| RF02 | Cadastros | `[ ]` Importadoras aparecem a partir da carga, sem CRUD de fornecedor/produto/NCM | Modelar cadastros e histórico |
+| RF03 | Solicitações | `[ ]` Não há solicitação nativa nem fila operacional de itens sem IP | Criar fluxo e fila sem inventar IP |
+| RF04 | Execução logística por IP | `[ ]` IPs são consultáveis como vínculo da PO; não há operação própria de IP | Lista, detalhe, edição e transições autorizadas |
+| RF05 | Itens | `[-]` Observações históricas de item estão disponíveis no detalhe | Separar e cadastrar itens oficiais/operacionais |
+| RF06 | Carteira central de POs TOTVS | `[-]` 336 POs em lista paginada, detalhe histórico e IPs vinculados | Fornecedor/estados confirmados, itens oficiais, atendimento, alocações e navegação completa |
+| RF07 | Invoices | `[ ]` Referências originais preservadas apenas no bruto | Cabeçalho, itens, associação e divergências |
+| RF08 | Logística | `[ ]` Marcos originais preservados apenas no bruto | Embarques, BL, portos e containers operacionais |
+| RF09 | Desembaraço | `[ ]` Dados originais preservados apenas no bruto | DUIMP, NF, marcos e entrega operacionais |
+| RF10 | Custos | `[-]` 422 custos históricos deduplicados por IP, sem rateio por PO | Lançamentos operacionais, reversões e rateio auditado |
+| RF11 | Documentos | `[ ]` Sem upload/download de documentos | Storage privado, versões e autorização |
+| RF12 | Histórico e auditoria | `[-]` Origem imutável e revisão de qualidade auditada | Timeline e auditoria operacional por campo |
+| RF13 | Histórico Excel | `[-]` Lote carregado, origem preservada, reexecução idempotente e pendências visíveis | Interface de prévia/reconciliação e revisão de todos os erros |
+| RF14 | Dashboard e relatórios | `[ ]` Sem dashboard ou relatórios na aplicação Node atual | Indicadores com grão, moeda, filtros e data de atualização |
+| RF15 | Administração | `[-]` Master cria, edita, desativa usuários e redefine senhas/escopos | Parâmetros e acompanhamento de jobs |
+| RF16 | Dados analíticos | `[ ]` Sem DW/modelo semântico operacional | ETL, fatos, medidas e RLS |
+
+## Registro histórico de retomada — 2026-09-29
 
 **Estado mais recente — 2026-09-29:** O usuário escolheu `erp_po_totvs_test`
 como banco operacional. Antes de atualizar o schema, um backup foi restaurado
@@ -144,7 +200,7 @@ Ao retomar em outra sessão, siga esta sequência:
 5. Ao terminar, atualize o status do DEV correspondente, evidência, próximo
    passo e a tabela **Histórico de incrementos** antes de encerrar a sessão.
 
-## Ordem de implementação e retomada
+## Ordem de implementação e retomada (registro anterior)
 
 Esta é a ordem de trabalho. As etapas podem sobrepor atividades, mas os itens
 da coluna **Condição para avançar** não podem ser ignorados.
@@ -161,7 +217,7 @@ da coluna **Condição para avançar** não podem ser ignorados.
 | 7 | E7 — Qualidade e homologação | DEV29 | Não iniciado | E2E, segurança, performance, restauração e UAT aprovados |
 | 8 | E8 — Corte e operação | DEV30 | Não iniciado | Snapshot final, treinamento, runbooks e aceite formal |
 
-### Sequência exata do próximo bloco
+### Sequência prevista no registro anterior
 
 1. Validar carteira, overview, histórico e escopo em PostgreSQL isolado; depois executar E2E autenticado DEV13, incluindo paginação e rastreabilidade.
 2. Configurar issuer OIDC de homologação e fechar E2E de login, sessão, CSRF, logout e respostas 401/403/404 (DEV03/DEV04).
@@ -347,6 +403,7 @@ inclua aqui a nova seção ou subseção antes de implementar a mudança.
 
 | Data | Incremento | Status | Evidência / observação |
 |---|---|---|---|
+| 2026-09-30 | Carga histórica na VPS e retomada funcional RF06 | [-] | Commit `9a1175e` em Production/`READY`; importação idempotente de 7.130 linhas de origem, 336 POs, 6.796 observações, 200 IPs, 449 vínculos, 422 custos históricos e 451 pendências. Cópia restaurada validou carga e reexecução; API real confirmou carteira, detalhes, 5.152 linhas com IP válido, 1.644 sem IP e 144 pendências sem PO visíveis ao Master. Backup posterior restaurado e contagens conferidas. Usuário confirmou login. RF06 permanece parcial: faltam itens oficiais, atendimento/alocações, navegação e testes de uso. Prompt da próxima sessão em `PROMPT_PROXIMA_SESSAO.md`. |
 | 2026-09-28 | DEV12 — fila e resolução de qualidade na API Node | [-] | `apps/api/src/data-issues.ts` implementa listagem filtrada/paginada e resolução por ID, aplica escopo por importador nas consultas antes da contagem/paginação, oculta registros sem vínculo autorizado e persiste revisor da sessão, evidência, justificativa, revisão, auditoria e outbox em transação. A resolução exige `Idempotency-Key` e trata replay/conflito. `apps/web/app/quality/page.tsx` usa esses contratos e não aceita identidade do revisor do browser. `M008_quality_resolution_idempotency.sql` adiciona campos/índices necessários, mas ainda não foi aplicada. Build API e `tsc --noEmit` web passaram; `next build` compilou, mas o subprocesso TypeScript falhou com `spawn EPERM`. | Aplicar M008 somente no banco isolado e executar integração/E2E de autorização, escopo, idempotência, auditoria e outbox. |
 | 2026-09-28 | Configuração e inspeção do projeto Vercel | [-] | Login da CLI concluído pelo usuário; projeto `erp-comex` no escopo `eletra-comex` ligado ao repositório GitHub `comexeletra/ERP_comex`. Root Directory corrigido de `.` para `apps/web`, framework Next.js confirmado. Production/Preview sem variáveis; dois deployments Production Ready são anteriores à correção e não houve redeploy. Checkout vinculado ao projeto via `.vercel` ignorado. Nenhum segredo foi cadastrado ou documentado. | Obter hostname HTTPS da API e configurar token pareado com `GATEWAY_TOKEN` por canal seguro; publicar somente depois da API/OIDC e validações. |
 | 2026-09-28 | DEV13 — overview de leitura e detalhe alinhado ao schema | [-] | Adicionado `GET /api/v1/purchase-orders/{id}/overview` com escopo, cobertura histórica, pendências ligadas à origem, IPs visíveis e custos no grão do IP. A tela usa overview/histórico paginado, mostra linhagem/desconhecidos e remove edição genérica e risco presumido. API build, 11 testes e build Next.js passaram. Sem conexão PostgreSQL, issuer ou E2E real. CI efêmera foi adicionada, ainda sem execução GitHub. | Validar integração PostgreSQL e E2E; executar workflow; schema de edição, TLS e issuer seguem pendentes. |
@@ -383,7 +440,7 @@ inclua aqui a nova seção ou subseção antes de implementar a mudança.
 | 2026-09-24 | DEV02 — tentativa de liberar 5432 | [-] | `sc query` confirmou `postgresql-x64-17` em execução, PID 6540 ouvindo em `0.0.0.0:5432` e `[::]:5432`; `Stop-Service` foi tentado com autorização explícita do usuário, mas o Windows retornou que não é possível abrir o serviço. PostgreSQL Compose responde em `127.0.0.1:5433` (PID 31400); Keycloak discovery responde HTTP 200 em `127.0.0.1:8180`; Azurite responde na porta 10000. Para usar 5432, o serviço do host precisa ser parado por uma sessão administrativa. |
 | 2026-09-24 | Preparação do frontend para Vercel | [-] | SDK .NET 10.0.301 instalado localmente em `.tools/dotnet` (ignorado pelo Git); restore NuGet travado passou. pnpm 12.6 instalou dependências com `allowBuilds: sharp` e lockfile congelado; `next build` passou. CLI Vercel autenticada. Containers Compose foram desligados sem remover volumes. A URL padrão do frontend ainda aponta para `localhost:5000`; API .NET e OIDC precisam de hospedagem pública para login e dados funcionarem. |
 
-## Atualização do incremento atual
+## Atualização anterior do incremento (2026-09-29)
 
 | Item | Status | Evidência | Próximo passo |
 |---|---|---|---|
@@ -422,7 +479,7 @@ inclua aqui a nova seção ou subseção antes de implementar a mudança.
 |---|---|---|---|
 | DEV05 | [-] | Em `erp_po_totvs_test`, uma alteração de comentário somente na cópia temporária de M007 fez `migrate:status` falhar explicitamente com checksum divergente. `ARQUIVO_RESTAURADO` foi confirmado e status posterior voltou a 7/0. Para upgrade/concorrência, M008 temporária criou `public.migration_validation_upgrade_probe_20260928`; duas execuções simultâneas de `migrate:up` terminaram sem erro, uma aplicando M008 e outra zero. Status confirmou 8/0; `DROP TABLE`, remoção de uma linha do ledger e `COMMIT` limparam o banco de teste. M008 e logs temporários foram removidos; status final confirmou M001–M007 aplicadas e zero pendentes. O arquivo de ambiente modo 0600 foi removido após os testes; nenhum segredo foi registrado. A senha da role dedicada foi redefinida interativamente. O banco operacional não foi acessado. | Integrar checks à CI e validar TLS de produção antes do aceite DEV05; OIDC/bootstrap/E2E seguem pendentes para DEV03. |
 
-### Ponto de partida para a próxima sessão
+### Ponto de partida registrado em 2026-09-29
 
 1. Não fazer commit nem push sem pedido explícito do usuário. Há alterações locais
    não commitadas; conferir `git status` antes de qualquer publicação.
@@ -464,14 +521,14 @@ Copie esta linha para a tabela de histórico e atualize os itens afetados acima:
 | AAAA-MM-DD | nome do incremento | [ ] / [-] / [x] / [!] | arquivos alterados, teste executado, resultado e decisão pendente |
 ```
 
-## Evidência atual do DEV13
+## Evidência anterior do DEV13
 
 | Data | Status | Evidência | Próximo passo |
 |---|---|---|---|
 | 2026-09-28 | [-] | A API Node agora oferece carteira paginada, overview de leitura e hist?rico paginado sob escopo por importador. Overview inclui cobertura/pend?ncias hist?ricas e IPs/custos no gr?o do IP; itens/saldo oficiais continuam desconhecidos. A tela mostra linhagem, pagina hist?rico e n?o oferece escrita arbitr?ria nem risco presumido. Build API, 11 testes e build Next.js/TypeScript passaram. Sem PostgreSQL/OIDC E2E real. | Validar com PostgreSQL isolado e sess?o OIDC de teste; definir schema/whitelist antes de edi??o e ETag. |
 | 2026-09-24 | [-] | A implementação com filtros, paginação, linhagem e ETag existiu na API .NET removida. O frontend ainda espera esses contratos same-origin; a API Node atual não tem as rotas nem os repositórios. Os resultados de checks anteriores são evidência histórica, não validação da nova stack. | Portar contratos e escopo por importador para PostgreSQL/Node; validar filtros, paginação, ETag/If-Match e concorrência. Itens oficiais TOTVS e invoices continuam fora do escopo. |
 
-## Evidência atual do DEV03
+## Evidência anterior do DEV03
 
 | Data | Status | Evidência | Próximo passo |
 |---|---|---|---|
