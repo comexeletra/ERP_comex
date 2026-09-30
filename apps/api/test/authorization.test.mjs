@@ -26,14 +26,14 @@ const identities = {
   master: [{ role: "Master", importer_code: null }],
 };
 
-async function createApp() {
+async function createApp(allImporters = ["ELETRA MATRIZ", "ELETRA FOR"]) {
   let policyQueries = 0;
   let resourceQueries = 0;
   const pool = {
     async query(sql, parameters) {
       policyQueries += 1;
       if (sql.includes("SELECT DISTINCT importer FROM procurement.purchase_order")) {
-        return { rows: [{ importer: "ELETRA MATRIZ" }, { importer: "ELETRA FOR" }] };
+        return { rows: allImporters.map((importer) => ({ importer })) };
       }
       assert.match(sql, /WHERE u\.issuer = \$1 AND u\.subject = \$2 AND u\.is_active = true/u);
       assert.deepEqual(parameters, [`issuer:${parameters[1]}`, parameters[1]]);
@@ -81,6 +81,12 @@ async function createApp() {
   }, async () => {
     resourceQueries += 1;
     return { ok: true };
+  });
+  app.get("/api/v1/data-issues", {
+    config: permissionConfig("quality.read"),
+  }, async (request) => {
+    resourceQueries += 1;
+    return { importerScopes: request.authorizationContext.importerScopes };
   });
   app.get("/api/v1/users", {
     config: permissionConfig("users.manage", "global"),
@@ -132,6 +138,23 @@ test("applies importer scope before pagination and reports only visible rows", a
     totalCount: 2,
     items: [{ id: "po-a", importer: "ELETRA MATRIZ", number: "100" }],
   });
+});
+
+test("master can open empty importer-scoped views before the first import", async (t) => {
+  const { app } = await createApp([]);
+  t.after(() => app.close());
+  const headers = { "x-test-subject": "master" };
+  const portfolio = await app.inject({ method: "GET", url: "/api/v1/purchase-orders", headers });
+  const quality = await app.inject({ method: "GET", url: "/api/v1/data-issues", headers });
+  assert.equal(portfolio.statusCode, 200);
+  assert.deepEqual(portfolio.json(), { totalCount: 0, items: [] });
+  assert.equal(quality.statusCode, 200);
+  assert.deepEqual(quality.json(), { importerScopes: [] });
+
+  const unscoped = await app.inject({
+    method: "GET", url: "/api/v1/purchase-orders", headers: { "x-test-subject": "unscoped" },
+  });
+  assert.equal(unscoped.statusCode, 403);
 });
 
 test("hides an out-of-scope PO as 404 while allowing an in-scope PO", async (t) => {

@@ -101,8 +101,12 @@ export async function registerAuthorization(app: FastifyInstance, pool: Pool): P
     }
     const context = { roles, importerScopes, permissions };
     request.authorizationContext = context;
+    // A master can inspect an empty database before its first import. Scoped
+    // queries still return no rows until an importer exists.
     if (!permissions.has(permission)
-      || (scopeMode === "importer" && importerScopes.length === 0)) return deny(reply, 403);
+      || (scopeMode === "importer" && importerScopes.length === 0 && !roles.includes("Master"))) {
+      return deny(reply, 403);
+    }
   });
 }
 
