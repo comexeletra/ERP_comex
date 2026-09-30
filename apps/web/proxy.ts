@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const gatewayHeader = "x-import-erp-gateway-token";
 const canonicalOrigin = "https://fup-comex-eletra.vercel.app";
+const canonicalHost = new URL(canonicalOrigin).hostname;
 
 function isGatewayPath(pathname: string): boolean {
   return pathname.startsWith("/auth/") || pathname.startsWith("/api/v1/");
@@ -11,11 +12,12 @@ export function proxy(request: NextRequest) {
   // During local transition, next.config.ts proxies these paths to the legacy API.
   if (process.env.NODE_ENV === "development") return NextResponse.next();
 
+  const requestHost = request.headers.get("host")?.split(":", 1)[0]?.toLowerCase();
   // Login sessions belong to the canonical hostname. Vercel also exposes
   // project and deployment hostnames, which must open the same login page.
   if ((request.method === "GET" || request.method === "HEAD")
-    && request.nextUrl.hostname.endsWith(".vercel.app")
-    && request.nextUrl.origin !== canonicalOrigin
+    && requestHost?.endsWith(".vercel.app")
+    && requestHost !== canonicalHost
     && !isGatewayPath(request.nextUrl.pathname)) {
     return NextResponse.redirect(
       new URL(`${request.nextUrl.pathname}${request.nextUrl.search}`, canonicalOrigin),
