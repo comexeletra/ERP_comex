@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { apiFetch } from "../../lib/api";
 
@@ -139,6 +139,7 @@ export default function SourceAuditPage() {
   const [valueOptions, setValueOptions] = useState<ValueOptionsResult>();
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [optionsError, setOptionsError] = useState<string>();
+  const filterPopoverRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     const state = readLocation();
@@ -191,7 +192,11 @@ export default function SourceAuditPage() {
 
   useEffect(() => {
     if (!activeColumn) return;
-    const closeOnScroll = () => setActiveColumn(undefined);
+    const closeOnScroll = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Node && filterPopoverRef.current?.contains(target)) return;
+      setActiveColumn(undefined);
+    };
     window.addEventListener("scroll", closeOnScroll, true);
     window.addEventListener("resize", closeOnScroll);
     return () => {
@@ -370,7 +375,7 @@ export default function SourceAuditPage() {
 
     {activeColumn && filterPosition && typeof document !== "undefined" && createPortal(<>
       <button className="source-filter-backdrop" aria-label="Fechar filtro" onClick={() => setActiveColumn(undefined)} />
-      <section className="source-filter-popover" role="dialog" aria-label={`Filtro da coluna ${activeColumn}`} style={filterPosition}>
+      <section ref={filterPopoverRef} className="source-filter-popover" role="dialog" aria-label={`Filtro da coluna ${activeColumn}`} style={filterPosition}>
         <div className="source-filter-title"><strong>{activeColumn} · {result?.columnHeaders[activeColumn]}</strong>
           <button type="button" className="source-filter-close" onClick={() => setActiveColumn(undefined)} aria-label="Fechar">×</button>
         </div>
