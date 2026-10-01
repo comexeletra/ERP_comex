@@ -37,7 +37,7 @@ fi
 
 # This script dumps the operational database, checks the archive, restores it
 # into a temporary database and checks its ledger before dropping that copy.
-bash /opt/import-erp/deploy/hostinger/backup-erp-db.sh
+bash "$stage_dir/backup-erp-db.sh"
 
 MIGRATION_ENV=production ALLOW_PRODUCTION_MIGRATIONS=true \
   /opt/node-v24/bin/node --env-file=/etc/import-erp/migration-release.env \
