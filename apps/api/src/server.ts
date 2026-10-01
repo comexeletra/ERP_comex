@@ -10,6 +10,7 @@ import { registerPurchaseOrderReadRoutes } from "./purchase-orders.js";
 import { registerProcessReadRoutes } from "./processes.js";
 import { registerDataIssueRoutes } from "./data-issues.js";
 import { registerAdminUserRoutes } from "./admin-users.js";
+import { registerCatalogRoutes } from "./catalog.js";
 
 const gatewayToken = process.env.GATEWAY_TOKEN;
 const connectionString = process.env.DATABASE_URL;
@@ -66,6 +67,7 @@ await registerPurchaseOrderReadRoutes(app, pool);
 await registerProcessReadRoutes(app, pool);
 await registerDataIssueRoutes(app, pool);
 await registerAdminUserRoutes(app, pool);
+await registerCatalogRoutes(app, pool);
 
 app.get("/health/live", async () => ({ status: "ok" }));
 

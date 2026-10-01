@@ -30,6 +30,16 @@ creation, role isolation and session revocation passed against a restored VPS
 database copy before M009 was applied to the operational database. The ledger
 now has M001–M009 applied and zero pending. OIDC is optional for a future phase.
 
+`M010` creates the reviewed operational catalog for supplier, product and NCM
+entries, literal aliases and actor-scoped command receipts. It does not seed
+official data from the historical workbook. The migration conditionally grants
+the existing `import_erp_app` runtime role only the required catalog permissions;
+an empty CI database can apply it before that role is provisioned. Before
+applying M010 to the selected operational database, run
+`deploy/hostinger/validate-m010-on-copy.py` on the VPS with the staged build.
+The script creates a verified backup, restores an isolated copy, applies M010
+there, runs the real PostgreSQL route checks and drops only that copy.
+
 The API never runs migrations at startup. From `apps/api`, build the API, then
 set `MIGRATION_ENV=isolated` in the shell or `.env` before running
 `pnpm migrate:status` to inspect the target without creating the ledger. For a

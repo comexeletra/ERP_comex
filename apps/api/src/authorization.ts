@@ -7,19 +7,21 @@ export type Permission =
   | "processes.read"
   | "quality.read"
   | "quality.resolve"
+  | "catalog.read"
+  | "catalog.write"
   | "users.manage";
 
 type Role = "Master" | "Administrador" | "Importação" | "Compras" | "Fiscal" | "Logística" | "Gestor" | "Consulta";
 
 const rolePermissions: Readonly<Record<Role, ReadonlySet<Permission>>> = {
-  Master: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "users.manage"]),
-  Administrador: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve"]),
-  Importação: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve"]),
-  Compras: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve"]),
-  Fiscal: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve"]),
-  Logística: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve"]),
-  Gestor: new Set(["purchase-orders.read", "processes.read", "quality.read"]),
-  Consulta: new Set(["purchase-orders.read", "processes.read", "quality.read"]),
+  Master: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "users.manage"]),
+  Administrador: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write"]),
+  Importação: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read"]),
+  Compras: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write"]),
+  Fiscal: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write"]),
+  Logística: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read"]),
+  Gestor: new Set(["purchase-orders.read", "processes.read", "quality.read", "catalog.read"]),
+  Consulta: new Set(["purchase-orders.read", "processes.read", "quality.read", "catalog.read"]),
 };
 
 export type AuthorizationContext = {

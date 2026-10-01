@@ -15,6 +15,11 @@ table { width: 100%; border-collapse: collapse; min-width: 720px; } th { color: 
 .stack-form label { display: grid; gap: 6px; font-weight: 700; }
 .stack-form input:not([type="checkbox"]), .stack-form select { border: 1px solid #b7c5cf; border-radius: 7px; font: inherit; padding: 10px; width: 100%; }
 .scope-list { border: 1px solid #dce4eb; border-radius: 8px; display: grid; gap: 10px; padding: 16px; }
+.stack-form textarea, .catalog-controls input, .catalog-controls select { border: 1px solid #b7c5cf; border-radius: 7px; font: inherit; padding: 10px; width: 100%; }
+.stack-form textarea { min-height: 88px; resize: vertical; }
+.catalog-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 18px; }
+.catalog-controls label { display: grid; gap: 6px; min-width: 210px; font-weight: 700; }
+.catalog-controls .secondary { margin-left: 4px; }
 .scope-list label { display: block; font-weight: 400; }
 .credential-notice { background: #fff4d6; color: #594300; margin-bottom: 20px; overflow-wrap: anywhere; }
 .credential-notice code { display: inline-block; font-size: 1.05rem; margin-left: 8px; }
