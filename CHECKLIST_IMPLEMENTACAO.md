@@ -26,10 +26,12 @@ O banco operacional continua sendo `erp_po_totvs_test` **apesar do sufixo
 `_test`**. A aplicação e os testes integrados são executados na VPS, não no
 computador corporativo.
 
-- **Produção publicada:** `https://fup-comex-eletra.vercel.app/` recebeu o
-  incremento de cadastros nos commits `af9e297`, `992adf9`, `309824e` e
-  `4463493` de `comexeletra/ERP_comex`. Vercel deployment
-  `dpl_B6gFiKAdHZmcyb6sXh8cbZA1np9L` está `READY` no alias público. A API
+- **Produção publicada:** `https://fup-comex-eletra.vercel.app/` recebeu
+  RF03/DEV14 no commit `6a74f4b` de `comexeletra/ERP_comex`; deployment
+  `dpl_DVDRS8TtDjs9ffW5254s2VQL4Q43` está `READY` e recebeu o alias público.
+  `/requests` respondeu 200 e `/api/v1/requests` sem sessão respondeu 401. Os
+  releases de catálogo foram `af9e297`, `992adf9`, `309824e` e `4463493`;
+  deployment de catálogo `dpl_B6gFiKAdHZmcyb6sXh8cbZA1np9L`. A API
   Fastify foi instalada na VPS, `systemd` está `active`, o ready local respondeu
   200 autenticado/401 anônimo e o ready HTTPS respondeu 200. A URL pública
   respondeu 200 para `/` e `/catalog`; chamadas anônimas a
@@ -84,20 +86,24 @@ computador corporativo.
   importador, referência do solicitante, motivo obrigatório, descrições e
   finalidade/centro de custo livres opcionais. API lista, detalha e cria com
   escopo; criação exige `Idempotency-Key`, grava recibo, auditoria e outbox na
-  mesma transação e retorna ETag. `/requests` oferece formulário e lista
-  recente, sem criar registros a partir do histórico. M011 passou em cópia
+  mesma transação e retorna ETag. `/requests` oferece formulário, lista e
+  detalhe, sem criar registros a partir do histórico. M011 passou em cópia
   restaurada e recebeu backup operacional verificável:
   `/var/backups/import-erp/erp_po_totvs_test_20261001T121101Z.dump`, SHA-256
   `394c5def6653be18a4c74f749974603167611673df8b35f762850fb66e7e84fb`;
-  ledger M001–M011/0 pendentes. API ativa, readiness HTTPS 200 e rota anônima
-  401. Rollback do código:
+  ledger M001–M011/0 pendentes. Validação operacional `READ ONLY` confirmou
+  7.130 source rows, 336 POs, 6.796 observações, 200 IPs, 449 relações, 422
+  custos, 451 pendências e zero solicitações nativas; privilégios de runtime
+  para tabelas/sequência conferidos. API ativa, readiness HTTPS 200 e rota
+  anônima 401. Rollback do código:
   `/var/backups/import-erp/rf03-m011-api-20261001T121107Z`. Build API e
   `tsc --noEmit` web passaram; 23 testes API passaram localmente e no pacote
   VPS. `next build` compilou a tela, mas o typecheck do Next falhou ao tentar
   iniciar subprocesso (`spawn EPERM`) neste computador; o `tsc --noEmit`
   independente passou. Nenhuma solicitação de demonstração foi gravada.
-  RF03 permanece parcial: aguardam publicação da tela, homologação de
-  navegador por Master/usuário restrito, workflow/edição com `If-Match` e
+  deployment Vercel `READY` comprova build remoto; nenhuma solicitação de
+  demonstração foi gravada. RF03 permanece parcial: aguardam homologação por
+  Master/usuário restrito, workflow/edição com `If-Match` e
   decisões de produto, quantidade/unidade, finalidade e centro de custo.
 - **Estados ainda parciais:** RF02/DEV06 `[-]` porque importadoras não têm
   mapeamento oficial empresa/filial nem CRUD, aliases adicionais e conflitos
@@ -114,6 +120,24 @@ computador corporativo.
   pública com `.pub`. São ignoradas pelo Git. Nunca mostrar ou versionar a
   privada. Preservados os não rastreados `hast.md` e
   `api-migration-test.tar.gz`.
+
+### Homologação RF03/DEV14 na URL pública
+
+1. Entre com uma conta Master e abra
+   [Solicitações](https://fup-comex-eletra.vercel.app/requests). Confira os
+   importadores, a lista vazia/recente e os estados de carregamento/erro.
+2. Com usuário de `Importação` e escopo real concedido, confirme que só aparece
+   o importador autorizado. Não crie solicitação fictícia em produção. Se houver
+   uma solicitação operacional real aprovada, registre-a com motivo e descrições;
+   confirme o número gerado, a lista e o detalhe. Finalidade/centro de custo são
+   textos informados, sem validação de catálogo; quantidade, unidade e produto
+   oficiais não são capturados neste corte.
+3. Confirme API anônima 401 e que tentativa de consultar registro fora do escopo
+   fica oculta. Registre usuário/perfil, importador e resultado; a sessão deve
+   usar identidades reais, não grants sintéticos.
+4. Product Owner de Importação/Compras deve confirmar campos, workflow e
+   permissão antes de habilitar edição ou associação de legado; Master/TI
+   TOTVS confirmam empresa/filial e identidade; Fiscal confirma NCM/vigência.
 
 ### Homologação do catálogo na URL pública
 
@@ -259,7 +283,7 @@ completo de uma RF depende dos critérios do plano e da validação do usuário.
 |---|---|---|---|
 | RF01 | Autenticação e autorização | `[-]` Login local, sessões, papéis, escopo por importador e dois Masters; usuário confirmou acesso | Validar fluxos completos e integrar provedor corporativo depois |
 | RF02 | Cadastros | `[ ]` Importadoras aparecem a partir da carga, sem CRUD de fornecedor/produto/NCM | Modelar cadastros e histórico |
-| RF03 | Solicitações | `[-]` M011 e solicitação nativa (cabeçalho, itens descritos, número, escopo, idempotência, auditoria/outbox) implementadas na API; tela `/requests` em publicação; filas históricas continuam separadas | Publicar/homologar; definir workflow, campos quantitativos/unidade e regra de associação do legado |
+| RF03 | Solicitações | `[-]` M011 e solicitação nativa (cabeçalho, itens descritos, número, escopo, idempotência, auditoria/outbox) publicados; tela `/requests` e detalhe publicados; filas históricas continuam separadas | Homologar Master/restrito; definir workflow, campos quantitativos/unidade e regra de associação do legado |
 | RF04 | Execução logística por IP | `[-]` Lista/detalhe próprios publicados para 200 IPs, com POs, observações e custos históricos no IP; sem escrita operacional | Definir campos editáveis, versão, transições autorizadas e homologar com usuário real |
 | RF05 | Itens | `[-]` Observações históricas de item estão disponíveis no detalhe | Separar e cadastrar itens oficiais/operacionais |
 | RF06 | Carteira central de POs TOTVS | `[-]` 336 POs em 7 páginas, filtros PO/importador/produto/IP publicados, detalhe histórico com linhagem e IPs/custos no grão correto; build, testes e leituras reais passaram na VPS | Homologar com usuário real; fornecedor/estados confirmados, itens oficiais, atendimento e alocações seguem pendentes |
@@ -604,6 +628,7 @@ inclua aqui a nova seção ou subseção antes de implementar a mudança.
 
 | Data | Incremento | Status | Evidência / observação |
 |---|---|---|---|
+| 2026-10-01 | RF03/DEV14 — solicitação nativa M011 | [-] | Commit `6a74f4b` publicado em `comexeletra/ERP_comex`; Vercel `dpl_DVDRS8TtDjs9ffW5254s2VQL4Q43` `READY` no alias público. `/requests` respondeu 200; API anônima 401. M011 validada em cópia restaurada, backup operacional `/var/backups/import-erp/erp_po_totvs_test_20261001T121101Z.dump` SHA-256 `394c5def6653be18a4c74f749974603167611673df8b35f762850fb66e7e84fb`, aplicada com ledger 11/0; reversão da API `/var/backups/import-erp/rf03-m011-api-20261001T121107Z`. 23 testes API e build API passaram local e VPS; `tsc --noEmit` web passou. Next local compilou, mas seu subprocesso typecheck falhou `spawn EPERM`; Vercel confirmou build READY. Leitura operacional confirmou origem/PO/observações/IP/vínculos/custos/pendências 7130/336/6796/200/449/422/451 e zero solicitação criada para demonstração. Aguardam homologaçao com usuários reais, workflow/edição/If-Match e decisões de negócio. |
 | 2026-10-01 | RF02/DEV06 — catálogo operacional revisado M010 | [-] | Commits `af9e297`, `992adf9`, `309824e`, `4463493` publicados em `comexeletra/ERP_comex`; Vercel `dpl_B6gFiKAdHZmcyb6sXh8cbZA1np9L` `READY` no alias público. M010 aplicada após backup restaurado `erp_po_totvs_test_20261001T113403Z.dump` (SHA-256 `4fcc31fd...3ed204e86`); ledger 10/0. API instalada com reversão em `/var/backups/import-erp/m010-api-af9e297-20261001T113550Z`, serviço ativo e ready HTTPS 200. Build API/web, 20 testes existentes, escrita integrada na cópia com 401/403/404, escopo, replay, versão e rollback da outbox, e leitura operacional `READ ONLY` com role de runtime passaram. `/catalog` público 200; API anônima 401. Origem preservada: 7.130/336/6.796/200/449/422/451; nenhum cadastro operacional de demonstração inserido. RF02/DEV06 e RF05 continuam parciais pelos cadastros oficiais, aliases revisados, itens e homologação humana pendentes. |
 | 2026-09-30 | RF04/DEV14 — IPs e filas de legado em leitura | [-] | Commit `50b27f9` publicado em `comexeletra/ERP_comex`; Vercel `dpl_DHivfZpKwMJ61zqw3HcQGQLkhWJF` `READY` com alias público. API instalada na VPS com backup reversível `/var/backups/import-erp/rf04-api-50b27f9`; serviço `active`, live 200, ready autenticado 200/anônimo 401. `pnpm install --frozen-lockfile`, build API/web e 20 testes API passaram na VPS. `processes.real-read.mjs` em transação `READ ONLY` confirmou 200 IPs, 1.772 sem IP, 144 sem PO, interseção 128, PO 6817 em NH-016/2025 e NH-017/2025, último IP em quatro POs e custos 17.520/545,45 somente no IP. Conferiu 401/403/404 e escopo restrito sintético; não havia sessão real restrita para homologação de navegador. `/processes`, `/pending-import-items` e `/unassigned-po-items` responderam 200 na URL pública, API anônima 401. Sem migration. Associação de source row a PO/IP/solicitação permanece bloqueada até definir prova da identidade destino, tratamento de linhas com status histórico entregue/cancelado, permissão de comando e invariantes concorrentes; não se cria entidade fictícia nem se altera origem bruta. RF03/RF04 permanecem parciais por solicitação nativa, edição, workflow e aceite humano. |
 | 2026-09-30 | Planejamento da próxima sessão — demais funcionalidades | [-] | `PROMPT_PROXIMA_SESSAO.md` atualizado para priorizar RF04/DEV14: lista e detalhe de IPs, navegação PO ↔ IP e filas de legado sem IP/sem PO. Registrada a sequência de RF02/RF05, workflow, alocações, invoices, documentos, logística, fiscal, custos e relatórios conforme dependências do plano. Nenhuma dessas funcionalidades foi implementada nesta revisão do prompt. |

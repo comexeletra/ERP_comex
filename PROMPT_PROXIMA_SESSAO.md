@@ -1,4 +1,4 @@
-# Prompt para a próxima sessão — ERP Comex após o catálogo M010
+# Prompt para a próxima sessão — ERP Comex após RF03/DEV14 M011
 
 Continue do estado real do repositório e leia primeiro **Estado atual —
 2026-10-01** em `CHECKLIST_IMPLEMENTACAO.md`. Consulte
@@ -9,13 +9,23 @@ Continue do estado real do repositório e leia primeiro **Estado atual —
 
 - Produção: `https://fup-comex-eletra.vercel.app/`, Next.js na Vercel, Fastify
   e PostgreSQL na VPS Hostinger. O banco operacional é `erp_po_totvs_test`
-  **apesar de `_test`**; não é descartável. M001–M010 estão aplicadas.
+  **apesar de `_test`**; não é descartável. M001–M011 estão aplicadas.
 - RF02/DEV06 ganhou catálogo manual revisado nos commits `af9e297`,
   `992adf9`, `309824e` e `4463493`. Vercel
   `dpl_B6gFiKAdHZmcyb6sXh8cbZA1np9L` está `READY` no alias público.
   `/catalog` e a carteira pública responderam 200; rotas de catálogo anônimas,
   401. API `systemd` ativa e HTTPS ready 200. Reversão da API:
   `/var/backups/import-erp/m010-api-af9e297-20261001T113550Z`.
+- RF03/DEV14 commit `6a74f4b` está publicado. Vercel
+  `dpl_DVDRS8TtDjs9ffW5254s2VQL4Q43` `READY` no alias público;
+  `/requests` respondeu 200 e API anônima 401. M011 cria solicitação nativa e
+  itens descritos pelo solicitante, com número interno, versão, autor, escopo,
+  motivo, chave idempotente e auditoria/outbox. Lista e detalhe estão
+  disponíveis. Backup anterior à migration:
+  `/var/backups/import-erp/erp_po_totvs_test_20261001T121101Z.dump`, SHA-256
+  `394c5def6653be18a4c74f749974603167611673df8b35f762850fb66e7e84fb`;
+  rollback do código da API em
+  `/var/backups/import-erp/rf03-m011-api-20261001T121107Z`.
 - Backup pré-M010 restaurado:
   `/var/backups/import-erp/erp_po_totvs_test_20261001T113403Z.dump`, SHA-256
   `4fcc31fdb6cb530f89f308bfbd7ac7a505d078891f0c46eb7a608ff3ed204e86`.
@@ -37,18 +47,22 @@ Continue do estado real do repositório e leia primeiro **Estado atual —
   builds, testes integrados e banco ficam na VPS. Antes de cada migration,
   validar uma cópia restaurada e fazer backup verificável do operacional.
 
-## Próximo incremento prioritário
+## Próxima atividade prioritária
 
-Avance `RF03/DEV14` pela **solicitação nativa**, separada das 1.772 linhas
-históricas sem IP e 144 sem PO. Modele número interno gerado no servidor,
-importador, versão, origem operacional, permissões e trilha auditável. Entregue
-um corte vertical utilizável de modelo, API, tela e testes, com `If-Match`,
-`Idempotency-Key` nas criações/comandos, motivo e transação. Não represente
-linha histórica entregue/cancelada como nova solicitação nem crie IP fictício.
-Se itens de solicitação dependerem de unidade, finalidade, centro de custo ou
-produto ainda não confirmados, registre precisamente o bloqueio e prossiga
-com campos operacionais sustentados por evidência; não marque RF03 concluída
-por haver somente cabeçalho ou endpoint.
+Homologue RF03/DEV14 e as leituras RF06/RF04/catalog com Master e usuário de
+Importação com escopo real na URL pública. Não cadastre amostras fictícias no
+banco operacional. Se houver solicitação operacional real aprovada, confirme
+criação/lista/detalhe, numeração server-side, autoria, importador e motivo.
+Usuários restritos devem ver apenas seu escopo; `/api/v1/requests` sem sessão
+deve continuar 401. RF03 permanece parcial até validar workflow/edição com
+`If-Match`, campos de item exigidos, permissões e aceite formal.
+
+Registre com Product Owner de Importação/Compras se quantidade, unidade e
+produto oficial precisam existir antes da submissão; quem aprova finalidade e
+centro de custo; estados e transições de solicitação; e regra de cancelamento.
+Identifique Compras/TI TOTVS para empresa/filial e identidade de fornecedor,
+Fiscal para NCM/vigência e Dados/Compras para aliases conflitantes. Mantenha os
+itens livres atuais rotulados como texto informado pelo solicitante.
 
 Em paralelo, obtenha homologação real de leitura RF06/RF04 e do novo catálogo
 com Master e usuário restrito. O teste anterior de escopo usou grant sintético
