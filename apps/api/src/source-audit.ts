@@ -73,7 +73,7 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
       quality_issues: number; any_gap: number; items: Array<Record<string, unknown>>;
     }>(
       `WITH visible AS MATERIALIZED (
-         SELECT source.id, source.batch_id, batch.file_name, source.sheet_name, source.row_number,
+         SELECT source.id, source.batch_id, source.sheet_name, source.row_number,
                 source.raw_values, source.error_columns, btrim(source.raw_values->>'F') AS importer,
                 po.id AS purchase_order_id, po.external_number AS po_number,
                 process.id AS process_id, process.ip_number,
@@ -82,7 +82,6 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
                 (${noIp}) AS missing_ip,
                 ${qualityGap} AS has_quality_gap
          FROM migration.source_row AS source
-         JOIN migration.import_batch AS batch ON batch.id = source.batch_id
          LEFT JOIN procurement.po_line_observation AS observation ON observation.source_row_id = source.id
          LEFT JOIN procurement.purchase_order AS po ON po.id = observation.purchase_order_id
          LEFT JOIN imports.import_process AS process
@@ -99,7 +98,7 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
            AND ($3::text IS NULL OR btrim(source.raw_values->>'F') = $3)
        ), filtered AS MATERIALIZED (
          SELECT * FROM visible AS source
-         WHERE ($5::text IS NULL OR strpos(lower(concat_ws(' ', source.file_name, source.sheet_name,
+         WHERE ($5::text IS NULL OR strpos(lower(concat_ws(' ', source.batch_id::text, source.sheet_name,
                 source.importer, source.po_number, source.ip_number, source.raw_values::text)), lower($5)) > 0)
            AND ${columnPredicate}
        ), gap_filtered AS MATERIALIZED (
@@ -119,7 +118,7 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
               (SELECT count(*) FILTER (WHERE has_quality_gap)::int FROM filtered) AS quality_issues,
               (SELECT count(*) FILTER (WHERE missing_ip OR missing_po OR has_quality_gap)::int FROM filtered) AS any_gap,
               coalesce(jsonb_agg(jsonb_build_object(
-                'id', page.id, 'batchId', page.batch_id, 'fileName', page.file_name,
+                'id', page.id, 'batchId', page.batch_id,
                 'sourceSheetName', page.sheet_name, 'sourceRowNumber', page.row_number,
                 'importer', page.importer, 'sourceValues', page.raw_values,
                 'cellErrors', page.error_columns,

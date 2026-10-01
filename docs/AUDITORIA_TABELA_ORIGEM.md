@@ -7,7 +7,7 @@ A página `/source-audit` exibe as linhas preservadas de `migration.source_row` 
 - As abas `Pré Embarque` e `Pós Embarque` mostram todas as colunas originais mapeadas, identificadas pela letra da coluna Excel. `Todas as linhas` combina as duas abas; células que não pertencem àquela aba ficam vazias.
 - Os campos sob cada cabeçalho aplicam uma busca por trecho de texto. Vários filtros de coluna são combinados por AND. Pressione Enter em um filtro ou use `Aplicar filtros`.
 - Importador, busca geral e categoria de gap podem ser combinados com os filtros de coluna. A busca por gap inclui falta de PO, falta de IP válido e problemas abertos de qualidade ou erros de célula.
-- A grade fixa linha, aba e indicadores de auditoria durante a rolagem horizontal. O número de linha é o da origem; passe sobre ele para ver o arquivo importado.
+- A grade fixa linha, aba e indicadores de auditoria durante a rolagem horizontal. O número de linha é o da origem; passe sobre ele para ver o identificador do lote.
 - A tela pagina os resultados em 25, 50 ou 100 linhas. Totais e indicadores respeitam o escopo do usuário e os filtros de busca/importador/coluna; o filtro de categoria de gap só reduz as linhas exibidas.
 
 ## Acesso e semântica

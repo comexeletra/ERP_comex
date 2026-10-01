@@ -9,20 +9,32 @@ target_dir=/opt/import-erp/apps/api
 for file in src/server.ts src/source-audit.ts dist/server.js dist/source-audit.js; do
   test -f "$source_dir/$file"
 done
-test ! -e "$target_dir/src/source-audit.ts"
-test ! -e "$target_dir/dist/source-audit.js"
 systemctl is-active --quiet import-erp-api
 
 rollback_dir=/var/backups/import-erp/source-audit-api-$(date -u +%Y%m%dT%H%M%SZ)
 install -d -m 0700 "$rollback_dir"
 cp -p "$target_dir/src/server.ts" "$rollback_dir/server.ts"
 cp -p "$target_dir/dist/server.js" "$rollback_dir/server.js"
+had_previous=false
+if [[ -e $target_dir/src/source-audit.ts && -e $target_dir/dist/source-audit.js ]]; then
+  had_previous=true
+  cp -p "$target_dir/src/source-audit.ts" "$rollback_dir/source-audit.ts"
+  cp -p "$target_dir/dist/source-audit.js" "$rollback_dir/source-audit.js"
+elif [[ -e $target_dir/src/source-audit.ts || -e $target_dir/dist/source-audit.js ]]; then
+  echo 'Source audit files are inconsistent; refusing an ambiguous release.' >&2
+  exit 1
+fi
 
 restore_api() {
   trap - ERR
   cp -p "$rollback_dir/server.ts" "$target_dir/src/server.ts"
   cp -p "$rollback_dir/server.js" "$target_dir/dist/server.js"
-  rm -f -- "$target_dir/src/source-audit.ts" "$target_dir/dist/source-audit.js"
+  if [[ $had_previous == true ]]; then
+    cp -p "$rollback_dir/source-audit.ts" "$target_dir/src/source-audit.ts"
+    cp -p "$rollback_dir/source-audit.js" "$target_dir/dist/source-audit.js"
+  else
+    rm -f -- "$target_dir/src/source-audit.ts" "$target_dir/dist/source-audit.js"
+  fi
   systemctl restart import-erp-api
   echo "API restored from $rollback_dir" >&2
 }

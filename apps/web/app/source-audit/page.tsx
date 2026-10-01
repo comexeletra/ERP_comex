@@ -7,7 +7,7 @@ import { apiFetch } from "../../lib/api";
 type Sheet = "all" | "Pré Embarque" | "Pós Embarque";
 type Gap = "all" | "without-ip" | "without-po" | "quality" | "any";
 type SourceRow = {
-  id: string; fileName: string; sourceSheetName: string; sourceRowNumber: number;
+  id: string; batchId: string; sourceSheetName: string; sourceRowNumber: number;
   importer: string; sourceValues: Record<string, string | null>; cellErrors: string[];
   poNumber: string | null; ipNumber: string | null;
   auditFlags: { withoutPurchaseOrder: boolean; withoutValidIp: boolean;
@@ -212,7 +212,7 @@ export default function SourceAuditPage() {
                 </tr>
               </thead>
               <tbody>{result.items.map(row => <tr key={row.id} className={row.auditFlags.anyGap ? "source-row-has-gap" : ""}>
-                <td className="source-pin source-pin-1 source-row-number" title={`${row.fileName} · linha ${row.sourceRowNumber}`}>{row.sourceRowNumber}</td>
+                <td className="source-pin source-pin-1 source-row-number" title={`Lote ${row.batchId} · linha ${row.sourceRowNumber}`}>{row.sourceRowNumber}</td>
                 <td className="source-pin source-pin-2">{row.sourceSheetName}</td>
                 <td className="source-pin source-pin-3"><div className="source-gap-tags">
                   {row.auditFlags.withoutPurchaseOrder && <span className="source-gap-tag">Sem PO</span>}
