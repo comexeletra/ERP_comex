@@ -19,9 +19,97 @@ incremento atual** registram a implementação histórica, que foi removida do
 snapshot. Eles não comprovam implementação nem aceite na API Node. Para o
 estado executável após a limpeza, use a tabela do incremento atual.
 
-## Estado atual — 2026-09-30
+## Estado atual — 2026-10-01
 
-Esta seção é o ponto de retomada vigente. Os registros datados abaixo são
+Este é o ponto de retomada vigente; a seção de 2026-09-30 abaixo é histórica.
+O banco operacional continua sendo `erp_po_totvs_test` **apesar do sufixo
+`_test`**. A aplicação e os testes integrados são executados na VPS, não no
+computador corporativo.
+
+- **Produção publicada:** `https://fup-comex-eletra.vercel.app/` recebeu o
+  incremento de cadastros nos commits `af9e297`, `992adf9`, `309824e` e
+  `4463493` de `comexeletra/ERP_comex`. Vercel deployment
+  `dpl_B6gFiKAdHZmcyb6sXh8cbZA1np9L` está `READY` no alias público. A API
+  Fastify foi instalada na VPS, `systemd` está `active`, o ready local respondeu
+  200 autenticado/401 anônimo e o ready HTTPS respondeu 200. A URL pública
+  respondeu 200 para `/` e `/catalog`; chamadas anônimas a
+  `/api/v1/importers` e `/api/v1/suppliers/candidates` responderam 401.
+- **M010 aplicada ao banco operacional:** `M010_catalog_review.sql` cria
+  `catalog.entry`, alias literal e recibo de idempotência, com concessões
+  restritas à role de runtime. O ledger está em M001–M010, zero pendências. O
+  backup imediatamente anterior,
+  `/var/backups/import-erp/erp_po_totvs_test_20261001T113403Z.dump`, SHA-256
+  `4fcc31fdb6cb530f89f308bfbd7ac7a505d078891f0c46eb7a608ff3ed204e86`,
+  foi restaurado e conferiu 9 migrations antes da aplicação. A cópia de
+  reversão do código da API está em
+  `/var/backups/import-erp/m010-api-af9e297-20261001T113550Z`. M010 deve
+  permanecer aplicada se apenas o código da API for revertido.
+- **Corte RF02/DEV06 entregue parcialmente:** `/catalog` mostra os três
+  importadores observados em POs, candidatos históricos de fornecedor (R),
+  produto (T) e NCM (V), com contagem e aba/linha de exemplo, separados de
+  cadastros operacionais. Os perfis autorizados podem criar, editar e inativar
+  registros de fornecedor/produto/NCM após informar evidência e motivo.
+  Criação exige `Idempotency-Key`; edição exige `If-Match`/versão. O código
+  literal vira alias inicial; normalização remove somente espaços externos e
+  verifica duplicidade por importador/tipo. NCM exige oito dígitos e início de
+  vigência informado pelo revisor. Auditoria por campo e outbox participam da
+  mesma transação. Não foram criados cadastros operacionais de demonstração em
+  produção; `catalog.entry` tinha zero linhas na verificação final. A tela
+  apresenta carregamento, vazio, erro e conflito de versão. Contrato e limites
+  em [docs/CATALOGO_M010.md](docs/CATALOGO_M010.md).
+- **Evidência de origem real:** consulta `READ ONLY` no banco operacional
+  confirmou, para ELETRA CWB/FOR/MATRIZ respectivamente, 107/178/6.511
+  observações com PO; 1/2/6 nomes de fornecedor distintos por importador;
+  94/126/1.344 códigos de produto após trim; 35/39/217 valores NCM após
+  trim, com 32/49/36 observações de NCM fora do formato de oito dígitos. As
+  contagens por importador não são somas globais de entidades distintas nem
+  prova de cadastro oficial. O histórico operacional ficou em 7.130 linhas de
+  origem, 336 POs, 6.796 observações, 200 IPs, 449 vínculos, 422 custos e
+  451 pendências após M010.
+- **Testes e reversão:** instalação congelada e builds API/web passaram na
+  VPS, assim como os 20 testes API existentes. `catalog.real-write.mjs` passou
+  em cópia restaurada com Master e escopo restrito sobre dados reais, 401/403/404,
+  candidato histórico, código literal, replay e conflito idempotente, ETag,
+  inativação, auditoria/outbox e rollback injetado. A checagem `READ ONLY`
+  `catalog.real-read.mjs` passou no banco operacional com a role de runtime:
+  três importadores, 336 POs, candidatos, catálogo vazio, escopo e
+  401/403/404. A primeira tentativa de release parou por usar uma cópia antiga
+  do script de backup que esperava 7 migrations; nenhuma migration foi aplicada
+  nessa tentativa. A segunda aplicou M010, mas a checagem imediata de saúde
+  encontrou o serviço ainda iniciando e restaurou a API antiga. O script foi
+  corrigido para aguardar ready; a retomada instalou a API com sucesso.
+- **Estados ainda parciais:** RF02/DEV06 `[-]` porque importadoras não têm
+  mapeamento oficial empresa/filial nem CRUD, aliases adicionais e conflitos
+  de atributos ainda não têm fluxo de revisão, e nenhum cadastro real foi
+  homologado por usuário. RF05 `[-]`: observações históricas seguem acessíveis
+  na PO, mas não há linha oficial TOTVS nem item operacional novo; unidade,
+  finalidade, centro de custo e fonte de quantidade/preço requerem definição
+  e confirmação. RF03/RF04 continuam `[-]` por solicitação nativa, associação
+  auditada, edição e workflow. A homologação em navegador com Master e usuário
+  restrito real permanece pendente. Não criar saldo, atribuição automática de
+  fornecedor/NCM/unidade ou vínculo automático de linhas sem IP/sem PO.
+- **SSH para rastreio:** a chave privada está somente neste checkout em
+  `C:\04_Portal_analytics\ERP_interno_Import\Import_eletra\.local-keys\rf06_ed25519`;
+  pública com `.pub`. São ignoradas pelo Git. Nunca mostrar ou versionar a
+  privada. Preservados os não rastreados `hast.md` e
+  `api-migration-test.tar.gz`.
+
+### Homologação do catálogo na URL pública
+
+1. Entrar como Master e abrir **Cadastros** na carteira. Verificar os três
+   importadores, candidatos separados dos registros operacionais e pesquisa,
+   paginação, vazio e recuperação de erro.
+2. Conferir uma amostra de fornecedor/produto/NCM na aba e linha de origem;
+   códigos NCM inválidos aparecem como candidatos sem ação de cadastro direto.
+   Não aprovar fornecedor de PO 18751/18223 apenas pela coluna R.
+3. Com documento de negócio disponível, cadastrar uma entidade de teste real
+   autorizada, conferir evidência, versão e edição/inativação. Um usuário sem
+   papel de escrita só deve consultar; um usuário restrito só deve ver seu
+   importador. Registrar resultado da homologação antes de concluir RF02.
+
+## Estado anterior — 2026-09-30
+
+Esta seção registrou o ponto de retomada daquela data. Os registros abaixo são
 históricos e podem descrever estados que já foram superados. O banco operacional
 é `erp_po_totvs_test` **apesar do sufixo `_test`**; nunca o trate como descartável.
 O computador corporativo não executa a aplicação, o banco nem testes integrados.
@@ -493,6 +581,7 @@ inclua aqui a nova seção ou subseção antes de implementar a mudança.
 
 | Data | Incremento | Status | Evidência / observação |
 |---|---|---|---|
+| 2026-10-01 | RF02/DEV06 — catálogo operacional revisado M010 | [-] | Commits `af9e297`, `992adf9`, `309824e`, `4463493` publicados em `comexeletra/ERP_comex`; Vercel `dpl_B6gFiKAdHZmcyb6sXh8cbZA1np9L` `READY` no alias público. M010 aplicada após backup restaurado `erp_po_totvs_test_20261001T113403Z.dump` (SHA-256 `4fcc31fd...3ed204e86`); ledger 10/0. API instalada com reversão em `/var/backups/import-erp/m010-api-af9e297-20261001T113550Z`, serviço ativo e ready HTTPS 200. Build API/web, 20 testes existentes, escrita integrada na cópia com 401/403/404, escopo, replay, versão e rollback da outbox, e leitura operacional `READ ONLY` com role de runtime passaram. `/catalog` público 200; API anônima 401. Origem preservada: 7.130/336/6.796/200/449/422/451; nenhum cadastro operacional de demonstração inserido. RF02/DEV06 e RF05 continuam parciais pelos cadastros oficiais, aliases revisados, itens e homologação humana pendentes. |
 | 2026-09-30 | RF04/DEV14 — IPs e filas de legado em leitura | [-] | Commit `50b27f9` publicado em `comexeletra/ERP_comex`; Vercel `dpl_DHivfZpKwMJ61zqw3HcQGQLkhWJF` `READY` com alias público. API instalada na VPS com backup reversível `/var/backups/import-erp/rf04-api-50b27f9`; serviço `active`, live 200, ready autenticado 200/anônimo 401. `pnpm install --frozen-lockfile`, build API/web e 20 testes API passaram na VPS. `processes.real-read.mjs` em transação `READ ONLY` confirmou 200 IPs, 1.772 sem IP, 144 sem PO, interseção 128, PO 6817 em NH-016/2025 e NH-017/2025, último IP em quatro POs e custos 17.520/545,45 somente no IP. Conferiu 401/403/404 e escopo restrito sintético; não havia sessão real restrita para homologação de navegador. `/processes`, `/pending-import-items` e `/unassigned-po-items` responderam 200 na URL pública, API anônima 401. Sem migration. Associação de source row a PO/IP/solicitação permanece bloqueada até definir prova da identidade destino, tratamento de linhas com status histórico entregue/cancelado, permissão de comando e invariantes concorrentes; não se cria entidade fictícia nem se altera origem bruta. RF03/RF04 permanecem parciais por solicitação nativa, edição, workflow e aceite humano. |
 | 2026-09-30 | Planejamento da próxima sessão — demais funcionalidades | [-] | `PROMPT_PROXIMA_SESSAO.md` atualizado para priorizar RF04/DEV14: lista e detalhe de IPs, navegação PO ↔ IP e filas de legado sem IP/sem PO. Registrada a sequência de RF02/RF05, workflow, alocações, invoices, documentos, logística, fiscal, custos e relatórios conforme dependências do plano. Nenhuma dessas funcionalidades foi implementada nesta revisão do prompt. |
 | 2026-09-30 | RF06/DEV13 — filtros e navegação de leitura | [-] | Commit `d6b4604` publicado em `comexeletra/ERP_comex` e deployment Vercel `dpl_38myVEUs8Wv8cLMEbo7aDVe74FXH` em `READY`, alias `fup-comex-eletra.vercel.app`. API instalada na VPS com backup `/var/backups/import-erp/rf06-api-20260930T175932Z`, serviço `active` e ready 200. Build API/web e 20 testes passaram na VPS. SQL `READ ONLY` confirmou 7.130 origens, 336 POs, 6.796 observações, 200 IPs, 449 vínculos, 422 custos, 451 issues, PO 18751 com 8 observações/3 IPs, PO 18223 com 2/0 e NH-017/2025 em 4 POs com custos 17.520 e 545,45 uma vez no IP. Teste de rotas `READ ONLY` confirmou páginas 1/7 (50/36), 576 linhas históricas alcançáveis na maior PO, filtros, 401/403/404 e 404 fora do escopo com grant sintético. Public URL 200 e chamada anônima 401. Faltam homologação no navegador com usuário real e os dados/regras oficiais do plano. | Homologar filtros e detalhe na URL pública; obter fonte TOTVS e decisões de negócio para itens oficiais, saldo, atendimento e rateio. |

@@ -34,11 +34,12 @@ now has M001–M009 applied and zero pending. OIDC is optional for a future phas
 entries, literal aliases and actor-scoped command receipts. It does not seed
 official data from the historical workbook. The migration conditionally grants
 the existing `import_erp_app` runtime role only the required catalog permissions;
-an empty CI database can apply it before that role is provisioned. Before
-applying M010 to the selected operational database, run
-`deploy/hostinger/validate-m010-on-copy.py` on the VPS with the staged build.
-The script creates a verified backup, restores an isolated copy, applies M010
-there, runs the real PostgreSQL route checks and drops only that copy.
+an empty CI database can apply it before that role is provisioned. On
+2026-10-01, `deploy/hostinger/validate-m010-on-copy.py` created a verified
+backup, restored an isolated copy, applied M010 there and passed the real
+PostgreSQL route checks. M010 was then applied to the selected operational
+database after another restored backup. The operational ledger is M001–M010,
+with zero pending migrations.
 
 The API never runs migrations at startup. From `apps/api`, build the API, then
 set `MIGRATION_ENV=isolated` in the shell or `.env` before running

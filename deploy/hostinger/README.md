@@ -40,6 +40,19 @@ Antes de aplicar M008, foi criado `/var/backups/import-erp/erp_po_totvs_test_202
 
 Antes de M009, foi criado e restaurado `/var/backups/import-erp/erp_po_totvs_test_20260929T201031Z.dump`, SHA256 `a6728676fd546afa40cbe195e3958da4626c67af17d710a3cc57b6a661974d7a`. O login, a troca de senha, a criação de usuário, o isolamento de papel e a revogação foram exercitados na cópia temporária; ela foi removida. M009 foi aplicada ao banco operacional e o ledger registra M001–M009, sem pendências.
 
+Em 2026-10-01, M010 foi validada primeiro em cópia restaurada, com criação,
+replay idempotente, conflito de versão, escopo e rollback da outbox. O backup
+imediatamente anterior à aplicação operacional é
+`/var/backups/import-erp/erp_po_totvs_test_20261001T113403Z.dump`, SHA-256
+`4fcc31fdb6cb530f89f308bfbd7ac7a505d078891f0c46eb7a608ff3ed204e86`;
+foi restaurado e conferiu as 9 migrations anteriores. O ledger operacional
+registra M001–M010, sem pendências. A primeira tentativa de reiniciar a API
+fez a checagem de saúde cedo demais e restaurou automaticamente o código
+anterior. A retomada esperou o serviço subir e confirmou HTTPS ready 200.
+Reversão somente da API: `/var/backups/import-erp/m010-api-af9e297-20261001T113550Z`.
+Não remova M010 do banco para reverter código: a migration é compatível com a
+API anterior e futuras escritas do catálogo precisam permanecer íntegras.
+
 Para um novo release, inspecione o estado, faça backup restaurável e use o runner explícito de `apps/api`; a API lê credenciais diferentes das migrations. Os scripts deste diretório registram a sequência executada para este release. `publish-api-traefik.sh` cria a rota HTTPS somente uma vez e recusa alterar um serviço `import_erp_edge` existente.
 
 Em 2026-09-30, a alteração de leitura RF06 foi compilada e testada em

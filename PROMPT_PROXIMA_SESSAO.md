@@ -1,39 +1,89 @@
-# Prompt para a próxima sessão — avanço das funcionalidades do ERP Comex
+# Prompt para a próxima sessão — ERP Comex após o catálogo M010
 
-Continue o desenvolvimento do ERP Comex a partir do estado real do repositório. Leia primeiro **Estado atual — 2026-09-30** em `CHECKLIST_IMPLEMENTACAO.md` e consulte `Plano_Implementacao_ERP_PO_TOTVS.md`, especialmente as seções **2.2**, **6.1**, **9**, **10**, **13.2**, **14.2**, **20**, **24.1**, **26** e **28**. Os registros antigos do checklist são históricos e podem descrever estados superados.
-
-## Objetivo
-
-Avançar para as demais funcionalidades do MVP, além da carteira de POs. Entregue incrementos operacionais completos e verificáveis, com modelo, API, tela, autorização, auditoria e testes proporcionais ao risco. Não concentre a sessão em repetir o trabalho de filtros e navegação RF06/DEV13 já publicado. Mantenha a PO como entrada central e o IP como execução logística que pode atender várias POs; uma PO pode se dividir entre vários IPs.
+Continue do estado real do repositório e leia primeiro **Estado atual —
+2026-10-01** em `CHECKLIST_IMPLEMENTACAO.md`. Consulte
+`Plano_Implementacao_ERP_PO_TOTVS.md`, em especial 2.2, 6.1, 9, 10, 13.2,
+14.2, 20, 24.1, 26 e 28. Registros antigos do checklist são históricos.
 
 ## Estado de partida
 
-- Produção: `https://fup-comex-eletra.vercel.app/`, frontend Next.js na Vercel, API Fastify e PostgreSQL na VPS Hostinger. O banco operacional se chama `erp_po_totvs_test` **apesar do sufixo `_test`**; nunca o trate como descartável. M001–M009 estão aplicadas.
-- O incremento de leitura RF06 foi publicado no commit `d6b4604`, validado na VPS e na Vercel; a documentação foi publicada no commit `26d0aad`. RF06/DEV13 continuam parciais pelos itens oficiais TOTVS, atendimento, alocações e homologação com usuário real.
-- O incremento de leitura RF04/DEV14 foi publicado no commit `50b27f9`; Vercel `dpl_DHivfZpKwMJ61zqw3HcQGQLkhWJF` está `READY` no alias público. Lista/detalhe de IPs e filas sem IP/sem PO estão disponíveis. Instalação congelada, builds, 20 testes API e teste de leitura real passaram na VPS. Não houve migration. RF03/RF04 continuam parciais por associação, solicitação nativa, edição, workflow e homologação com usuário real. Reversão da API: `/var/backups/import-erp/rf04-api-50b27f9`.
-- A carga aprovada contém 7.130 linhas de origem, 336 POs, 6.796 observações com PO, 200 IPs, 449 vínculos PO–IP, 422 custos históricos e 451 pendências de qualidade. Há 1.772 linhas sem IP e 144 sem PO, com interseção de 128; consulte o checklist antes de usar números em testes.
-- O usuário já acessou a aplicação e autorizou acesso à VPS. A chave privada SSH está neste checkout em `C:\04_Portal_analytics\ERP_interno_Import\Import_eletra\.local-keys\rf06_ed25519`; a pública está no mesmo local com extensão `.pub`. Ambas são ignoradas pelo Git. Fingerprint: `SHA256:S5y5JFC6znJh9aId1V6GLzIjYsnQ9x963Pti7wL7ivs`. Destino: `root@srv1054123.hstgr.cloud` (`72.60.250.212`). Nunca versionar nem exibir a chave privada.
-- O computador corporativo serve para editar e inspecionar. Build e testes integrados da aplicação e do banco devem ocorrer na VPS. Preserve os arquivos não rastreados `hast.md` e `api-migration-test.tar.gz`.
+- Produção: `https://fup-comex-eletra.vercel.app/`, Next.js na Vercel, Fastify
+  e PostgreSQL na VPS Hostinger. O banco operacional é `erp_po_totvs_test`
+  **apesar de `_test`**; não é descartável. M001–M010 estão aplicadas.
+- RF02/DEV06 ganhou catálogo manual revisado nos commits `af9e297`,
+  `992adf9`, `309824e` e `4463493`. Vercel
+  `dpl_B6gFiKAdHZmcyb6sXh8cbZA1np9L` está `READY` no alias público.
+  `/catalog` e a carteira pública responderam 200; rotas de catálogo anônimas,
+  401. API `systemd` ativa e HTTPS ready 200. Reversão da API:
+  `/var/backups/import-erp/m010-api-af9e297-20261001T113550Z`.
+- Backup pré-M010 restaurado:
+  `/var/backups/import-erp/erp_po_totvs_test_20261001T113403Z.dump`, SHA-256
+  `4fcc31fdb6cb530f89f308bfbd7ac7a505d078891f0c46eb7a608ff3ed204e86`.
+  A M010 passou antes em cópia isolada, inclusive 401/403/404, escopo,
+  idempotência, `If-Match`, auditoria e rollback da outbox. Builds API/web,
+  20 testes existentes e leitura `READ ONLY` operacional passaram na VPS.
+- Carga histórica inalterada: 7.130 linhas de origem, 336 POs, 6.796
+  observações com PO, 200 IPs, 449 vínculos PO–IP, 422 custos históricos e
+  451 pendências. O catálogo operacional está vazio até revisão humana real.
+  Observações da origem são candidatos, não fornecedor/produto/NCM oficiais.
+- O usuário autorizou VPS e publicação neste histórico. A chave privada SSH
+  permanece somente no checkout em
+  `C:\04_Portal_analytics\ERP_interno_Import\Import_eletra\.local-keys\rf06_ed25519`;
+  a pública tem `.pub`. Fingerprint:
+  `SHA256:S5y5JFC6znJh9aId1V6GLzIjYsnQ9x963Pti7wL7ivs`. Não mostrar nem
+  versionar a privada. Preservar os não rastreados `hast.md` e
+  `api-migration-test.tar.gz`.
+- O computador corporativo serve para edição/inspeção. Instalação congelada,
+  builds, testes integrados e banco ficam na VPS. Antes de cada migration,
+  validar uma cópia restaurada e fazer backup verificável do operacional.
 
-## Próximo incremento prioritário — RF02/DEV06 e RF05
+## Próximo incremento prioritário
 
-1. Inspecione código, migrations, permissões, origem aprovada e cadastros reais. Defina o primeiro corte vertical de importadoras, fornecedores, produtos, NCM, aliases e itens operacionais. Preserve códigos e nomes de origem, histórico e vigência. Não converta fornecedor, unidade, NCM ou saldo de uma célula em dado oficial sem confirmação.
-2. Entregue modelo, API e tela utilizáveis para o recorte sustentado pelas evidências, com autorização por importador, validação, auditoria, versões e testes. Para escrita, use `If-Match`, `Idempotency-Key` quando aplicável, motivo e transação. Migre primeiro em cópia restaurada; faça backup verificável antes de aplicar migration ao banco operacional.
-3. Mantenha PO como entrada central e IP como execução que pode atender várias POs. Cadastros e itens novos devem explicitar se são operacionais confirmados ou históricos. Não crie linhas oficiais TOTVS nem saldo até existir fonte e regra aprovadas.
-4. Verifique Master e escopo restrito em dados reais, 401/403/404, conflitos de versão, reversão e estados de carregamento/vazio/erro. Faça instalação congelada, build e testes na VPS; publique no repositório de produção somente após validação; confira serviço, Vercel e URL pública.
-5. Registre no checklist o que foi entregue e as decisões pendentes. A associação de linhas sem IP/sem PO depende de regra sobre prova da identidade de destino, tratamento de status histórico entregue/cancelado, permissão de comando e invariantes de concorrência. Não implemente associação automática sem essas decisões.
+Avance `RF03/DEV14` pela **solicitação nativa**, separada das 1.772 linhas
+históricas sem IP e 144 sem PO. Modele número interno gerado no servidor,
+importador, versão, origem operacional, permissões e trilha auditável. Entregue
+um corte vertical utilizável de modelo, API, tela e testes, com `If-Match`,
+`Idempotency-Key` nas criações/comandos, motivo e transação. Não represente
+linha histórica entregue/cancelada como nova solicitação nem crie IP fictício.
+Se itens de solicitação dependerem de unidade, finalidade, centro de custo ou
+produto ainda não confirmados, registre precisamente o bloqueio e prossiga
+com campos operacionais sustentados por evidência; não marque RF03 concluída
+por haver somente cabeçalho ou endpoint.
 
-## Sequência das próximas entregas
+Em paralelo, obtenha homologação real de leitura RF06/RF04 e do novo catálogo
+com Master e usuário restrito. O teste anterior de escopo usou grant sintético
+sobre dados reais. Identifique quem aprova mapeamento de empresa/filial TOTVS,
+identidade de fornecedor, aliases conflitantes, classificação NCM e unidades.
+Não promova células R/T/V, unidade ou saldo a dado oficial sem confirmação.
 
-Após o incremento acima, avance em cortes verticais nesta ordem, revisando dependências e prioridades com a evidência encontrada:
+## Dependências para os incrementos seguintes
 
-1. `RF03/DEV14` completo e `RF04/DEV15`: solicitação nativa, associação auditada de pendências, edição permitida e workflow de IP com pré-condições, permissões e histórico. A homologação da leitura RF06/RF04 pode ocorrer em paralelo.
-2. `RF06/DEV16`, `RF07/DEV17`, `RF11/DEV23` e `RF12/DEV24`: linhas oficiais e saldos somente após fonte TOTVS e regras confirmadas; alocações quantitativas, invoices/comparação, documentos privados e auditoria/outbox transacional.
-3. `RF08/DEV18–19`, `RF09/DEV20`, `RF10/DEV21–22`: embarques, containers, desembaraço/NF e custos/reversões/rateio. Preserve relações múltiplas e moeda; não atribua custo de IP compartilhado a cada PO sem política aprovada.
-4. `RF13` e `RF14/DEV25–28`: interface de prévia/reconciliação da importação, dashboard, relatórios e BI com grãos, moeda, cobertura, atualização e RLS comprovados. Depois, `DEV29–30`: E2E, segurança, desempenho, recuperação, treinamento e corte.
+1. Completar RF02/DEV06 com importadoras oficiais, aliases adicionais com
+   revisão de conflitos e vigência aprovada; RF05 com itens operacionais
+   explicitamente separados dos históricos e das linhas oficiais TOTVS.
+2. Completar RF03/RF04 com associação auditada e workflow de IP somente após
+   definir prova da identidade de destino, tratamento de status histórico
+   entregue/cancelado, permissão do comando e invariantes concorrentes.
+3. RF06/DEV16, RF07/DEV17, RF11/DEV23 e RF12/DEV24: linhas oficiais e saldos
+   após fonte TOTVS aprovada; alocação quantitativa, invoices/comparação,
+   documentos privados e auditoria/outbox transacional.
+4. RF08/DEV18–19, RF09/DEV20 e RF10/DEV21–22: embarques, containers,
+   desembaraço/NF, custos/reversões/rateio. Custos de IP compartilhado
+   permanecem no IP até aprovar política de alocação e moeda.
+5. RF13, RF14/DEV25–28 e DEV29–30: prévia/reconciliação de importação,
+   dashboard/BI com grão, moeda, atualização e RLS, depois E2E, segurança,
+   recuperação, treinamento e corte.
 
-Para cada entrega, aplique a **definição de pronto da seção 28**. Se uma dependência de negócio bloquear parte do módulo, entregue a parte sustentada pelos dados, documente o bloqueio específico e prossiga para outra funcionalidade viável. Não marque RF/DEV como concluído apenas por existir endpoint ou tela.
+Mantenha a PO como entrada central e o IP como execução logística que pode
+atender várias POs; uma PO pode dividir-se entre vários IPs. Para cada entrega,
+aplique a definição de pronto da seção 28. Se a decisão de negócio bloquear
+parte do módulo, entregue a parte comprovável e registre a dependência sem
+inventar autoridade para dados da origem.
 
-## Fechamento da sessão
+## Fechamento da próxima sessão
 
-Atualize `CHECKLIST_IMPLEMENTACAO.md` com status, commits, migrations, testes, deploy, casos de aceite e próximos passos. Atualize este prompt para a sessão seguinte, retirando tarefas concluídas. Informe ao usuário o que já pode testar na URL pública, o que depende de confirmação de negócio e a localização da chave SSH para rastreio, sem mostrar seu conteúdo.
+Atualize `CHECKLIST_IMPLEMENTACAO.md` com status, commits, migrations, testes,
+deploy, casos de aceite e decisões pendentes. Atualize este prompt retirando
+tarefas concluídas. Informe o que o usuário pode testar na URL pública e o que
+ainda requer confirmação de negócio. Registre o caminho da chave SSH para
+rastreio, sem mostrar seu conteúdo.
