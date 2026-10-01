@@ -84,7 +84,7 @@ export default function PortfolioPage() {
     <header className="page-header">
       <p className="eyebrow">ERP Comex</p><h1>Carteira de POs TOTVS</h1>
       <p>Uma linha por pedido. Abra a PO para consultar observações históricas, IPs vinculados e pendências.</p>
-      <Link className="text-link" href="/requests">Solicitações →</Link> · <Link className="text-link" href="/processes">Consultar IPs →</Link> · <Link className="text-link" href="/pending-import-items">Linhas sem IP →</Link> · <Link className="text-link" href="/unassigned-po-items">Linhas sem PO →</Link> · <Link className="text-link" href="/quality">Revisar qualidade →</Link> · <Link className="text-link" href="/catalog">Cadastros →</Link>
+      <Link className="text-link" href="/source-audit">Tabela de auditoria →</Link> · <Link className="text-link" href="/requests">Solicitações →</Link> · <Link className="text-link" href="/processes">Consultar IPs →</Link> · <Link className="text-link" href="/pending-import-items">Linhas sem IP →</Link> · <Link className="text-link" href="/unassigned-po-items">Linhas sem PO →</Link> · <Link className="text-link" href="/quality">Revisar qualidade →</Link> · <Link className="text-link" href="/catalog">Cadastros →</Link>
     </header>
     <section className="card">
       <form className="portfolio-filter" onSubmit={filter}>

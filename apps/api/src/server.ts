@@ -12,6 +12,7 @@ import { registerDataIssueRoutes } from "./data-issues.js";
 import { registerAdminUserRoutes } from "./admin-users.js";
 import { registerCatalogRoutes } from "./catalog.js";
 import { registerRequestRoutes } from "./requests.js";
+import { registerSourceAuditRoutes } from "./source-audit.js";
 
 const gatewayToken = process.env.GATEWAY_TOKEN;
 const connectionString = process.env.DATABASE_URL;
@@ -70,6 +71,7 @@ await registerDataIssueRoutes(app, pool);
 await registerAdminUserRoutes(app, pool);
 await registerCatalogRoutes(app, pool);
 await registerRequestRoutes(app, pool);
+await registerSourceAuditRoutes(app, pool);
 
 app.get("/health/live", async () => ({ status: "ok" }));
 
