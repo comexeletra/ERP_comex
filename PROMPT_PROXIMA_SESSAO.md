@@ -26,6 +26,14 @@ Continue do estado real do repositório e leia primeiro **Estado atual —
   `394c5def6653be18a4c74f749974603167611673df8b35f762850fb66e7e84fb`;
   rollback do código da API em
   `/var/backups/import-erp/rf03-m011-api-20261001T121107Z`.
+- RF13 recebeu a visão `/source-audit` no commit `1c718ab`, já publicado na
+  produção. A tela responde 200; mostra as linhas das duas abas em grade,
+  filtros por coluna, busca, categorias de gaps, indicadores e paginação. A
+  API read-only respeita o escopo de importador; chamada sem sessão retorna
+  401. Serviço ativo e ready HTTPS 200. Sem migration ou alteração do banco;
+  rollback da API em `/var/backups/import-erp/source-audit-api-20261001T125916Z`.
+  O registro da entrega e seus limites está em `CHECKLIST_IMPLEMENTACAO.md` e
+  `docs/AUDITORIA_TABELA_ORIGEM.md`.
 - Backup pré-M010 restaurado:
   `/var/backups/import-erp/erp_po_totvs_test_20261001T113403Z.dump`, SHA-256
   `4fcc31fdb6cb530f89f308bfbd7ac7a505d078891f0c46eb7a608ff3ed204e86`.
