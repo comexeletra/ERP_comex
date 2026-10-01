@@ -2,10 +2,15 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { apiFetch } from "../../lib/api";
 
 type Sheet = "all" | "Pré Embarque" | "Pós Embarque";
 type Gap = "all" | "without-ip" | "without-po" | "quality" | "any";
+type Direction = "asc" | "desc";
+type ColumnFilter = { text?: string; values?: string[]; exclude?: boolean };
+type ColumnFilters = Record<string, ColumnFilter>;
+type SortState = { column: string; direction: Direction } | null;
 type SourceRow = {
   id: string; batchId: string; sourceSheetName: string; sourceRowNumber: number;
   importer: string; sourceValues: Record<string, string | null>; cellErrors: string[];
@@ -19,6 +24,9 @@ type AuditResult = {
   columns: string[]; columnHeaders: Record<string, string>; items: SourceRow[];
 };
 type Importer = { code: string };
+type ValueOption = { value: string; rowCount: number };
+type ValueOptionsResult = { items: ValueOption[]; totalCount: number; hasMore: boolean };
+type GridFilters = typeof emptyFilters;
 
 const emptyFilters = { importer: "", search: "", gap: "all" as Gap };
 const pageSizeOptions = [25, 50, 100];
@@ -35,26 +43,56 @@ const gapOptions: Array<{ value: Gap; label: string }> = [
   { value: "quality", label: "Com problema de qualidade" },
 ];
 
+function readColumnFilters(raw: string | null): ColumnFilters {
+  try {
+    const parsed: unknown = JSON.parse(raw ?? "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).flatMap(([column, value]) => {
+      if (typeof value === "string") return [[column, { text: value }]];
+      if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+      const filter = value as Partial<ColumnFilter>;
+      return [[column, {
+        ...(typeof filter.text === "string" ? { text: filter.text } : {}),
+        ...(Array.isArray(filter.values) && filter.values.every(item => typeof item === "string") ? { values: filter.values } : {}),
+        ...(typeof filter.exclude === "boolean" ? { exclude: filter.exclude } : {}),
+      }]];
+    }));
+  } catch { return {}; }
+}
+
 function readLocation() {
   const params = new URLSearchParams(window.location.search);
-  let columnFilters: Record<string, string> = {};
-  try { columnFilters = JSON.parse(params.get("filters") ?? "{}"); } catch { /* use empty filters */ }
+  const requestedSheet = params.get("sheet");
+  const requestedGap = params.get("gap");
+  const sortColumn = params.get("sortColumn");
+  const sortDirection = params.get("sortDirection");
   return {
-    sheet: (sheetOptions.some(option => option.value === params.get("sheet")) ? params.get("sheet") : "Pré Embarque") as Sheet,
+    sheet: (sheetOptions.some(option => option.value === requestedSheet) ? requestedSheet : "Pré Embarque") as Sheet,
     filters: { importer: params.get("importer") ?? "", search: params.get("search") ?? "",
-      gap: (gapOptions.some(option => option.value === params.get("gap")) ? params.get("gap") : "all") as Gap },
-    columnFilters: columnFilters && typeof columnFilters === "object" && !Array.isArray(columnFilters) ? columnFilters : {},
+      gap: (gapOptions.some(option => option.value === requestedGap) ? requestedGap : "all") as Gap },
+    columnFilters: readColumnFilters(params.get("filters")),
+    sort: sortColumn && (sortDirection === "asc" || sortDirection === "desc")
+      ? { column: sortColumn, direction: sortDirection } as SortState : null,
     page: Math.max(1, Number(params.get("page")) || 1),
     pageSize: pageSizeOptions.includes(Number(params.get("pageSize"))) ? Number(params.get("pageSize")) : 50,
   };
 }
 
-function makeQuery(sheet: Sheet, filters: typeof emptyFilters, columnFilters: Record<string, string>, page: number, pageSize: number) {
+function makeQuery(sheet: Sheet, filters: GridFilters, columnFilters: ColumnFilters, page: number, pageSize: number, sort: SortState) {
   const params = new URLSearchParams({ sheet, page: String(page), pageSize: String(pageSize), gap: filters.gap });
   if (filters.importer) params.set("importer", filters.importer);
   if (filters.search) params.set("search", filters.search);
-  const activeColumnFilters = Object.fromEntries(Object.entries(columnFilters).filter(([, value]) => value.trim()));
+  const activeColumnFilters = Object.fromEntries(Object.entries(columnFilters).filter(([, filter]) =>
+    Boolean(filter.text?.trim()) || filter.values !== undefined));
   if (Object.keys(activeColumnFilters).length) params.set("filters", JSON.stringify(activeColumnFilters));
+  if (sort) { params.set("sortColumn", sort.column); params.set("sortDirection", sort.direction); }
+  return params;
+}
+
+function makeValueQuery(sheet: Sheet, filters: GridFilters, columnFilters: ColumnFilters, column: string, valueSearch: string) {
+  const params = makeQuery(sheet, filters, columnFilters, 1, 50, null);
+  params.set("column", column);
+  if (valueSearch.trim()) params.set("valueSearch", valueSearch.trim());
   return params;
 }
 
@@ -64,12 +102,24 @@ function display(value: unknown): string {
   return String(value);
 }
 
+function hasColumnFilter(filter: ColumnFilter | undefined): boolean {
+  return Boolean(filter?.text?.trim()) || filter?.values !== undefined;
+}
+
+function selectedOption(filter: ColumnFilter | undefined, value: string): boolean {
+  if (filter?.values === undefined) return true;
+  const found = filter.values.includes(value);
+  return filter.exclude ? !found : found;
+}
+
 export default function SourceAuditPage() {
   const [sheet, setSheet] = useState<Sheet>("Pré Embarque");
-  const [draft, setDraft] = useState(emptyFilters);
-  const [applied, setApplied] = useState(emptyFilters);
-  const [draftColumnFilters, setDraftColumnFilters] = useState<Record<string, string>>({});
-  const [appliedColumnFilters, setAppliedColumnFilters] = useState<Record<string, string>>({});
+  const [draft, setDraft] = useState<GridFilters>(emptyFilters);
+  const [applied, setApplied] = useState<GridFilters>(emptyFilters);
+  const [draftColumnFilters, setDraftColumnFilters] = useState<ColumnFilters>({});
+  const [appliedColumnFilters, setAppliedColumnFilters] = useState<ColumnFilters>({});
+  const [draftSort, setDraftSort] = useState<SortState>(null);
+  const [sort, setSort] = useState<SortState>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [importers, setImporters] = useState<Importer[]>([]);
@@ -78,11 +128,18 @@ export default function SourceAuditPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [retry, setRetry] = useState(0);
+  const [activeColumn, setActiveColumn] = useState<string>();
+  const [filterPosition, setFilterPosition] = useState<{ left: number; top: number }>();
+  const [valueSearch, setValueSearch] = useState("");
+  const [valueOptions, setValueOptions] = useState<ValueOptionsResult>();
+  const [loadingOptions, setLoadingOptions] = useState(false);
+  const [optionsError, setOptionsError] = useState<string>();
 
   useEffect(() => {
     const state = readLocation();
     setSheet(state.sheet); setDraft(state.filters); setApplied(state.filters);
     setDraftColumnFilters(state.columnFilters); setAppliedColumnFilters(state.columnFilters);
+    setDraftSort(state.sort); setSort(state.sort);
     setPage(state.page); setPageSize(state.pageSize); setReady(true);
     apiFetch("/api/v1/importers").then(async response => {
       if (!response.ok) return;
@@ -93,7 +150,7 @@ export default function SourceAuditPage() {
   useEffect(() => {
     if (!ready) return;
     const controller = new AbortController();
-    const query = makeQuery(sheet, applied, appliedColumnFilters, page, pageSize);
+    const query = makeQuery(sheet, applied, appliedColumnFilters, page, pageSize, sort);
     setLoading(true); setError(undefined); setResult(undefined);
     apiFetch(`/api/v1/source-rows?${query}`, { signal: controller.signal })
       .then(async response => {
@@ -106,37 +163,108 @@ export default function SourceAuditPage() {
       .catch((reason: unknown) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Erro inesperado."); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [sheet, applied, appliedColumnFilters, page, pageSize, ready, retry]);
+  }, [sheet, applied, appliedColumnFilters, page, pageSize, sort, ready, retry]);
 
-  function updateUrl(nextSheet: Sheet, filters: typeof emptyFilters, columns: Record<string, string>, nextPage: number, size: number) {
-    window.history.replaceState(null, "", `/source-audit?${makeQuery(nextSheet, filters, columns, nextPage, size)}`);
+  useEffect(() => {
+    if (!ready || !activeColumn) { setValueOptions(undefined); return; }
+    const controller = new AbortController();
+    setLoadingOptions(true); setOptionsError(undefined);
+    const timeout = window.setTimeout(() => {
+      const query = makeValueQuery(sheet, applied, appliedColumnFilters, activeColumn, valueSearch);
+      apiFetch(`/api/v1/source-rows/column-values?${query}`, { signal: controller.signal })
+        .then(async response => {
+          if (response.status === 401) throw new Error("Sua sessão expirou. Entre novamente.");
+          if (!response.ok) throw new Error("Não foi possível carregar os valores desta coluna.");
+          return await response.json() as ValueOptionsResult;
+        })
+        .then(data => { if (!controller.signal.aborted) setValueOptions(data); })
+        .catch((reason: unknown) => { if (!controller.signal.aborted) setOptionsError(reason instanceof Error ? reason.message : "Erro inesperado."); })
+        .finally(() => { if (!controller.signal.aborted) setLoadingOptions(false); });
+    }, 200);
+    return () => { window.clearTimeout(timeout); controller.abort(); };
+  }, [activeColumn, applied, appliedColumnFilters, ready, retry, sheet, valueSearch]);
+
+  useEffect(() => {
+    if (!activeColumn) return;
+    const closeOnScroll = () => setActiveColumn(undefined);
+    window.addEventListener("scroll", closeOnScroll, true);
+    window.addEventListener("resize", closeOnScroll);
+    return () => {
+      window.removeEventListener("scroll", closeOnScroll, true);
+      window.removeEventListener("resize", closeOnScroll);
+    };
+  }, [activeColumn]);
+
+  function updateUrl(nextSheet: Sheet, filters: GridFilters, columns: ColumnFilters, nextPage: number, size: number, nextSort: SortState) {
+    window.history.replaceState(null, "", `/source-audit?${makeQuery(nextSheet, filters, columns, nextPage, size, nextSort)}`);
   }
   function applyFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextFilters = { importer: draft.importer, search: draft.search.trim(), gap: draft.gap };
-    setApplied(nextFilters); setAppliedColumnFilters(draftColumnFilters); setPage(1);
-    updateUrl(sheet, nextFilters, draftColumnFilters, 1, pageSize);
+    setApplied(nextFilters); setAppliedColumnFilters(draftColumnFilters); setSort(draftSort); setPage(1);
+    updateUrl(sheet, nextFilters, draftColumnFilters, 1, pageSize, draftSort);
   }
   function changeSheet(nextSheet: Sheet) {
-    setSheet(nextSheet); setPage(1);
-    const nextColumns = {};
-    setDraftColumnFilters(nextColumns); setAppliedColumnFilters(nextColumns);
-    updateUrl(nextSheet, applied, nextColumns, 1, pageSize);
+    const nextColumns: ColumnFilters = {};
+    setSheet(nextSheet); setPage(1); setDraftColumnFilters(nextColumns); setAppliedColumnFilters(nextColumns);
+    setDraftSort(null); setSort(null);
+    updateUrl(nextSheet, applied, nextColumns, 1, pageSize, null);
   }
   function clearFilters() {
     setDraft(emptyFilters); setApplied(emptyFilters); setDraftColumnFilters({}); setAppliedColumnFilters({});
-    setPage(1); updateUrl(sheet, emptyFilters, {}, 1, pageSize);
+    setDraftSort(null); setSort(null); setPage(1);
+    updateUrl(sheet, emptyFilters, {}, 1, pageSize, null);
   }
   function goToPage(nextPage: number) {
-    setPage(nextPage); updateUrl(sheet, applied, appliedColumnFilters, nextPage, pageSize);
+    setPage(nextPage); updateUrl(sheet, applied, appliedColumnFilters, nextPage, pageSize, sort);
   }
   function changePageSize(size: number) {
-    setPageSize(size); setPage(1); updateUrl(sheet, applied, appliedColumnFilters, 1, size);
+    setPageSize(size); setPage(1); updateUrl(sheet, applied, appliedColumnFilters, 1, size, sort);
+  }
+  function openColumnFilter(column: string, event: React.MouseEvent<HTMLButtonElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const width = Math.min(360, window.innerWidth - 24);
+    const height = Math.min(500, window.innerHeight - 24);
+    const left = Math.min(Math.max(12, rect.left), Math.max(12, window.innerWidth - width - 12));
+    const top = rect.bottom + height + 10 < window.innerHeight
+      ? rect.bottom + 6 : Math.max(12, rect.top - height - 6);
+    setFilterPosition({ left, top }); setValueSearch(""); setActiveColumn(column);
+  }
+  function updateColumnFilter(column: string, update: (current: ColumnFilter) => ColumnFilter) {
+    setDraftColumnFilters(current => {
+      const next = { ...current };
+      const changed = update(next[column] ?? {});
+      if (!changed.text?.trim() && changed.values === undefined) delete next[column];
+      else next[column] = changed;
+      return next;
+    });
+  }
+  function toggleOption(column: string, value: string, checked: boolean) {
+    updateColumnFilter(column, current => {
+      if (current.values === undefined) {
+        return checked ? current : { ...current, values: [value], exclude: true };
+      }
+      const values = new Set(current.values);
+      if (current.exclude) checked ? values.delete(value) : values.add(value);
+      else checked ? values.add(value) : values.delete(value);
+      return { ...current, values: [...values], exclude: current.exclude ?? false };
+    });
+  }
+  function applyColumnFilter() {
+    const nextSort = draftSort;
+    setAppliedColumnFilters(draftColumnFilters); setSort(nextSort); setPage(1);
+    updateUrl(sheet, applied, draftColumnFilters, 1, pageSize, nextSort);
+    setActiveColumn(undefined);
+  }
+  function clearColumnFilter(column: string) {
+    setDraftColumnFilters(current => { const next = { ...current }; delete next[column]; return next; });
   }
 
   const totalPages = result ? Math.ceil(result.totalCount / pageSize) : 0;
   const columns = result?.columns ?? [];
-  const activeFilterCount = useMemo(() => Object.values(appliedColumnFilters).filter(Boolean).length, [appliedColumnFilters]);
+  const activeFilterCount = useMemo(() => Object.values(appliedColumnFilters).filter(hasColumnFilter).length, [appliedColumnFilters]);
+  const activeColumnFilter = activeColumn ? draftColumnFilters[activeColumn] : undefined;
+  const options = valueOptions?.items ?? [];
 
   return <main className="shell source-audit-shell">
     <header className="page-header">
@@ -165,7 +293,7 @@ export default function SourceAuditPage() {
         <button className="button" type="submit">Aplicar filtros</button>
         <button className="button secondary" type="button" onClick={clearFilters}>Limpar</button>
       </form>
-      <p className="muted source-filter-hint">Os filtros nas colunas procuram o texto digitado e podem ser combinados entre si. {activeFilterCount} filtro(s) de coluna aplicado(s).</p>
+      <p className="muted source-filter-hint">Clique no filtro de cada cabeçalho para escolher valores ou ordenar. O campo de texto filtra por trecho; {activeFilterCount} filtro(s) de coluna aplicado(s).</p>
     </section>
 
     <section className="metric-grid source-audit-metrics" aria-live="polite">
@@ -197,6 +325,7 @@ export default function SourceAuditPage() {
                   <th className="source-pin source-pin-3" scope="col">Gap de auditoria</th>
                   {columns.map(column => <th key={column} scope="col" title={`Coluna Excel ${column}: ${result.columnHeaders[column] ?? ""}`}>
                     <span className="source-excel-col">{column}</span>{result.columnHeaders[column] || "(sem cabeçalho)"}
+                    {sort?.column === column && <span className="source-sort-indicator" aria-label={sort.direction === "asc" ? "Ordem crescente" : "Ordem decrescente"}>{sort.direction === "asc" ? " ▲" : " ▼"}</span>}
                   </th>)}
                 </tr>
                 <tr className="source-grid-filters">
@@ -204,10 +333,11 @@ export default function SourceAuditPage() {
                   <th className="source-pin source-pin-2"><span className="sr-only">Sem filtro para planilha</span></th>
                   <th className="source-pin source-pin-3"><span className="sr-only">Sem filtro para gaps</span></th>
                   {columns.map(column => <th key={column}>
-                    <input aria-label={`Filtrar coluna ${column} ${result.columnHeaders[column] ?? ""}`} value={draftColumnFilters[column] ?? ""}
-                      onChange={event => setDraftColumnFilters(current => ({ ...current, [column]: event.target.value }))}
-                      onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); setAppliedColumnFilters(draftColumnFilters); setPage(1); updateUrl(sheet, applied, draftColumnFilters, 1, pageSize); } }}
-                      placeholder="Filtrar…" />
+                    <button type="button" className={hasColumnFilter(appliedColumnFilters[column]) ? "source-filter-trigger active" : "source-filter-trigger"}
+                      aria-label={`Abrir filtro da coluna ${column} ${result.columnHeaders[column] ?? ""}`}
+                      aria-expanded={activeColumn === column} onClick={event => openColumnFilter(column, event)}>
+                      <span aria-hidden="true">▼</span> Filtro{hasColumnFilter(appliedColumnFilters[column]) ? " ·" : ""}
+                    </button>
                   </th>)}
                 </tr>
               </thead>
@@ -232,5 +362,53 @@ export default function SourceAuditPage() {
         </nav>}
       </>}
     </section>
+
+    {activeColumn && filterPosition && typeof document !== "undefined" && createPortal(<>
+      <button className="source-filter-backdrop" aria-label="Fechar filtro" onClick={() => setActiveColumn(undefined)} />
+      <section className="source-filter-popover" role="dialog" aria-label={`Filtro da coluna ${activeColumn}`} style={filterPosition}>
+        <div className="source-filter-title"><strong>{activeColumn} · {result?.columnHeaders[activeColumn]}</strong>
+          <button type="button" className="source-filter-close" onClick={() => setActiveColumn(undefined)} aria-label="Fechar">×</button>
+        </div>
+        <div className="source-sort-actions" aria-label="Ordenar valores">
+          <button type="button" className={draftSort?.column === activeColumn && draftSort.direction === "asc" ? "selected" : ""}
+            onClick={() => setDraftSort({ column: activeColumn, direction: "asc" })}>↑ Ordem crescente</button>
+          <button type="button" className={draftSort?.column === activeColumn && draftSort.direction === "desc" ? "selected" : ""}
+            onClick={() => setDraftSort({ column: activeColumn, direction: "desc" })}>↓ Ordem decrescente</button>
+        </div>
+        <label className="source-filter-text-label">Filtrar por texto (contém)
+          <input autoFocus value={activeColumnFilter?.text ?? ""}
+            onChange={event => updateColumnFilter(activeColumn, current => ({ ...current, text: event.target.value }))}
+            placeholder="Digite um valor ou trecho" />
+        </label>
+        <label className="source-filter-text-label">Localizar valores na lista
+          <input value={valueSearch} onChange={event => setValueSearch(event.target.value)} placeholder="Pesquisar possibilidades…" />
+        </label>
+        <div className="source-value-actions">
+          <button type="button" onClick={() => updateColumnFilter(activeColumn, current => ({ text: current.text }))}>Selecionar todos</button>
+          <button type="button" onClick={() => updateColumnFilter(activeColumn, current => ({ ...current, values: [], exclude: false }))}>Desmarcar todos</button>
+        </div>
+        <div className="source-value-list" aria-live="polite">
+          {loadingOptions && <p role="status">Carregando valores…</p>}
+          {optionsError && <p className="source-option-error" role="alert">{optionsError}</p>}
+          {!loadingOptions && !optionsError && options.length === 0 && <p>Nenhum valor encontrado.</p>}
+          {!loadingOptions && !optionsError && options.map(option => {
+            const checked = selectedOption(activeColumnFilter, option.value);
+            const canAdd = checked || (activeColumnFilter?.values?.length ?? 0) < 100;
+            return <label key={option.value || "__blank__"} className="source-value-option">
+              <input type="checkbox" checked={checked} disabled={!canAdd}
+                onChange={event => toggleOption(activeColumn, option.value, event.target.checked)} />
+              <span>{option.value === "" ? "(em branco)" : option.value}</span>
+              <small>{option.rowCount ? option.rowCount.toLocaleString("pt-BR") : ""}</small>
+            </label>;
+          })}
+          {valueOptions?.hasMore && <p className="source-option-hint">Há mais valores. Pesquise acima para localizar outros.</p>}
+          {!loadingOptions && activeColumnFilter?.values?.length === 100 && <p className="source-option-hint">Limite de 100 valores por filtro. Use a busca textual para intervalos maiores.</p>}
+        </div>
+        <div className="source-filter-footer">
+          <button type="button" className="button secondary" onClick={() => clearColumnFilter(activeColumn)}>Limpar coluna</button>
+          <button type="button" className="button" onClick={applyColumnFilter}>Aplicar</button>
+        </div>
+      </section>
+    </>, document.body)}
   </main>;
 }
