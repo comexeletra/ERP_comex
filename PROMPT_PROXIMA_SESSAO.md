@@ -40,9 +40,16 @@ Continue do estado real do repositório e leia primeiro **Estado atual —
   backup de reversão em `/var/backups/import-erp/source-audit-api-20261001T131042Z`.
 - A solicitação seguinte adicionou filtros no estilo Excel. Commit `187f0d4`
   publicado: o menu por coluna lista valores distintos selecionáveis, busca
-  opções, mantém o filtro de texto e ordena crescente/decrescente. A API foi
-  compilada e as opções/seleção/ordenação passaram em handler real na VPS em
-  transação `READ ONLY` com escopo ELETRA CWB. Backup de reversão da API:
+  opções, mantém o filtro de texto e ordena crescente/decrescente. A captura do
+  usuário mostrou HTTP 400 ao carregar as opções: o cliente enviava `page` e
+  `pageSize`, parâmetros rejeitados pelo schema estrito desse endpoint. Commit
+  `f024bba` remove esses parâmetros da chamada, preservando aba, importador,
+  busca, gaps e filtros ativos; deployment Vercel
+  `dpl_ChT9kHNabdkQZZvSFmY9Eqk4diei` está `READY` com alias público. Na próxima
+  conferência, atualizar `/source-audit` e abrir filtros por coluna para
+  confirmar que as opções carregam. A API original já havia sido compilada e
+  opções/seleção/ordenação passaram em handler real na VPS em transação
+  `READ ONLY` com escopo ELETRA CWB. Backup de reversão da API:
   `/var/backups/import-erp/source-audit-api-20261001T140519Z`.
 - Backup pré-M010 restaurado:
   `/var/backups/import-erp/erp_po_totvs_test_20261001T113403Z.dump`, SHA-256
