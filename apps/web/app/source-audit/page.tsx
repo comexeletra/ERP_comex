@@ -90,7 +90,12 @@ function makeQuery(sheet: Sheet, filters: GridFilters, columnFilters: ColumnFilt
 }
 
 function makeValueQuery(sheet: Sheet, filters: GridFilters, columnFilters: ColumnFilters, column: string, valueSearch: string) {
-  const params = makeQuery(sheet, filters, columnFilters, 1, 50, null);
+  const params = new URLSearchParams({ sheet, gap: filters.gap });
+  if (filters.importer) params.set("importer", filters.importer);
+  if (filters.search) params.set("search", filters.search);
+  const activeColumnFilters = Object.fromEntries(Object.entries(columnFilters).filter(([, filter]) =>
+    Boolean(filter.text?.trim()) || filter.values !== undefined));
+  if (Object.keys(activeColumnFilters).length) params.set("filters", JSON.stringify(activeColumnFilters));
   params.set("column", column);
   if (valueSearch.trim()) params.set("valueSearch", valueSearch.trim());
   return params;
