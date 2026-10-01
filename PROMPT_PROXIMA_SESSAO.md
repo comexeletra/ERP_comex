@@ -51,6 +51,12 @@ Continue do estado real do repositório e leia primeiro **Estado atual —
   opções/seleção/ordenação passaram em handler real na VPS em transação
   `READ ONLY` com escopo ELETRA CWB. Backup de reversão da API:
   `/var/backups/import-erp/source-audit-api-20261001T140519Z`.
+- O usuário reportou que o menu fechava ao clicar na barra de rolagem ou usar a
+  roda do mouse. O listener global de `scroll` também capturava a rolagem dentro
+  do próprio menu; commit `f868848` mantém o menu aberto quando o evento começa
+  no popover e fecha ao rolar fora dele. Deployment
+  `dpl_5HFsBrG5Pd54KJVq2DNgRLBDhBcT` está `READY` com alias público. Pedir
+  conferência de rolagem da lista na sessão autenticada.
 - Backup pré-M010 restaurado:
   `/var/backups/import-erp/erp_po_totvs_test_20261001T113403Z.dump`, SHA-256
   `4fcc31fdb6cb530f89f308bfbd7ac7a505d078891f0c46eb7a608ff3ed204e86`.
