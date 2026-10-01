@@ -9,16 +9,18 @@ export type Permission =
   | "quality.resolve"
   | "catalog.read"
   | "catalog.write"
+  | "requests.read"
+  | "requests.write"
   | "users.manage";
 
 type Role = "Master" | "Administrador" | "Importação" | "Compras" | "Fiscal" | "Logística" | "Gestor" | "Consulta";
 
 const rolePermissions: Readonly<Record<Role, ReadonlySet<Permission>>> = {
-  Master: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "users.manage"]),
-  Administrador: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write"]),
-  Importação: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read"]),
-  Compras: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write"]),
-  Fiscal: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write"]),
+  Master: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "requests.read", "requests.write", "users.manage"]),
+  Administrador: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "requests.read", "requests.write"]),
+  Importação: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "requests.read", "requests.write"]),
+  Compras: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "requests.read"]),
+  Fiscal: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "requests.read"]),
   Logística: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read"]),
   Gestor: new Set(["purchase-orders.read", "processes.read", "quality.read", "catalog.read"]),
   Consulta: new Set(["purchase-orders.read", "processes.read", "quality.read", "catalog.read"]),

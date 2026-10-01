@@ -27,6 +27,14 @@ table { width: 100%; border-collapse: collapse; min-width: 720px; } th { color: 
 .portfolio-filter label { color: #526371; display: grid; font-size: .85rem; font-weight: 700; gap: 6px; }
 .portfolio-filter input { border: 1px solid #b7c5cf; border-radius: 7px; font: inherit; min-width: 0; padding: 9px; width: 100%; }
 .portfolio-filter .secondary { margin-left: 0; }
+.request-form { max-width: 900px; }
+.request-form h3 { margin: 4px 0 0; }
+.request-form select, .request-form textarea, .request-form input { border: 1px solid #b7c5cf; border-radius: 7px; font: inherit; padding: 10px; width: 100%; }
+.request-form textarea { min-height: 78px; resize: vertical; }
+.request-line { border: 1px solid #dce4eb; border-radius: 8px; display: grid; gap: 14px; padding: 16px; }
+.request-line legend { color: #086d7e; font-weight: 700; padding: 0 6px; }
+.request-line label { color: #526371; display: grid; font-size: .85rem; font-weight: 700; gap: 6px; }
+.success { background: #e2f5e8; color: #176637; }
 .table-scroll { overflow-x: auto; }
 button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid #e88415; outline-offset: 2px; }
 @media (max-width: 1100px) { .portfolio-filter { grid-template-columns: repeat(2, minmax(180px, 1fr)); } }

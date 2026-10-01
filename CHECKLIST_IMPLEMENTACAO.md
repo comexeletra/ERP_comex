@@ -34,16 +34,17 @@ computador corporativo.
   200 autenticado/401 anônimo e o ready HTTPS respondeu 200. A URL pública
   respondeu 200 para `/` e `/catalog`; chamadas anônimas a
   `/api/v1/importers` e `/api/v1/suppliers/candidates` responderam 401.
-- **M010 aplicada ao banco operacional:** `M010_catalog_review.sql` cria
+- **M010 aplicada ao banco operacional antes de M011:** `M010_catalog_review.sql` cria
   `catalog.entry`, alias literal e recibo de idempotência, com concessões
-  restritas à role de runtime. O ledger está em M001–M010, zero pendências. O
+  restritas à role de runtime. Naquele release, o ledger estava em M001–M010;
+  M011 foi aplicada depois e o ledger atual é M001–M011, sem pendências. O
   backup imediatamente anterior,
   `/var/backups/import-erp/erp_po_totvs_test_20261001T113403Z.dump`, SHA-256
   `4fcc31fdb6cb530f89f308bfbd7ac7a505d078891f0c46eb7a608ff3ed204e86`,
   foi restaurado e conferiu 9 migrations antes da aplicação. A cópia de
   reversão do código da API está em
-  `/var/backups/import-erp/m010-api-af9e297-20261001T113550Z`. M010 deve
-  permanecer aplicada se apenas o código da API for revertido.
+  `/var/backups/import-erp/m010-api-af9e297-20261001T113550Z`. M010 e M011
+  permanecem aplicadas se apenas o código da API for revertido.
 - **Corte RF02/DEV06 entregue parcialmente:** `/catalog` mostra os três
   importadores observados em POs, candidatos históricos de fornecedor (R),
   produto (T) e NCM (V), com contagem e aba/linha de exemplo, separados de
@@ -78,14 +79,34 @@ computador corporativo.
   nessa tentativa. A segunda aplicou M010, mas a checagem imediata de saúde
   encontrou o serviço ainda iniciando e restaurou a API antiga. O script foi
   corrigido para aguardar ready; a retomada instalou a API com sucesso.
+- **RF03/DEV14 — solicitação nativa (2026-10-01):** M011 cria cabeçalho e
+  itens `NATIVE`, sequência de número gerado pelo servidor, versão, autor,
+  importador, referência do solicitante, motivo obrigatório, descrições e
+  finalidade/centro de custo livres opcionais. API lista, detalha e cria com
+  escopo; criação exige `Idempotency-Key`, grava recibo, auditoria e outbox na
+  mesma transação e retorna ETag. `/requests` oferece formulário e lista
+  recente, sem criar registros a partir do histórico. M011 passou em cópia
+  restaurada e recebeu backup operacional verificável:
+  `/var/backups/import-erp/erp_po_totvs_test_20261001T121101Z.dump`, SHA-256
+  `394c5def6653be18a4c74f749974603167611673df8b35f762850fb66e7e84fb`;
+  ledger M001–M011/0 pendentes. API ativa, readiness HTTPS 200 e rota anônima
+  401. Rollback do código:
+  `/var/backups/import-erp/rf03-m011-api-20261001T121107Z`. Build API e
+  `tsc --noEmit` web passaram; 23 testes API passaram localmente e no pacote
+  VPS. `next build` compilou a tela, mas o typecheck do Next falhou ao tentar
+  iniciar subprocesso (`spawn EPERM`) neste computador; o `tsc --noEmit`
+  independente passou. Nenhuma solicitação de demonstração foi gravada.
+  RF03 permanece parcial: aguardam publicação da tela, homologação de
+  navegador por Master/usuário restrito, workflow/edição com `If-Match` e
+  decisões de produto, quantidade/unidade, finalidade e centro de custo.
 - **Estados ainda parciais:** RF02/DEV06 `[-]` porque importadoras não têm
   mapeamento oficial empresa/filial nem CRUD, aliases adicionais e conflitos
   de atributos ainda não têm fluxo de revisão, e nenhum cadastro real foi
   homologado por usuário. RF05 `[-]`: observações históricas seguem acessíveis
   na PO, mas não há linha oficial TOTVS nem item operacional novo; unidade,
   finalidade, centro de custo e fonte de quantidade/preço requerem definição
-  e confirmação. RF03/RF04 continuam `[-]` por solicitação nativa, associação
-  auditada, edição e workflow. A homologação em navegador com Master e usuário
+  e confirmação. RF03/RF04 continuam `[-]` por associação legada, edição e
+  workflow. A homologação em navegador com Master e usuário
   restrito real permanece pendente. Não criar saldo, atribuição automática de
   fornecedor/NCM/unidade ou vínculo automático de linhas sem IP/sem PO.
 - **SSH para rastreio:** a chave privada está somente neste checkout em
@@ -238,7 +259,7 @@ completo de uma RF depende dos critérios do plano e da validação do usuário.
 |---|---|---|---|
 | RF01 | Autenticação e autorização | `[-]` Login local, sessões, papéis, escopo por importador e dois Masters; usuário confirmou acesso | Validar fluxos completos e integrar provedor corporativo depois |
 | RF02 | Cadastros | `[ ]` Importadoras aparecem a partir da carga, sem CRUD de fornecedor/produto/NCM | Modelar cadastros e histórico |
-| RF03 | Solicitações | `[-]` Filas de leitura sem IP/sem PO publicadas, com origem, escopo e sobreposição; ainda sem solicitação nativa ou associação | Confirmar regra de associação auditada e criar solicitação operacional |
+| RF03 | Solicitações | `[-]` M011 e solicitação nativa (cabeçalho, itens descritos, número, escopo, idempotência, auditoria/outbox) implementadas na API; tela `/requests` em publicação; filas históricas continuam separadas | Publicar/homologar; definir workflow, campos quantitativos/unidade e regra de associação do legado |
 | RF04 | Execução logística por IP | `[-]` Lista/detalhe próprios publicados para 200 IPs, com POs, observações e custos históricos no IP; sem escrita operacional | Definir campos editáveis, versão, transições autorizadas e homologar com usuário real |
 | RF05 | Itens | `[-]` Observações históricas de item estão disponíveis no detalhe | Separar e cadastrar itens oficiais/operacionais |
 | RF06 | Carteira central de POs TOTVS | `[-]` 336 POs em 7 páginas, filtros PO/importador/produto/IP publicados, detalhe histórico com linhagem e IPs/custos no grão correto; build, testes e leituras reais passaram na VPS | Homologar com usuário real; fornecedor/estados confirmados, itens oficiais, atendimento e alocações seguem pendentes |
@@ -526,7 +547,7 @@ inclua aqui a nova seção ou subseção antes de implementar a mudança.
 | DEV11 | [x] | Promoção retomável e idempotente | Check automatizado injeta falha antes do commit, confirma rollback de PO/IP/observação/custo, promove o mesmo lote na retomada e reinsere zero na reimportação. | Manter a cobertura na CI. |
 | DEV12 | [-] | Tela de qualidade auditável | Revisão local de M003/M008 e handlers confirmou identidade `(issuer, subject)`/`userId` da sessão, permissões `quality.read`/`quality.resolve`, escopo dentro da CTE antes de contagens/paginação e na leitura bloqueada da issue, campos de evidência/motivo/`Idempotency-Key`, e gravação em transação de revisão/status/auditoria/outbox. Corrigida a ordem para ocultar issue fora do escopo como 404 antes de revelar conflito idempotente. Build API e `tsc --noEmit` web passaram; 11 testes de autorização e 5 testes locais do handler passaram (401/403/404, escopo, replay/conflito, identidade e rollback simulado de outbox). O serviço PostgreSQL local não está ativo/escutando em 5432; não há `.env` nem variáveis PG/MIGRATION no ambiente. M008 não foi aplicada e atomicidade PostgreSQL/E2E real não foram validados. | Disponibilizar sessão segura com alvo explicitamente confirmado como `erp_po_totvs_test` ou outro banco isolado descartável. Conferir status 7/0, aplicar M008, validar grants/escopo entre importadores, replay/conflito, rollback PostgreSQL e fluxo E2E autenticado antes de concluir DEV12. |
 | DEV13 | [-] | Carteira e detalhe centrados em PO | Filtros PO/importador/produto/IP, paginação de 50 POs com total de páginas, estados da tela, retorno à busca, células de origem e IP compartilhado publicados em `d6b4604`. Build API/web e 20 testes passaram na VPS; SQL e rotas `READ ONLY` sobre 336 POs/6.796 observações confirmaram 18751/18223, custos no IP e 401/403/404. Grant sintético testou 404 fora do escopo com dados reais; faltou usuário restrito ativo e E2E de login no navegador. Itens/saldo oficiais continuam desconhecidos. | Homologar uso com usuário real; confirmar fonte TOTVS, itens oficiais, atendimento/alocações, invoices e critérios restantes do plano. |
-| DEV14 | [-] | Solicitações e filas de pendência | A fila histórica inclui linhas de Pré Embarque sem PO e IP, inclusive lotes promovidos antes da regra explícita; não cria solicitação nem altera a origem. | Modelar solicitação nativa e sua regra de conversão após autenticação, perfis e workflow. |
+| DEV14 | [-] | Solicitações e filas de pendência | M011/API criam solicitação e itens `NATIVE`, número interno, versão e autor. `Idempotency-Key`, escopo, motivo, auditoria/outbox e tela `/requests`; fila histórica segue read-only e separada. | Homologar a tela com Master/restrito; completar workflow/edição com `If-Match` e fechar decisões de negócio antes de associação histórica. |
 | DEV15 | [-] | Workflow e histórico de transições | Regras de PO e IP, rotas GET de estado/histórico e POST de transição implementadas; `If-Match`, escopo, grants explícitos, motivo, evidência obrigatória e journal append-only persistido em SQLite/PostgreSQL. Status histórico é mapeado sem inventar transições, com evento inicial e linhagem do XLSX. Build API sem warnings. | Validar E2E; vincular pré-condições às entidades oficiais de item, invoice, shipment, documento e saldo quando cada módulo existir; habilitar saltos simplificados somente com justificativa/permissão própria. |
 | DEV16 | [ ] | Alocações de PO por processo | Não iniciado; não há rateio automático | Definir saldo, quantidade e validações |
 | DEV17 | [ ] | Invoices e comparação | Não iniciado | Modelar vínculo, moedas e não comparabilidade |
@@ -566,11 +587,13 @@ inclua aqui a nova seção ou subseção antes de implementar a mudança.
 
 | Status | Tema | Tratamento atual | Responsável para confirmar |
 |---|---|---|---|
-| [!] | PostgreSQL da VPS | Banco isolado `erp_po_totvs_test` e role `erp_po_totvs_migrator` foram criados para validar migrations; não usar os bancos das aplicações existentes. A credencial e o banco operacional da API ainda não foram configurados. Manter a conexão da API em loopback/rede privada, role de runtime com privilégios mínimos, pool limitado e backup/restore testado; não publicar 5432. Firewall externa foi validada com 5432/6543/6379 bloqueadas. | Usuário / DevOps |
-| [!] | Acesso HTTPS da Vercel à API VPS | Publicar somente a API via HTTPS reverse proxy ou Cloudflare Tunnel e autenticar o proxy com `VPS_API_TOKEN`; esta topologia não exige Static IP da Vercel nem conexão direta Vercel→PostgreSQL. Escolher e configurar domínio/DNS e método de exposição. | Usuário / DevOps |
+| [x] | PostgreSQL da VPS | `erp_po_totvs_test` é o banco operacional; API usa role de runtime e conexão privada/local, porta PostgreSQL não exposta externamente. Para M011, backup restaurado e validado antes da aplicação; ledger M001–M011. | DevOps |
+| [x] | Acesso HTTPS da Vercel à API VPS | API publicada por HTTPS no domínio existente, gateway server-side; readiness autenticada 200 e endpoints sem sessão 401. | DevOps |
 | [!] | Provedor e credenciais OIDC | Configurar issuer/client/secret e callback HTTPS após escolher/provisionar provedor público; Keycloak local não é endpoint Vercel. | Usuário / TI |
 | [!] | Storage e jobs serverless | Selecionar object storage privado e mecanismo cron/queue para imports/outbox; filesystem e worker residente não são assumidos na Vercel. | Arquitetura / Usuário |
 | [!] | Dados oficiais TOTVS | A carga atual representa histórico Excel, não linhas oficiais de pedido | Compras / TI TOTVS |
+| [!] | Solicitação nativa RF03 | Cabeçalho e itens descritos pelo solicitante disponíveis. Confirmar se quantidade/unidade/produto são obrigatórios antes da submissão, finalidade/centro de custo oficiais, workflow, edição e permissões; linhas históricas ficam separadas até aprovar identidade, status entregue/cancelado e concorrência | Product Owner de Importação / Compras / Master |
+| [!] | Cadastros e identidade TOTVS | Aprovar mapeamento empresa/filial, identidade de fornecedor e aliases conflitantes; NCM e vigência por contexto; unidades | Compras / TI TOTVS / Fiscal |
 | [!] | Rateio de custos | Nenhum rateio automático é aplicado; custos permanecem no IP | Importação / Financeiro |
 | [!] | Conversão de moedas | Não há total consolidado entre moedas sem taxa aprovada | Financeiro |
 | [!] | Regras fiscais | Sem cálculo fiscal presumido | Fiscal |

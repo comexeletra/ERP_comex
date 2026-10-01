@@ -53,6 +53,17 @@ Reversão somente da API: `/var/backups/import-erp/m010-api-af9e297-20261001T113
 Não remova M010 do banco para reverter código: a migration é compatível com a
 API anterior e futuras escritas do catálogo precisam permanecer íntegras.
 
+Em 2026-10-01, M011 foi restaurada e validada em cópia temporária antes da
+aplicação operacional. Backup imediatamente anterior:
+`/var/backups/import-erp/erp_po_totvs_test_20261001T121101Z.dump`, SHA-256
+`394c5def6653be18a4c74f749974603167611673df8b35f762850fb66e7e84fb`.
+Ledger operacional: M001–M011, sem pendências. API de solicitações instalada,
+ready HTTPS 200 e endpoint anônimo 401. Reversão somente do código:
+`/var/backups/import-erp/rf03-m011-api-20261001T121107Z`; mantenha M011 aplicada
+ao reverter o código, pois a migration é aditiva e não introduziu dados de
+demonstração. O procedimento reproduzível está em `validate-m011-on-copy.py` e
+`release-m011.sh`.
+
 Para um novo release, inspecione o estado, faça backup restaurável e use o runner explícito de `apps/api`; a API lê credenciais diferentes das migrations. Os scripts deste diretório registram a sequência executada para este release. `publish-api-traefik.sh` cria a rota HTTPS somente uma vez e recusa alterar um serviço `import_erp_edge` existente.
 
 Em 2026-09-30, a alteração de leitura RF06 foi compilada e testada em

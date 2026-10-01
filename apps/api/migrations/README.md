@@ -41,6 +41,16 @@ PostgreSQL route checks. M010 was then applied to the selected operational
 database after another restored backup. The operational ledger is M001–M010,
 with zero pending migrations.
 
+`M011_native_requests.sql` adds native request headers and requester-described
+items, a server-number sequence, actor-scoped idempotency receipts, and the
+least-privilege grants for the API role. Native records carry `source_kind` and
+do not derive from historical rows. The request handler writes request/items,
+audit and outbox in one transaction. Purpose/cost center are preserved only as
+requester-entered text; quantity, unit, official product and workflow remain
+pending business confirmation. On 2026-10-01 M011 was applied after a protected
+backup and restored-copy validation; the operational ledger is M001–M011 with
+zero pending migrations.
+
 The API never runs migrations at startup. From `apps/api`, build the API, then
 set `MIGRATION_ENV=isolated` in the shell or `.env` before running
 `pnpm migrate:status` to inspect the target without creating the ledger. For a
