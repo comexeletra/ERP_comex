@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 
 type Cost = { id: string; type: string; currency: string; amount: string; status: string; sourceSheetName: string; sourceRowNumber: number; sourceColumn: string };
@@ -13,6 +13,7 @@ type LinePage = { page: number; pageSize: number; totalCount: number; items: Lin
 export default function ProcessWorkspace({ id, returnPath }: { id: string; returnPath: string }) {
   const [process, setProcess] = useState<Process>();
   const [lines, setLines] = useState<LinePage>();
+  const [expandedLineId, setExpandedLineId] = useState<string>();
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
@@ -47,7 +48,8 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
       <section className="card"><h2>Observações da origem</h2><p className="muted">Células do Excel; produto, quantidade e status abaixo não são dados oficiais de item ou saldo.</p>
         {lines.items.length === 0 && <p>Nenhuma linha nesta página.</p>}
         {lines.items.length > 0 && <div className="table-scroll"><table><thead><tr><th>Origem</th><th>PO</th><th>Produto de origem</th><th>Quantidade de origem</th><th>Status de origem</th><th>Células</th></tr></thead><tbody>
-          {lines.items.map(line => <tr key={line.id}><td>{line.sourceSheetName} · {line.sourceRowNumber}</td><td>{line.purchaseOrderId ? <Link className="text-link" href={`/purchase-orders/${line.purchaseOrderId}`}>{line.poNumber}</Link> : "Sem PO"}</td><td>{line.productCode ?? "—"}<br />{line.productDescription}</td><td>{line.quantityFromSource ?? "—"}</td><td>{line.legacyStatus ?? "—"}</td><td><details><summary>Ver células</summary><dl className="source-values">{Object.entries(line.sourceValues ?? {}).map(([column, value]) => <div key={column}><dt>{column}{line.sourceRowNumber}</dt><dd>{value == null ? "—" : String(value)}</dd></div>)}</dl></details></td></tr>)}
+          {lines.items.map(line => <Fragment key={line.id}><tr><td>{line.sourceSheetName} · {line.sourceRowNumber}</td><td>{line.purchaseOrderId ? <Link className="text-link" href={`/purchase-orders/${line.purchaseOrderId}`}>{line.poNumber}</Link> : "Sem PO"}</td><td>{line.productCode ?? "—"}<br />{line.productDescription}</td><td>{line.quantityFromSource ?? "—"}</td><td>{line.legacyStatus ?? "—"}</td><td><button type="button" className="source-expand-button" aria-expanded={expandedLineId === line.id} onClick={() => setExpandedLineId(current => current === line.id ? undefined : line.id)}>{expandedLineId === line.id ? "Ocultar campos" : "Ver campos"}</button></td></tr>
+            {expandedLineId === line.id && <tr className="source-detail-row"><td colSpan={6}><section className="source-detail-panel"><div className="source-detail-heading"><strong>Campos preservados da origem</strong><span>Aba {line.sourceSheetName} · linha {line.sourceRowNumber}</span></div><dl className="source-field-grid">{Object.entries(line.sourceValues ?? {}).map(([column, value]) => <div className="source-field" key={column}><dt>{column}{line.sourceRowNumber}</dt><dd>{value == null ? "—" : String(value)}</dd></div>)}</dl></section></td></tr>}</Fragment>)}
         </tbody></table></div>}
         {lines.totalCount > lines.pageSize && <nav className="pagination"><button className="button secondary" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Anterior</button><span>Página {page} de {Math.ceil(lines.totalCount / lines.pageSize)}</span><button className="button" disabled={page * lines.pageSize >= lines.totalCount} onClick={() => setPage(value => value + 1)}>Próxima</button></nav>}
       </section>

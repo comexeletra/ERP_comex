@@ -69,8 +69,8 @@ export default function QualityPage() {
     {data?.items.map(item => <article className="card quality-item" key={item.id}>
       <div className="quality-heading"><div><p className="eyebrow">{item.sheetName ?? "Origem indisponível"} · linha {item.sourceRowNumber ?? "—"}</p><h2>{item.code}</h2></div><span className={`quality-status ${item.status}`}>{item.status}</span></div>
       <p>Severidade: <strong>{item.severity}</strong></p>{item.fieldName && <p className="muted">Campo de origem: <strong>{item.fieldName}</strong></p>}
-      <details><summary>Ver evidência original</summary><pre>{JSON.stringify(item.evidence, null, 2)}</pre></details>
-      <details><summary>Ver valores preservados da origem</summary><dl className="source-values">{Object.entries(item.sourceValues).map(([name, value]) => <><dt key={`${name}-name`}>{name}</dt><dd key={`${name}-value`}>{value == null ? "—" : typeof value === "string" ? value : JSON.stringify(value)}</dd></>)}</dl></details>
+      <details className="source-disclosure"><summary>Ver evidência original</summary><dl className="source-field-grid">{Object.entries(item.evidence).map(([name, value]) => <div className="source-field" key={name}><dt>{name}</dt><dd>{formatFieldValue(value)}</dd></div>)}</dl></details>
+      <details className="source-disclosure"><summary>Ver valores preservados da origem</summary><dl className="source-field-grid">{Object.entries(item.sourceValues).map(([name, value]) => <div className="source-field" key={name}><dt>{name}</dt><dd>{formatFieldValue(value)}</dd></div>)}</dl></details>
       {item.latestReview && <section className="review-history"><h3>Última revisão</h3><p><strong>{item.latestReview.outcome}</strong> por {item.latestReview.reviewer} em {formatUsDateTime(item.latestReview.recordedAt)}</p><p>{item.latestReview.notes}</p><p className="muted">PO proposta: {item.latestReview.proposedPurchaseOrder ?? "—"} · IP proposto: {item.latestReview.proposedIpNumber ?? "—"}</p></section>}
       {reviewing === item.id ? <form className="review-form" onSubmit={event => { event.preventDefault(); void submitReview(item, event.currentTarget); }}><label>Evidência da resolução (objeto JSON)<textarea name="evidence" required placeholder='{"referencia":"documento ou evidência conferida"}' /></label><label>Justificativa<textarea name="reason" required /></label><label>PO proposta (opcional)<input name="proposedPurchaseOrder" /></label><label>IP proposto (opcional)<input name="proposedIpNumber" /></label><div><button className="button" type="submit" disabled={submitting}>{submitting ? "Registrando…" : "Resolver pendência"}</button><button className="button secondary" type="button" disabled={submitting} onClick={() => { setReviewing(undefined); setIdempotencyKey(undefined); }}>Cancelar</button></div></form> : item.status === "OPEN" && <button className="button" type="button" onClick={() => { setReviewing(item.id); setIdempotencyKey(crypto.randomUUID()); }}>Revisar pendência</button>}
     </article>)}
@@ -78,3 +78,8 @@ export default function QualityPage() {
 }
 
 function Metric({ label, value }: { label: string; value: number | string }) { return <section className="metric"><span>{label}</span><strong>{value}</strong></section>; }
+
+function formatFieldValue(value: unknown): string {
+  if (value == null) return "—";
+  return typeof value === "object" ? JSON.stringify(value, null, 2) : String(value);
+}

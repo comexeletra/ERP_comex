@@ -165,6 +165,21 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
   .metric { min-height: 96px; padding: 15px 16px; }
   .metric strong { font-size: 1.55rem; }
   .source-values { grid-template-columns: minmax(105px, .8fr) minmax(0, 1.4fr); }
-  .source-values dt, .source-values dd { padding: 8px; }
+.source-values dt, .source-values dd { padding: 8px; }
   .quality-heading { align-items: flex-start; flex-direction: column; }
+}
+.source-expand-button { background: #edf6f6; border: 1px solid #c9dfe1; border-radius: 7px; color: #086d7e; cursor: pointer; font: inherit; font-size: .82rem; font-weight: 700; padding: 7px 10px; white-space: nowrap; }
+.source-expand-button:hover, .source-expand-button[aria-expanded="true"] { background: #deeeee; border-color: #9fc5c9; }
+.source-detail-row > td { background: #f1f6f7 !important; padding: 0 !important; white-space: normal; }
+.source-detail-panel { padding: 20px 22px 24px; }
+.source-detail-heading { align-items: baseline; display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 0 0 14px; }
+.source-detail-heading strong { color: #21414e; font-size: .95rem; }
+.source-detail-heading span { color: #697f8a; font-size: .8rem; }
+.source-field-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); margin: 0; }
+.source-field { background: #fff; border: 1px solid #dfe8eb; border-radius: 8px; min-width: 0; padding: 11px 13px; }
+.source-field dt { color: #647c87; font-size: .72rem; font-weight: 700; letter-spacing: .045em; margin-bottom: 6px; overflow-wrap: anywhere; text-transform: uppercase; }
+.source-field dd { color: #253d48; font-size: .86rem; line-height: 1.45; margin: 0; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+@media (max-width: 560px) {
+  .source-detail-panel { padding: 14px; }
+  .source-field-grid { grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); }
 }

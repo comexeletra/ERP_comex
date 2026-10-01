@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { formatUsDate } from "../lib/date-format";
 
@@ -59,6 +59,7 @@ function formatDate(value: string | null) {
 export default function PurchaseOrderWorkspace({ id, returnPath }: { id: string; returnPath: string }) {
   const [data, setData] = useState<Overview>();
   const [history, setHistory] = useState<HistoryPage>();
+  const [expandedHistoryId, setExpandedHistoryId] = useState<string>();
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
@@ -120,8 +121,9 @@ export default function PurchaseOrderWorkspace({ id, returnPath }: { id: string;
       </section>
 
       <section className="card"><h2>Histórico da PO</h2><p className="muted">Observações importadas, com linhagem até a aba e a linha de origem. Não representam itens oficiais nem saldo.</p>
-        {history.items.length === 0 ? <p>Nenhuma observação nesta página.</p> : <div className="table-scroll"><table><thead><tr><th>Linha</th><th>Produto</th><th>Qtd.</th><th>Valor histórico</th><th>Necessidade</th><th>Status de origem</th><th>IP de origem</th><th>Origem completa</th></tr></thead>
-          <tbody>{history.items.map(line => <tr key={line.id}><td>{line.sourceRowNumber} · {line.sourceSheetName}</td><td><strong>{line.productCode ?? "—"}</strong><br />{line.productDescription}</td><td>{formatDecimal(line.quantity)}</td><td>{line.historicalAmount == null ? "—" : `${formatDecimal(line.historicalAmount)} ${line.currency ?? ""}`}</td><td>{formatDate(line.necessityDate)}</td><td>{line.legacyStatus ?? "—"}</td><td>{line.ipNumber ?? "Sem IP"}</td><td><details><summary>Ver células</summary><p>Aba {line.sourceSheetName}, linha {line.sourceRowNumber}</p><dl className="source-values">{Object.entries(line.sourceValues ?? {}).map(([column, value]) => <SourceCell key={column} column={column} row={line.sourceRowNumber} value={value} />)}</dl></details></td></tr>)}</tbody>
+        {history.items.length === 0 ? <p>Nenhuma observação nesta página.</p> : <div className="table-scroll"><table><thead><tr><th>Linha</th><th>Produto</th><th>Qtd.</th><th>Valor histórico</th><th>Necessidade</th><th>Status de origem</th><th>IP de origem</th><th>Campos da origem</th></tr></thead>
+          <tbody>{history.items.map(line => <Fragment key={line.id}><tr><td>{line.sourceRowNumber} · {line.sourceSheetName}</td><td><strong>{line.productCode ?? "—"}</strong><br />{line.productDescription}</td><td>{formatDecimal(line.quantity)}</td><td>{line.historicalAmount == null ? "—" : `${formatDecimal(line.historicalAmount)} ${line.currency ?? ""}`}</td><td>{formatDate(line.necessityDate)}</td><td>{line.legacyStatus ?? "—"}</td><td>{line.ipNumber ?? "Sem IP"}</td><td><button type="button" className="source-expand-button" aria-expanded={expandedHistoryId === line.id} onClick={() => setExpandedHistoryId(current => current === line.id ? undefined : line.id)}>{expandedHistoryId === line.id ? "Ocultar campos" : "Ver campos"}</button></td></tr>
+            {expandedHistoryId === line.id && <tr className="source-detail-row"><td colSpan={8}><section className="source-detail-panel"><div className="source-detail-heading"><strong>Campos preservados da origem</strong><span>Aba {line.sourceSheetName} · linha {line.sourceRowNumber}</span></div><dl className="source-field-grid">{Object.entries(line.sourceValues ?? {}).map(([column, value]) => <SourceCell key={column} column={column} row={line.sourceRowNumber} value={value} />)}</dl></section></td></tr>}</Fragment>)}</tbody>
         </table></div>}
         {history.totalCount > history.pageSize && <p className="pagination"><button className="button secondary" disabled={page === 1} onClick={() => setPage(value => value - 1)}>Anterior</button><span>Página {page} de {Math.ceil(history.totalCount / history.pageSize)}</span><button className="button" disabled={page * history.pageSize >= history.totalCount} onClick={() => setPage(value => value + 1)}>Próxima</button></p>}
       </section>
@@ -144,5 +146,5 @@ function Metric({ label, value }: { label: string; value: number }) {
 
 function SourceCell({ column, row, value }: { column: string; row: number; value: unknown }) {
   const raw = value == null ? "—" : typeof value === "object" ? JSON.stringify(value) : String(value);
-  return <><dt>{column}{row}</dt><dd>{value == null ? raw : formatUsDate(raw)}</dd></>;
+  return <div className="source-field"><dt>{column}{row}</dt><dd>{value == null ? raw : formatUsDate(raw)}</dd></div>;
 }

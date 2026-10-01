@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, Fragment, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 
 type Item = { id: string; sourceSheetName: string; sourceRowNumber: number; sourceValues: Record<string, unknown>; importer: string; sourcePoNumber: string | null; sourceIpNumber: string | null; purchaseOrderId: string | null; poNumber: string | null; processId: string | null; ipNumber: string | null; legacyStatus: string | null; reason: string; alsoWithoutPo: boolean; alsoWithoutIp: boolean };
@@ -14,6 +14,7 @@ export default function LegacyQueue({ kind }: { kind: "pending-import-items" | "
   const [page, setPage] = useState(1);
   const [ready, setReady] = useState(false);
   const [data, setData] = useState<Page>();
+  const [expandedItemId, setExpandedItemId] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [retry, setRetry] = useState(0);
@@ -66,7 +67,8 @@ export default function LegacyQueue({ kind }: { kind: "pending-import-items" | "
       {!loading && !error && data && <><p>{data.totalCount} linhas encontradas{pages > 0 && ` · página ${page} de ${pages}`}</p>
         {data.items.length === 0 && <p>{data.totalCount ? "Página fora do intervalo." : "Nenhuma linha encontrada."}</p>}
         {data.items.length > 0 && <div className="table-scroll"><table><thead><tr><th>Origem</th><th>Importador</th><th>PO</th><th>IP</th><th>Motivo</th><th>Status de origem</th><th>Células</th></tr></thead><tbody>
-          {data.items.map(item => <tr key={item.id}><td>{item.sourceSheetName} · {item.sourceRowNumber}</td><td>{item.importer}</td><td>{item.purchaseOrderId ? <Link className="text-link" href={`/purchase-orders/${item.purchaseOrderId}`}>{item.poNumber}</Link> : item.sourcePoNumber || "Sem PO"}</td><td>{item.processId ? <Link className="text-link" href={`/processes/${item.processId}`}>{item.ipNumber}</Link> : item.sourceIpNumber || "Sem IP"}</td><td>{item.reason}{item.alsoWithoutPo && withoutIp ? "; também sem PO" : ""}{item.alsoWithoutIp && !withoutIp ? "; também sem IP" : ""}</td><td>{item.legacyStatus ?? "—"}</td><td><details><summary>Ver células</summary><dl className="source-values">{Object.entries(item.sourceValues ?? {}).map(([column, value]) => <div key={column}><dt>{column}{item.sourceRowNumber}</dt><dd>{value == null ? "—" : String(value)}</dd></div>)}</dl></details></td></tr>)}
+          {data.items.map(item => <Fragment key={item.id}><tr><td>{item.sourceSheetName} · {item.sourceRowNumber}</td><td>{item.importer}</td><td>{item.purchaseOrderId ? <Link className="text-link" href={`/purchase-orders/${item.purchaseOrderId}`}>{item.poNumber}</Link> : item.sourcePoNumber || "Sem PO"}</td><td>{item.processId ? <Link className="text-link" href={`/processes/${item.processId}`}>{item.ipNumber}</Link> : item.sourceIpNumber || "Sem IP"}</td><td>{item.reason}{item.alsoWithoutPo && withoutIp ? "; também sem PO" : ""}{item.alsoWithoutIp && !withoutIp ? "; também sem IP" : ""}</td><td>{item.legacyStatus ?? "—"}</td><td><button type="button" className="source-expand-button" aria-expanded={expandedItemId === item.id} onClick={() => setExpandedItemId(current => current === item.id ? undefined : item.id)}>{expandedItemId === item.id ? "Ocultar campos" : "Ver campos"}</button></td></tr>
+            {expandedItemId === item.id && <tr className="source-detail-row"><td colSpan={7}><section className="source-detail-panel"><div className="source-detail-heading"><strong>Campos preservados da origem</strong><span>Aba {item.sourceSheetName} · linha {item.sourceRowNumber}</span></div><dl className="source-field-grid">{Object.entries(item.sourceValues ?? {}).map(([column, value]) => <div className="source-field" key={column}><dt>{column}{item.sourceRowNumber}</dt><dd>{value == null ? "—" : String(value)}</dd></div>)}</dl></section></td></tr>}</Fragment>)}
         </tbody></table></div>}
         {pages > 1 && <nav className="pagination"><button className="button secondary" disabled={page <= 1} onClick={() => navigate(filters, page - 1)}>Anterior</button><span>Página {page} de {pages}</span><button className="button" disabled={page >= pages} onClick={() => navigate(filters, page + 1)}>Próxima</button></nav>}
       </>}
