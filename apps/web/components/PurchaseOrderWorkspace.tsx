@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
+import { formatUsDate } from "../lib/date-format";
 
 type HistoryLine = {
   id: string;
@@ -52,9 +53,7 @@ function formatDecimal(value: string | null) {
 }
 
 function formatDate(value: string | null) {
-  if (value == null) return "—";
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
-  return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
+  return value == null ? "—" : formatUsDate(value);
 }
 
 export default function PurchaseOrderWorkspace({ id, returnPath }: { id: string; returnPath: string }) {
@@ -144,5 +143,6 @@ function Metric({ label, value }: { label: string; value: number }) {
 }
 
 function SourceCell({ column, row, value }: { column: string; row: number; value: unknown }) {
-  return <><dt>{column}{row}</dt><dd>{value == null ? "—" : typeof value === "object" ? JSON.stringify(value) : String(value)}</dd></>;
+  const raw = value == null ? "—" : typeof value === "object" ? JSON.stringify(value) : String(value);
+  return <><dt>{column}{row}</dt><dd>{value == null ? raw : formatUsDate(raw)}</dd></>;
 }

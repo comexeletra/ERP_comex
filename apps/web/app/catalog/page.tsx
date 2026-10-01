@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api";
+import { formatUsDate, parseUsDate } from "../../lib/date-format";
 
 type Resource = "suppliers" | "products" | "ncms";
 type Importer = { code: string; historicalPoCount: number; status: string };
@@ -72,11 +73,15 @@ export default function CatalogPage() {
   }
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSaving(true); setError(undefined); setMessage(undefined);
+    const validFrom = resource === "ncms" ? parseUsDate(draft.validFrom) : null;
+    if (resource === "ncms" && !validFrom) {
+      setError("Informe uma data válida no formato MM/DD/YYYY."); setSaving(false); return;
+    }
     try {
       const response = await apiFetch(`/api/v1/${resource}`, { method: "POST",
         headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify({ importer, code: draft.code, name: draft.name, evidence: draft.evidence,
-          reason: draft.reason, validFrom: draft.validFrom || null }) });
+          reason: draft.reason, validFrom }) });
       await responseJson<Entry>(response);
       setDraft({ code: "", name: "", evidence: "", reason: "", validFrom: "" });
       setMessage("Cadastro operacional registrado. As linhas históricas não foram alteradas.");
@@ -123,7 +128,7 @@ export default function CatalogPage() {
         {registered?.items.length === 0 && <p>Nenhum cadastro encontrado.</p>}
         {!!registered?.items.length && <div className="table-scroll"><table><thead><tr><th>Código</th><th>Nome</th><th>Situação</th><th>Vigência</th><th>Versão</th><th>Ação</th></tr></thead><tbody>
           {registered.items.map(entry => <tr key={entry.id}><td>{entry.code}</td><td>{entry.name}</td><td>{entry.status === "ACTIVE" ? "Ativo" : "Inativo"}</td>
-            <td>{entry.validFrom || "—"}{entry.validTo ? ` a ${entry.validTo}` : ""}</td><td>{entry.version}</td>
+            <td>{formatUsDate(entry.validFrom) || "—"}{entry.validTo ? ` a ${formatUsDate(entry.validTo)}` : ""}</td><td>{entry.version}</td>
             <td>{canWrite && <button className="button secondary" type="button" onClick={() => startEdit(entry)}>Editar</button>}</td></tr>)}
         </tbody></table></div>}
       </section>
@@ -141,7 +146,7 @@ export default function CatalogPage() {
       <form className="stack-form" onSubmit={event => void create(event)}>
         <label>Código ou nome da origem<input required maxLength={120} value={draft.code} onChange={event => setDraft(value => ({ ...value, code: event.target.value }))} /></label>
         <label>Nome operacional<input required maxLength={240} value={draft.name} onChange={event => setDraft(value => ({ ...value, name: event.target.value }))} /></label>
-        {resource === "ncms" && <label>Início da vigência<input required type="date" value={draft.validFrom} onChange={event => setDraft(value => ({ ...value, validFrom: event.target.value }))} /></label>}
+        {resource === "ncms" && <label>Início da vigência (MM/DD/YYYY)<input required type="text" inputMode="numeric" maxLength={10} pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}" placeholder="MM/DD/YYYY" value={draft.validFrom} onChange={event => setDraft(value => ({ ...value, validFrom: event.target.value }))} /></label>}
         <label>Evidência da revisão<textarea required minLength={8} maxLength={2000} value={draft.evidence} onChange={event => setDraft(value => ({ ...value, evidence: event.target.value }))} placeholder="Documento, número, data e onde conferir" /></label>
         <label>Motivo do cadastro<textarea required minLength={8} maxLength={500} value={draft.reason} onChange={event => setDraft(value => ({ ...value, reason: event.target.value }))} /></label>
         <button className="button" disabled={saving || !importer} type="submit">{saving ? "Salvando…" : "Registrar cadastro"}</button>

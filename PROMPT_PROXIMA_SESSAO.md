@@ -73,8 +73,11 @@ Continue do estado real do repositório e leia primeiro **Estado atual —
   devem ser revisadas. Não tratar ausência de PO/IP, NCM fora de oito dígitos,
   diferenças de nomes ou outro formato legado como erro, nem normalizar o
   histórico por cima do valor bruto. Aplicar padrões somente a novos registros;
-  datas novas devem usar/exibir `MM/DD/YYYY` (mês/dia/ano), com validação de
-  data real.
+  todas as datas visíveis devem usar `MM/DD/YYYY` (mês/dia/ano), inclusive em
+  tabelas e filtros. Quando houver horário, exibir `MM/DD/YYYY HH:mm`. Entradas
+  de data devem aceitar esse formato e validar uma data real. Preservar os
+  valores históricos armazenados; não exibir timestamps ISO como
+  `YYYY-MM-DDTHH:mm:ss`.
   BRL é a moeda padrão de novos lançamentos e, quando aplicável, também deve ser
   guardado o valor CNY; qualquer conversão para BRL precisa conservar taxa, data
   e fonte. O histórico mantém a moeda original.

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { apiFetch } from "../../lib/api";
+import { formatUsDate } from "../../lib/date-format";
 
 type Sheet = "all" | "Pré Embarque" | "Pós Embarque";
 type Gap = "all" | "without-ip" | "without-po" | "quality" | "any";
@@ -30,6 +31,10 @@ type GridFilters = typeof emptyFilters;
 
 const emptyFilters = { importer: "", search: "", gap: "all" as Gap };
 const pageSizeOptions = [25, 50, 100];
+const dateColumnsBySheet: Record<Exclude<Sheet, "all">, Set<string>> = {
+  "Pré Embarque": new Set(["J", "O", "P", "Q", "AC", "AI", "AJ", "AN", "AO", "AQ", "AW", "AX"]),
+  "Pós Embarque": new Set(["Q", "S", "U", "AC", "AD", "AG", "AL", "AM", "AN"]),
+};
 const sheetOptions: Array<{ value: Sheet; label: string }> = [
   { value: "all", label: "Todas as linhas" },
   { value: "Pré Embarque", label: "Pré Embarque" },
@@ -58,6 +63,13 @@ function readColumnFilters(raw: string | null): ColumnFilters {
       }]];
     }));
   } catch { return {}; }
+}
+
+function displayCell(sheetName: string, column: string, value: string | null): string {
+  const raw = display(value);
+  if (value == null) return raw;
+  const dateColumns = dateColumnsBySheet[sheetName as Exclude<Sheet, "all">];
+  return dateColumns?.has(column) ? formatUsDate(value) : raw;
 }
 
 function readLocation() {
@@ -360,7 +372,7 @@ export default function SourceAuditPage() {
                   {row.auditFlags.cellErrors > 0 && <span className="source-gap-tag">{row.auditFlags.cellErrors} erro(s) de cálculo</span>}
                   {!row.auditFlags.anyGap && <span className="source-ok-tag">Sem sinalizador</span>}
                 </div></td>
-                {columns.map(column => <td key={column} title={display(row.sourceValues[column])}>{display(row.sourceValues[column])}</td>)}
+                {columns.map(column => <td key={column} title={displayCell(row.sourceSheetName, column, row.sourceValues[column])}>{displayCell(row.sourceSheetName, column, row.sourceValues[column])}</td>)}
               </tr>)}</tbody>
             </table>
           </div>}
@@ -406,7 +418,7 @@ export default function SourceAuditPage() {
             return <label key={option.value || "__blank__"} className="source-value-option">
               <input type="checkbox" checked={checked} disabled={!canAdd}
                 onChange={event => toggleOption(activeColumn, option.value, event.target.checked)} />
-              <span>{option.value === "" ? "(em branco)" : option.value}</span>
+              <span>{option.value === "" ? "(em branco)" : displayCell(result?.items[0]?.sourceSheetName ?? sheet, activeColumn, option.value)}</span>
               <small>{option.rowCount ? option.rowCount.toLocaleString("pt-BR") : ""}</small>
             </label>;
           })}

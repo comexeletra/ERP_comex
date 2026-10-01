@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api";
+import { formatUsDateTime } from "../../lib/date-format";
 
 type RequestLine = { id: string; lineNumber: number; description: string; purposeText: string | null; costCenterText: string | null };
 type ImportRequest = { id: string; requestNumber: string; importer: string; requesterReference: string;
@@ -106,7 +107,7 @@ export default function RequestsPage() {
         <thead><tr><th>Número</th><th>Importador</th><th>Solicitante</th><th>Itens</th><th>Status</th><th>Data</th><th>Ação</th></tr></thead>
         <tbody>{requests.map(item => <tr key={item.id}><td><strong>{item.requestNumber}</strong></td><td>{item.importer}</td>
           <td>{item.requesterReference}</td><td>{item.itemCount}</td><td>{item.status}</td>
-          <td>{new Date(item.createdAt).toLocaleString("pt-BR")}</td><td><Link className="button" href={`/requests/${item.id}`}>Abrir</Link></td></tr>)}</tbody>
+          <td>{formatUsDateTime(item.createdAt)}</td><td><Link className="button" href={`/requests/${item.id}`}>Abrir</Link></td></tr>)}</tbody>
       </table></div>}
     </section>
   </main>;

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../../lib/api";
+import { formatUsDateTime } from "../../../lib/date-format";
 
 type RequestDetail = { id: string; requestNumber: string; importer: string; sourceKind: string;
   requesterReference: string; reason: string; notes: string; status: string; version: string;
@@ -49,7 +50,7 @@ export default function RequestDetailPage() {
           <dt>Versão</dt><dd>{request.version}</dd>
           <dt>Motivo</dt><dd>{request.reason}</dd>
           {request.notes && <><dt>Observações</dt><dd>{request.notes}</dd></>}
-          <dt>Criada em</dt><dd>{new Date(request.createdAt).toLocaleString("pt-BR")}</dd>
+          <dt>Criada em</dt><dd>{formatUsDateTime(request.createdAt)}</dd>
         </dl>
         <h2>Itens solicitados</h2>
         {request.items.map(item => <article className="request-line" key={item.id}>

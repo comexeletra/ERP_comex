@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api";
+import { formatUsDateTime } from "../../lib/date-format";
 
 type Review = { id: string; outcome: string; reviewer: string; notes: string; evidence: Record<string, unknown>; proposedPurchaseOrder?: string; proposedIpNumber?: string; recordedAt: string };
 type QualityItem = { id: string; sourceRowId: string; code: string; severity: string; status: string; evidence: Record<string, unknown>; fieldName?: string; sheetName?: string; sourceRowNumber?: number; sourceValues: Record<string, unknown>; latestReview?: Review };
@@ -70,7 +71,7 @@ export default function QualityPage() {
       <p>Severidade: <strong>{item.severity}</strong></p>{item.fieldName && <p className="muted">Campo de origem: <strong>{item.fieldName}</strong></p>}
       <details><summary>Ver evidência original</summary><pre>{JSON.stringify(item.evidence, null, 2)}</pre></details>
       <details><summary>Ver valores preservados da origem</summary><dl className="source-values">{Object.entries(item.sourceValues).map(([name, value]) => <><dt key={`${name}-name`}>{name}</dt><dd key={`${name}-value`}>{value == null ? "—" : typeof value === "string" ? value : JSON.stringify(value)}</dd></>)}</dl></details>
-      {item.latestReview && <section className="review-history"><h3>Última revisão</h3><p><strong>{item.latestReview.outcome}</strong> por {item.latestReview.reviewer} em {new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.latestReview.recordedAt))}</p><p>{item.latestReview.notes}</p><p className="muted">PO proposta: {item.latestReview.proposedPurchaseOrder ?? "—"} · IP proposto: {item.latestReview.proposedIpNumber ?? "—"}</p></section>}
+      {item.latestReview && <section className="review-history"><h3>Última revisão</h3><p><strong>{item.latestReview.outcome}</strong> por {item.latestReview.reviewer} em {formatUsDateTime(item.latestReview.recordedAt)}</p><p>{item.latestReview.notes}</p><p className="muted">PO proposta: {item.latestReview.proposedPurchaseOrder ?? "—"} · IP proposto: {item.latestReview.proposedIpNumber ?? "—"}</p></section>}
       {reviewing === item.id ? <form className="review-form" onSubmit={event => { event.preventDefault(); void submitReview(item, event.currentTarget); }}><label>Evidência da resolução (objeto JSON)<textarea name="evidence" required placeholder='{"referencia":"documento ou evidência conferida"}' /></label><label>Justificativa<textarea name="reason" required /></label><label>PO proposta (opcional)<input name="proposedPurchaseOrder" /></label><label>IP proposto (opcional)<input name="proposedIpNumber" /></label><div><button className="button" type="submit" disabled={submitting}>{submitting ? "Registrando…" : "Resolver pendência"}</button><button className="button secondary" type="button" disabled={submitting} onClick={() => { setReviewing(undefined); setIdempotencyKey(undefined); }}>Cancelar</button></div></form> : item.status === "OPEN" && <button className="button" type="button" onClick={() => { setReviewing(item.id); setIdempotencyKey(crypto.randomUUID()); }}>Revisar pendência</button>}
     </article>)}
   </main>;
