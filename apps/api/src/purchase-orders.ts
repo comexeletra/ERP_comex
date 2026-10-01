@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { importerScopePredicate, permissionConfig } from "./authorization.js";
+import { sourceColumnHeadersFor } from "./source-audit.js";
 
 const listQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -307,7 +308,11 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
          FROM page`,
         [id.data, scoped.values[0], pageSize, offset],
       );
-      return { page, pageSize, totalCount: Number(history.rows[0]?.total_count ?? 0), items: history.rows[0]?.items ?? [] };
+      const items = history.rows[0]?.items ?? [];
+      return { page, pageSize, totalCount: Number(history.rows[0]?.total_count ?? 0),
+        items: items.map(item => ({ ...item,
+          sourceColumnHeaders: sourceColumnHeadersFor(String(item.sourceSheetName ?? "")),
+        })) };
     },
   );
 }

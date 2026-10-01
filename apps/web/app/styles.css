@@ -178,6 +178,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .source-field-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); margin: 0; }
 .source-field { background: #fff; border: 1px solid #dfe8eb; border-radius: 8px; min-width: 0; padding: 11px 13px; }
 .source-field dt { color: #647c87; font-size: .72rem; font-weight: 700; letter-spacing: .045em; margin-bottom: 6px; overflow-wrap: anywhere; text-transform: uppercase; }
+.source-field dt small { color: #91a0a8; display: block; font-size: .66rem; font-weight: 400; letter-spacing: .02em; margin-top: 3px; text-transform: none; }
 .source-field dd { color: #253d48; font-size: .86rem; line-height: 1.45; margin: 0; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 @media (max-width: 560px) {
   .source-detail-panel { padding: 14px; }

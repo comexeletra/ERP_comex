@@ -269,6 +269,23 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
   });
 }
 
+export function sourceColumnHeadersFor(sheetName: string): Record<string, string> {
+  const headers = sheetName === "Pr\u00e9 Embarque" ? preHeaders
+    : sheetName === "P\u00f3s Embarque" ? postHeaders : [];
+  return Object.fromEntries(headers.map((header, index) => [excelColumnLabel(index + 2), header]));
+}
+
+function excelColumnLabel(value: number): string {
+  let current = value;
+  let result = "";
+  while (current > 0) {
+    current -= 1;
+    result = String.fromCharCode(65 + current % 26) + result;
+    current = Math.floor(current / 26);
+  }
+  return result;
+}
+
 function validIp(expression: string): string {
   return `NULLIF(btrim(${expression}), '') IS NOT NULL AND upper(btrim(${expression})) NOT IN ('CANCELLED', 'CANCELED') AND left(btrim(${expression}), 1) <> '#'`;
 }

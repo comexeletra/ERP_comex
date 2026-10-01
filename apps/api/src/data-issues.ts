@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { importerScopePredicate, permissionConfig } from "./authorization.js";
+import { sourceColumnHeadersFor } from "./source-audit.js";
 
 const listQuerySchema = z.object({
   status: z.enum(["open", "resolved", "all"]).default("open"),
@@ -137,7 +138,9 @@ export async function registerDataIssueRoutes(app: FastifyInstance, pool: Pool):
         totalCount: Number(result.rows[0]?.total_count ?? 0),
         openCount: Number(result.rows[0]?.open_count ?? 0),
         resolvedCount: Number(result.rows[0]?.resolved_count ?? 0),
-        items: result.rows[0]?.items ?? [],
+        items: (result.rows[0]?.items ?? []).map(item => ({ ...item,
+          sourceColumnHeaders: sourceColumnHeadersFor(String(item.sheetName ?? "")),
+        })),
       };
     },
   );

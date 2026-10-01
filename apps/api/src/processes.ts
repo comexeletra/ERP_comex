@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { importerScopePredicate, permissionConfig } from "./authorization.js";
+import { sourceColumnHeadersFor } from "./source-audit.js";
 
 const paging = {
   page: z.coerce.number().int().min(1).default(1),
@@ -144,7 +145,10 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
       [id.data, scope.values[0], parsed.data.pageSize, (parsed.data.page - 1) * parsed.data.pageSize],
     );
     if (!result.rows[0]?.process_found) return problem(reply, 404, "O IP não existe ou está fora do escopo autorizado.");
-    return { ...parsed.data, totalCount: Number(result.rows[0].total_count), items: result.rows[0].items };
+    return { ...parsed.data, totalCount: Number(result.rows[0].total_count),
+      items: result.rows[0].items.map(item => ({ ...item,
+        sourceColumnHeaders: sourceColumnHeadersFor(String(item.sourceSheetName ?? "")),
+      })) };
   });
 
   for (const kind of ["pending-import-items", "unassigned-po-items"] as const) {
@@ -195,7 +199,11 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
          FROM page`,
         [request.authorizationContext?.importerScopes ?? [], reference || null, importer || null, pageSize, (page - 1) * pageSize],
       );
-      return { page, pageSize, totalCount: Number(result.rows[0]?.total_count ?? 0), items: result.rows[0]?.items ?? [] };
+      const items = result.rows[0]?.items ?? [];
+      return { page, pageSize, totalCount: Number(result.rows[0]?.total_count ?? 0),
+        items: items.map(item => ({ ...item,
+          sourceColumnHeaders: sourceColumnHeadersFor(String(item.sourceSheetName ?? "")),
+        })) };
     });
   }
 }
