@@ -118,18 +118,13 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
     const postNoIp = `(${validIp("source.raw_values->>'B'")}) IS NOT TRUE`;
     const noIp = `(source.sheet_name = 'Pré Embarque' AND ${preNoIp}) OR (source.sheet_name = 'Pós Embarque' AND ${postNoIp})`;
     const noPo = `(source.sheet_name = 'Pré Embarque' AND NULLIF(btrim(source.raw_values->>'N'), '') IS NULL)`;
-    const qualityGap = `(issues.open_issue_count > 0 OR jsonb_array_length(source.error_columns) > 0)`;
+    const calculationError = `jsonb_array_length(source.error_columns) > 0`;
     const result = await pool.query<{ total_count: number; items: Array<{ value: string; rowCount: number }> }>(
       `WITH visible AS MATERIALIZED (
          SELECT source.id, source.batch_id, source.sheet_name, source.row_number, source.raw_values,
                 source.error_columns,
-                (${noPo}) AS missing_po, (${noIp}) AS missing_ip, ${qualityGap} AS has_quality_gap,
-                issues.open_issue_count
+                (${noPo}) AS missing_po, (${noIp}) AS missing_ip, ${calculationError} AS has_calculation_error
          FROM migration.source_row AS source
-         LEFT JOIN LATERAL (
-           SELECT count(*) FILTER (WHERE issue.status = 'OPEN')::int AS open_issue_count
-           FROM migration.data_issue AS issue WHERE issue.source_row_id = source.id
-         ) AS issues ON TRUE
          WHERE btrim(source.raw_values->>'F') = ANY($1::text[])
            AND ($2::text = 'all' OR source.sheet_name = $2)
            AND ($3::text IS NULL OR btrim(source.raw_values->>'F') = $3)
@@ -141,8 +136,8 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
            AND ($7::text = 'all'
              OR ($7::text = 'without-ip' AND source.missing_ip)
              OR ($7::text = 'without-po' AND source.missing_po)
-             OR ($7::text = 'quality' AND source.has_quality_gap)
-             OR ($7::text = 'any' AND (source.missing_ip OR source.missing_po OR source.has_quality_gap)))
+             OR ($7::text = 'quality' AND source.has_calculation_error)
+             OR ($7::text = 'any' AND (source.missing_ip OR source.missing_po OR source.has_calculation_error)))
        ), grouped AS MATERIALIZED (
          SELECT coalesce(source.raw_values->>$5, '') AS value, count(*)::int AS row_count
          FROM filtered AS source GROUP BY 1
@@ -181,7 +176,7 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
     const postNoIp = `(${validIp("source.raw_values->>'B'")}) IS NOT TRUE`;
     const noIp = `(source.sheet_name = 'Pré Embarque' AND ${preNoIp}) OR (source.sheet_name = 'Pós Embarque' AND ${postNoIp})`;
     const noPo = `(source.sheet_name = 'Pré Embarque' AND NULLIF(btrim(source.raw_values->>'N'), '') IS NULL)`;
-    const qualityGap = `(issues.open_issue_count > 0 OR jsonb_array_length(source.error_columns) > 0)`;
+    const calculationError = `jsonb_array_length(source.error_columns) > 0`;
     const columnPredicate = columnFilterPredicate("$4");
     const sortExpression = sortColumn
       ? `CASE WHEN (source.raw_values->>'${sortColumn}') ~ '^-?[0-9]+(\\.[0-9]+)?$'
@@ -190,17 +185,16 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
       : "";
     const result = await pool.query<{
       total_count: number; rows_before_gap_filter: number; without_po: number; without_ip: number;
-      quality_issues: number; any_gap: number; items: Array<Record<string, unknown>>;
+      cell_errors: number; any_gap: number; items: Array<Record<string, unknown>>;
     }>(
       `WITH visible AS MATERIALIZED (
          SELECT source.id, source.batch_id, source.sheet_name, source.row_number,
                 source.raw_values, source.error_columns, btrim(source.raw_values->>'F') AS importer,
                 po.id AS purchase_order_id, po.external_number AS po_number,
                 process.id AS process_id, process.ip_number,
-                issues.open_issue_count,
                 (${noPo}) AS missing_po,
                 (${noIp}) AS missing_ip,
-                ${qualityGap} AS has_quality_gap
+                ${calculationError} AS has_calculation_error
          FROM migration.source_row AS source
          LEFT JOIN procurement.po_line_observation AS observation ON observation.source_row_id = source.id
          LEFT JOIN procurement.purchase_order AS po ON po.id = observation.purchase_order_id
@@ -209,10 +203,6 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
                 WHEN 'Pré Embarque' THEN source.raw_values->>'AB'
                 WHEN 'Pós Embarque' THEN source.raw_values->>'B' END))
           AND process.importer = btrim(source.raw_values->>'F')
-         LEFT JOIN LATERAL (
-           SELECT count(*) FILTER (WHERE issue.status = 'OPEN')::int AS open_issue_count
-           FROM migration.data_issue AS issue WHERE issue.source_row_id = source.id
-         ) AS issues ON TRUE
          WHERE btrim(source.raw_values->>'F') = ANY($1::text[])
            AND ($2::text = 'all' OR source.sheet_name = $2)
            AND ($3::text IS NULL OR btrim(source.raw_values->>'F') = $3)
@@ -226,8 +216,8 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
          WHERE $6::text = 'all'
             OR ($6::text = 'without-ip' AND source.missing_ip)
             OR ($6::text = 'without-po' AND source.missing_po)
-            OR ($6::text = 'quality' AND source.has_quality_gap)
-            OR ($6::text = 'any' AND (source.missing_ip OR source.missing_po OR source.has_quality_gap))
+            OR ($6::text = 'quality' AND source.has_calculation_error)
+            OR ($6::text = 'any' AND (source.missing_ip OR source.missing_po OR source.has_calculation_error))
        ), page AS (
          SELECT * FROM gap_filtered AS source ORDER BY ${sortExpression} sheet_name, row_number, id LIMIT $7 OFFSET $8
        )
@@ -235,8 +225,8 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
               (SELECT count(*)::int FROM filtered) AS rows_before_gap_filter,
               (SELECT count(*) FILTER (WHERE missing_po)::int FROM filtered) AS without_po,
               (SELECT count(*) FILTER (WHERE missing_ip)::int FROM filtered) AS without_ip,
-              (SELECT count(*) FILTER (WHERE has_quality_gap)::int FROM filtered) AS quality_issues,
-              (SELECT count(*) FILTER (WHERE missing_ip OR missing_po OR has_quality_gap)::int FROM filtered) AS any_gap,
+              (SELECT count(*) FILTER (WHERE jsonb_array_length(error_columns) > 0)::int FROM filtered) AS cell_errors,
+              (SELECT count(*) FILTER (WHERE missing_ip OR missing_po OR has_calculation_error)::int FROM filtered) AS any_gap,
               coalesce(jsonb_agg(jsonb_build_object(
                 'id', page.id, 'batchId', page.batch_id,
                 'sourceSheetName', page.sheet_name, 'sourceRowNumber', page.row_number,
@@ -245,9 +235,9 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
                 'purchaseOrderId', page.purchase_order_id, 'poNumber', page.po_number,
                 'processId', page.process_id, 'ipNumber', page.ip_number,
                 'auditFlags', jsonb_build_object('withoutPurchaseOrder', page.missing_po,
-                  'withoutValidIp', page.missing_ip, 'openQualityIssues', page.open_issue_count,
+                  'withoutValidIp', page.missing_ip,
                   'cellErrors', jsonb_array_length(page.error_columns), 'anyGap',
-                  page.missing_ip OR page.missing_po OR page.has_quality_gap)
+                  page.missing_ip OR page.missing_po OR page.has_calculation_error)
               ) ORDER BY page.sheet_name, page.row_number, page.id)
                 FILTER (WHERE page.id IS NOT NULL), '[]'::jsonb) AS items
        FROM page`,
@@ -270,7 +260,7 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
       rowsBeforeGapFilter: Number(result.rows[0]?.rows_before_gap_filter ?? 0),
       summary: { withoutPurchaseOrder: Number(result.rows[0]?.without_po ?? 0),
         withoutValidIp: Number(result.rows[0]?.without_ip ?? 0),
-        withQualityIssues: Number(result.rows[0]?.quality_issues ?? 0),
+        cellErrors: Number(result.rows[0]?.cell_errors ?? 0),
         anyGap: Number(result.rows[0]?.any_gap ?? 0) },
       columns,
       columnHeaders,

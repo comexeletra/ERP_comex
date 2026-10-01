@@ -16,11 +16,11 @@ type SourceRow = {
   importer: string; sourceValues: Record<string, string | null>; cellErrors: string[];
   poNumber: string | null; ipNumber: string | null;
   auditFlags: { withoutPurchaseOrder: boolean; withoutValidIp: boolean;
-    openQualityIssues: number; cellErrors: number; anyGap: boolean };
+    cellErrors: number; anyGap: boolean };
 };
 type AuditResult = {
   page: number; pageSize: number; totalCount: number; rowsBeforeGapFilter: number;
-  summary: { withoutPurchaseOrder: number; withoutValidIp: number; withQualityIssues: number; anyGap: number };
+  summary: { withoutPurchaseOrder: number; withoutValidIp: number; cellErrors: number; anyGap: number };
   columns: string[]; columnHeaders: Record<string, string>; items: SourceRow[];
 };
 type Importer = { code: string };
@@ -37,10 +37,10 @@ const sheetOptions: Array<{ value: Sheet; label: string }> = [
 ];
 const gapOptions: Array<{ value: Gap; label: string }> = [
   { value: "all", label: "Todos os registros" },
-  { value: "any", label: "Qualquer gap" },
-  { value: "without-ip", label: "Sem IP válido" },
-  { value: "without-po", label: "Sem PO" },
-  { value: "quality", label: "Com problema de qualidade" },
+  { value: "any", label: "Qualquer sinalizador" },
+  { value: "without-ip", label: "Sem IP válido na origem" },
+  { value: "without-po", label: "Sem PO na origem" },
+  { value: "quality", label: "Célula com erro de cálculo" },
 ];
 
 function readColumnFilters(raw: string | null): ColumnFilters {
@@ -280,7 +280,7 @@ export default function SourceAuditPage() {
     <header className="page-header">
       <p className="eyebrow">ERP Comex · Auditoria de origem</p>
       <h1>Tabela completa para auditoria</h1>
-      <p>Consulte os registros das planilhas de origem em formato tabular. Os valores permanecem como foram importados; os indicadores destacam possíveis gaps para revisão.</p>
+      <p>Consulte os registros da planilha de origem. Os valores históricos são preservados como foram informados; os indicadores mostram o que está preenchido na origem. Somente células com erro de cálculo são sinalizadas como erro.</p>
       <Link className="text-link" href="/">← Carteira de POs</Link>
     </header>
 
@@ -297,7 +297,7 @@ export default function SourceAuditPage() {
           <option value="">Todos no meu escopo</option>{importers.map(importer => <option key={importer.code} value={importer.code}>{importer.code}</option>)}
         </select></label>
         <label>Busca geral<input value={draft.search} onChange={event => setDraft(value => ({ ...value, search: event.target.value }))} placeholder="Texto em qualquer coluna" /></label>
-        <label>Auditoria de gaps<select value={draft.gap} onChange={event => setDraft(value => ({ ...value, gap: event.target.value as Gap }))}>
+        <label>Sinais de auditoria<select value={draft.gap} onChange={event => setDraft(value => ({ ...value, gap: event.target.value as Gap }))}>
           {gapOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select></label>
         <button className="button" type="submit">Aplicar filtros</button>
@@ -308,10 +308,10 @@ export default function SourceAuditPage() {
 
     <section className="metric-grid source-audit-metrics" aria-live="polite">
       <div className="metric"><span>Linhas no recorte</span><strong>{loading ? "…" : result?.totalCount.toLocaleString("pt-BR") ?? "—"}</strong></div>
-      <div className="metric"><span>Sem PO na origem</span><strong>{loading ? "…" : result?.summary.withoutPurchaseOrder.toLocaleString("pt-BR") ?? "—"}</strong></div>
-      <div className="metric"><span>Sem IP válido</span><strong>{loading ? "…" : result?.summary.withoutValidIp.toLocaleString("pt-BR") ?? "—"}</strong></div>
-      <div className="metric"><span>Problemas de qualidade</span><strong>{loading ? "…" : result?.summary.withQualityIssues.toLocaleString("pt-BR") ?? "—"}</strong></div>
-      <div className="metric"><span>Com qualquer gap</span><strong>{loading ? "…" : result?.summary.anyGap.toLocaleString("pt-BR") ?? "—"}</strong></div>
+      <div className="metric"><span>Sem PO informado na origem</span><strong>{loading ? "…" : result?.summary.withoutPurchaseOrder.toLocaleString("pt-BR") ?? "—"}</strong></div>
+      <div className="metric"><span>Sem IP válido na origem</span><strong>{loading ? "…" : result?.summary.withoutValidIp.toLocaleString("pt-BR") ?? "—"}</strong></div>
+      <div className="metric"><span>Células com erro de cálculo</span><strong>{loading ? "…" : result?.summary.cellErrors.toLocaleString("pt-BR") ?? "—"}</strong></div>
+      <div className="metric"><span>Linhas com sinalizador</span><strong>{loading ? "…" : result?.summary.anyGap.toLocaleString("pt-BR") ?? "—"}</strong></div>
     </section>
 
     <section className="card source-audit-grid-card" aria-live="polite">
@@ -319,7 +319,7 @@ export default function SourceAuditPage() {
       {error && <div className="notice error" role="alert"><p>{error}</p><button className="button" onClick={() => setRetry(value => value + 1)}>Tentar novamente</button></div>}
       {!loading && !error && result && <>
         <div className="source-grid-toolbar">
-          <p><strong>{result.totalCount.toLocaleString("pt-BR")}</strong> linha(s){result.rowsBeforeGapFilter !== result.totalCount ? ` · ${result.rowsBeforeGapFilter.toLocaleString("pt-BR")} antes do filtro de gaps` : ""}
+          <p><strong>{result.totalCount.toLocaleString("pt-BR")}</strong> linha(s){result.rowsBeforeGapFilter !== result.totalCount ? ` · ${result.rowsBeforeGapFilter.toLocaleString("pt-BR")} antes dos sinais de auditoria` : ""}
             {totalPages > 0 && ` · página ${page} de ${totalPages}`}</p>
           <label>Linhas por página<select value={pageSize} onChange={event => changePageSize(Number(event.target.value))}>
             {pageSizeOptions.map(size => <option key={size} value={size}>{size}</option>)}
@@ -332,7 +332,7 @@ export default function SourceAuditPage() {
                 <tr className="source-grid-head">
                   <th className="source-pin source-pin-1" scope="col">Linha</th>
                   <th className="source-pin source-pin-2" scope="col">Planilha</th>
-                  <th className="source-pin source-pin-3" scope="col">Gap de auditoria</th>
+                  <th className="source-pin source-pin-3" scope="col">Sinais da origem</th>
                   {columns.map(column => <th key={column} scope="col" title={`Coluna Excel ${column}: ${result.columnHeaders[column] ?? ""}`}>
                     <span className="source-excel-col">{column}</span>{result.columnHeaders[column] || "(sem cabeçalho)"}
                     {sort?.column === column && <span className="source-sort-indicator" aria-label={sort.direction === "asc" ? "Ordem crescente" : "Ordem decrescente"}>{sort.direction === "asc" ? " ▲" : " ▼"}</span>}
@@ -341,7 +341,7 @@ export default function SourceAuditPage() {
                 <tr className="source-grid-filters">
                   <th className="source-pin source-pin-1"><span className="sr-only">Sem filtro para linha</span></th>
                   <th className="source-pin source-pin-2"><span className="sr-only">Sem filtro para planilha</span></th>
-                  <th className="source-pin source-pin-3"><span className="sr-only">Sem filtro para gaps</span></th>
+                  <th className="source-pin source-pin-3"><span className="sr-only">Sem filtro para sinais da origem</span></th>
                   {columns.map(column => <th key={column}>
                     <button type="button" className={hasColumnFilter(appliedColumnFilters[column]) ? "source-filter-trigger active" : "source-filter-trigger"}
                       aria-label={`Abrir filtro da coluna ${column} ${result.columnHeaders[column] ?? ""}`}
@@ -355,11 +355,10 @@ export default function SourceAuditPage() {
                 <td className="source-pin source-pin-1 source-row-number" title={`Lote ${row.batchId} · linha ${row.sourceRowNumber}`}>{row.sourceRowNumber}</td>
                 <td className="source-pin source-pin-2">{row.sourceSheetName}</td>
                 <td className="source-pin source-pin-3"><div className="source-gap-tags">
-                  {row.auditFlags.withoutPurchaseOrder && <span className="source-gap-tag">Sem PO</span>}
-                  {row.auditFlags.withoutValidIp && <span className="source-gap-tag">Sem IP</span>}
-                  {row.auditFlags.openQualityIssues > 0 && <span className="source-gap-tag">{row.auditFlags.openQualityIssues} pend.</span>}
-                  {row.auditFlags.cellErrors > 0 && <span className="source-gap-tag">{row.auditFlags.cellErrors} erro(s)</span>}
-                  {!row.auditFlags.anyGap && <span className="source-ok-tag">Sem gap</span>}
+                  {row.auditFlags.withoutPurchaseOrder && <span className="source-gap-tag">Sem PO na origem</span>}
+                  {row.auditFlags.withoutValidIp && <span className="source-gap-tag">Sem IP válido na origem</span>}
+                  {row.auditFlags.cellErrors > 0 && <span className="source-gap-tag">{row.auditFlags.cellErrors} erro(s) de cálculo</span>}
+                  {!row.auditFlags.anyGap && <span className="source-ok-tag">Sem sinalizador</span>}
                 </div></td>
                 {columns.map(column => <td key={column} title={display(row.sourceValues[column])}>{display(row.sourceValues[column])}</td>)}
               </tr>)}</tbody>
