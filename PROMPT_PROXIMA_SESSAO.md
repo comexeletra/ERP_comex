@@ -34,6 +34,10 @@ Continue do estado real do repositório e leia primeiro **Estado atual —
   rollback da API em `/var/backups/import-erp/source-audit-api-20261001T125916Z`.
   O registro da entrega e seus limites está em `CHECKLIST_IMPLEMENTACAO.md` e
   `docs/AUDITORIA_TABELA_ORIGEM.md`.
+- Hotfix `852254e` corrigiu o `500` observado pelo usuário: a role de runtime
+  não tem SELECT em `migration.import_batch`; a consulta agora não lê essa
+  tabela e mantém o ID do lote sem ampliar grants. API reimplantada e pronta;
+  backup de reversão em `/var/backups/import-erp/source-audit-api-20261001T131042Z`.
 - Backup pré-M010 restaurado:
   `/var/backups/import-erp/erp_po_totvs_test_20261001T113403Z.dump`, SHA-256
   `4fcc31fdb6cb530f89f308bfbd7ac7a505d078891f0c46eb7a608ff3ed204e86`.
