@@ -450,16 +450,16 @@ Um valor histórico originalmente calculado no Excel passa a ser um **snapshot h
 - **RB00 Centralidade:** qualquer item com PO conhecida deve ser acessível a partir dessa PO, com seus IPs, invoices, marcos e custos atribuídos. O IP nunca substitui a identidade do pedido.
 - **RB02 Grão:** uma linha pré-embarque não equivale a um processo. Uma linha pós-embarque não equivale a um item.
 - **RB03 Custos:** cada valor de pós-embarque entra uma vez por processo e campo de origem. Nunca replicar custos em cada item para facilitar uma tela.
-- **RB04 Moedas:** não somar CNY, USD e BRL em um cartão único sem conversão documentada. Ausência de moeda bloqueia a inclusão do valor no total por moeda.
-- **RB05 Legado:** cadastro incompleto não exclui a linha. A linha aparece como histórica com pendência de qualidade.
+- **RB04 Moedas:** BRL é a moeda padrão para novos lançamentos. Quando houver valor em CNY, preservar também o valor original em CNY e sua moeda; qualquer equivalente em BRL deve guardar taxa, data e fonte da conversão. Não somar moedas sem conversão documentada. Valores históricos mantêm a moeda e o valor exatamente como registrados na planilha.
+- **RB05 Legado:** a planilha histórica é a fonte oficial dos valores da operação até que o ERP seja formalmente adotado como padrão. Preservar todos os valores armazenados, inclusive os que não sigam o padrão atual; a exceção de revisão histórica são células com erro de cálculo do Excel. Não excluir nem marcar como erro histórico um valor somente por formato, NCM, unidade, identidade ou vínculo ausente.
 - **RB06 Cancelamento:** manter itens e custos históricos; excluir cancelados somente nas métricas cuja definição assim determinar.
-- **RB07 Quantidade e preço novos:** quantidade maior que zero e preço não negativo; preço zero exige motivo de bonificação/amostra. Valores legados inesperados abrem pendência em vez de serem descartados.
-- **RB08 Unidade:** não inferir unidade de medida da planilha. Legado fica como não informada; novos itens exigem seleção.
+- **RB07 Quantidade e preço novos:** quantidade maior que zero e preço não negativo; preço zero exige motivo de bonificação/amostra. Essas validações aplicam-se a novos lançamentos; valores históricos são preservados sem revalidação retroativa.
+- **RB08 Unidade:** não inferir unidade de medida para novos itens; a entrada nova exige seleção conforme o padrão da coluna. Manter intacto o conteúdo histórico da planilha, inclusive vazio ou valor fora do padrão.
 - **RB09 Alteração de item:** recalcular valor operacional; não modificar `legacy_total_amount`. Auditoria guarda os valores anterior e novo.
 - **RB10 Documentos externos:** campos contendo múltiplas referências não serão divididos automaticamente por qualquer barra ou vírgula. O parser precisa de regra específica e evidência de que o separador não integra o número.
 - **RB11 Pedido e invoice:** alocação não pode exceder quantidade disponível sem resolução autorizada. Comparação usa os vínculos de linhas, não apenas igualdade de descrição.
 - **RB12 Dados fiscais:** NCM e alíquotas possuem vigência. Correção atual do produto não altera a classificação histórica da operação.
-- **RB13 Datas:** registros novos validam ordem temporal; dados legados incoerentes mantêm valores e pendência. Data desconhecida não recebe hoje.
+- **RB13 Datas:** registros novos validam ordem temporal; datas históricas mantêm exatamente o valor da planilha. Data desconhecida não recebe hoje.
 - **RB14 Containers:** quantidade equivalente decimal e número de containers físicos são métricas distintas. Não chamar Ctnr Qty de TEU sem confirmação.
 - **RB15 Concorrência:** gravação exige versão esperada. Conflito devolve 409 e mantém o formulário do usuário para comparação.
 - **RB16 Auditoria:** comando, evento de status, log e outbox são confirmados na mesma transação PostgreSQL.
@@ -580,7 +580,7 @@ Iterar todas as linhas com conteúdo de negócio, inclusive ocultas e fora dos f
 | Verificar | Recontar registros e valores após persistência | CONCLUIDO ou CONCLUIDO_COM_PENDENCIAS |
 | Reprocessar | Retomar do checkpoint sem duplicação | Nova tentativa no mesmo lote |
 
-Carga inicial: preservar exatamente **7.130 registros de origem**. Promover **200 processos identificados**, **5.168 linhas de itens vinculadas** e **1.772 linhas para a fila de legado sem IP**, sem inventar agrupamentos. Campos inválidos não impedem a preservação e consulta do restante da linha.
+Carga inicial: preservar exatamente **7.130 registros de origem**. Promover **200 processos identificados**, **5.168 linhas de itens vinculadas** e **1.772 linhas para a fila de legado sem IP**, sem inventar agrupamentos. Ausências de PO/IP são estados fiéis à planilha, não erros por si só. Preserve e consulte a linha inteira mesmo quando seus valores históricos não sigam os padrões de novos lançamentos.
 
 Os 6.796 registros com PO passam a ser observações históricas de acompanhamento dos 336 pedidos identificados. Não equivalem a 6.796 linhas oficiais distintas de PO TOTVS. Dos 1.772 registros sem IP, 1.644 já têm PO e ficam visíveis nela como atendimento histórico sem IP; apenas 128 não têm nenhuma das duas referências. Os 16 registros com IP e sem PO ficam no IP e na fila para identificar o pedido.
 
@@ -590,8 +590,8 @@ Os 190 registros de pós-embarque enriquecem processos existentes. Não são 190
 
 - Trim de identificadores conserva o valor bruto e gera alias. Três códigos observados têm espaços ou quebras de linha extras.
 - Modal será normalizado para SEA, AIR e COURIER conforme os valores observados; os rótulos de tela podem ser Marítimo, Aéreo e Courier.
-- Preços textuais como ` 10,00 `, `0,5` e `0,50` serão convertidos por regra decimal pt-BR documentada. Separadores ambíguos geram pendência.
-- NCM aceita apenas código de oito dígitos no campo canônico. Valor inválido permanece na origem; não preencher zero nem consultar uma alíquota por suposição.
+- Novos preços textuais serão validados por regra decimal pt-BR documentada. Valores históricos permanecem exatamente como registrados, mesmo quando a representação é ambígua para uma coluna tipada.
+- Novos cadastros de NCM aceitam apenas código de oito dígitos no campo canônico. Valores históricos de NCM permanecem exatamente como estão na planilha mesmo quando fora desse formato; não preencher zero nem consultar uma alíquota por suposição.
 - Referências de SC, PO, invoice, NF e BL permanecem texto. Associação por número externo exige conferir importador e fornecedor, além da integridade do número.
 - Descrição e categoria divergentes de um mesmo código não serão substituídas pela primeira ocorrência. Preservar snapshot no item e abrir pendência de cadastro quando necessário.
 - Um produto com código conhecido e NCM ausente pode existir como cadastro incompleto. Operações fiscais dependentes devem ser bloqueadas até completar classificação.
@@ -604,15 +604,21 @@ Promoção identifica cada entidade criada por `source_row_id + target_entity_ty
 
 Jobs usam lock/lease no PostgreSQL e checkpoints. Reexecução após falha não duplica custo, item ou evento. Alterações operacionais posteriores à carga nunca são sobrescritas por reimportação sem um comando de correção aprovado.
 
+### 12.4.1 Planilha mestra enquanto a operação não migrar
+
+Enquanto o usuário não declarar o ERP como padrão da operação, a planilha enviada mais recentemente continua sendo a fonte histórica mestra. Quando uma nova versão for fornecida, recebê-la como novo snapshot imutável e produzir uma prévia comparativa por abas, cabeçalhos, linhas, valores, entidades e novos valores; nunca sobrescrever silenciosamente o lote ou a operação existente. Incorporar colunas adicionais detectadas no workbook sem descartar colunas desconhecidas, preservando a ordem/letra, o cabeçalho, o valor bruto e a linhagem por lote/aba/linha. A promoção acontece após conferir a prévia e resolver apenas erros de cálculo do Excel.
+
+A tela atual tem intervalos de colunas predefinidos (`B:AZ` e `B:AS`), enquanto o usuário informou que a planilha em uso passou a conter colunas adicionais. A cobertura integral da versão atual está pendente: ao receber a próxima cópia, inventariar seus cabeçalhos e ampliar extração/API/tabela para expor todas as colunas novas, sem assumir que a contagem ou o esquema antigo continue completo.
+
 ### 12.5 Qualidade e severidade
 
 **Bloqueante:** IP conflitando com outra identidade, valor impossível de representar, autorização ausente, arquivo corrompido, vínculo cruzado entre importadores ou promoção com perda de linhas.
 
-**Revisão obrigatória de campo:** erro de Excel, total divergente, moeda inválida, NCM inválido, status conflitante, referências documentais ambíguas ou container agregado não desambiguado.
+**Revisão obrigatória de campo histórico:** célula com erro de cálculo do Excel. Para lançamentos novos, validar também padrão da coluna, moeda, NCM, status, referências e granularidade de containers. Não aplicar essas validações retroativamente para classificar os demais valores históricos como erro.
 
 **Informativa:** campo opcional vazio, ausência de pós-embarque, normalização de caixa ou trim sem conflito. Ausência de dado não deve ser convertida indiscriminadamente em erro operacional.
 
-O relatório separa linhas preservadas, promovidas, pendentes e rejeitadas por estrutura. Uma linha com erro de NCM não desaparece do histórico financeiro por esse único motivo; seu grau de confiabilidade deve ser visível e as métricas dependentes de NCM a tratarão separadamente.
+O relatório separa linhas preservadas, promovidas, pendentes e rejeitadas por estrutura. Somente células com erro de cálculo do Excel são pendência histórica de conteúdo; valores históricos fora do padrão permanecem disponíveis sem correção. A validação estrita de colunas passa a valer para dados informados depois que o ERP adotar esse processo.
 
 ### 12.6 Reconciliação obrigatória
 

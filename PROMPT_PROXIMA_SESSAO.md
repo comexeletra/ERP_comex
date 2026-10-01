@@ -67,6 +67,30 @@ Continue do estado real do repositório e leia primeiro **Estado atual —
   observações com PO, 200 IPs, 449 vínculos PO–IP, 422 custos históricos e
   451 pendências. O catálogo operacional está vazio até revisão humana real.
   Observações da origem são candidatos, não fornecedor/produto/NCM oficiais.
+- Regra confirmada pelo usuário: a planilha é a fonte histórica verdadeira
+  enquanto o ERP não for declarado padrão operacional. Todos os valores são
+  reais conforme preenchidos, exceto células com erro de cálculo do Excel que
+  devem ser revisadas. Não tratar ausência de PO/IP, NCM fora de oito dígitos,
+  diferenças de nomes ou outro formato legado como erro, nem normalizar o
+  histórico por cima do valor bruto. Aplicar padrões somente a novos registros.
+  BRL é a moeda padrão de novos lançamentos e, quando aplicável, também deve ser
+  guardado o valor CNY; qualquer conversão para BRL precisa conservar taxa, data
+  e fonte. O histórico mantém a moeda original.
+- A tabela `/source-audit` foi alinhada a essa regra no commit `ffb07fb`:
+  `Sem PO` e `Sem IP` agora aparecem como sinais preenchidos na origem, e o
+  indicador/filtro de erro conta somente `source_row.error_columns`, sem somar
+  outras pendências abertas de `data_issue`. Frontend Vercel
+  `dpl_CHWEAuxasqFcUXfEsw34NutAZScZ` está `READY` com alias público. API
+  compilada e instalada na VPS; `systemd` ativo, ready HTTPS 200 e anônimo 401.
+  Reversão da API em `/var/backups/import-erp/source-audit-api-20261001T163609Z`.
+  Sem migration ou escrita no banco.
+- A planilha em uso pode ter colunas novas e o usuário poderá reenviá-la até o
+  ERP virar a fonte da operação. A tela atual cobre somente `B:AZ` e `B:AS`.
+  Quando o arquivo atualizado for fornecido, comparar hash, abas, cabeçalhos,
+  linhas, entidades e valores; ampliar extração e visualização sem descartar
+  colunas nem sobrescrever o snapshot anterior. Diferenças de contagens entre
+  snapshots antigos só devem ser tratadas como mudança de versão, não como
+  linhas faltantes do histórico aceito.
 - O usuário autorizou VPS e publicação neste histórico. A chave privada SSH
   permanece somente no checkout em
   `C:\04_Portal_analytics\ERP_interno_Import\Import_eletra\.local-keys\rf06_ed25519`;
@@ -91,15 +115,16 @@ deve continuar 401. RF03 permanece parcial até validar workflow/edição com
 Registre com Product Owner de Importação/Compras se quantidade, unidade e
 produto oficial precisam existir antes da submissão; quem aprova finalidade e
 centro de custo; estados e transições de solicitação; e regra de cancelamento.
-Identifique Compras/TI TOTVS para empresa/filial e identidade de fornecedor,
-Fiscal para NCM/vigência e Dados/Compras para aliases conflitantes. Mantenha os
-itens livres atuais rotulados como texto informado pelo solicitante.
+Identifique Compras/TI TOTVS para empresa/filial e identidade canônica de
+fornecedor, Fiscal para novos cadastros NCM/vigência e Dados/Compras para aliases
+de operação nova. Essas validações não reabrem nem corrigem valores da planilha
+histórica, que o usuário confirmou como reais.
 
 Em paralelo, obtenha homologação real de leitura RF06/RF04 e do novo catálogo
 com Master e usuário restrito. O teste anterior de escopo usou grant sintético
-sobre dados reais. Identifique quem aprova mapeamento de empresa/filial TOTVS,
-identidade de fornecedor, aliases conflitantes, classificação NCM e unidades.
-Não promova células R/T/V, unidade ou saldo a dado oficial sem confirmação.
+sobre dados reais. Cadastros canônicos para a operação nova ainda exigem
+empresa/filial TOTVS, identidade de fornecedor, aliases, classificação NCM e
+unidades aprovados; mantenha o valor histórico bruto ao criar esses vínculos.
 
 ## Dependências para os incrementos seguintes
 
@@ -116,8 +141,9 @@ Não promova células R/T/V, unidade ou saldo a dado oficial sem confirmação.
    desembaraço/NF, custos/reversões/rateio. Custos de IP compartilhado
    permanecem no IP até aprovar política de alocação e moeda.
 5. RF13, RF14/DEV25–28 e DEV29–30: prévia/reconciliação de importação,
-   dashboard/BI com grão, moeda, atualização e RLS, depois E2E, segurança,
-   recuperação, treinamento e corte.
+   incluindo colunas adicionais quando o usuário enviar nova versão da planilha;
+   dashboard/BI com grão, BRL/CNY, conversão rastreável, atualização e RLS,
+   depois E2E, segurança, recuperação, treinamento e corte.
 
 Mantenha a PO como entrada central e o IP como execução logística que pode
 atender várias POs; uma PO pode dividir-se entre vários IPs. Para cada entrega,

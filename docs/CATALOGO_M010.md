@@ -1,9 +1,10 @@
 # Catálogo operacional revisado — M010
 
 Este corte distingue **candidato histórico** de **cadastro operacional revisado**.
-Nenhuma linha da PO TOTVS, fornecedor oficial, unidade, saldo ou NCM fiscal é
-inferida da planilha. O cadastro manual não altera observações de origem e não
-atribui automaticamente um produto ou fornecedor a uma PO.
+A planilha é a fonte histórica de verdade até a adoção formal do ERP. Seus
+valores são preservados como reais, mesmo quando não seguem o padrão de novos
+lançamentos. O cadastro operacional pode associar valores observados a entidades
+canônicas, mas não altera o valor bruto nem reescreve a origem.
 
 ## Origem e limites
 
@@ -14,8 +15,10 @@ atribui automaticamente um produto ou fornecedor a uma PO.
   agrupam respectivamente os valores literais `R`, `T` e `V` das observações
   históricas **com PO**, por importador. Informam contagem e uma aba/linha de
   exemplo. As 144 linhas sem PO não entram nessa consulta porque seu importador
-  não foi vinculado de forma autorizada. NCM com formato diferente de oito
-  dígitos aparece como candidato inválido; não é corrigido automaticamente.
+  não foi vinculado de forma autorizada. Valores históricos de NCM fora de oito
+  dígitos continuam sendo valores reais da planilha, não erros históricos nem
+  alvos de correção retroativa; o cadastro canônico de novos NCMs exige oito
+  dígitos.
 - As observações históricas preservam código, descrição, quantidade, preço,
   moeda, status e células brutas. A PO continua a entrada central. O IP segue
   como execução logística com vínculos muitos para muitos com as POs.
@@ -54,8 +57,10 @@ e rollback de falha injetada na outbox. Na URL pública, abrir **Cadastros** e
 verificar estados de carregamento, vazio e erro. Criar um cadastro real apenas
 com evidência de negócio; os testes automatizados criam dados só na cópia.
 
-Continuam pendentes: empresa/filial oficial por importador; documentos/códigos
-aprovados de fornecedor; política de aliases múltiplos e conflitos de atributos
-de produto; fonte e vigência fiscal de NCM; lista de unidades; origem das linhas
-oficiais TOTVS, finalidade e centro de custo. Sem essas decisões, RF02/DEV06 e
-RF05 permanecem parciais. Não calcular saldo ou atendimento quantitativo.
+Continuam pendentes para a operação nova: empresa/filial oficial por importador;
+identificadores canônicos e aliases que ligam os valores literais aos cadastros;
+fonte e vigência fiscal para novos cadastros de NCM; lista de unidades para
+novos lançamentos; origem das linhas oficiais TOTVS, finalidade e centro de
+custo. Essas decisões não invalidam os valores históricos da planilha. Sem a
+fonte oficial de linhas/quantidades, não calcular saldo ou atendimento
+quantitativo.

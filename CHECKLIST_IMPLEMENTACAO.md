@@ -64,11 +64,33 @@ computador corporativo.
   confirmou, para ELETRA CWB/FOR/MATRIZ respectivamente, 107/178/6.511
   observações com PO; 1/2/6 nomes de fornecedor distintos por importador;
   94/126/1.344 códigos de produto após trim; 35/39/217 valores NCM após
-  trim, com 32/49/36 observações de NCM fora do formato de oito dígitos. As
+  trim, com 32/49/36 observações de NCM fora do formato de oito dígitos. Por
+  decisão do usuário, esses valores fora do padrão continuam sendo dados
+  históricos reais, não erros a corrigir. As
   contagens por importador não são somas globais de entidades distintas nem
   prova de cadastro oficial. O histórico operacional ficou em 7.130 linhas de
   origem, 336 POs, 6.796 observações, 200 IPs, 449 vínculos, 422 custos e
   451 pendências após M010.
+- **Regra de negócio confirmada pelo usuário:** enquanto o ERP não for
+  formalmente o padrão da operação, a planilha enviada é a fonte mestra dos
+  dados históricos. Preservar os valores exatamente como vieram; revisar somente
+  células com erro de cálculo do Excel. Valores fora do padrão, lacunas de PO/IP
+  e divergências textuais não devem ser tratados como erro nem corrigidos
+  retroativamente. A validação de padrão vale para novos preenchimentos.
+- **Moeda:** BRL é o padrão para novos lançamentos e o valor em CNY também deve
+  ser mantido quando aplicável. Valores históricos preservam sua moeda original.
+  Para calcular equivalente BRL a partir de CNY, ainda é necessário definir
+  fonte, data e taxa de câmbio; não substituir nem somar moedas sem registrar a
+  conversão.
+- **Planilha evolutiva:** o usuário informa que a planilha atual ganhou colunas
+  e poderá reenviá-la enquanto ela continuar sendo a fonte da operação. A tela
+  atual cobre apenas os intervalos `B:AZ` e `B:AS`. Quando a nova cópia for
+  fornecida, comparar hash, cabeçalhos, linhas, entidades e valores; ampliar a
+  extração e a grade para colunas adicionais e promover como novo snapshot, sem
+  sobrescrita silenciosa. A divergência antiga de contagens 7.000/195 versus
+  6.940/190 é entre referências/versões e não significa linha faltante na
+  planilha considerada real pelo usuário; só reabrir na comparação de uma nova
+  versão identificada.
 - **Testes e reversão:** instalação congelada e builds API/web passaram na
   VPS, assim como os 20 testes API existentes. `catalog.real-write.mjs` passou
   em cópia restaurada com Master e escopo restrito sobre dados reais, 401/403/404,
@@ -293,7 +315,7 @@ completo de uma RF depende dos critérios do plano e da validação do usuário.
 | RF10 | Custos | `[-]` 422 custos históricos deduplicados por IP, sem rateio por PO | Lançamentos operacionais, reversões e rateio auditado |
 | RF11 | Documentos | `[ ]` Sem upload/download de documentos | Storage privado, versões e autorização |
 | RF12 | Histórico e auditoria | `[-]` Origem imutável e revisão de qualidade auditada | Timeline e auditoria operacional por campo |
-| RF13 | Histórico Excel | `[-]` Lote preservado e tela `/source-audit` publicada: abas de Pré/Pós Embarque, colunas Excel, menu por coluna com valores distintos selecionáveis, crescente/decrescente e campo de texto, filtros de gaps, indicadores e paginação; API somente leitura e filtrada por escopo | Homologar Master/restrito; prévia/reconciliação, classificação e revisão de todos os erros seguem pendentes |
+| RF13 | Histórico Excel | `[-]` Lote preservado e tela `/source-audit` publicada: abas de Pré/Pós Embarque, colunas Excel, menu por coluna com valores distintos selecionáveis, crescente/decrescente e campo de texto, filtros de auditoria, indicadores e paginação; API somente leitura e filtrada por escopo | Homologar Master/restrito; revisar células com erro de cálculo e, quando o usuário reenviar a planilha, comparar snapshot e incluir colunas adicionais informadas |
 | RF14 | Dashboard e relatórios | `[ ]` Sem dashboard ou relatórios na aplicação Node atual | Indicadores com grão, moeda, filtros e data de atualização |
 | RF15 | Administração | `[-]` Master cria, edita, desativa usuários e redefine senhas/escopos | Parâmetros e acompanhamento de jobs |
 | RF16 | Dados analíticos | `[ ]` Sem DW/modelo semântico operacional | ETL, fatos, medidas e RLS |
@@ -619,15 +641,16 @@ inclua aqui a nova seção ou subseção antes de implementar a mudança.
 | [!] | Solicitação nativa RF03 | Cabeçalho e itens descritos pelo solicitante disponíveis. Confirmar se quantidade/unidade/produto são obrigatórios antes da submissão, finalidade/centro de custo oficiais, workflow, edição e permissões; linhas históricas ficam separadas até aprovar identidade, status entregue/cancelado e concorrência | Product Owner de Importação / Compras / Master |
 | [!] | Cadastros e identidade TOTVS | Aprovar mapeamento empresa/filial, identidade de fornecedor e aliases conflitantes; NCM e vigência por contexto; unidades | Compras / TI TOTVS / Fiscal |
 | [!] | Rateio de custos | Nenhum rateio automático é aplicado; custos permanecem no IP | Importação / Financeiro |
-| [!] | Conversão de moedas | Não há total consolidado entre moedas sem taxa aprovada | Financeiro |
+| [!] | Conversão de moedas | BRL é padrão para novos lançamentos e deve haver valor CNY quando aplicável. Para equivalência/total consolidado, ainda registrar fonte, taxa e data da conversão; histórico preserva a moeda original | Financeiro |
 | [!] | Regras fiscais | Sem cálculo fiscal presumido | Fiscal |
-| [!] | Critérios antigos do plano | As contagens do plano diferem da cópia de trabalho analisada; usar a evidência de carga até reconciliação formal | Dados / Product Owner |
+| [!] | Atualização da planilha mestra | A versão em uso pode conter colunas adicionais; aguardar reenvio do usuário para inventariar e comparar. Diferenças de contagem de snapshots antigos não indicam erro ou dado faltante no histórico aceito | Usuário / Importação |
 | [!] | Consumidores da outbox | ADR 010 já define PostgreSQL, sem broker/Redis inicial. Não há consumidor de negócio, destino externo, credencial ou política de reprocessamento manual aprovada; o dispatcher preserva mensagens pendentes sem consumidor e não finge publicação. | Arquitetura / Product Owner / DevOps |
 
 ## Histórico de incrementos
 
 | Data | Incremento | Status | Evidência / observação |
 |---|---|---|---|
+| 2026-10-01 | RF13 — planilha mestra e semântica de auditoria | [-] | O usuário confirmou a planilha como fonte histórica verdadeira até adoção formal do ERP; revisar somente células com erro de cálculo do Excel e manter os demais valores exatamente como preenchidos, inclusive fora de padrão. BRL é a moeda padrão futura e o valor CNY deve ser mantido quando aplicável; taxa/data/fonte ainda necessárias para conversão. Commit `ffb07fb` muda os indicadores de `/source-audit` para distinguir estados existentes na origem (sem PO/IP) de erros de cálculo (somente `source_row.error_columns`), sem contar outras pendências `data_issue` como erros da tabela. Vercel `dpl_CHWEAuxasqFcUXfEsw34NutAZScZ` `READY` com alias público; API recompilada em staging e instalada com backup `/var/backups/import-erp/source-audit-api-20261001T163609Z`, `systemd` ativo e ready HTTPS 200/anônimo 401. Sem migration ou escrita no banco. O usuário poderá reenviar versões da planilha até o ERP ser o padrão; quando isso ocorrer, inventariar colunas novas, entidades e valores e comparar hashes/snapshots. A tela atual ainda cobre somente `B:AZ` e `B:AS`; expansão da nova versão aguarda recebimento do arquivo atualizado. |
 | 2026-10-01 | RF13 — tabela completa de auditoria da origem | [-] | Commits `1c718ab`, hotfix `852254e`, filtros Excel `187f0d4`, correção de consulta `f024bba` e correção de rolagem `f868848` publicados em `comexeletra/ERP_comex`; deployment `dpl_5HFsBrG5Pd54KJVq2DNgRLBDhBcT` para `f868848` está `READY` com alias público. A imagem do usuário revelou `500` por `42501` ao ler `migration.import_batch`; o hotfix remove essa dependência, preserva o `batchId` e não amplia privilégios. Atualização `187f0d4` adiciona opções distintas por coluna, seleção exata, ordenação e campo de texto. A captura seguinte mostrou HTTP 400 ao abrir filtros porque o cliente enviava `page` e `pageSize`, rejeitados pelo schema estrito; `f024bba` remove esses parâmetros da chamada e mantém aba, importador, busca, gaps e filtros ativos. A captura posterior mostrou o menu fechando ao rolar: o listener global tratava a rolagem interna como externa; `f868848` ignora eventos originados no popover. API recompilada na VPS; handlers de opções, seleção exata e ordenação passaram em transação `READ ONLY` com escopo ELETRA CWB. `systemd` `active`, ready HTTPS 200 e rotas protegidas sem sessão 401. Backup da primeira instalação `/var/backups/import-erp/source-audit-api-20261001T125916Z`, hotfix do 500 `/var/backups/import-erp/source-audit-api-20261001T131042Z` e atualização Excel `/var/backups/import-erp/source-audit-api-20261001T140519Z`. Build Production Vercel `READY` confirma compilação das correções `f024bba` e `f868848`. Sem migration e sem escrita no banco. Escopo por importador, abas/colunas, busca, gaps e paginação em `docs/AUDITORIA_TABELA_ORIGEM.md`. RF13 permanece parcial até conferir opções e rolagem no browser da sessão autenticada, homologar acesso real e concluir prévia/reconciliação de erros. |
 | 2026-10-01 | RF03/DEV14 — solicitação nativa M011 | [-] | Commit `6a74f4b` publicado em `comexeletra/ERP_comex`; Vercel `dpl_DVDRS8TtDjs9ffW5254s2VQL4Q43` `READY` no alias público. `/requests` respondeu 200; API anônima 401. M011 validada em cópia restaurada, backup operacional `/var/backups/import-erp/erp_po_totvs_test_20261001T121101Z.dump` SHA-256 `394c5def6653be18a4c74f749974603167611673df8b35f762850fb66e7e84fb`, aplicada com ledger 11/0; reversão da API `/var/backups/import-erp/rf03-m011-api-20261001T121107Z`. 23 testes API e build API passaram local e VPS; `tsc --noEmit` web passou. Next local compilou, mas seu subprocesso typecheck falhou `spawn EPERM`; Vercel confirmou build READY. Leitura operacional confirmou origem/PO/observações/IP/vínculos/custos/pendências 7130/336/6796/200/449/422/451 e zero solicitação criada para demonstração. Aguardam homologaçao com usuários reais, workflow/edição/If-Match e decisões de negócio. |
 | 2026-10-01 | RF02/DEV06 — catálogo operacional revisado M010 | [-] | Commits `af9e297`, `992adf9`, `309824e`, `4463493` publicados em `comexeletra/ERP_comex`; Vercel `dpl_B6gFiKAdHZmcyb6sXh8cbZA1np9L` `READY` no alias público. M010 aplicada após backup restaurado `erp_po_totvs_test_20261001T113403Z.dump` (SHA-256 `4fcc31fd...3ed204e86`); ledger 10/0. API instalada com reversão em `/var/backups/import-erp/m010-api-af9e297-20261001T113550Z`, serviço ativo e ready HTTPS 200. Build API/web, 20 testes existentes, escrita integrada na cópia com 401/403/404, escopo, replay, versão e rollback da outbox, e leitura operacional `READ ONLY` com role de runtime passaram. `/catalog` público 200; API anônima 401. Origem preservada: 7.130/336/6.796/200/449/422/451; nenhum cadastro operacional de demonstração inserido. RF02/DEV06 e RF05 continuam parciais pelos cadastros oficiais, aliases revisados, itens e homologação humana pendentes. |
