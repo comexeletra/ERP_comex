@@ -38,6 +38,12 @@ Continue do estado real do repositório e leia primeiro **Estado atual —
   não tem SELECT em `migration.import_batch`; a consulta agora não lê essa
   tabela e mantém o ID do lote sem ampliar grants. API reimplantada e pronta;
   backup de reversão em `/var/backups/import-erp/source-audit-api-20261001T131042Z`.
+- A solicitação seguinte adicionou filtros no estilo Excel. Commit `187f0d4`
+  publicado: o menu por coluna lista valores distintos selecionáveis, busca
+  opções, mantém o filtro de texto e ordena crescente/decrescente. A API foi
+  compilada e as opções/seleção/ordenação passaram em handler real na VPS em
+  transação `READ ONLY` com escopo ELETRA CWB. Backup de reversão da API:
+  `/var/backups/import-erp/source-audit-api-20261001T140519Z`.
 - Backup pré-M010 restaurado:
   `/var/backups/import-erp/erp_po_totvs_test_20261001T113403Z.dump`, SHA-256
   `4fcc31fdb6cb530f89f308bfbd7ac7a505d078891f0c46eb7a608ff3ed204e86`.
