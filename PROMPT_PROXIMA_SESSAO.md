@@ -72,7 +72,9 @@ Continue do estado real do repositório e leia primeiro **Estado atual —
   reais conforme preenchidos, exceto células com erro de cálculo do Excel que
   devem ser revisadas. Não tratar ausência de PO/IP, NCM fora de oito dígitos,
   diferenças de nomes ou outro formato legado como erro, nem normalizar o
-  histórico por cima do valor bruto. Aplicar padrões somente a novos registros.
+  histórico por cima do valor bruto. Aplicar padrões somente a novos registros;
+  datas novas devem usar/exibir `MM/DD/YYYY` (mês/dia/ano), com validação de
+  data real.
   BRL é a moeda padrão de novos lançamentos e, quando aplicável, também deve ser
   guardado o valor CNY; qualquer conversão para BRL precisa conservar taxa, data
   e fonte. O histórico mantém a moeda original.

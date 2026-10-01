@@ -1,6 +1,6 @@
 # Tabela de auditoria da origem
 
-A página `/source-audit` exibe as linhas preservadas de `migration.source_row` em uma grade ampla, semelhante a uma planilha. A planilha é a fonte histórica de verdade enquanto o ERP não for formalmente adotado como padrão da operação. Os valores históricos são reais conforme registrados; a única revisão de conteúdo pendente são células com erro de cálculo do Excel. Valores fora do padrão de colunas futuras devem continuar visíveis e inalterados.
+A página `/source-audit` exibe as linhas preservadas de `migration.source_row` em uma grade ampla, semelhante a uma planilha. A planilha é a fonte histórica de verdade enquanto o ERP não for formalmente adotado como padrão da operação. Os valores históricos são reais conforme registrados; a única revisão de conteúdo pendente são células com erro de cálculo do Excel. Valores fora do padrão de colunas futuras devem continuar visíveis e inalterados. Para novos preenchimentos, a data deve usar/exibir `MM/DD/YYYY` (mês/dia/ano); isso não reinterpreta datas históricas.
 
 ## Uso
 
