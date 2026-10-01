@@ -2,8 +2,9 @@
 # Explicit production release after approval. Run only on the selected VPS.
 set -euo pipefail
 
-[[ ${1:-} == '--apply-to-erp_po_totvs_test' ]] || {
-  echo 'Pass --apply-to-erp_po_totvs_test after the production release is approved.' >&2
+mode=${1:-}
+[[ $mode == '--apply-to-erp_po_totvs_test' || $mode == '--resume-api-after-m010' ]] || {
+  echo 'Pass --apply-to-erp_po_totvs_test or --resume-api-after-m010 after approval.' >&2
   exit 2
 }
 source_dir=/tmp/erp-catalog-validation-20261001/apps/api
@@ -29,23 +30,31 @@ printf '%s  %s\n' \
 status=$(MIGRATION_ENV=production ALLOW_PRODUCTION_MIGRATIONS=true \
   /opt/node-v24/bin/node --env-file=/etc/import-erp/migration-release.env \
   "$source_dir/dist/migrate.js" status)
-if [[ $status != *'Migrations: 9 aplicadas, 1 pendentes.'* \
-   || $status != *'pendente  M010_catalog_review.sql'* ]]; then
-  echo 'Unexpected migration ledger; no release applied.' >&2
-  exit 1
+if [[ $mode == '--apply-to-erp_po_totvs_test' ]]; then
+  if [[ $status != *'Migrations: 9 aplicadas, 1 pendentes.'* \
+     || $status != *'pendente  M010_catalog_review.sql'* ]]; then
+    echo 'Unexpected migration ledger; no release applied.' >&2
+    exit 1
+  fi
+  # The backup script dumps, restores and checks the operational database.
+  bash "$stage_dir/backup-erp-db.sh"
+  MIGRATION_ENV=production ALLOW_PRODUCTION_MIGRATIONS=true \
+    /opt/node-v24/bin/node --env-file=/etc/import-erp/migration-release.env \
+    "$source_dir/dist/migrate.js" up
+  status=$(MIGRATION_ENV=production ALLOW_PRODUCTION_MIGRATIONS=true \
+    /opt/node-v24/bin/node --env-file=/etc/import-erp/migration-release.env \
+    "$source_dir/dist/migrate.js" status)
+  [[ $status == *'Migrations: 10 aplicadas, 0 pendentes.'* ]]
+else
+  [[ $status == *'Migrations: 10 aplicadas, 0 pendentes.'* ]] || {
+    echo 'M010 is not applied; refusing API-only resume.' >&2
+    exit 1
+  }
+  printf '%s  %s\n' \
+    4fcc31fdb6cb530f89f308bfbd7ac7a505d078891f0c46eb7a608ff3ed204e86 \
+    /var/backups/import-erp/erp_po_totvs_test_20261001T113403Z.dump \
+    | sha256sum -c -
 fi
-
-# This script dumps the operational database, checks the archive, restores it
-# into a temporary database and checks its ledger before dropping that copy.
-bash "$stage_dir/backup-erp-db.sh"
-
-MIGRATION_ENV=production ALLOW_PRODUCTION_MIGRATIONS=true \
-  /opt/node-v24/bin/node --env-file=/etc/import-erp/migration-release.env \
-  "$source_dir/dist/migrate.js" up
-status=$(MIGRATION_ENV=production ALLOW_PRODUCTION_MIGRATIONS=true \
-  /opt/node-v24/bin/node --env-file=/etc/import-erp/migration-release.env \
-  "$source_dir/dist/migrate.js" status)
-[[ $status == *'Migrations: 10 aplicadas, 0 pendentes.'* ]]
 
 install -m 0644 "$source_dir/migrations/M010_catalog_review.sql" "$target_dir/migrations/M010_catalog_review.sql"
 install -d -m 0700 "$rollback_dir"
@@ -75,7 +84,23 @@ install -m 0644 "$source_dir/dist/catalog.js" "$target_dir/dist/catalog.js"
 install -m 0644 "$source_dir/dist/server.js" "$target_dir/dist/server.js"
 install -m 0644 "$source_dir/package.json" "$target_dir/package.json"
 systemctl restart import-erp-api
-bash "$stage_dir/verify-api-ready.sh"
-bash "$stage_dir/verify-public-api.sh"
+ready=false
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+  if bash "$stage_dir/verify-api-ready.sh" >/dev/null 2>&1; then
+    ready=true
+    break
+  fi
+  sleep 2
+done
+test "$ready" = true
+public_ready=false
+for attempt in 1 2 3 4 5; do
+  if bash "$stage_dir/verify-public-api.sh"; then
+    public_ready=true
+    break
+  fi
+  sleep 2
+done
+test "$public_ready" = true
 trap - ERR
 echo "M010 API installed; API rollback files: $rollback_dir"
