@@ -311,7 +311,9 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
       const items = history.rows[0]?.items ?? [];
       return { page, pageSize, totalCount: Number(history.rows[0]?.total_count ?? 0),
         items: items.map(item => ({ ...item,
-          sourceColumnHeaders: sourceColumnHeadersFor(String(item.sourceSheetName ?? "")),
+          // PO observations are created only from the Pré Embarque sheet. Use
+          // that schema directly so legacy sheet-name encoding cannot hide labels.
+          sourceColumnHeaders: sourceColumnHeadersFor("Pré Embarque"),
         })) };
     },
   );

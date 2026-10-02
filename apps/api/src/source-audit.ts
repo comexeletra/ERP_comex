@@ -282,8 +282,10 @@ export function sourceColumnHeadersFor(sheetName: string): Record<string, string
     .replace(/\p{Diacritic}/gu, "")
     .trim()
     .toLocaleLowerCase("pt-BR");
-  const headers = normalizedName === "pre embarque" ? preHeaders
-    : normalizedName === "pos embarque" ? postHeaders : [];
+  // Some historical rows carry a suffix/version in the sheet name. Keep the
+  // matching tolerant so source fields from either worksheet retain labels.
+  const headers = normalizedName.startsWith("pre embarque") ? preHeaders
+    : normalizedName.startsWith("pos embarque") ? postHeaders : [];
   return Object.fromEntries(headers.map((header, index) => [excelColumnLabel(index + 2), header]));
 }
 
