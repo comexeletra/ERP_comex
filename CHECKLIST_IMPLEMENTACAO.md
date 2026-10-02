@@ -1,8 +1,13 @@
 # Checklist e histórico da implementação
 
-Este arquivo é o registro versionado do andamento do ERP Comex. Atualize-o em
-todo incremento: marque o status, registre a evidência verificável e acrescente
-uma linha no histórico. Não remova registros anteriores.
+> **Controle vigente:** [CHECKLIST_ATUAL_IMPLEMENTACAO.md](CHECKLIST_ATUAL_IMPLEMENTACAO.md).
+> Este arquivo conserva a cronologia, inclusive estados .NET/SQLite e retratos
+> anteriores da stack Node. Tabelas antigas intituladas “estado atual” valem para
+> a data indicada, não para o fechamento do plano em 2026-10-02.
+
+Este arquivo é o registro cronológico do ERP Comex. Em novos incrementos,
+atualize os estados no checklist vigente e acrescente aqui a evidência
+verificável da entrega. Não remova registros anteriores.
 
 ## Convenções
 

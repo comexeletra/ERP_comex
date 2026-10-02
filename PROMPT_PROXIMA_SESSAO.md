@@ -1,8 +1,12 @@
 # Prompt para a próxima sessão — ERP Comex após RF03/DEV14 M011
 
-Continue do estado real do repositório e leia primeiro **Estado atual —
-2026-10-01** e **Atualização do incremento atual — 2026-10-02** em
-`CHECKLIST_IMPLEMENTACAO.md`. Consulte
+> Registro de retomada da fase M011/M012. Para trabalho novo, leia primeiro
+> [CHECKLIST_ATUAL_IMPLEMENTACAO.md](CHECKLIST_ATUAL_IMPLEMENTACAO.md). Os estados
+> e números de migrations abaixo são um retrato histórico.
+
+Continue do estado real do repositório e leia primeiro
+`CHECKLIST_ATUAL_IMPLEMENTACAO.md`. Para a cronologia das decisões, consulte
+`CHECKLIST_IMPLEMENTACAO.md`. Consulte também
 `Plano_Implementacao_ERP_PO_TOTVS.md`, em especial 2.2, 6.1, 9, 10, 13.2,
 14.2, 20, 24.1, 26 e 28. Registros antigos do checklist são históricos.
 

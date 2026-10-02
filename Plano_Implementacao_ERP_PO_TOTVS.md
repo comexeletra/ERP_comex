@@ -1,23 +1,21 @@
 # Plano completo do ERP de acompanhamento de POs TOTVS e importações
 
-**Atualização operacional — 29/09/2026:** O usuário escolheu
-`erp_po_totvs_test` como banco operacional na VPS. Backup e restauração foram
-verificados; M001–M008 estão aplicadas. A API está ativa por `systemd`, usa
-PostgreSQL na própria VPS com TLS e atende por
-`https://api.72-60-250-212.sslip.io` via Traefik. A porta 5432 está publicada
-pelo Swarm, mas bloqueada externamente pela firewall da Hostinger. A Vercel
-ainda precisa de `VPS_API_URL`, `VPS_API_TOKEN` e novo deployment; o hostname
-`fup-comex-eletra.vercel.app` respondeu 404. Login depende de provedor OIDC.
-Esta atualização substitui as previsões de instalação ou M008 pendente abaixo;
-as demais seções preservam o histórico e o plano do produto.
+**Atualização do plano — 02/10/2026:** o controle vigente de implementação é
+[CHECKLIST_ATUAL_IMPLEMENTACAO.md](CHECKLIST_ATUAL_IMPLEMENTACAO.md). O banco
+`erp_po_totvs_test` é operacional apesar do nome. O histórico de entregas registra
+M001–M012 aplicadas, API Fastify na VPS, frontend Next.js na Vercel e login local
+em uso. OIDC/PKCE está no código, mas a autenticação corporativa não foi
+homologada. A validação remota desses fatos não foi repetida nesta revisão.
+Trechos abaixo que descrevem M008 pendente, ausência de API publicada ou da
+escrita operacional são evidências datadas da fase inicial, não o estado vigente.
 
 **Especificação para desenvolvimento — versão 1.1 — 24 de setembro de 2026**
 
-Este documento define o produto, a arquitetura de dados, a stack, os contratos técnicos e a sequência de implementação de um ERP de importações. É a referência de trabalho para produto, desenvolvimento, dados, qualidade e infraestrutura. A implementação será realizada no ambiente de desenvolvimento da equipe. Esta entrega é um plano técnico; não é uma aplicação implantada nem uma declaração de que os componentes já foram construídos.
+Este documento define o produto, a arquitetura de dados, a stack, os contratos técnicos e a sequência de implementação de um ERP de importações. É a referência de trabalho para produto, desenvolvimento, dados, qualidade e infraestrutura. O checklist atual distingue a aplicação já implantada das funcionalidades ainda planejadas.
 
 A **PO TOTVS é a entidade central de negócio e o ponto de entrada operacional**. O IP representa uma execução logística vinculada aos itens do pedido. Uma PO pode ser atendida por vários IPs; um IP pode reunir itens de várias POs. O desenho de telas, permissões, indicadores e rastreabilidade parte dessa relação.
 
-A arquitetura de aplicação escolhida pelo Product Owner em 24 de setembro de 2026 é **Next.js/React/TypeScript na Vercel Free**, com **API Fastify/Node.js + PostgreSQL privados na mesma VPS Hostinger**. Next.js usa `proxy.ts` para encaminhar `/auth/*` e `/api/v1/*` server-side para a API por HTTPS com token de gateway; a conexão do banco não sai da VPS e a porta PostgreSQL não é publicada. A API e o PostgreSQL serão serviços persistentes na VPS, independentes do computador pessoal. OIDC, storage de arquivos e processamento durável serão serviços configurados por ambiente. O código ASP.NET Core/SQLite/Compose foi removido do snapshot ativo; as regras, contratos e resultados históricos permanecem documentados neste plano e no checklist. A API Node já contém autenticação OIDC/PKCE, grants de autorização, leitura de POs, workflow e fila de qualidade em diferentes níveis de validação; ainda não atende ao aceite de produção, pois faltam issuer real, integração/E2E autenticado, validação isolada de M008 e instalação/configuração do serviço.
+A arquitetura em uso é **Next.js/React/TypeScript na Vercel**, com **API Fastify/Node.js e PostgreSQL na VPS Hostinger**. Next.js usa `proxy.ts` para encaminhar `/auth/*` e `/api/v1/*` por HTTPS com token de gateway server-side. O banco não é acessado pelo frontend. A API e o PostgreSQL são serviços da VPS; o login local está ativo e OIDC/PKCE aguarda homologação. O importador histórico atual é Python/openpyxl, executado na VPS. O código ASP.NET Core/SQLite/Compose foi retirado do snapshot ativo; seus resultados permanecem somente como histórico. Storage privado, consumidor de outbox e plataforma analítica ainda são entregas futuras.
 
 ## 1 Como utilizar este plano
 
@@ -178,40 +176,40 @@ Não iniciar com microsserviços, Kubernetes, event sourcing integral, Elasticse
 
 ## 5 Stack tecnológica definida
 
-Versões de referência verificadas na documentação oficial em setembro de 2026. Fixar o patch estável de cada linha na criação do repositório; não usar `latest`, previews nem atualização automática irrestrita. O plano define as famílias compatíveis; o lockfile e os digests de imagem identificarão os builds exatos.
+O checkout atual fixa Next.js 16.3.6, React 19.3.0, TypeScript 5.9.3 no web, pnpm 12.6.0 e Node 24 na API. Os lockfiles identificam as instalações. A tabela distingue a base já usada de opções ainda planejadas; uma biblioteca proposta não constitui dependência instalada nem requisito para encerrar uma entrega.
 
 | Camada | Tecnologia | Linha de referência | Responsabilidade |
 |---|---|---|---|
-| Linguagem frontend | TypeScript | 5.x compatível com Next 16 | Tipagem estrita e contratos gerados |
-| Aplicação frontend | Next.js App Router | 16.x | Navegação, layouts e entrega da interface |
-| UI | React | 19.2 compatível com Next escolhido | Componentes e formulários |
+| Linguagem frontend | TypeScript | 5.9.3 no checkout | Tipagem da interface; cliente de API gerado é futuro |
+| Aplicação frontend | Next.js App Router | 16.3.6 no checkout | Navegação, layouts e entrega da interface |
+| UI | React | 19.3.0 no checkout | Componentes e formulários |
 | Runtime frontend | Node.js | 24 LTS | Desenvolvimento, build e execução |
-| Estilos e componentes | Tailwind CSS e shadcn/ui com Radix | Tailwind 4; componentes fixados no repositório | Sistema visual acessível |
-| Estado remoto | TanStack Query | 5.x | Consultas, invalidação e tratamento de loading/erro |
-| Formulários | React Hook Form e Zod | Versões estáveis compatíveis, travadas no lockfile | Validação de UX; backend permanece autoritativo |
-| Linguagem backend | TypeScript | mesma linha fixada pelo Next.js | API, validação e acesso a dados server-side |
+| Estilos e componentes | CSS próprio | `apps/web/app/styles.css`; Tailwind/shadcn/Radix não instalados | Sistema visual atual; avaliar biblioteca só se houver necessidade concreta |
+| Estado remoto | `fetch` e hooks React | TanStack Query não instalado | Consultas e estados de carregamento/erro atuais |
+| Formulários | React e validação na API | React Hook Form não instalado; Zod na API | Backend valida os comandos; biblioteca de formulário é opcional |
+| Linguagem backend | TypeScript | 5.9.3 no checkout | API, validação e acesso a dados server-side |
 | Proxy same-origin | Next.js `proxy.ts` + rewrites externos | Next.js 16 / Vercel | Encaminha `/auth/*` e `/api/v1/*`, adicionando token server-only |
 | Runtime e API de negócio | Node.js 24 LTS + Fastify | Serviço persistente na VPS Hostinger, supervisionado pelo sistema operacional | REST, OIDC, autorização, domínio e funções de negócio |
 | Driver PostgreSQL | `pg` (node-postgres) com pool na VPS | Versão travada em `apps/api/pnpm-lock.yaml` | Consultas parametrizadas, transações e limite de conexões |
 | Banco operacional | PostgreSQL na mesma VPS | Versão existente a confirmar antes da migration | Bind local/privado; nenhum acesso direto da Vercel ou browser |
 | Migrations | SQL PostgreSQL versionado no repositório | Aplicação explícita, fora do cold start/request | Upgrade reproduzível sem DDL automático ao iniciar função |
-| Importador Excel | Node.js ou job gerenciado compatível | Definir ao portar parser; não usar filesystem da função como storage | Leitura dos valores salvos do XLSX e staging idempotente |
+| Importador Excel atual | Python/openpyxl na VPS | `deploy/hostinger/import-historical-workbook.py` | Carga idempotente do arquivo histórico aprovado; evolução de versões ainda pendente |
 | Jobs | Outbox PostgreSQL + cron/queue compatível com execução curta | Escolher mecanismo e retry antes de ativar consumidores | Trabalho durável sem worker residente na Vercel |
-| Login corporativo | OIDC Authorization Code + PKCE | Issuer e cliente confidencial a confirmar | Identidade; callback HTTPS da aplicação Vercel |
+| Login em uso | Contas locais e sessões PostgreSQL | M009 e API Fastify | Acesso atual; OIDC Authorization Code + PKCE está no código para homologação futura |
 | Provedor de identidade | OIDC externo a selecionar | Sem provider local versionado | Issuer e client de teste/prod separados |
 | Arquivos | Object storage externo compatível com upload assinado | Provedor pendente | Documentos e planilhas, sem persistência em disco local |
 | Testes backend | Node.js/TypeScript + PostgreSQL real em CI | Fixados em lockfile | Regras, autorização, transações e integração |
-| Testes frontend | Vitest, Testing Library e Playwright | Versões compatíveis fixadas | Componentes e fluxos de ponta a ponta |
-| Observabilidade | OpenTelemetry e logs JSON | Pacotes compatíveis fixados | Traces, métricas e logs correlacionados |
-| Entrega frontend | Vercel Free para preview/produção | Root Directory `apps/web`; projeto a vincular ao GitHub | Build Next.js, domínio e proxy HTTPS same-origin |
-| Entrega backend | Serviço Node na VPS + reverse proxy HTTPS ou Cloudflare Tunnel | `systemd`/supervisor; listener API `127.0.0.1` | Processo persistente após reboot, sem Docker |
+| Testes frontend | TypeScript/build Next.js atuais | Vitest, Testing Library e Playwright não instalados | Adicionar testes de interface/E2E relevantes às jornadas |
+| Observabilidade | Logs estruturados Fastify | OpenTelemetry não instalado | Instrumentação e métricas ainda pendentes |
+| Entrega frontend | Vercel | Root Directory `apps/web`; projeto `erp-comex` já vinculado | Build Next.js, domínio e proxy HTTPS same-origin |
+| Entrega backend | Serviço Node na VPS e HTTPS via Traefik | `systemd` para API; PostgreSQL em Docker na VPS | Processo persistente após reboot |
 | Desenvolvimento local | Node.js + pnpm; PostgreSQL de teste remoto ou local gerenciado | Lockfiles do repo | Desenvolvimento; sem Compose obrigatório |
-| CI e repositório | GitHub e GitHub Actions | Workflows versionados | Checks, artefatos e promoção |
+| CI e repositório | GitHub e GitHub Actions | Workflow API versionado; web ainda sem workflow | Ampliar checks, artefatos e promoção |
 | BI | Power BI Desktop e Service | Versões homologadas pela organização | Modelo semântico, medidas e relatórios |
 
-Node 24 é o runtime do Next.js e da API Fastify. A implementação .NET foi retirada do snapshot para reduzir e alinhar o repositório; regras e evidências da implementação anterior permanecem registradas no checklist e na história Git. A versão PostgreSQL da VPS será confirmada antes de aplicar migrations. A API, banco e proxy/túnel iniciam automaticamente na VPS; não dependem do computador pessoal ligado.
+Node 24 é a linha usada pela API e pelo build Next.js. A implementação .NET foi retirada do snapshot. A imagem PostgreSQL da CI é `postgres:17.6-alpine`; a versão efetiva da VPS deve ser conferida no ambiente antes de uma nova migration. A API, banco e proxy iniciam na VPS e não dependem do computador pessoal ligado.
 
-Browser e funções Vercel não abrem conexão ao PostgreSQL da VPS. A API Node na VPS acessa PostgreSQL por `DATABASE_URL` local, usa queries parametrizadas e pool limitado; Next `proxy.ts` envia o token gateway somente server-side. A API ainda não tem paridade nem writer funcional. Migrations PostgreSQL reutilizáveis estão em `apps/api/migrations`; o runner explícito Node em `apps/api/src/migrate.ts` registra ledger e checksum, serializa execuções com advisory lock e aplica cada arquivo em transação. `pnpm install --frozen-lockfile` e `pnpm build` passaram na VPS; M001–M007 também passaram por status inicial, aplicação e reaplicação no banco isolado. Em 2026-09-28, checksum divergente foi rejeitado/restaurado e upgrade/concorrência foram validados por migration temporária, depois removida com a linha de ledger; o banco voltou a 7/0. CI e identidade TLS de produção seguem pendentes. Qualquer aplicação exige banco isolado e backup restaurável, e produção exige credencial de migration separada.
+Browser e funções Vercel não abrem conexão ao PostgreSQL da VPS. A API Node acessa PostgreSQL por `DATABASE_URL`, usa queries parametrizadas e pool limitado; Next `proxy.ts` envia o token gateway somente server-side. A API já escreve usuários, revisões de qualidade, cadastros e solicitações nativas, mas os demais módulos do MVP continuam incompletos. Migrations PostgreSQL estão em `apps/api/migrations`; o runner Node em `apps/api/src/migrate.ts` mantém ledger/checksum, advisory lock e transação por arquivo. O histórico registra M001–M012 aplicadas no banco operacional após validação de cópia e backup. A CI API existe; execução recente e identidade TLS da VPS devem ser confirmadas antes do próximo release. Nova migration exige validação isolada e backup restaurável.
 
 ## 6 Topologia e fronteiras
 
@@ -220,7 +218,7 @@ flowchart TD
   U["Navegador"] --> V["Vercel HTTPS / Next.js"]
   V --> R["Next.js proxy same-origin"]
   R --> N["Node API HTTPS na VPS Hostinger"]
-  N --> O["Provedor OIDC externo"]
+  N --> O["Provedor OIDC externo (a homologar)"]
   N --> P["PostgreSQL privado / loopback na VPS"]
   N --> S["Object storage externo (a definir)"]
   Q["Worker/queue persistente (a definir)"] --> P
@@ -229,7 +227,7 @@ flowchart TD
   D --> BI["Power BI"]
 ```
 
-O domínio Vercel atende UI, `/api/v1/*` e `/auth/*` na mesma origem. Next.js `proxy.ts` acrescenta um token de gateway server-side e reescreve chamadas para API Node HTTPS na VPS; a API rejeita chamadas sem o token e ainda aplica OIDC, grants, escopos e CSRF. PostgreSQL aceita conexão somente local/privada da API. TLS e proxy reverso HTTPS são obrigatórios; Cloudflare Tunnel pode ser usado se DNS/conta estiverem disponíveis, com listener da API apenas em loopback. Vercel Static IP não é necessário, pois ela chama HTTPS público/tunelado e não PostgreSQL. O computador pessoal pode ficar desligado depois do deploy; Node API, PostgreSQL e proxy/túnel devem iniciar automaticamente na VPS.
+O domínio Vercel atende UI, `/api/v1/*` e `/auth/*` na mesma origem. Next.js `proxy.ts` acrescenta um token de gateway server-side e reescreve chamadas para API Node HTTPS na VPS; a API rejeita chamadas sem o token e aplica sessão, grants, escopos e CSRF. OIDC corporativo continua uma integração a homologar. PostgreSQL aceita conexão somente local/privada da API. TLS e proxy reverso HTTPS são obrigatórios; o ambiente atual usa Traefik. Vercel Static IP não é necessário, pois ela chama HTTPS e não PostgreSQL. O computador pessoal pode ficar desligado; Node API, PostgreSQL e proxy iniciam na VPS.
 
 O worker reutiliza os casos de uso autorizados, mas possui processo e recursos próprios. Um job longo não ocupa uma requisição HTTP até terminar. API e worker podem escalar independentemente. Nenhuma transação entre banco e object storage será tratada como atomicidade distribuída: usar estados intermediários, outbox e compensação.
 
@@ -260,20 +258,18 @@ Cada módulo expõe casos de uso. Uma tela não escreve diretamente em tabelas d
 | `apps/web/proxy.ts` | Proxy same-origin e token server-only para a API VPS |
 | `apps/api` | API Fastify Node, OIDC, autorização, contratos e PostgreSQL na VPS |
 | `apps/api/src` | Rotas por feature, sessão, validação, comandos e consultas parametrizadas (em implementação) |
-| `apps/api/migrations` | SQL PostgreSQL reaproveitado; runner Node compilado na VPS; M001–M007 aplicadas e reaplicadas no banco de teste; checksum divergente e upgrade concorrente validados em teste; CI/TLS de produção pendentes; M008 funcional ainda aguarda validação isolada |
-| `tests/Unit` | Regras e transformações determinísticas |
-| `tests/Integration` | PostgreSQL, API, concorrência, storage e importação |
-| `tests/Architecture` | Restrições de dependência entre camadas |
-| `tests/E2E` | Playwright com perfis e jornadas |
-| `data/contracts` | Mapeamentos, enumerações, contratos e reconciliação |
-| `data/fixtures` | Amostras sintéticas ou anonimizadas para testes |
-| `analytics/sql` | DDL analítico, cargas e testes de qualidade |
-| `analytics/powerbi` | Projeto PBIP, modelo semântico e medidas |
+| `apps/api/migrations` | SQL PostgreSQL M001–M012 e runner Node explícito; aplicação operacional registrada no checklist histórico |
+| `apps/api/test` | Testes API unitários e integrações de leitura/escrita específicas; a suíte principal está em `package.json` |
+| `deploy/hostinger` | Importador Python/openpyxl, scripts de validação, backup e release da API |
+| `.github/workflows/api-ci.yml` | Build/testes API e migrations em PostgreSQL isolado; ampliar para web e integrações |
+| `tests/Unit`, `tests/Integration`, `tests/Architecture`, `tests/E2E` | Estrutura proposta, ainda não criada; substituir por organização compatível com os projetos Node quando necessária |
+| `data/contracts`, `data/fixtures` | Estrutura proposta para contratos e fixtures, ainda não criada |
+| `analytics/sql`, `analytics/powerbi` | Entregas analíticas planejadas, ainda não criadas |
 | `VERCEL_SETUP.md` | Preparação Vercel, PostgreSQL VPS, OIDC, storage, jobs e rollback |
 | `docs/adr` | Decisões arquiteturais versionadas |
 | `docs/runbooks` | Execução, backup, restauração, migração e incidentes |
 
-Usar um único repositório. Cada aplicação Node mantém `package.json` e `pnpm-lock.yaml` próprios; instalar em modo congelado na CI. Não há dependência do SDK .NET ou do Docker. Arquivos Excel reais, ZIPs, bancos locais e segredos não entram no Git.
+Usar um único repositório. Cada aplicação Node mantém `package.json` e `pnpm-lock.yaml` próprios; instalar em modo congelado na CI. O Docker não é necessário para desenvolver a API, mas hospeda PostgreSQL/Traefik na VPS. O importador histórico usa Python/openpyxl. Arquivos Excel reais, ZIPs, bancos locais e segredos não entram no Git.
 
 ## 8 Arquitetura de dados
 
@@ -608,7 +604,7 @@ Jobs usam lock/lease no PostgreSQL e checkpoints. Reexecução após falha não 
 
 Enquanto o usuário não declarar o ERP como padrão da operação, a planilha enviada mais recentemente continua sendo a fonte histórica mestra. Quando uma nova versão for fornecida, recebê-la como novo snapshot imutável e produzir uma prévia comparativa por abas, cabeçalhos, linhas, valores, entidades e novos valores; nunca sobrescrever silenciosamente o lote ou a operação existente. Incorporar colunas adicionais detectadas no workbook sem descartar colunas desconhecidas, preservando a ordem/letra, o cabeçalho, o valor bruto e a linhagem por lote/aba/linha. A promoção acontece após conferir a prévia e resolver apenas erros de cálculo do Excel.
 
-A tela atual tem intervalos de colunas predefinidos (`B:AZ` e `B:AS`), enquanto o usuário informou que a planilha em uso passou a conter colunas adicionais. A cobertura integral da versão atual está pendente: ao receber a próxima cópia, inventariar seus cabeçalhos e ampliar extração/API/tabela para expor todas as colunas novas, sem assumir que a contagem ou o esquema antigo continue completo.
+A extração e a tela atuais usam Pré `B:AZ` e Pós `B:AS`. O arquivo aprovado pelo SHA-256 do importador já contém 11 cabeçalhos nomeados na aba Pré fora do intervalo extraído (`BB:BH` e `BJ:BM`); a aba Pós não tem cabeçalho nomeado após `AS` na linha 4. A inclusão desses campos auxiliares exige decisão de escopo e novo lote versionado, com extração/API/tabela alinhadas. O usuário também informou que a planilha em uso pode receber outras colunas: ao receber nova cópia, inventariar cabeçalhos e diferenças de hash, linhas, entidades e valores antes da promoção.
 
 ### 12.5 Qualidade e severidade
 
@@ -754,7 +750,7 @@ Toda tela prevê carregamento, vazio, sem permissão, erro, sucesso, conflito de
 
 ### 15.1 Fluxo definido
 
-O serviço Fastify persistente na VPS implementa rotas OIDC Authorization Code com PKCE, sessão por cookie e endpoints `/auth/login`, `/auth/callback`, `/auth/me`, `/auth/csrf` e `/auth/logout`; o proxy Next.js mantém `/auth/*` e a API same-origin no domínio Vercel. O issuer corporativo ainda será confirmado e não há credenciais de provider no repositório. O adaptador de identidade utiliza `(issuer, subject)` como chave externa; e-mail serve para exibição e convite, não como identidade permanente. State, nonce, verifier PKCE e sessões são persistidos no PostgreSQL por M007, sem depender de memória local. A implementação ainda não foi aplicada/validada em PostgreSQL ou contra um issuer real e não pode ser usada para login de produção.
+O serviço Fastify na VPS oferece login local em uso e rotas OIDC Authorization Code com PKCE; o proxy Next.js mantém `/auth/*` e a API same-origin no domínio Vercel. O issuer corporativo ainda será confirmado e não há credenciais de provider no repositório. Para OIDC, a identidade usa `(issuer, subject)` como chave externa; e-mail serve para exibição/convite. State, nonce, verifier PKCE e sessões são persistidos no PostgreSQL por M007. OIDC ainda exige homologação com issuer real e usuários de escopo restrito; a sessão local já foi usada em produção conforme o checklist histórico.
 
 Cookie de sessão: `HttpOnly`, `Secure`, escopo de host, `SameSite=Lax` compatível com o fluxo homologado. Cookies transitórios OIDC seguem a configuração segura do middleware. API mutável exige token anti-CSRF e valida origem quando aplicável. Tokens do provedor não serão armazenados em localStorage. O MVP não precisa chamar Graph; não pedir scopes extras ou refresh token sem necessidade.
 
@@ -937,7 +933,7 @@ Fixtures devem incluir valores com vírgula, #REF!, NCM ausente, múltiplos stat
 
 | Teste | Resultado esperado |
 |---|---|
-| T01 Leitura do escopo | 51 colunas pré e 43 colunas pós, sem importar colunas laterais extras |
+| T01 Leitura do snapshot aprovado | 51 colunas Pré (`B:AZ`) e 44 colunas Pós (`B:AS`) no recorte atual; decidir a cobertura dos 11 cabeçalhos Pré além de `AZ` já presentes e inventariar cada versão nova |
 | T02 Contagem bruta | 6.940 + 190 linhas de negócio preservadas |
 | T03 Autofiltro | Linhas 6.928 a 6.944 presentes |
 | T04 Valores de origem | Total Price salvo permanece idêntico no raw, inclusive nas 14 divergências |
@@ -991,15 +987,15 @@ Fixar CPU, memória, tamanho de dados e concorrência do benchmark no relatório
 
 ## 22 Integração contínua e entrega
 
-Pull requests devem executar: instalação pnpm travada; lint; TypeScript; build Next.js; testes das regras portadas; testes de integração com PostgreSQL; validação dos contratos de API; migrations em banco vazio e upgrade; análise de dependências e segredos. Build/restore .NET só é temporário durante a migração, até o código Node atingir parity; depois sua remoção da CI deve ocorrer após aceite e decisão registrada. E2E das jornadas principais roda antes de promover para homologação.
+O workflow versionado `.github/workflows/api-ci.yml` já instala dependências travadas, compila e testa a API e aplica migrations em PostgreSQL isolado; nesta revisão a contagem de migrations passou a ser calculada pelos arquivos, em vez de fixada em sete. Confirmar sua execução no GitHub. Completar a CI com typecheck/build web, lint válido, contratos de API, integrações PostgreSQL, análise de dependências/segredos e E2E das jornadas principais. Não há build .NET na stack atual.
 
-Vercel cria preview por branch/PR e produção por branch principal conforme as proteções configuradas. Cada release associa commit, build e versão de migrations. Nenhum segredo entra em camada de imagem, bundle cliente, artefato público ou argumento de build.
+O projeto Vercel publica a branch principal; Preview ainda precisa de API, credenciais e dados segregados para testes autenticados. Cada release deve associar commit, build e versão de migrations. Nenhum segredo entra em camada de imagem, bundle cliente, artefato público ou argumento de build.
 
 Homologação recebe dados sintéticos ou históricos autorizados, login OIDC e storage segregados. Produção exige aprovação de release após aceite de negócio e plano de rollback. Preferir mudanças compatíveis por expansão, migração de dados e só depois remoção de estrutura antiga.
 
 ### 22.1 Destino de implantação escolhido
 
-Vercel Free hospeda Next.js; a API Node e PostgreSQL operacional ficam na VPS. Segredos da API/OIDC/banco ficam na VPS; Vercel recebe somente `VPS_API_URL` e `VPS_API_TOKEN` server-side, separados por ambiente. Antes de deploy funcional: portar endpoints e testes, cadastrar variáveis sem valores no Git, expor somente HTTPS à API por reverse proxy ou Cloudflare Tunnel, manter API em loopback e PostgreSQL sem porta pública, aplicar migrations em base de teste, configurar callback OIDC, cookies/CSRF, executar E2E, validar backup/restore e só então cortar. Essa topologia não depende de Static IP Vercel. O modelo `systemd`/Nginx está em `deploy/hostinger`; API, banco e proxy/túnel devem reiniciar automaticamente na VPS. O PC pessoal pode ficar desligado após isso.
+Vercel hospeda Next.js; a API Node e PostgreSQL operacional ficam na VPS. Segredos da API/OIDC/banco ficam na VPS; Vercel usa `VPS_API_URL` e `VPS_API_TOKEN` server-side. HTTPS da API, proxy same-origin, serviço `systemd`, banco operacional e migrations M001–M012 constam das entregas anteriores. OIDC corporativo, Preview segregado, E2E e restauração integrada com documentos ainda compõem o aceite final. Antes de cada novo release, validar migrations em cópia, backup, build, autorização e plano de retorno. Essa topologia não depende de Static IP Vercel; o PC pessoal pode ficar desligado.
 
 ## 23 Operação e recuperação
 
@@ -1067,10 +1063,10 @@ Etapas sobrepostas indicam trabalho paralelo entre funções, não omissão de d
 ### 24.2 Trilha de migração para Vercel + PostgreSQL na VPS
 
 Esta trilha foi aprovada pelo Product Owner em 2026-09-24 e complementa o backlog
-DEV01–DEV30. A implementação ASP.NET Core foi removida do snapshot após a
-decisão de reduzir a stack. O plano e o checklist preservam contratos e
-evidências históricos para orientar a migração Node; não presumir paridade com
-base apenas nesses registros.
+DEV01–DEV30. A implementação ASP.NET Core foi removida do snapshot. V01, V02,
+parte de V03–V06 e V08/V09 já foram executadas na stack Node/VPS/Vercel;
+V07, homologação OIDC, Preview segregado e V10 continuam pendentes. O estado por
+entrega está no checklist atual; a tabela abaixo conserva a intenção e o aceite.
 
 | Ordem | Trabalho | Saída/aceite |
 |---:|---|---|
@@ -1085,12 +1081,13 @@ base apenas nesses registros.
 | V09 | Ligar GitHub/Vercel e configurar ambientes | Preview/Production segregados; nenhuma credencial no Git; deploy Preview com smoke/E2E |
 | V10 | Corte e rollback | UAT, restore, E2E, plano de rollback e aprovação formal antes de liberar o único runtime Node |
 
-Pendências externas para V03/V06/V08/V09: dados do OIDC (issuer, client e callback),
-versão/endereço/role TLS do PostgreSQL VPS, política de firewall/conectividade,
-plano Vercel e URL do projeto. Variáveis usam os nomes em `VERCEL_SETUP.md`; os
-valores devem ser cadastrados no painel Vercel e nunca nesta especificação.
+Pendências atuais: issuer/client/callback de OIDC corporativo, ambiente Preview
+segregado, storage privado, executor/consumidor de jobs, fonte TOTVS oficial e
+decisões de negócio do checklist. Rede HTTPS da API, projeto Vercel e conexão
+PostgreSQL operacional já constam do histórico; confirmar seus detalhes no
+ambiente antes de cada release. Segredos nunca entram nesta especificação.
 
-### 24.3 Evidência de DEV12 — revisão local de 2026-09-29
+### 24.3 Evidência histórica de DEV12 — revisão local de 2026-09-29
 
 O handler Node de `/api/v1/data-issues` e `/api/v1/data-issues/{id}/resolve`
 foi revisado contra M003, M005, M008 e a tela `/quality`. M003 fornece a
@@ -1139,7 +1136,7 @@ Nenhuma decisão de significado fiscal será assumida exclusivamente pelo desenv
 
 O MVP estará pronto para homologação quando todas as funcionalidades obrigatórias tiverem implementação e evidência de teste, o histórico estiver carregado e reconciliado, a aplicação funcionar com permissões reais e o ambiente puder ser reproduzido pelo README.
 
-Para entrar em produção, adicionalmente:
+Para substituir a planilha como operação principal, além da aplicação já publicada:
 
 1. Confirmar 7.130 linhas brutas, 336 POs identificadas, 6.796 observações com PO, 200 IPs, 449 relações PO-IP, 5.168 linhas com IP e 1.772 linhas sem IP, além das 144 linhas sem PO em sua interseção correta, considerando correções posteriores explicitamente aprovadas.
 2. Aprovar o relatório de valores por moeda e custos sem duplicação.
