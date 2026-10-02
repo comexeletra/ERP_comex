@@ -1,6 +1,11 @@
 # Vercel + API e PostgreSQL na VPS
 
-## Estado em 2026-09-29
+> Os números de migrations e verificações abaixo registram 2026-09-29. Para o
+> estado vigente, consulte [CHECKLIST_ATUAL_IMPLEMENTACAO.md](CHECKLIST_ATUAL_IMPLEMENTACAO.md).
+> O histórico posterior registra M001–M012 aplicadas; confira o ledger da VPS
+> antes de um novo release.
+
+## Estado registrado em 2026-09-29
 
 - Banco operacional escolhido pelo usuário: `erp_po_totvs_test`, apesar do nome. M001–M009 estão aplicadas; não há migration pendente. M009 foi validada numa cópia restaurada antes de produção.
 - A API Fastify roda como `import-erp-api.service` na VPS. Usa a role `import_erp_app` com privilégios limitados e TLS com certificado PostgreSQL fixado em `/etc/import-erp/postgres-root.crt`.

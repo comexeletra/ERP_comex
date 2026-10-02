@@ -1,5 +1,9 @@
 # API ERP na VPS Hostinger
 
+> As seções de migrations abaixo são registros de releases anteriores.
+> [O checklist vigente](../../CHECKLIST_ATUAL_IMPLEMENTACAO.md) registra M001–M012
+> no histórico operacional. Confira o ledger real antes do próximo release.
+
 Esta instalação usa a VPS `matheusproserv` e o banco operacional `erp_po_totvs_test` escolhido pelo usuário. O computador corporativo não executa componentes de produção. O código da API fica em `/opt/import-erp/apps/api`; configurações e segredos ficam em `/etc/import-erp`.
 
 ## Serviços

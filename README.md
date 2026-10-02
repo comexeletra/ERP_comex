@@ -16,6 +16,8 @@ no código para integração futura. O estado vigente e as pendências estão em
 [CHECKLIST_ATUAL_IMPLEMENTACAO.md](CHECKLIST_ATUAL_IMPLEMENTACAO.md); a cronologia
 está em [CHECKLIST_IMPLEMENTACAO.md](CHECKLIST_IMPLEMENTACAO.md) e o produto
 completo em [Plano_Implementacao_ERP_PO_TOTVS.md](Plano_Implementacao_ERP_PO_TOTVS.md).
+Para continuar o trabalho em outro computador, siga
+[TRABALHAR_EM_DUAS_MAQUINAS.md](TRABALHAR_EM_DUAS_MAQUINAS.md).
 
 ## Operação
 
