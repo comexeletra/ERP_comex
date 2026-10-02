@@ -19,6 +19,17 @@ const createRequestBody = z.object({
     costCenterText: z.string().trim().max(160).nullable().optional(),
   }).strict()).min(1).max(100),
 }).strict();
+const updateRequestBody = z.object({
+  requesterReference: z.string().trim().min(1).max(160),
+  reason: z.string().trim().min(8).max(2000),
+  notes: z.string().trim().max(2000),
+  items: z.array(z.object({
+    id: z.uuid().optional(),
+    description: z.string().trim().min(1).max(1000),
+    purposeText: z.string().trim().max(500).nullable().optional(),
+    costCenterText: z.string().trim().max(160).nullable().optional(),
+  }).strict()).min(1).max(100),
+}).strict();
 
 type RequestItem = { id: string; line_number: number; description: string; source_kind: "NATIVE";
   purpose_text: string | null; cost_center_text: string | null; created_at: Date };
@@ -171,5 +182,118 @@ export async function registerRequestRoutes(app: FastifyInstance, pool: Pool): P
       "SELECT * FROM procurement.import_request_item WHERE request_id = $1 ORDER BY line_number", [id.data]);
     reply.header("ETag", `"${found.rows[0].version}"`);
     return presentRequest(found.rows[0], lines.rows);
+  });
+
+  app.patch<{ Params: { id: string } }>("/api/v1/requests/:id", { config: permissionConfig("requests.write") }, async (request, reply) => {
+    const id = z.uuid().safeParse(request.params.id);
+    const parsed = updateRequestBody.safeParse(request.body);
+    const expected = request.headers["if-match"];
+    if (!id.success || !parsed.success) {
+      return problem(reply, 400, "INVALID_REQUEST_UPDATE", "Informe solicitação, campos completos, ao menos um item e If-Match válido.");
+    }
+    if (expected === undefined) return problem(reply, 428, "PRECONDITION_REQUIRED", "Informe If-Match com a versão atual da solicitação.");
+    if (typeof expected !== "string" || !/^"[1-9][0-9]*"$/u.test(expected)) {
+      return problem(reply, 400, "INVALID_REQUEST_UPDATE", "If-Match inválido.");
+    }
+    const auth = request.authorizationContext;
+    const actor = request.authContext;
+    if (!auth || !actor) return problem(reply, 401, "AUTHENTICATION_REQUIRED", "Sessão ausente.");
+    const body = parsed.data;
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const found = await client.query<RequestRow>(
+        `SELECT * FROM procurement.import_request
+         WHERE id = $1 AND importer = ANY($2::text[]) FOR UPDATE`, [id.data, auth.importerScopes]);
+      const before = found.rows[0];
+      if (!before) { await client.query("ROLLBACK"); return problem(reply, 404, "RESOURCE_NOT_FOUND", "Solicitação não encontrada."); }
+      if (`"${before.version}"` !== expected) {
+        await client.query("ROLLBACK");
+        return problem(reply, 409, "VERSION_CONFLICT", "Solicitação alterada. Recarregue antes de salvar.");
+      }
+      if (before.status !== "SUBMITTED") {
+        await client.query("ROLLBACK");
+        return problem(reply, 409, "REQUEST_NOT_EDITABLE", "Somente solicitações enviadas podem ser editadas.");
+      }
+
+      const currentItems = await client.query<RequestItem>(
+        "SELECT * FROM procurement.import_request_item WHERE request_id = $1 ORDER BY line_number FOR UPDATE", [id.data]);
+      const currentIds = new Set(currentItems.rows.map(item => item.id));
+      const requestedIds = body.items.flatMap(item => item.id ? [item.id] : []);
+      if (new Set(requestedIds).size !== requestedIds.length || requestedIds.some(itemId => !currentIds.has(itemId))) {
+        await client.query("ROLLBACK");
+        return problem(reply, 400, "INVALID_REQUEST_ITEMS", "Os itens informados não pertencem à solicitação ou estão duplicados.");
+      }
+
+      const existingPayload = {
+        requesterReference: before.requester_reference, reason: before.reason, notes: before.notes,
+        items: currentItems.rows.map(item => ({ description: item.description,
+          purposeText: item.purpose_text, costCenterText: item.cost_center_text })),
+      };
+      const nextPayload = {
+        requesterReference: body.requesterReference, reason: body.reason, notes: body.notes,
+        items: body.items.map(item => ({ description: item.description,
+          purposeText: item.purposeText ?? null, costCenterText: item.costCenterText ?? null })),
+      };
+      if (canonicalJson(existingPayload) === canonicalJson(nextPayload)) {
+        await client.query("ROLLBACK");
+        return problem(reply, 400, "NO_CHANGES", "Nenhuma alteração informada.");
+      }
+
+      const updated = await client.query<RequestRow>(
+        `UPDATE procurement.import_request
+         SET requester_reference = $2, reason = $3, notes = $4, version = version + 1,
+             updated_by = $5, updated_at = now()
+        WHERE id = $1 RETURNING *`,
+        [id.data, body.requesterReference, body.reason, body.notes, actor.userId]);
+      // Vacate the current unique line numbers before reordering existing rows.
+      await client.query(
+        "UPDATE procurement.import_request_item SET line_number = line_number + 1000 WHERE request_id = $1",
+        [id.data]);
+      const keptItemIds: string[] = [];
+      for (const [index, item] of body.items.entries()) {
+        if (item.id) {
+          keptItemIds.push(item.id);
+          await client.query(
+            `UPDATE procurement.import_request_item
+             SET line_number = $3, description = $4, purpose_text = $5, cost_center_text = $6
+             WHERE id = $1 AND request_id = $2`,
+            [item.id, id.data, index + 1, item.description, item.purposeText ?? null, item.costCenterText ?? null]);
+        } else {
+          const newId = randomUUID();
+          keptItemIds.push(newId);
+          await client.query(
+            `INSERT INTO procurement.import_request_item
+              (id, request_id, line_number, description, purpose_text, cost_center_text)
+             VALUES ($1,$2,$3,$4,$5,$6)`,
+            [newId, id.data, index + 1, item.description, item.purposeText ?? null, item.costCenterText ?? null]);
+        }
+      }
+      await client.query(
+        "DELETE FROM procurement.import_request_item WHERE request_id = $1 AND NOT (id = ANY($2::uuid[]))",
+        [id.data, keptItemIds]);
+      const savedItems = await client.query<RequestItem>(
+        "SELECT * FROM procurement.import_request_item WHERE request_id = $1 ORDER BY line_number", [id.data]);
+      const oldValue = presentRequest(before, currentItems.rows);
+      const newValue = presentRequest(updated.rows[0], savedItems.rows);
+      const correlationId = randomUUID();
+      await client.query(
+        `INSERT INTO audit.audit_log
+          (id,aggregate_type,aggregate_id,entity_type,entity_id,operation,field_name,old_value,new_value,actor_id,occurred_at,reason,correlation_id)
+         VALUES ($1,'IMPORT_REQUEST',$2,'IMPORT_REQUEST',$2,'UPDATE','request',$3::jsonb,$4::jsonb,$5,now(),$6,$7)`,
+        [randomUUID(), id.data, JSON.stringify(oldValue), JSON.stringify(newValue), `${actor.issuer}#${actor.subject}`,
+          body.reason, correlationId]);
+      await client.query(
+        `INSERT INTO audit.outbox_message (event_id,event_type,aggregate_type,aggregate_id,payload,occurred_at)
+         VALUES ($1,'procurement.request.updated','IMPORT_REQUEST',$2,$3::jsonb,now())`,
+        [randomUUID(), id.data, JSON.stringify({ id: id.data, requestNumber: before.request_number,
+          importer: before.importer, version: String(updated.rows[0].version) })]);
+      await client.query("COMMIT");
+      reply.header("ETag", `"${updated.rows[0].version}"`);
+      return presentRequest(updated.rows[0], savedItems.rows);
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally { client.release(); }
   });
 }

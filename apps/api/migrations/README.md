@@ -51,6 +51,22 @@ pending business confirmation. On 2026-10-01 M011 was applied after a protected
 backup and restored-copy validation; the operational ledger is M001–M011 with
 zero pending migrations.
 
+`M012_native_request_editing.sql` grants the API role `UPDATE` and `DELETE` on
+native request items so the versioned edit command can maintain existing items
+and remove those omitted from the submitted replacement. Request edits remain
+limited in the API to `SUBMITTED` records in the caller's importer scope and
+use `If-Match`; status transitions are not part of this migration or command.
+On 2026-10-02 M012 passed migration and runtime UPDATE/DELETE privilege checks
+on a temporary restored database, then was applied to the operational database.
+The pre-release verified backup is
+`/var/backups/import-erp/erp_po_totvs_test_20261002T190606Z.dump` (SHA-256
+`78232483deb7f06038c008b12577ae232eb7bbc05772b6c08374645c8bb2fdde`). The
+operational ledger is M001-M012 with zero pending migrations. The API release
+passed readiness and anonymous-route checks; its code rollback copy is
+`/var/backups/import-erp/m012-api-20261002T190614Z`. The web changes remain
+local because the connected GitHub integration rejected the release commit
+with HTTP 403 (`Resource not accessible by integration`).
+
 The API never runs migrations at startup. From `apps/api`, build the API, then
 set `MIGRATION_ENV=isolated` in the shell or `.env` before running
 `pnpm migrate:status` to inspect the target without creating the ledger. For a

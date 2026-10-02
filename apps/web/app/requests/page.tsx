@@ -8,7 +8,7 @@ import { formatUsDateTime } from "../../lib/date-format";
 type RequestLine = { id: string; lineNumber: number; description: string; purposeText: string | null; costCenterText: string | null };
 type ImportRequest = { id: string; requestNumber: string; importer: string; requesterReference: string;
   notes: string; status: string; version: string; itemCount: number; items?: RequestLine[]; createdAt: string };
-type RequestPage = { totalCount: number; items: ImportRequest[] };
+type RequestPage = { page: number; pageSize: number; totalCount: number; items: ImportRequest[] };
 type DraftLine = { description: string; purposeText: string; costCenterText: string };
 const blankLine = (): DraftLine => ({ description: "", purposeText: "", costCenterText: "" });
 
@@ -20,6 +20,8 @@ export default function RequestsPage() {
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([blankLine()]);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -30,7 +32,7 @@ export default function RequestsPage() {
     setLoading(true); setError("");
     try {
       const [importerResponse, requestResponse] = await Promise.all([
-        apiFetch("/api/v1/importers"), apiFetch("/api/v1/requests?page=1&pageSize=100"),
+        apiFetch("/api/v1/importers"), apiFetch(`/api/v1/requests?page=${page}&pageSize=25`),
       ]);
       if (!importerResponse.ok || !requestResponse.ok) {
         const response = !importerResponse.ok ? importerResponse : requestResponse;
@@ -39,11 +41,11 @@ export default function RequestsPage() {
       }
       const importerData = await importerResponse.json() as { items: Array<{ code: string }> };
       const requestData = await requestResponse.json() as RequestPage;
-      setImporters(importerData.items); setRequests(requestData.items);
+      setImporters(importerData.items); setRequests(requestData.items); setTotalCount(requestData.totalCount);
       if (!importer && importerData.items[0]) setImporter(importerData.items[0].code);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setLoading(false); }
-  }, [importer]);
+  }, [importer, page]);
 
   useEffect(() => { void load(); }, [load, reload]);
 
@@ -59,7 +61,8 @@ export default function RequestsPage() {
       const data = await response.json() as ImportRequest & { detail?: string };
       if (!response.ok) throw new Error(data.detail || "Não foi possível registrar a solicitação.");
       setNotice(`Solicitação ${data.requestNumber} registrada.`);
-      setRequesterReference(""); setReason(""); setNotes(""); setLines([blankLine()]); setReload(value => value + 1);
+      setRequesterReference(""); setReason(""); setNotes(""); setLines([blankLine()]);
+      setPage(1); setReload(value => value + 1);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setSaving(false); }
   }
@@ -103,6 +106,13 @@ export default function RequestsPage() {
       <h2>Solicitações recentes</h2>
       {loading && <p role="status">Carregando…</p>}
       {!loading && !error && requests.length === 0 && <p>Nenhuma solicitação nativa registrada.</p>}
+      {!loading && !error && totalCount > 0 && <nav className="pagination" aria-label="Paginação das solicitações">
+        <span className="muted">{totalCount} solicitações · Página {page} de {Math.ceil(totalCount / 25)}</span>
+        <button className="button secondary" type="button" disabled={page <= 1}
+          onClick={() => setPage(value => Math.max(1, value - 1))}>Anterior</button>
+        <button className="button secondary" type="button" disabled={page >= Math.ceil(totalCount / 25)}
+          onClick={() => setPage(value => Math.min(Math.ceil(totalCount / 25), value + 1))}>Próxima</button>
+      </nav>}
       {!loading && requests.length > 0 && <div className="table-scroll"><table>
         <thead><tr><th>Número</th><th>Importador</th><th>Solicitante</th><th>Itens</th><th>Status</th><th>Data</th><th>Ação</th></tr></thead>
         <tbody>{requests.map(item => <tr key={item.id}><td><strong>{item.requestNumber}</strong></td><td>{item.importer}</td>

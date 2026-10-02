@@ -427,7 +427,7 @@ Avaliar índices de busca textual depois de medir consultas com `EXPLAIN ANALYZE
 
 ### 8.7 Migrations e integridade
 
-Sequência proposta: M001 schemas, organização e IAM; M002 catálogo e escopos; M003 staging, qualidade, auditoria, jobs e outbox; M004 solicitações, POs e observações históricas; M005 IPs, itens, filas e alocações de PO; M006 documentos; M007 invoices e vínculos; M008 logística e containers; M009 desembaraço, NF e fiscal; M010 custos, reversões e rateios por PO; M011 validações e FKs complementares; M012 índices e views operacionais. Respeitar a dependência das chaves nas migrations reais.
+Sequência proposta: M001 schemas, organização e IAM; M002 catálogo e escopos; M003 staging, qualidade, auditoria, jobs e outbox; M004 solicitações, POs e observações históricas; M005 IPs, itens, filas e alocações de PO; M006 documentos; M007 invoices e vínculos; M008 logística e containers; M009 desembaraço, NF e fiscal; M010 custos, reversões e rateios por PO; M011 validações e FKs complementares. A migration sequencial M012 passou a ser reservada à edição concorrente de solicitações nativas; índices e views operacionais previstos nesta sequência serão numerados depois dela. Respeitar a dependência das chaves nas migrations reais.
 
 Cada migration será revisada como SQL, testada em banco vazio e em uma cópia de homologação. Arquivo já aplicado é imutável. Não executar `EnsureCreated` nem migrations automaticamente em todas as réplicas da API. Um job exclusivo de release aplica a mudança com credencial específica. A carga histórica é um job de dados separado, não um enorme `INSERT` dentro da migration estrutural.
 
@@ -647,7 +647,7 @@ Erros usam Problem Details com `type`, `title`, `status`, `detail`, `instance`, 
 | `/users`, `/roles`, `/users/{id}/importer-scopes` | Listar e administrar | Sem criar conta no provedor externo automaticamente |
 | `/suppliers`, `/importers`, `/products`, `/ncms` | GET, POST, PATCH, inativar | Filtros, versão e auditoria |
 | `/reference-data/{type}` | Consultar/cadastrar auxiliares | Tipos explicitamente permitidos |
-| `/requests`, `/requests/{id}/items` | Criar e acompanhar solicitação | Número interno gerado no servidor |
+| `/requests`, `/requests/{id}` | Criar, consultar e editar solicitação nativa | Número interno gerado no servidor; edição integral dos campos informados pelo solicitante somente em `SUBMITTED`, com `If-Match`; esse comando não altera status |
 | `/pending-import-items` | Listar itens históricos sem IP, filtráveis por PO | Sem IP não significa sem pedido |
 | `/unassigned-po-items` | Listar as 144 linhas sem PO | 16 com IP e 128 sem ambos |
 | `/pending-import-items/{id}/assign` | Associar a processo/solicitação | Comando transacional com versão e motivo |
@@ -1046,7 +1046,7 @@ Etapas sobrepostas indicam trabalho paralelo entre funções, não omissão de d
 | DEV11 | Promoção e retomada | Falha injetada e retry sem duplicatas |
 | DEV12 | Tela de qualidade | Revisão lado a lado e motivo auditado |
 | DEV13 | Carteira de PO e acompanhamento | Pedido como entrada; itens, IPs e invoices acessíveis; concorrência e paginação |
-| DEV14 | Solicitações e filas de pendências | 1.772 sem IP e 144 sem PO, com interseção de 128; sem duplicar linha |
+| DEV14 | Solicitações e filas de pendências | 1.772 sem IP e 144 sem PO, com interseção de 128; sem duplicar linha; edição concorrente da solicitação enviada com `If-Match`, auditoria e outbox atômicos |
 | DEV15 | Workflow e histórico | Todas as transições definidas validadas no backend |
 | DEV16 | PO e alocações | Divisão de pedido entre processos sem exceder quantidade |
 | DEV17 | Invoices e comparação | Não comparável quando faltam linha, moeda ou vínculo |

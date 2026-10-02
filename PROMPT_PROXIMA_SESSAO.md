@@ -1,7 +1,8 @@
 # Prompt para a próxima sessão — ERP Comex após RF03/DEV14 M011
 
 Continue do estado real do repositório e leia primeiro **Estado atual —
-2026-10-01** em `CHECKLIST_IMPLEMENTACAO.md`. Consulte
+2026-10-01** e **Atualização do incremento atual — 2026-10-02** em
+`CHECKLIST_IMPLEMENTACAO.md`. Consulte
 `Plano_Implementacao_ERP_PO_TOTVS.md`, em especial 2.2, 6.1, 9, 10, 13.2,
 14.2, 20, 24.1, 26 e 28. Registros antigos do checklist são históricos.
 
@@ -57,6 +58,34 @@ Continue do estado real do repositório e leia primeiro **Estado atual —
   no popover e fecha ao rolar fora dele. Deployment
   `dpl_5HFsBrG5Pd54KJVq2DNgRLBDhBcT` está `READY` com alias público. Pedir
   conferência de rolagem da lista na sessão autenticada.
+- Commits mais recentes no checkout de retomada: `cb306e5`
+  melhora a apresentação de dados internos; `7e9105a` expande os campos da
+  origem sob os registros; `cbba192` exibe cabeçalhos de coluna nos campos
+  expandidos. Em 2026-10-02, GETs sem sessão confirmaram HTTP 200 em `/`,
+  `/requests`, `/catalog`, `/source-audit`, `/processes`,
+  `/pending-import-items` e `/unassigned-po-items`; `/api/v1/requests`,
+  `/api/v1/importers` e `/api/v1/suppliers/candidates` responderam 401. API
+  VPS `systemd` `active`, `/health/live` 200 e `/health/ready` anônimo 401.
+  No pacote isolado `/tmp/erp-api-validation-20261002`, depois da autorização do
+  usuário, os quatro módulos API do checkout compilaram com sucesso. A
+  expectativa do teste de qualidade foi atualizada para o campo
+  `sourceColumnHeaders: {}` quando a fixture não tem cabeçalho; após autorização
+  adicional, a suíte unitária passou 23/23 (13 autorização/PO, 7 qualidade e 3
+  solicitações). As três integrações de catálogo, PO e IP/processos passaram em
+  transações `READ ONLY` usando o build atual. Uma consulta agregada `READ ONLY`
+  encontrou dois usuários ativos `Master`, cujo papel concede acesso global;
+  não há identidades inativas, papéis `Importação`/`Consulta`, escopos de
+  importador ou sessões ativas (uma sessão expirada). Há duas credenciais locais
+  ativas; a auditoria apontou uma com troca de senha obrigatória. O usuário
+  confirmou depois que fez login com sucesso e alterou a senha padrão; a auditoria
+  de credenciais/sessões é um retrato anterior. Um teste `requests.real-read.mjs`
+  consultou a lista com identidade Master real e obteve 200 com zero solicitações;
+  sem identidade, recebeu 401. Não foram lidos nomes, emails, hashes ou tokens.
+  A chave SSH serve para a VPS, não autentica a aplicação. O teste de usuário
+  restrito continua sintético, sem grant real ativo. O build atual não foi
+  instalado nem publicado. O login manual foi confirmado pelo usuário; ainda
+  falta homologar as telas e fluxos autenticados. O agente não teve acesso à
+  sessão de navegador do usuário.
 - Backup pré-M010 restaurado:
   `/var/backups/import-erp/erp_po_totvs_test_20261001T113403Z.dump`, SHA-256
   `4fcc31fdb6cb530f89f308bfbd7ac7a505d078891f0c46eb7a608ff3ed204e86`.
@@ -109,13 +138,42 @@ Continue do estado real do repositório e leia primeiro **Estado atual —
 
 ## Próxima atividade prioritária
 
-Homologue RF03/DEV14 e as leituras RF06/RF04/catalog com Master e usuário de
-Importação com escopo real na URL pública. Não cadastre amostras fictícias no
-banco operacional. Se houver solicitação operacional real aprovada, confirme
-criação/lista/detalhe, numeração server-side, autoria, importador e motivo.
-Usuários restritos devem ver apenas seu escopo; `/api/v1/requests` sem sessão
-deve continuar 401. RF03 permanece parcial até validar workflow/edição com
-`If-Match`, campos de item exigidos, permissões e aceite formal.
+Última conferência pública sem sessão: 2026-10-02. As sete telas verificadas
+responderam 200; `/api/v1/requests`, `/api/v1/importers` e
+`/api/v1/suppliers/candidates` responderam 401. O build API atual passou em
+`/tmp/erp-api-validation-20261002`, a suíte unitária passou 23/23 e as três
+integrações RF02/RF06/RF04 passaram em `READ ONLY`. Não instale nem publique o
+build de validação. A consulta real encontrou dois usuários Master ativos; o
+papel Master concede acesso global. A rota da lista de solicitações respondeu
+200 para uma identidade Master real e 401 sem identidade; a lista está vazia.
+Não há identidades inativas, papéis `Importação`/`Consulta`, escopos por
+importador ou sessões ativas (há uma sessão expirada) no instante da auditoria.
+Duas credenciais locais estavam ativas; uma exigia troca de senha. Depois, o
+usuário confirmou login manual bem-sucedido e troca da senha padrão. Não leia nem
+copie nomes, emails, hashes ou tokens. O par SSH autentica a VPS, não a aplicação.
+Em 2026-10-02, o usu?rio autorizou edi??o somente quando a solicita??o estiver
+`SUBMITTED`, sem transi??o de status nesse comando. A implementa??o usa `If-Match`,
+valida escopo e estado, grava cabe?alho/itens, auditoria e outbox na mesma transa??o,
+e a tela mant?m o rascunho em conflito de vers?o. M012 concede UPDATE/DELETE de itens
+? role de runtime. O build API passou, a su?te API passou 26/26, e o typecheck/build
+de produ??o web passaram. M012 foi aplicada ao banco operacional depois da valida??o
+em c?pia restaurada, incluindo DML real pela role `import_erp_app` em transa??o
+revertida. Ledger operacional: M001?M012, zero pend?ncias.
+
+Backup da valida??o em c?pia:
+`/var/backups/import-erp/erp_po_totvs_test_20261002T185047Z.dump`, SHA-256
+`292cb489b75dc9f8e42bcfe3be4d43d344f2e3198899601aa412e7e54f24542d`. Backup
+pr?-release aplicado:
+`/var/backups/import-erp/erp_po_totvs_test_20261002T190606Z.dump`, SHA-256
+`78232483deb7f06038c008b12577ae232eb7bbc05772b6c08374645c8bb2fdde`. API ativa,
+readiness OK e rota an?nima 401. C?digo anterior em
+`/var/backups/import-erp/m012-api-20261002T190614Z`; ao reverter o c?digo, mantenha
+M012 aplicada. A interface n?o foi publicada: a cria??o do commit pela integra??o
+GitHub retornou 403 `Resource not accessible by integration`, e este ambiente n?o
+tem Vercel CLI ou token. Os arquivos da implementa??o permanecem no checkout local.
+Pr?ximo: habilitar escrita pela integra??o GitHub/Vercel, publicar somente os arquivos
+desta implementa??o e confirmar Vercel `READY` e o alias p?blico. N?o repetir testes
+j? aprovados sem indica??o de falha.
 
 Registre com Product Owner de Importação/Compras se quantidade, unidade e
 produto oficial precisam existir antes da submissão; quem aprova finalidade e
@@ -125,8 +183,9 @@ fornecedor, Fiscal para novos cadastros NCM/vigência e Dados/Compras para alias
 de operação nova. Essas validações não reabrem nem corrigem valores da planilha
 histórica, que o usuário confirmou como reais.
 
-Em paralelo, obtenha homologação real de leitura RF06/RF04 e do novo catálogo
-com Master e usuário restrito. O teste anterior de escopo usou grant sintético
+As leituras autenticadas RF06/RF04 e do novo catálogo foram reportadas como
+aprovadas pelo usuário; recupere apenas os dados de perfil e escopo para o
+registro auditável. O teste técnico anterior de escopo usou grant sintético
 sobre dados reais. Cadastros canônicos para a operação nova ainda exigem
 empresa/filial TOTVS, identidade de fornecedor, aliases, classificação NCM e
 unidades aprovados; mantenha o valor histórico bruto ao criar esses vínculos.
@@ -162,4 +221,9 @@ Atualize `CHECKLIST_IMPLEMENTACAO.md` com status, commits, migrations, testes,
 deploy, casos de aceite e decisões pendentes. Atualize este prompt retirando
 tarefas concluídas. Informe o que o usuário pode testar na URL pública e o que
 ainda requer confirmação de negócio. Registre o caminho da chave SSH para
-rastreio, sem mostrar seu conteúdo.
+rastreio, sem mostrar seu conteúdo. Considere a confirmação do usuário como
+evidência de aprovação dos testes de interface relatados; não atribua perfil,
+importador ou escopo que não tenham sido informados. Preserve essa pendência no
+checklist antes de declarar aceite de acesso restrito. Não faça alterações de
+código, migration, banco ou deploy para contornar a ausência desses detalhes.
+Preserve `hast.md` e `api-migration-test.tar.gz`.
