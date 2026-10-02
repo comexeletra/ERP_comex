@@ -140,7 +140,7 @@ test("quality list scopes before counts and pagination", async (t) => {
   assert.equal(response.statusCode, 200);
   assert.ok(state.listSql.indexOf("WHERE (EXISTS (") < state.listSql.indexOf("LIMIT $5 OFFSET $6"));
   assert.match(state.listSql, /SELECT count\(\*\)::int FROM filtered/u);
-  assert.deepEqual(response.json().items, [{ id: issueIds.visible }]);
+  assert.deepEqual(response.json().items, [{ id: issueIds.visible, sourceColumnHeaders: {} }]);
 });
 
 test("master can see and resolve historical issues without a PO or IP", async (t) => {

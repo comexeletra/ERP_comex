@@ -151,29 +151,29 @@ importador ou sessões ativas (há uma sessão expirada) no instante da auditori
 Duas credenciais locais estavam ativas; uma exigia troca de senha. Depois, o
 usuário confirmou login manual bem-sucedido e troca da senha padrão. Não leia nem
 copie nomes, emails, hashes ou tokens. O par SSH autentica a VPS, não a aplicação.
-Em 2026-10-02, o usu?rio autorizou edi??o somente quando a solicita??o estiver
-`SUBMITTED`, sem transi??o de status nesse comando. A implementa??o usa `If-Match`,
-valida escopo e estado, grava cabe?alho/itens, auditoria e outbox na mesma transa??o,
-e a tela mant?m o rascunho em conflito de vers?o. M012 concede UPDATE/DELETE de itens
-? role de runtime. O build API passou, a su?te API passou 26/26, e o typecheck/build
-de produ??o web passaram. M012 foi aplicada ao banco operacional depois da valida??o
-em c?pia restaurada, incluindo DML real pela role `import_erp_app` em transa??o
-revertida. Ledger operacional: M001?M012, zero pend?ncias.
+Em 2026-10-02, o usuario autorizou edicao somente quando a solicitacao estiver
+`SUBMITTED`, sem transicao de status nesse comando. A implementacao usa `If-Match`,
+valida escopo e estado, grava cabecalho/itens, auditoria e outbox na mesma transacao,
+e a tela mantem o rascunho em conflito de versao. M012 concede UPDATE/DELETE de itens
+a role de runtime. O build API passou, a suite API passou 26/26, e o typecheck/build
+de producao web passaram. M012 foi aplicada ao banco operacional depois da validacao
+em copia restaurada, incluindo DML real pela role `import_erp_app` em transacao
+revertida. Ledger operacional: M001-M012, zero pendencias.
 
-Backup da valida??o em c?pia:
+Backup da validacao em copia:
 `/var/backups/import-erp/erp_po_totvs_test_20261002T185047Z.dump`, SHA-256
 `292cb489b75dc9f8e42bcfe3be4d43d344f2e3198899601aa412e7e54f24542d`. Backup
-pr?-release aplicado:
+pre-release aplicado:
 `/var/backups/import-erp/erp_po_totvs_test_20261002T190606Z.dump`, SHA-256
 `78232483deb7f06038c008b12577ae232eb7bbc05772b6c08374645c8bb2fdde`. API ativa,
-readiness OK e rota an?nima 401. C?digo anterior em
-`/var/backups/import-erp/m012-api-20261002T190614Z`; ao reverter o c?digo, mantenha
-M012 aplicada. A interface n?o foi publicada: a cria??o do commit pela integra??o
-GitHub retornou 403 `Resource not accessible by integration`, e este ambiente n?o
-tem Vercel CLI ou token. Os arquivos da implementa??o permanecem no checkout local.
-Pr?ximo: habilitar escrita pela integra??o GitHub/Vercel, publicar somente os arquivos
-desta implementa??o e confirmar Vercel `READY` e o alias p?blico. N?o repetir testes
-j? aprovados sem indica??o de falha.
+readiness OK e rota anonima 401. Codigo anterior em
+`/var/backups/import-erp/m012-api-20261002T190614Z`; ao reverter o codigo, mantenha
+M012 aplicada. Commit `26ae538` foi enviado a `comexeletra/ERP_comex`; deploy Vercel
+`dpl_35azfjEXCUmqmBgV9AmHDnHXckx5` esta `READY` no alias
+`fup-comex-eletra.vercel.app`. O `origin` local aponta para outro repositorio; o push
+foi feito explicitamente ao repositorio da Vercel. As alteracoes anteriores locais
+foram preservadas e enviadas em um segundo commit. Nao repetir testes ja aprovados
+sem indicacao de falha.
 
 Registre com Product Owner de Importação/Compras se quantidade, unidade e
 produto oficial precisam existir antes da submissão; quem aprova finalidade e

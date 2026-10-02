@@ -63,9 +63,10 @@ The pre-release verified backup is
 `78232483deb7f06038c008b12577ae232eb7bbc05772b6c08374645c8bb2fdde`). The
 operational ledger is M001-M012 with zero pending migrations. The API release
 passed readiness and anonymous-route checks; its code rollback copy is
-`/var/backups/import-erp/m012-api-20261002T190614Z`. The web changes remain
-local because the connected GitHub integration rejected the release commit
-with HTTP 403 (`Resource not accessible by integration`).
+`/var/backups/import-erp/m012-api-20261002T190614Z`. Commit `26ae538` was
+published to `comexeletra/ERP_comex`; Vercel deployment
+`dpl_35azfjEXCUmqmBgV9AmHDnHXckx5` reached `READY` and serves the
+`fup-comex-eletra.vercel.app` alias.
 
 The API never runs migrations at startup. From `apps/api`, build the API, then
 set `MIGRATION_ENV=isolated` in the shell or `.env` before running
