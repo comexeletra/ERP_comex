@@ -255,6 +255,7 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
         columnHeaders[key] += ` / ${label}`;
       }
     }
+    const items = (result.rows[0]?.items ?? []) as Array<Record<string, unknown>>;
     return {
       page, pageSize, sheet, gap, totalCount: Number(result.rows[0]?.total_count ?? 0),
       rowsBeforeGapFilter: Number(result.rows[0]?.rows_before_gap_filter ?? 0),
@@ -264,14 +265,25 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
         anyGap: Number(result.rows[0]?.any_gap ?? 0) },
       columns,
       columnHeaders,
-      items: result.rows[0]?.items ?? [],
+      items: items.map(item => ({ ...item,
+        sourceColumnHeaders: sourceColumnHeadersFor(String(item.sourceSheetName ?? "")),
+      })),
     };
   });
 }
 
 export function sourceColumnHeadersFor(sheetName: string): Record<string, string> {
-  const headers = sheetName === "Pr\u00e9 Embarque" ? preHeaders
-    : sheetName === "P\u00f3s Embarque" ? postHeaders : [];
+  // Sheet names in older imports may contain mojibake or omit accents. Normalize
+  // those variants before choosing the matching header row.
+  const normalizedName = sheetName
+    .replaceAll("\u00c3\u00a9", "\u00e9")
+    .replaceAll("\u00c3\u00b3", "\u00f3")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim()
+    .toLocaleLowerCase("pt-BR");
+  const headers = normalizedName === "pre embarque" ? preHeaders
+    : normalizedName === "pos embarque" ? postHeaders : [];
   return Object.fromEntries(headers.map((header, index) => [excelColumnLabel(index + 2), header]));
 }
 
