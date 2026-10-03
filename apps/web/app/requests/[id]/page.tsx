@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 import { formatUsDateTime } from "../../../lib/date-format";
+import { canWriteRequests } from "../../../lib/request-permissions";
 
 type RequestDetail = { id: string; requestNumber: string; importer: string; sourceKind: string;
   requesterReference: string; reason: string; notes: string; status: string; version: string;
@@ -20,6 +21,7 @@ const blankItem = (): DraftItem => ({ description: "", purposeText: "", costCent
 export default function RequestDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [request, setRequest] = useState<RequestDetail>();
+  const [canWrite, setCanWrite] = useState(false);
   const [draft, setDraft] = useState<RequestDraft>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -34,8 +36,14 @@ export default function RequestDetailPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    apiFetch(`/api/v1/requests/${encodeURIComponent(id)}`, { signal: controller.signal })
-      .then(async response => {
+    Promise.all([
+      apiFetch("/auth/me", { signal: controller.signal }),
+      apiFetch(`/api/v1/requests/${encodeURIComponent(id)}`, { signal: controller.signal }),
+    ])
+      .then(async ([identityResponse, response]) => {
+        if (!identityResponse.ok) throw new Error("Sua sessão expirou. Entre novamente.");
+        const identity = await identityResponse.json() as { roles: string[] };
+        if (!controller.signal.aborted) setCanWrite(canWriteRequests(identity.roles));
         if (response.status === 401) throw new Error("Sua sessão expirou. Entre novamente.");
         if (response.status === 403) throw new Error("Seu perfil não pode consultar esta solicitação.");
         if (response.status === 404) throw new Error("Solicitação não encontrada no seu escopo.");
@@ -70,7 +78,7 @@ export default function RequestDetailPage() {
   }, [id, historyPage, historyRevision]);
 
   function beginEditing() {
-    if (!request || request.status !== "SUBMITTED") return;
+    if (!canWrite || !request || request.status !== "SUBMITTED") return;
     setError(""); setNotice("");
     setDraft({ requesterReference: request.requesterReference, reason: request.reason, notes: request.notes,
       items: request.items.map(item => ({ id: item.id, description: item.description,
@@ -135,7 +143,7 @@ export default function RequestDetailPage() {
           {item.purposeText && <p><strong>Finalidade informada:</strong> {item.purposeText}</p>}
           {item.costCenterText && <p><strong>Centro de custo informado:</strong> {item.costCenterText}</p>}
         </article>)}</>}
-        {!draft && request.status === "SUBMITTED" && <button className="button" type="button" onClick={beginEditing}>Editar solicitação</button>}
+        {!draft && canWrite && request.status === "SUBMITTED" && <button className="button" type="button" onClick={beginEditing}>Editar solicitação</button>}
         {draft && <form className="stack-form request-form" onSubmit={save}>
           <h2>Editar solicitação</h2>
           <p className="muted">A edição está disponível enquanto o status for Enviada. Número, importador e status não podem ser alterados aqui.</p>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api";
 import { formatUsDateTime } from "../../lib/date-format";
+import { canWriteRequests } from "../../lib/request-permissions";
 
 type RequestLine = { id: string; lineNumber: number; description: string; purposeText: string | null; costCenterText: string | null };
 type ImportRequest = { id: string; requestNumber: string; importer: string; requesterReference: string;
@@ -13,6 +14,7 @@ type DraftLine = { description: string; purposeText: string; costCenterText: str
 const blankLine = (): DraftLine => ({ description: "", purposeText: "", costCenterText: "" });
 
 export default function RequestsPage() {
+  const [roles, setRoles] = useState<string[]>([]);
   const [importers, setImporters] = useState<Array<{ code: string }>>([]);
   const [requests, setRequests] = useState<ImportRequest[]>([]);
   const [importer, setImporter] = useState("");
@@ -31,16 +33,18 @@ export default function RequestsPage() {
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const [importerResponse, requestResponse] = await Promise.all([
-        apiFetch("/api/v1/importers"), apiFetch(`/api/v1/requests?page=${page}&pageSize=25`),
+      const [identityResponse, importerResponse, requestResponse] = await Promise.all([
+        apiFetch("/auth/me"), apiFetch("/api/v1/importers"), apiFetch(`/api/v1/requests?page=${page}&pageSize=25`),
       ]);
-      if (!importerResponse.ok || !requestResponse.ok) {
-        const response = !importerResponse.ok ? importerResponse : requestResponse;
+      if (!identityResponse.ok || !importerResponse.ok || !requestResponse.ok) {
+        const response = !identityResponse.ok ? identityResponse : !importerResponse.ok ? importerResponse : requestResponse;
         throw new Error(response.status === 401 ? "Sua sessão expirou. Entre novamente." :
           response.status === 403 ? "Seu perfil não pode consultar solicitações." : "Não foi possível carregar os dados.");
       }
+      const identity = await identityResponse.json() as { roles: string[] };
       const importerData = await importerResponse.json() as { items: Array<{ code: string }> };
       const requestData = await requestResponse.json() as RequestPage;
+      setRoles(identity.roles);
       setImporters(importerData.items); setRequests(requestData.items); setTotalCount(requestData.totalCount);
       if (!importer && importerData.items[0]) setImporter(importerData.items[0].code);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
@@ -70,10 +74,12 @@ export default function RequestsPage() {
   return <main className="shell">
     <header className="page-header">
       <p className="eyebrow">ERP Comex</p><h1>Solicitações de importação</h1>
-      <p>Registre uma solicitação nova e seus itens descritos pelo solicitante. Solicitações não são criadas a partir das linhas históricas da planilha.</p>
+      <p>{canWriteRequests(roles)
+        ? "Registre uma solicitação nova e seus itens descritos pelo solicitante. Solicitações não são criadas a partir das linhas históricas da planilha."
+        : "Consulte as solicitações disponíveis no seu escopo. Solicitações não são criadas a partir das linhas históricas da planilha."}</p>
       <Link className="text-link" href="/">← Carteira de POs</Link>
     </header>
-    <section className="card">
+    {canWriteRequests(roles) ? <section className="card">
       <h2>Nova solicitação</h2>
       <p className="muted">O número é gerado pelo servidor. Produto, quantidade/unidade, finalidade e centro de custo oficiais ainda dependem de confirmação. Finalidade e centro de custo abaixo são referências livres informadas pelo solicitante.</p>
       {error && <div className="notice error" role="alert">{error} <button className="button secondary" type="button" onClick={() => setReload(value => value + 1)}>Tentar novamente</button></div>}
@@ -101,7 +107,7 @@ export default function RequestsPage() {
         {lines.length < 100 && <button className="button secondary" type="button" onClick={() => setLines(current => [...current, blankLine()])}>Adicionar item</button>}
         <button className="button" disabled={saving || !importer}>{saving ? "Registrando…" : "Registrar solicitação"}</button>
       </form>
-    </section>
+    </section> : <p className="notice">Seu perfil permite consultar solicitações. Para registrar uma solicitação, peça ao Master para revisar seu acesso.</p>}
     <section className="card" aria-live="polite">
       <h2>Solicitações recentes</h2>
       {loading && <p role="status">Carregando…</p>}
