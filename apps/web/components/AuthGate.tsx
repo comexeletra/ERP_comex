@@ -9,6 +9,7 @@ type Identity = {
   authenticated: boolean;
   user: { displayName: string | null };
   roles: string[];
+  importerScopes: string[];
   mustChangePassword: boolean;
 };
 
@@ -53,7 +54,16 @@ export default function AuthGate({ children }: { children: ReactNode }) {
 
   return <>
     <div className="session-bar">
-      <span>{identity.user.displayName ?? "Usuário autenticado"}</span>
+      <div className="session-identity">
+        <span>{identity.user.displayName ?? "Usuário autenticado"}</span>
+        <small>
+          Papel: {identity.roles.length > 0 ? identity.roles.join(", ") : "não atribuído"}
+          {" · Importadoras: "}
+          {identity.roles.includes("Master")
+            ? "Todas (Master)"
+            : identity.importerScopes.length > 0 ? identity.importerScopes.join(", ") : "Nenhuma atribuída"}
+        </small>
+      </div>
       {identity.roles.includes("Master") && <Link className="text-link" href="/admin/users">Gerenciar acessos</Link>}
       {identity.roles.includes("Master") && <Link className="text-link" href="/admin/outbox">Fila de eventos</Link>}
       <Link className="text-link" href="/change-password">Trocar senha</Link>
