@@ -13,11 +13,11 @@ Um item daquele histórico não está concluído na stack atual sem evidência a
 - `[ ]` Não há implementação operacional correspondente no repositório atual.
 - `[!]` Depende de decisão ou fonte externa identificada.
 
-**Fontes deste retrato:** código e configuração do checkout, migrations M001–M013,
+**Fontes deste retrato:** código e configuração do checkout, migrations M001–M014,
 documentos de entrega e evidências registradas no checklist histórico até
 2026-10-02. A aplicação em `erp_po_totvs_test`, a API na VPS e os deployments
 Vercel são fatos registrados nas entregas anteriores. Nesta revisão, a VPS foi
-consultada para M013, saúde da API e grant da view; os demais módulos e o deploy
+consultada para M013/M014, saúde da API e grants das views; os demais módulos e o deploy
 Vercel não foram revalidados remotamente. O commit `2ea54a5` dos cabeçalhos foi enviado
 a `production/main`, mas não há evidência nesta revisão de que a API VPS o tenha
 recebido. Aceites com usuários reais foram informados pelo usuário sem perfil,
@@ -32,11 +32,11 @@ recebeu `[x]` integral apenas por existir na fase .NET/SQLite ou no plano.
 |---|---|---|
 | Frontend | Next.js 16.3.6, React 19.3.0, TypeScript 5.9.3, CSS próprio; `fetch` em componentes e `proxy.ts` same-origin; Vercel `apps/web` | Manter esta base. Tailwind, shadcn/ui, TanStack Query, React Hook Form, Vitest e Playwright são propostas do plano e **não estão instalados**. Adotá-los só quando uma entrega exigir. |
 | API | Node 24, Fastify 5, TypeScript, Zod, `pg`; serviço `systemd` na VPS, HTTPS via Traefik, token de gateway | Completar contratos e workflows no serviço persistente. Não há backend .NET ativo. |
-| Banco | PostgreSQL da VPS; `erp_po_totvs_test` é operacional apesar do nome; SQL M001–M013 versionado, runner explícito | Separar banco de CI/homologação do operacional; validar cada nova migration em cópia restaurada e manter backup. Não usar SQLite como evidência atual. |
+| Banco | PostgreSQL da VPS; `erp_po_totvs_test` é operacional apesar do nome; SQL M001–M014 versionado, runner explícito | Separar banco de CI/homologação do operacional; validar cada nova migration em cópia restaurada e manter backup. Não usar SQLite como evidência atual. |
 | Autenticação | Login local e sessões PostgreSQL em uso; OIDC/PKCE existe no código | Homologar provedor corporativo e testar sessão/escopo com identidade restrita real. |
 | Importação | `deploy/hostinger/import-historical-workbook.py` usa Python/openpyxl e hash do arquivo aprovado; a origem bruta é preservada | Criar prévia, reconciliação e promoção versionada da próxima planilha; não pressupor importador Node já existente. |
 | Jobs e arquivos | Outbox no PostgreSQL; sem consumidor operacional ou object storage escolhido | Definir executor persistente/agenda na VPS ou serviço gerenciado, storage privado e políticas de retry/retensão antes de documentos e integrações. |
-| CI | `.github/workflows/api-ci.yml` compila/testa API e aplica migrations em PostgreSQL isolado; `.github/workflows/web-ci.yml` instala, executa ESLint e compila o frontend | Confirmar execução no GitHub; acrescentar integração, contratos, segurança e E2E relevantes. |
+| CI | `.github/workflows/api-ci.yml` compila/testa API e aplica migrations em PostgreSQL isolado; `.github/workflows/web-ci.yml` executa testes, ESLint e build; `source-preview-ci.yml` testa a prévia. As três passaram no GitHub após M013. | Revalidar após M014; acrescentar integração, contratos, segurança e E2E relevantes. |
 | BI | Sem banco analítico ou projeto Power BI versionado | Implementar depois de fixar grãos, moeda e fonte de cada indicador. |
 
 **Cobertura de colunas do arquivo aprovado:** o arquivo local
@@ -72,7 +72,7 @@ política aprovada. Datas visíveis seguem `MM/DD/YYYY` e, com horário,
 | RF12 Histórico/auditoria | `[-]` | Origem imutável, revisão de qualidade, auditoria e outbox em comandos existentes. M013 aplicada após backup/cópia restaurada; a API de histórico de solicitações está ativa na VPS. | Ampliar timeline às demais entidades e criar consumidor da outbox; homologar a tela com usuário restrito real. |
 | RF13 Histórico Excel | `[-]` | Carga idempotente do snapshot aprovado; `/source-audit` com abas Pré/Pós, filtros e cabeçalhos; revisão de qualidade. CLI de inventário/comparação posicional de versões sem escrita no banco. | Decidir cobertura dos 11 cabeçalhos Pré além de `AZ` já no arquivo aprovado; reconciliar entidades de versões novas, promover sem sobrescrita e aceitar os erros de cálculo. |
 | RF14 Painéis | `[-]` | Exportação CSV da carteira filtrada e restrita ao escopo foi versionada; ainda não há painel operacional completo. | Catálogo de KPIs por grão/moeda, filtros, atualização e relatórios completos. |
-| RF15 Administração | `[-]` | Master gerencia usuários, papéis e escopos. | Parâmetros operacionais, acompanhamento de jobs e autorização completa para novos módulos. |
+| RF15 Administração | `[-]` | Master gerencia usuários, papéis e escopos e pode consultar metadados da outbox. | Parâmetros operacionais, acompanhamento dos demais jobs e autorização completa para novos módulos. |
 | RF16 Analítico | `[ ]` | Sem DW/ETL/modelo semântico ativo no repositório. | Banco analítico, cargas reconciliadas, fatos/dimensões, Power BI e RLS. |
 
 Nenhum RF01–RF16 tem aceite integral registrado para a stack atual. Isso não
@@ -87,7 +87,7 @@ reaproveitado.
 | DEV02 Ambiente | `[-]` | Node 24 e PostgreSQL/VPS operacionais; separar desenvolvimento/Preview do banco operacional e completar CI web. |
 | DEV03 OIDC/sessão | `[-]` | Login local e sessões ativos; OIDC/PKCE no código. Homologar issuer corporativo, callback, expiração, CSRF e logout. |
 | DEV04 Permissões | `[-]` | Papéis/grants e filtros SQL existem; validar casos negativos e 404 fora do escopo com usuário restrito real. |
-| DEV05 Migrations | `[-]` | Runner Node e M001–M013; M013 validada em cópia restaurada, backup e grant operacional conferidos. Confirmar CI dinâmica no GitHub e gates de upgrade/release. |
+| DEV05 Migrations | `[-]` | Runner Node e M001–M014; M013/M014 validadas em cópia restaurada, backup e grants operacionais conferidos. CI dinâmica passou no GitHub para M013; faltam gates de upgrade/release. |
 | DEV06 Cadastros/aliases | `[-]` | M010 e fluxo manual revisado; faltam identidades oficiais, aliases conflitantes e homologação de dados reais. |
 | DEV07 Lote de origem | `[-]` | Snapshot, hash e linhas brutas persistidos; CLI local de inventário/comparação por coordenada versionada. Faltam recebimento, armazenamento e prévia reconciliada por entidade. |
 | DEV08 Leitura Excel | `[-]` | Python/openpyxl lê valores salvos do arquivo aprovado; avaliar os 11 cabeçalhos Pré além de `AZ` já presentes e generalizar leitura de versões novas. |
@@ -106,7 +106,7 @@ reaproveitado.
 | DEV21 Custos | `[-]` | Custos legados por IP; faltam custo novo, reversão e rateio versionado. |
 | DEV22 Regras fiscais | `[ ]` | Sem cálculo/regra de benefício aprovada; depende do Fiscal. |
 | DEV23 Documentos | `[ ]` | Selecionar storage privado e construir fluxo autorizado/versionado. |
-| DEV24 Auditoria/outbox | `[-]` | Escrita atômica nos comandos existentes e histórico de solicitações com M013. Monitor Master da fila e view M014 versionados, ainda sem release. Faltam consumidor, política de retries e retenção. |
+| DEV24 Auditoria/outbox | `[-]` | Escrita atômica nos comandos existentes, histórico de solicitações M013 e monitor Master da fila M014 instalados. Faltam consumidor, política de retries e retenção. |
 | DEV25 Dashboard | `[-]` | CSV filtrado da carteira de POs versionado, sem valores ou saldos oficiais. Faltam painel, indicadores por grão/moeda e referência temporal. |
 | DEV26 ETL | `[ ]` | Sem carga analítica; criar dimensões, watermark, reexecução e reconciliação. |
 | DEV27 Fatos/medidas | `[ ]` | Sem fatos e medidas; impedir ligação fato a fato e soma entre moedas. |
@@ -141,6 +141,6 @@ reaproveitado.
 
 Priorizar o registro dos casos de homologação já executados e das decisões de
 produto/TOTVS, pois elas determinam o modelo dos itens oficiais. Em paralelo,
-confirmar no GitHub a CI corrigida e preparar ambiente segregado de integração.
+revalidar as três CIs após M014 e preparar ambiente segregado de integração.
 Nenhuma contagem histórica ou evidência .NET/SQLite substitui o aceite dos novos
 comandos na API Fastify e no PostgreSQL.

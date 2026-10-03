@@ -76,8 +76,10 @@ with zero pending migrations. The API code was installed after a controlled
 retry of the health check; see `deploy/hostinger/README.md` for evidence.
 
 `M014_outbox_monitor.sql` adds a metadata-only view for the Master outbox
-monitor. It grants no access to event payloads or error text. This migration is
-versioned but awaits restored-copy validation and operational release.
+monitor. It grants no access to event payloads or error text. On 2026-10-02,
+M014 passed on a restored copy after a verified backup and was applied to the
+operational database. The runtime role successfully read the view; the ledger
+records M001–M014 with zero pending migrations.
 
 The API never runs migrations at startup. From `apps/api`, build the API, then
 set `MIGRATION_ENV=isolated` in the shell or `.env` before running

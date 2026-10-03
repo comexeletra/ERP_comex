@@ -1,7 +1,7 @@
 # API ERP na VPS Hostinger
 
 > As seções de migrations abaixo são registros de releases anteriores.
-> [O checklist vigente](../../CHECKLIST_ATUAL_IMPLEMENTACAO.md) registra M001–M013
+> [O checklist vigente](../../CHECKLIST_ATUAL_IMPLEMENTACAO.md) registra M001–M014
 > no histórico operacional. Confira o ledger real antes do próximo release.
 
 ## Release M014: monitor da outbox
@@ -20,6 +20,15 @@ restaura uma cópia, aplica M014 nela, testa o grant e a leitura da view com a r
 da API, depois migra o banco operacional e instala os arquivos da rota. Se a
 checagem de saúde falhar, o `server.js` anterior é restaurado; M014 permanece.
 Uma retomada exige `ERP_M014_RESUME=true` e o caminho/hash do backup verificado.
+
+Em 2026-10-02, M014 passou em cópia restaurada e foi aplicada ao banco
+operacional. Backup verificado:
+`/var/backups/import-erp/erp_po_totvs_test_20261003T005132Z.dump`, SHA-256
+`0f515d5fbc685b2ce15c214816a006fb3eede2488aa738430d62f437363dbc8b`.
+API ativa e rota anônima da outbox retornando 401. Código anterior em
+`/var/backups/import-erp/m014-api-20261003T005136Z`.
+`verify-m014-operational.sh` confere ledger, grant e consulta da view com a role
+da API.
 
 ## Release M013: histórico de solicitações
 

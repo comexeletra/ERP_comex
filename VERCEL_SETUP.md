@@ -2,7 +2,7 @@
 
 > Os números de migrations e verificações abaixo registram 2026-09-29. Para o
 > estado vigente, consulte [CHECKLIST_ATUAL_IMPLEMENTACAO.md](CHECKLIST_ATUAL_IMPLEMENTACAO.md).
-> O histórico posterior registra M001–M012 aplicadas; confira o ledger da VPS
+> O histórico posterior registra M001–M014 aplicadas; confira o ledger da VPS
 > antes de um novo release.
 
 ## Estado registrado em 2026-09-29
