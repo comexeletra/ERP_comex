@@ -5,11 +5,13 @@ on:
     paths:
       - "apps/api/**"
       - ".github/workflows/api-ci.yml"
+      - ".github/scripts/check-migration-upgrade.sh"
   push:
     branches: [main]
     paths:
       - "apps/api/**"
       - ".github/workflows/api-ci.yml"
+      - ".github/scripts/check-migration-upgrade.sh"
 
 permissions:
   contents: read
@@ -78,3 +80,5 @@ jobs:
           output="$(corepack pnpm migrate:up)"
           printf '%s\n' "$output"
           grep -Fq 'Concluído: 0 migration(s) aplicada(s).' <<< "$output"
+      - name: Upgrade previous schema with existing data
+        run: bash .github/scripts/check-migration-upgrade.sh
