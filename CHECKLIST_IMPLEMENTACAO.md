@@ -19,6 +19,27 @@ verificável da entrega. Não remova registros anteriores.
 Uma marcação `[x]` só pode ser usada quando houver teste ou evidência descrita
 na coluna **Evidência**. Produção só é marcada depois de homologação formal.
 
+## Incrementos técnicos concluídos em 2026-10-02
+
+- `82e2535`: ESLint compatível com Next 16 e Web CI com instalação travada,
+  testes, lint e build. [Web CI verde após M014](https://github.com/comexeletra/ERP_comex/actions/runs/37083924735).
+- `640b50d`, `57cd0e9`, `fa7c67e`: histórico paginado e restrito por escopo de
+  solicitações (M013), validação em cópia restaurada, backup e release na VPS.
+  [API CI verde](https://github.com/comexeletra/ERP_comex/actions/runs/37083237543).
+- `a32b950`: CLI de inventário/comparação de planilhas por coordenada, sem
+  escrita no banco. [Source Preview CI verde](https://github.com/comexeletra/ERP_comex/actions/runs/37083237522).
+- `029bf81`: CSV da carteira de POs filtrada no escopo do usuário, com proteção
+  contra fórmulas e contra exportação incompleta.
+- `67e3a16`, `2e9c9a5`, `6d4f75b`: monitor de metadados da outbox para Master
+  (M014), validação em cópia restaurada, backup e release na VPS.
+  [API CI verde após M014](https://github.com/comexeletra/ERP_comex/actions/runs/37083924733).
+- API ativa, ledger M001–M014 completo, grants das views M013/M014 testados
+  com a role de runtime; Vercel pública respondeu 200 em `/admin/outbox` e 401
+  na API sem sessão. As telas novas ainda não tiveram aceite autenticado.
+- O único XLSX local desta revisão, `Follow Up Import 2026 - Copiar.xlsx`, não
+  tem o hash aprovado pelo importador. Ele não foi importado. O snapshot aprovado
+  e os dados operacionais não foram alterados por esta análise.
+
 Os quadros e resultados SQLite/.NET anteriores à seção **Atualização do
 incremento atual** registram a implementação histórica, que foi removida do
 snapshot. Eles não comprovam implementação nem aceite na API Node. Para o

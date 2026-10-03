@@ -2,10 +2,14 @@
 
 **Atualização do plano — 02/10/2026:** o controle vigente de implementação é
 [CHECKLIST_ATUAL_IMPLEMENTACAO.md](CHECKLIST_ATUAL_IMPLEMENTACAO.md). O banco
-`erp_po_totvs_test` é operacional apesar do nome. O histórico de entregas registra
-M001–M012 aplicadas, API Fastify na VPS, frontend Next.js na Vercel e login local
-em uso. OIDC/PKCE está no código, mas a autenticação corporativa não foi
-homologada. A validação remota desses fatos não foi repetida nesta revisão.
+`erp_po_totvs_test` é operacional apesar do nome. M001–M014 estão aplicadas,
+API Fastify na VPS, frontend Next.js na Vercel e login local em uso. M013
+entrega histórico de solicitações; M014 entrega monitor da outbox ao Master.
+As duas migrations passaram em cópias restauradas antes do release, com backups
+verificados. API CI e Web CI passaram no último commit de implementação
+`6d4f75b`; a Vercel pública entregou a nova tela, mas falta validação
+autenticada com perfis reais. OIDC/PKCE está no código, mas a autenticação
+corporativa não foi homologada.
 Trechos abaixo que descrevem M008 pendente, ausência de API publicada ou da
 escrita operacional são evidências datadas da fase inicial, não o estado vigente.
 

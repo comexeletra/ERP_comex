@@ -1,4 +1,29 @@
-# Prompt para a próxima sessão — ERP Comex após RF03/DEV14 M011
+# Retomada do ERP Comex — stack Next.js/Vercel/VPS
+
+## Estado vigente em 2026-10-02
+
+- Leia primeiro [CHECKLIST_ATUAL_IMPLEMENTACAO.md](CHECKLIST_ATUAL_IMPLEMENTACAO.md).
+  O restante deste arquivo documenta a retomada antiga de M011/M012 e não é o
+  estado atual da implementação.
+- `production/main` contém M001–M014. M013 adicionou histórico paginado de
+  solicitações restrito ao escopo; M014 adicionou monitor somente de metadados
+  da outbox para Master. Ambas foram validadas em cópia restaurada, aplicadas na
+  VPS com backup verificado e verificadas com a role da API. Os registros e
+  caminhos de recuperação estão em [deploy/hostinger/README.md](deploy/hostinger/README.md).
+- O frontend público serve `/admin/outbox` e os bundles de histórico/CSV. Rotas
+  da API sem sessão retornam 401. Web CI e API CI passaram para `6d4f75b`; a
+  Source Preview CI passou para `fa7c67e`. Ainda falta teste autenticado das
+  telas novas com perfis reais e aceite formal do escopo.
+- O arquivo local `Follow Up Import 2026 - Copiar.xlsx` difere do hash aprovado
+  no importador. A CLI de inventário/comparação é somente leitura; não promover
+  nem importar esse arquivo sem identificar e homologar a versão de origem.
+- Próximas ações independentes da planilha: ambiente segregado de integração,
+  gate repetível de upgrade, testes de escopo com identidade restrita real,
+  política/destino do consumidor da outbox e storage privado. Campos oficiais
+  TOTVS, workflow, rateio, moeda e colunas adicionais da origem aguardam decisão
+  registrada de negócio.
+
+## Registro histórico da retomada M011/M012
 
 > Registro de retomada da fase M011/M012. Para trabalho novo, leia primeiro
 > [CHECKLIST_ATUAL_IMPLEMENTACAO.md](CHECKLIST_ATUAL_IMPLEMENTACAO.md). Os estados
