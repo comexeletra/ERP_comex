@@ -33,5 +33,7 @@ jobs:
         run: corepack pnpm install --frozen-lockfile
       - name: Lint
         run: corepack pnpm lint
+      - name: Test CSV formatting
+        run: corepack pnpm test
       - name: Build
         run: corepack pnpm build

@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
+import { purchaseOrdersCsv, type ExportPurchaseOrder } from "../lib/po-export";
 
 type Filters = { number: string; importer: string; product: string; ipNumber: string };
-type PurchaseOrder = {
-  id: string; number: string; importer: string; identityStatus: string;
+type PurchaseOrder = ExportPurchaseOrder & {
   officialItemsKnown: boolean; historicalItemCount: number; linkedProcessCount: number;
   historicalItemsWithIp: number; historicalItemsWithoutIp: number;
   unresolvedIssueCount: number; balanceAvailable: boolean;
@@ -15,8 +15,8 @@ type PurchaseOrderPage = { page: number; pageSize: number; totalCount: number; i
 const emptyFilters: Filters = { number: "", importer: "", product: "", ipNumber: "" };
 const pageSize = 50;
 
-function queryFor(filters: Filters, page: number) {
-  const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+function queryFor(filters: Filters, page: number, size = pageSize) {
+  const query = new URLSearchParams({ page: String(page), pageSize: String(size) });
   for (const key of Object.keys(emptyFilters) as (keyof Filters)[]) {
     if (filters[key].trim()) query.set(key, filters[key].trim());
   }
@@ -32,6 +32,8 @@ export default function PortfolioPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [retry, setRetry] = useState(0);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
@@ -78,6 +80,41 @@ export default function PortfolioPage() {
       product: draft.product.trim(), ipNumber: draft.ipNumber.trim() }, 1);
   }
 
+  async function downloadCsv() {
+    if (exporting || !result?.totalCount) return;
+    setExporting(true); setExportError("");
+    try {
+      const rows: PurchaseOrder[] = [];
+      const seen = new Set<string>();
+      const expectedCount = result.totalCount;
+      if (expectedCount > 5000) throw new Error("A exportação suporta até 5.000 POs por vez. Refine os filtros.");
+      for (let nextPage = 1; nextPage <= Math.ceil(expectedCount / 200); nextPage++) {
+        const response = await apiFetch(`/api/v1/purchase-orders?${queryFor(applied, nextPage, 200)}`);
+        if (!response.ok) throw new Error("Não foi possível consultar todas as POs para exportação.");
+        const data = await response.json() as PurchaseOrderPage;
+        if (data.totalCount !== expectedCount || data.page !== nextPage || !Array.isArray(data.items)) {
+          throw new Error("A carteira mudou durante a exportação. Tente novamente.");
+        }
+        for (const order of data.items) {
+          if (seen.has(order.id)) throw new Error("A carteira mudou durante a exportação. Tente novamente.");
+          seen.add(order.id); rows.push(order);
+        }
+      }
+      if (rows.length !== expectedCount) throw new Error("A carteira mudou durante a exportação. Tente novamente.");
+      const blob = new Blob(["\uFEFF", purchaseOrdersCsv(rows)], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `carteira-pos-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (cause) {
+      setExportError(cause instanceof Error ? cause.message : "Erro inesperado na exportação.");
+    } finally { setExporting(false); }
+  }
+
   const totalPages = result ? Math.ceil(result.totalCount / pageSize) : 0;
   const returnPath = `/?${queryFor(applied, page)}`;
   return <main className="shell">
@@ -102,6 +139,10 @@ export default function PortfolioPage() {
       {error && <div className="notice error" role="alert"><p>{error}</p><button className="button" onClick={() => setRetry(value => value + 1)}>Tentar novamente</button></div>}
       {!loading && !error && result && <>
         <p>{result.totalCount} POs encontradas{result.totalCount > 0 && ` · página ${page} de ${totalPages}`}</p>
+        {result.totalCount > 0 && <p><button className="button secondary" type="button" disabled={exporting}
+          onClick={() => void downloadCsv()}>{exporting ? "Preparando CSV…" : "Exportar carteira filtrada (CSV)"}</button></p>}
+        <p className="muted">O CSV contém somente campos históricos e contagens visíveis no seu escopo; não inclui saldo ou valores oficiais.</p>
+        {exportError && <p className="notice error" role="alert">{exportError}</p>}
         {result.items.length === 0 && result.totalCount > 0 ? <p>Esta página está fora do intervalo. <button className="button" onClick={() => navigate(applied, 1)}>Ir para a primeira página</button></p> : null}
         {result.totalCount === 0 ? <p>Nenhuma PO encontrada. Revise os filtros ou limpe a busca.</p> : null}
         {result.items.length > 0 && <div className="table-scroll"><table>

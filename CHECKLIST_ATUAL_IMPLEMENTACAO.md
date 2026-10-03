@@ -21,8 +21,8 @@ não consultou os ambientes remotos. O commit `2ea54a5` dos cabeçalhos foi envi
 a `production/main`, mas não há evidência nesta revisão de que a API VPS o tenha
 recebido. Aceites com usuários reais foram informados pelo usuário sem perfil,
 importador e casos detalhados; não equivalem à validação de escopo restrito.
-Neste recorte, **10 RF estão parciais e 6 ainda sem módulo operacional**; dos
-30 DEV, **18 estão parciais e 12 sem implementação operacional**. Nenhum item
+Neste recorte, **11 RF estão parciais e 5 ainda sem módulo operacional**; dos
+30 DEV, **19 estão parciais e 11 sem implementação operacional**. Nenhum item
 recebeu `[x]` integral apenas por existir na fase .NET/SQLite ou no plano.
 
 ## Stack vigente e divergências resolvidas
@@ -70,7 +70,7 @@ política aprovada. Datas visíveis seguem `MM/DD/YYYY` e, com horário,
 | RF11 Documentos | `[ ]` | Nenhum fluxo de upload/download operacional. | Storage privado, versões, autorização, vínculo e restauração. |
 | RF12 Histórico/auditoria | `[-]` | Origem imutável, revisão de qualidade, auditoria e outbox em comandos existentes. M013 e a tela/API de histórico de solicitações estão versionadas, ainda sem aplicação operacional. | Aplicar/validar M013, ampliar timeline às demais entidades e criar consumidor da outbox. |
 | RF13 Histórico Excel | `[-]` | Carga idempotente do snapshot aprovado; `/source-audit` com abas Pré/Pós, filtros e cabeçalhos; revisão de qualidade. CLI de inventário/comparação posicional de versões sem escrita no banco. | Decidir cobertura dos 11 cabeçalhos Pré além de `AZ` já no arquivo aprovado; reconciliar entidades de versões novas, promover sem sobrescrita e aceitar os erros de cálculo. |
-| RF14 Painéis | `[ ]` | Sem painel operacional completo. | Catálogo de KPIs por grão/moeda, filtros, atualização e relatórios. |
+| RF14 Painéis | `[-]` | Exportação CSV da carteira filtrada e restrita ao escopo foi versionada; ainda não há painel operacional completo. | Catálogo de KPIs por grão/moeda, filtros, atualização e relatórios completos. |
 | RF15 Administração | `[-]` | Master gerencia usuários, papéis e escopos. | Parâmetros operacionais, acompanhamento de jobs e autorização completa para novos módulos. |
 | RF16 Analítico | `[ ]` | Sem DW/ETL/modelo semântico ativo no repositório. | Banco analítico, cargas reconciliadas, fatos/dimensões, Power BI e RLS. |
 
@@ -106,7 +106,7 @@ reaproveitado.
 | DEV22 Regras fiscais | `[ ]` | Sem cálculo/regra de benefício aprovada; depende do Fiscal. |
 | DEV23 Documentos | `[ ]` | Selecionar storage privado e construir fluxo autorizado/versionado. |
 | DEV24 Auditoria/outbox | `[-]` | Escrita atômica nos comandos existentes; leitura de histórico de solicitações versionada em M013, ainda sem release. Faltam consumidor, retries e monitoramento operacional. |
-| DEV25 Dashboard | `[ ]` | Sem painel/exportação completos; definir indicadores por grão e referência temporal. |
+| DEV25 Dashboard | `[-]` | CSV filtrado da carteira de POs versionado, sem valores ou saldos oficiais. Faltam painel, indicadores por grão/moeda e referência temporal. |
 | DEV26 ETL | `[ ]` | Sem carga analítica; criar dimensões, watermark, reexecução e reconciliação. |
 | DEV27 Fatos/medidas | `[ ]` | Sem fatos e medidas; impedir ligação fato a fato e soma entre moedas. |
 | DEV28 Power BI/RLS | `[ ]` | Sem PBIP, refresh ou RLS; validar acesso por importador real. |
