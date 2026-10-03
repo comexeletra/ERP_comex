@@ -145,11 +145,13 @@ def read_workbook(path: Path) -> dict[str, object]:
         def add_source(sheet_name: str, row_number: int, row: tuple, last_column: int) -> tuple[UUID, dict]:
             raw = raw_row(row, last_column)
             source_id = stable_id(batch_id, sheet_name, row_number)
-            source_rows.append((source_id, batch_id, sheet_name, row_number, raw,
-                                sha256(canonical_json(raw).encode("utf-8")).hexdigest()))
+            error_columns = []
             for column, value in raw.items():
                 if isinstance(value, str) and value.startswith(("#REF!", "#VALUE!", "#N/A", "#DIV/0!", "#NUM!", "#NAME?", "#NULL!")):
+                    error_columns.append(column)
                     issue(source_id, "EXCEL_CELL_ERROR", column, {"column": column, "value": value})
+            source_rows.append((source_id, batch_id, sheet_name, row_number, raw, error_columns,
+                                sha256(canonical_json(raw).encode("utf-8")).hexdigest()))
             return source_id, raw
 
         def add_process(ip: str, importer: str) -> UUID:
@@ -289,8 +291,8 @@ def apply_import(data: dict[str, object], dsn_file: Path, database_name: str) ->
 
                 cursor.execute("INSERT INTO migration.import_batch (id, file_name, file_sha256, mapping_version, state, source_row_count) VALUES (%s, %s, %s, %s, 'STAGED', %s)",
                                (data["batch_id"], "Follow Up Import 2026.xlsx", data["sha256"], MAPPING_VERSION, len(data["sources"])))
-                cursor.executemany("INSERT INTO migration.source_row (id, batch_id, sheet_name, row_number, raw_values, row_hash) VALUES (%s, %s, %s, %s, %s, %s)",
-                                   [(a,b,c,d,Jsonb(e),f) for a,b,c,d,e,f in data["sources"]])
+                cursor.executemany("INSERT INTO migration.source_row (id, batch_id, sheet_name, row_number, raw_values, error_columns, row_hash) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                                   [(a,b,c,d,Jsonb(e),Jsonb(f),g) for a,b,c,d,e,f,g in data["sources"]])
                 cursor.executemany("INSERT INTO procurement.purchase_order (id, importer, external_number, normalized_number) VALUES (%s, %s, %s, %s)", data["orders"])
                 cursor.executemany("INSERT INTO imports.import_process (id, ip_number, importer, normalized_ip_number, logistics_status) VALUES (%s, %s, %s, %s, %s)", data["processes"])
                 cursor.executemany("INSERT INTO procurement.po_line_observation (id, purchase_order_id, source_row_id, source_row_number, product_code_snapshot, description_snapshot, quantity, unit_price, historical_amount, currency_code, necessity_date, historical_status, source_ip_text, raw_values) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",

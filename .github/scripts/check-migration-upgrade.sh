@@ -2,13 +2,15 @@
 set -euo pipefail
 
 # Exercise the same runner first with the previous schema, then with the full
-# checkout. A seeded outbox row catches accidental data loss during upgrade.
+# checkout. Seeded outbox and source rows catch data loss and verify the latest
+# migration's Excel error backfill without touching the operational database.
 cd "$(dirname "$0")/../../apps/api"
 mapfile -t migrations < <(find migrations -maxdepth 1 -type f -name 'M[0-9][0-9][0-9]_*.sql' | sort)
 if (( ${#migrations[@]} < 2 )); then
   echo 'Upgrade check requires at least two migrations.' >&2
   exit 1
 fi
+latest_migration="${migrations[${#migrations[@]}-1]}"
 
 stage="$(mktemp -d "$PWD/.migration-upgrade-ci.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
@@ -29,6 +31,29 @@ VALUES
   ('00000000-0000-4000-8000-000000000001', 'CI.UPGRADE', 'CI',
    '00000000-0000-4000-8000-000000000002', '{"source":"migration-upgrade-ci"}', now());
 SQL
+
+if [[ $latest_migration == migrations/M015_excel_error_columns.sql ]]; then
+psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+INSERT INTO migration.import_batch
+  (id, file_name, file_sha256, mapping_version, state, source_row_count)
+VALUES
+  ('00000000-0000-4000-8000-000000000003', 'ci-fixture.xlsx', repeat('a', 64),
+   'ci-upgrade', 'PROMOTED', 1);
+INSERT INTO migration.source_row
+  (id, batch_id, sheet_name, row_number, raw_values, row_hash)
+VALUES
+  ('00000000-0000-4000-8000-000000000004',
+   '00000000-0000-4000-8000-000000000003', 'Pré Embarque', 5,
+   '{"S":"#N/A","N":"PO-1"}', repeat('b', 64));
+INSERT INTO migration.data_issue
+  (id, batch_id, source_row_id, severity, issue_code, field_name, evidence)
+VALUES
+  ('00000000-0000-4000-8000-000000000005',
+   '00000000-0000-4000-8000-000000000003',
+   '00000000-0000-4000-8000-000000000004', 'WARNING',
+   'EXCEL_CELL_ERROR', 'S', '{"column":"S","value":"#N/A"}');
+SQL
+fi
 
 previous_count="$((${#migrations[@]} - 1))"
 status="$(corepack pnpm migrate:status)"
@@ -51,3 +76,21 @@ BEGIN
 END;
 $$;
 SQL
+
+if [[ $latest_migration == migrations/M015_excel_error_columns.sql ]]; then
+psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+DO $$
+BEGIN
+  IF (SELECT error_columns FROM migration.source_row
+      WHERE id = '00000000-0000-4000-8000-000000000004') <> '["S"]'::jsonb THEN
+    RAISE EXCEPTION 'Excel error column was not backfilled';
+  END IF;
+  IF (SELECT raw_values FROM migration.source_row
+      WHERE id = '00000000-0000-4000-8000-000000000004') <>
+      '{"S":"#N/A","N":"PO-1"}'::jsonb THEN
+    RAISE EXCEPTION 'Raw workbook cells changed during upgrade';
+  END IF;
+END;
+$$;
+SQL
+fi
