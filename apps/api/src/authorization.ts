@@ -21,9 +21,9 @@ const rolePermissions: Readonly<Record<Role, ReadonlySet<Permission>>> = {
   Importação: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "requests.read", "requests.write"]),
   Compras: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "requests.read"]),
   Fiscal: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "requests.read"]),
-  Logística: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read"]),
-  Gestor: new Set(["purchase-orders.read", "processes.read", "quality.read", "catalog.read"]),
-  Consulta: new Set(["purchase-orders.read", "processes.read", "quality.read", "catalog.read"]),
+  Logística: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "requests.read"]),
+  Gestor: new Set(["purchase-orders.read", "processes.read", "quality.read", "catalog.read", "requests.read"]),
+  Consulta: new Set(["purchase-orders.read", "processes.read", "quality.read", "catalog.read", "requests.read"]),
 };
 
 export type AuthorizationContext = {
