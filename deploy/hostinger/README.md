@@ -91,6 +91,13 @@ futuras; ele deve permanecer ignorado pelo Git e não ser copiado para artefatos
 de release. A revogação na VPS fica para quando esse acesso deixar de ser
 necessário.
 
+Para restaurar o acesso, recupere a chave privada do cofre/local autorizado para
+`.local-keys/rf06_ed25519` (não a envie pelo chat nem a adicione ao Git) ou carregue
+essa identidade no `ssh-agent`. Confirme o fingerprint público esperado acima e
+use `ssh -o BatchMode=yes -i .local-keys/rf06_ed25519 -o IdentitiesOnly=yes`
+para o teste de conexão. Não gere uma chave substituta sem provisionar e aprovar
+a chave pública correspondente no servidor.
+
 `/etc/import-erp/api.env` contém `DATABASE_URL`, `DATABASE_POOL_MAX`, `GATEWAY_TOKEN`, `AUTH_SESSION_SECRET`, `APP_PUBLIC_ORIGIN`, `HOST` e `PORT`; ele pertence a `root:import-erp` com modo `0640`. A URL do PostgreSQL usa `127.0.0.1` **da VPS** e TLS verificado pelo certificado fixado em `/etc/import-erp/postgres-root.crt`. O serviço não lê a credencial de migrations.
 
 `/etc/import-erp/migration-release.env` contém a URL da role de migrations, pertence a `root:root` e tem modo `0600`. Não envie o conteúdo desses arquivos a chats, logs ou ao Git. No painel Vercel Production, `VPS_API_URL=https://api.72-60-250-212.sslip.io` e `VPS_API_TOKEN` deve ter o mesmo valor do `GATEWAY_TOKEN`. O token deve ser do tipo Secret. Não configure `DATABASE_URL` na Vercel.

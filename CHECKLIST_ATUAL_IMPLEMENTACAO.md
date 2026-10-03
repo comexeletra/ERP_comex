@@ -82,6 +82,12 @@ em lote versionado. A aba Pós não tem cabeçalho nomeado após `AS` na linha 4
   em cópia restaurada; nenhum backup remoto foi criado e nenhuma migration foi
   aplicada ao banco operacional. Restaurar o acesso SSH é necessário antes de
   continuar o release M016/M017.
+- **Dependências do runner M017:** a revisão prévia para retomar o release mostrou
+  que o migrador em `/tmp` resolve módulos pelo diretório do pacote e não encontra
+  automaticamente `node_modules` instalado em `/opt/import-erp/apps/api`. O runner
+  agora valida e liga o diretório de dependências instalado ao staging antes de
+  consultar o ledger ou validar a cópia restaurada. O script ainda precisa ser
+  executado na VPS para comprovar o caminho no ambiente real.
 - **Cobertura da prévia de planilhas:** o inventário já lia cabeçalhos fora da
   faixa atual, mas não os destacava como alerta. O relatório agora expõe
   `headersOutsideCurrentExtraction` (inventário) e

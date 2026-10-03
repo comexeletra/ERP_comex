@@ -5,6 +5,7 @@ set -euo pipefail
 stage_dir=${ERP_STAGE_DIR:?Set ERP_STAGE_DIR to the staged release under /tmp}
 api_dir=$stage_dir/apps/api
 target_dir=/opt/import-erp/apps/api
+runtime_modules=$target_dir/node_modules
 node=/opt/node-v24/bin/node
 [[ $stage_dir == /tmp/* ]]
 test -f "$api_dir/dist/migrate.js"
@@ -14,6 +15,15 @@ test -f "$api_dir/migrations/M016_import_batch_snapshot_read.sql"
 test -f "$api_dir/migrations/M017_catalog_entry_history.sql"
 test -f "$stage_dir/deploy/hostinger/validate-m017-on-copy.py"
 systemctl is-active --quiet import-erp-api
+
+# The staged migrator loads its dependencies relative to its own /tmp path.
+# Reuse the API's installed dependencies without copying secrets or packages.
+if [[ ! -e $api_dir/node_modules ]]; then
+  test -d "$runtime_modules"
+  ln -s "$runtime_modules" "$api_dir/node_modules"
+else
+  test -d "$api_dir/node_modules"
+fi
 
 status=$(MIGRATION_ENV=production ALLOW_PRODUCTION_MIGRATIONS=true \
   "$node" --env-file=/etc/import-erp/migration-release.env \
