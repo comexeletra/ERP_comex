@@ -55,6 +55,16 @@ VALUES
 SQL
 fi
 
+previous_count="$((${#migrations[@]} - 1))"
+status="$(corepack pnpm migrate:status)"
+printf '%s\n' "$status"
+grep -Fq "Migrations: ${previous_count} aplicadas, 1 pendentes." <<< "$status"
+
+corepack pnpm migrate:up
+status="$(corepack pnpm migrate:status)"
+printf '%s\n' "$status"
+grep -Fq "Migrations: ${#migrations[@]} aplicadas, 0 pendentes." <<< "$status"
+
 if [[ $latest_migration == migrations/M016_import_batch_snapshot_read.sql ]]; then
 psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
 DO $$
@@ -68,16 +78,6 @@ END;
 $$;
 SQL
 fi
-
-previous_count="$((${#migrations[@]} - 1))"
-status="$(corepack pnpm migrate:status)"
-printf '%s\n' "$status"
-grep -Fq "Migrations: ${previous_count} aplicadas, 1 pendentes." <<< "$status"
-
-corepack pnpm migrate:up
-status="$(corepack pnpm migrate:status)"
-printf '%s\n' "$status"
-grep -Fq "Migrations: ${#migrations[@]} aplicadas, 0 pendentes." <<< "$status"
 
 psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
 DO $$
