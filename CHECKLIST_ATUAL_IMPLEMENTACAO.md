@@ -13,22 +13,27 @@ Um item daquele histórico não está concluído na stack atual sem evidência a
 - `[ ]` Não há implementação operacional correspondente no repositório atual.
 - `[!]` Depende de decisão ou fonte externa identificada.
 
-**Fontes deste retrato:** código/configuração do checkout, migrations M001–M016,
-incremento local M017, documentos de entrega e evidências registradas no checklist
-histórico até 2026-10-03. O banco operacional `erp_po_totvs_test` e a API na VPS foram
-verificados após M013–M015: migration M015 confirmada aplicada (ledger 15/15),
-serviço ativo, health 200 e flags de 277 linhas/306 células de erro conferidas
+**Fontes deste retrato:** código/configuração do checkout, migrations M001–M017,
+documentos de entrega e evidências registradas no checklist histórico até 2026-10-03.
+O banco operacional `erp_po_totvs_test` e a API na VPS foram verificados após
+M013–M017: backup `erp_po_totvs_test_20261003T173247Z.dump` validado, M016/M017
+confirmadas aplicadas (ledger 17/17), cópia restaurada e grants de menor privilégio
+conferidos, serviço ativo e release da API concluído em `m017-api-20261003T173254Z`.
+As flags de 277 linhas/306 células de erro foram conferidas
 com os registros imutáveis de qualidade. Os grants das views também foram conferidos. Na Vercel pública, `/admin/outbox` respondeu 200, o bundle contém a
-carteira nova está publicada e a API sem sessão respondeu 401; a interface
-autenticada ainda precisa de teste com perfil real. Web CI e API CI passaram para
+carteira nova está publicada e a API sem sessão respondeu 401. Em 2026-10-03, a
+interface autenticada foi aceita com perfil real Consulta e escopo ELETRA CWB,
+ELETRA FOR e ELETRA MATRIZ: a lista de solicitações abriu sem erro e sem controles
+de criação; estava vazia, sem solicitações nativas registradas. A API também
+passou as verificações de saúde após aplicar c98c03d pelo console da VPS
+(live 200, ready sem token 401, ready com token 200). Web CI e API CI passaram para
 `ae9bd6b`; o deploy Vercel de `f41b2bc` está `READY`. A API CI
 passou novamente para `1d1d771`, incluindo upgrade isolado de M013 para M014
 com evento de teste preservado. As três CIs
 passaram para `fa7c67e`. Os demais módulos não foram revalidados remotamente
-nesta revisão. O commit `2ea54a5` dos cabeçalhos foi enviado
-a `production/main`, mas não há evidência nesta revisão de que a API VPS o tenha
-recebido. Aceites com usuários reais foram informados pelo usuário sem perfil,
-importador e casos detalhados; não equivalem à validação de escopo restrito.
+nesta revisão. A evidência acima valida somente consulta de solicitações no
+escopo exibido e ocultação dos controles de criação; não cobre escrita direta na
+API, recursos fora do escopo, OIDC nem os demais módulos.
 Neste recorte, **11 RF estão parciais e 5 ainda sem módulo operacional**; dos
 30 DEV, **19 estão parciais e 11 sem implementação operacional**. Nenhum item
 recebeu `[x]` integral apenas por existir na fase .NET/SQLite ou no plano.
@@ -39,8 +44,8 @@ recebeu `[x]` integral apenas por existir na fase .NET/SQLite ou no plano.
 |---|---|---|
 | Frontend | Next.js 16.3.6, React 19.3.0, TypeScript 5.9.3, CSS próprio; `fetch` em componentes e `proxy.ts` same-origin; Vercel `apps/web` | Manter esta base. Tailwind, shadcn/ui, TanStack Query, React Hook Form, Vitest e Playwright são propostas do plano e **não estão instalados**. Adotá-los só quando uma entrega exigir. |
 | API | Node 24, Fastify 5, TypeScript, Zod, `pg`; serviço `systemd` na VPS, HTTPS via Traefik, token de gateway | Completar contratos e workflows no serviço persistente. Não há backend .NET ativo. |
-| Banco | PostgreSQL da VPS; `erp_po_totvs_test` é operacional apesar do nome; M001–M015 têm evidência de aplicação operacional. M016 está versionada e M017 em implementação local; não há evidência de aplicação de M016/M017 na VPS. | Separar banco de CI/homologação do operacional; validar M016–M017 em cópia restaurada e manter backup antes do release. Não usar SQLite como evidência atual. |
-| Autenticação | Login local e sessões PostgreSQL em uso; OIDC/PKCE existe no código | Homologar provedor corporativo e testar sessão/escopo com identidade restrita real. |
+| Banco | PostgreSQL da VPS; `erp_po_totvs_test` é operacional apesar do nome; M001–M017 estão aplicadas. M016/M017 foram validadas em cópia restaurada, com backup e grants operacionais conferidos. | Separar banco de CI/homologação do operacional e manter backup antes de novos releases. Não usar SQLite como evidência atual. |
+| Autenticação | Login local e sessões PostgreSQL em uso; OIDC/PKCE existe no código; leitura de solicitações conferida com perfil Consulta real e três escopos atribuídos. | Homologar provedor corporativo e ampliar a validação real para logout/CSRF e outros recursos e casos de isolamento. |
 | Importação | `deploy/hostinger/import-historical-workbook.py` usa Python/openpyxl e hash do arquivo aprovado; a origem bruta é preservada | Criar prévia, reconciliação e promoção versionada da próxima planilha; não pressupor importador Node já existente. |
 | Jobs e arquivos | Outbox no PostgreSQL; sem consumidor operacional ou object storage escolhido | Definir executor persistente/agenda na VPS ou serviço gerenciado, storage privado e políticas de retry/retensão antes de documentos e integrações. |
 | CI | `.github/workflows/api-ci.yml` compila/testa API, instala migrations do zero e testa upgrade com dado em PostgreSQL isolado; `.github/workflows/web-ci.yml` executa testes, ESLint e build; `source-preview-ci.yml` testa a prévia. As três passaram para `fa7c67e`; Web CI e API CI passaram para `6d4f75b`, e o gate de upgrade passou para `1d1d771`. | Acrescentar integração, contratos, segurança e E2E relevantes. |
@@ -71,11 +76,11 @@ em lote versionado. A aba Pós não tem cabeçalho nomeado após `AS` na linha 4
   M017 em ordem. API/Web CI passaram em `5962c5a` com M017 aplicado do zero. A API
   CI passou novamente em `51f345d`; o upgrade M016→M017 verificou grants da view,
   filtro de eventos e ausência de SELECT na tabela de auditoria. A VPS segue
-  comprovada em M015; validação em cópia restaurada e release controlado
-  continuam pendentes.
+  comprovada em M017; validação em cópia restaurada e release controlado foram
+  concluídos em 2026-10-03, com backup operacional preservado.
 - **Escopo da auditoria de cadastros:** o endpoint e a tela de histórico estão
-  no checkout, enquanto o acesso da API ao view depende de M017. Não contar a
-  funcionalidade como publicada ou operacional antes da migration e do deploy.
+  no checkout, enquanto o acesso da API ao view depende de M017. A migration e o
+  deploy controlado foram concluídos; falta o aceite funcional com perfis reais.
 - **Credencial SSH do cliente:** o usuário confirmou que o acesso à VPS está
   autorizado. A validação estrita da chave do servidor passou pelo IP
   `72.60.250.212`, já presente em `known_hosts`; o FQDN não tem entrada local,
@@ -85,9 +90,9 @@ em lote versionado. A aba Pós não tem cabeçalho nomeado após `AS` na linha 4
   no checkout atual nem no checkout anterior registrado, e não há identidade no
   `ssh-agent`. Foi gerado o candidato local `.local-keys/rf06_m017_recovery_ed25519`
   (fingerprint público `SHA256:TGiM4/V33UAHRLOXjWU0qikrq7bHR/Qn4mRH+kmjcBU`), mas
-  sua chave pública ainda precisa ser cadastrada na VPS pelo console administrativo.
-  Ainda não foi possível criar backup remoto ou validar a cópia; não houve alteração
-  no banco operacional. Após provisionar a chave pública, retomar a validação M016/M017.
+  sua chave pública foi cadastrada na VPS pelo console administrativo. O backup
+  remoto foi verificado, a cópia restaurada foi validada e a validação M016/M017
+  foi retomada e concluída na VPS; a API anterior ficou preservada para rollback.
 - **Dependências do runner M017:** a revisão prévia para retomar o release mostrou
   que o migrador em `/tmp` resolve módulos pelo diretório do pacote e não encontra
   automaticamente `node_modules` instalado em `/opt/import-erp/apps/api`. O runner
@@ -113,9 +118,9 @@ política aprovada. Datas visíveis seguem `MM/DD/YYYY` e, com horário,
 
 | RF | Estado | O que já existe na stack atual | O que falta para concluir |
 |---|---|---|---|
-| RF01 Acesso | `[-]` | Login local, sessões, Master, administração de usuários, papéis e filtros por importador na API. | Homologar OIDC corporativo, sessão/CSRF/logout e isolamento com usuário restrito real; registrar perfil/importador/casos. |
+| RF01 Acesso | `[-]` | Login local, sessões, Master, administração de usuários, papéis e filtros por importador na API. Cenário autenticado Consulta em solicitações com escopo ELETRA CWB, ELETRA FOR e ELETRA MATRIZ validado em 2026-10-03. | Homologar OIDC corporativo, sessão/CSRF/logout e ampliar os casos negativos de isolamento; o cenário atual cobre leitura da lista e ocultação dos controles de criação. |
 | RF02 Cadastros | `[-]` | M010, `/catalog`, candidatos históricos separados de registros operacionais, criação/edição/inativação auditadas com idempotência e versão. Incremento local M017 acrescenta histórico paginado de mudanças do cadastro e tela de consulta. | Identidade oficial de importadora/empresa/filial, fornecedor, aliases conflitantes, produto/unidade e NCM/vigência aprovados; validar migration/API/UI na CI e homologar cadastro real. |
-| RF03 Solicitações | `[-]` | M011/M012, criação nativa com itens descritos, listagem/detalhe, paginação e edição de `SUBMITTED` com `If-Match`, auditoria/outbox; filas legadas separadas. | Decidir campos obrigatórios, estados/transições, cancelamento, permissões e regra de associação auditada das linhas legadas; aceite completo. |
+| RF03 Solicitações | `[-]` | M011/M012, criação nativa com itens descritos, listagem/detalhe, paginação e edição de `SUBMITTED` com `If-Match`, auditoria/outbox; filas legadas separadas. Consulta autenticada por perfil Consulta foi validada nos três importadores atribuídos; a lista estava vazia. | Decidir campos obrigatórios, estados/transições, cancelamento, permissões e regra de associação auditada das linhas legadas; validar escrita negada via API e concluir aceite funcional. |
 | RF04 IP | `[-]` | Lista/detalhe de 200 IPs, POs vinculadas, linhas e custos históricos, filas sem IP/PO em leitura. | Comandos para criar/editar/priorizar/cancelar/reabrir/encerrar, versões, pré-condições e associação legada segura. |
 | RF05 Itens | `[-]` | 6.796 observações históricas acessíveis na PO; itens descritivos de solicitação nativa. | Produto, unidade, quantidade, preço, moeda, finalidade, centro de custo e itens oficiais/operacionais com autoridade de fonte definida. |
 | RF06 PO central | `[-]` | Carteira de 336 POs, filtros, detalhe, linhagem, IPs e custos mostrados no grão do IP. | Fonte TOTVS aprovada, fornecedor/estado comercial confirmados, linhas oficiais, saldo, atendimento e alocações quantitativas. |
@@ -124,7 +129,7 @@ política aprovada. Datas visíveis seguem `MM/DD/YYYY` e, com horário,
 | RF09 Desembaraço | `[ ]` | DUIMP, NF e datas históricas preservadas no bruto. | Processo fiscal, documentos, armazenagem, marcos e entrega com regras aprovadas. |
 | RF10 Custos | `[-]` | 422 custos históricos deduplicados por IP. | Lançamentos novos, aprovação, reversão, conciliação por moeda e rateio por PO aprovado. |
 | RF11 Documentos | `[ ]` | Nenhum fluxo de upload/download operacional. | Storage privado, versões, autorização, vínculo e restauração. |
-| RF12 Histórico/auditoria | `[-]` | Origem imutável, revisão de qualidade, auditoria e outbox em comandos existentes. M013 aplicada após backup/cópia restaurada; histórico de solicitações ativo. API/Web CI passaram em `5962c5a`; API CI de upgrade e o contrato local do endpoint passaram. M017/código ainda não foram publicados. A fila de qualidade prepara a linha do tempo das revisões por pendência. | Ampliar timeline às demais entidades e criar consumidor da outbox; validar cópia restaurada e homologar as telas com usuário restrito real. |
+| RF12 Histórico/auditoria | `[-]` | Origem imutável, revisão de qualidade, auditoria e outbox em comandos existentes. M013 e M017 aplicadas após backup/cópia restaurada; histórico de solicitações e de cadastros ativos. API/Web CI passaram e o release M016/M017 foi concluído na VPS. Leitura restrita da lista de solicitações foi validada em 2026-10-03. | Ampliar timeline às demais entidades, criar consumidor da outbox e homologar históricos e demais telas com perfis reais. |
 | RF13 Histórico Excel | `[-]` | Carga idempotente do snapshot aprovado; `/source-audit` com abas Pré/Pós, filtros e cabeçalhos; revisão de qualidade. CLI de inventário/comparação posicional de versões sem escrita no banco. | Decidir cobertura dos 11 cabeçalhos Pré além de `AZ` já no arquivo aprovado; reconciliar entidades de versões novas, promover sem sobrescrita e aceitar os erros de cálculo. |
 | RF14 Painéis | `[-]` | API publicada na VPS; UI/CSV publicados na Vercel. API/Web CI passaram em `5962c5a`. Leitura no banco real confirmou 336 POs, 6.796 linhas, escopo e timestamp `source_row.created_at` do recorte. | Catálogo de KPIs oficiais por grão/moeda, referência temporal do TOTVS, relatórios completos e aceite dos valores. O resumo histórico não é saldo, atendimento oficial, valor comercial nem atualização do TOTVS. |
 | RF15 Administração | `[-]` | Master gerencia usuários, papéis e escopos e pode consultar metadados da outbox. | Parâmetros operacionais, acompanhamento dos demais jobs e autorização completa para novos módulos. |
@@ -141,8 +146,8 @@ reaproveitado.
 | DEV01 Monorepo | `[-]` | Projetos web/API e lockfiles pnpm existem; reproduzir instalação/build em checkout limpo e documentar versões exatas. |
 | DEV02 Ambiente | `[-]` | Node 24 e PostgreSQL/VPS operacionais; CI web ativa e verde. Falta separar desenvolvimento/Preview do banco operacional. |
 | DEV03 OIDC/sessão | `[-]` | Login local e sessões ativos; OIDC/PKCE no código. Homologar issuer corporativo, callback, expiração, CSRF e logout. |
-| DEV04 Permissões | `[-]` | Papéis/grants e filtros SQL existem; validar casos negativos e 404 fora do escopo com usuário restrito real. |
-| DEV05 Migrations | `[-]` | Runner Node; M001–M016 versionadas; M013–M015 validadas em cópia restaurada, backup e grants operacionais conferidos. M017 aplica do zero e o upgrade M016→M017 passou na API CI `51f345d`, verificando grants da view e negando SELECT na tabela de auditoria. Falta validar em cópia restaurada antes do release. |
+| DEV04 Permissões | `[-]` | Papéis/grants e filtros SQL existem. Em 2026-10-03, perfil Consulta acessou a lista de solicitações no escopo de três importadores e não recebeu controles de criação. | Validar escrita negada diretamente na API e respostas 404 para recursos fora do escopo; cobrir as demais rotas com usuário restrito real. |
+| DEV05 Migrations | `[-]` | Runner Node; M001–M017 versionadas. M013–M017 foram validadas em cópia restaurada, backup e grants operacionais conferidos; o release M016/M017 verificou a view de histórico e negou SELECT na tabela de auditoria. |
 | DEV06 Cadastros/aliases | `[-]` | M010 e fluxo manual revisado; faltam identidades oficiais, aliases conflitantes e homologação de dados reais. |
 | DEV07 Lote de origem | `[-]` | Snapshot, hash e linhas brutas persistidos; CLI local de inventário/comparação por coordenada versionada. Faltam recebimento, armazenamento e prévia reconciliada por entidade. |
 | DEV08 Leitura Excel | `[-]` | Python/openpyxl lê valores salvos do arquivo aprovado; avaliar os 11 cabeçalhos Pré além de `AZ` já presentes e generalizar leitura de versões novas. |
@@ -151,7 +156,7 @@ reaproveitado.
 | DEV11 Promoção | `[-]` | Reexecução histórica idempotente registrada; criar aprovação, falha/retomada e promoção de novos lotes. |
 | DEV12 Qualidade | `[-]` | M008, API/tela de issues, resolução auditada e apresentação local da linha do tempo completa de revisões por pendência; falta CI/release e homologação com perfis reais e novos lotes. |
 | DEV13 PO | `[-]` | Carteira/detalhe em leitura; faltam itens oficiais, saldo, atendimento e vínculo quantitativo. |
-| DEV14 Solicitações | `[-]` | M011/M012, criação, edição de `SUBMITTED` e filas em leitura; faltam workflow e associação legada. |
+| DEV14 Solicitações | `[-]` | M011/M012, criação, edição de `SUBMITTED` e filas em leitura; perfil Consulta validado na lista com escopo real em 2026-10-03. Faltam workflow, associação legada e validação negativa de escrita na API. |
 | DEV15 Workflow | `[ ]` | Há estrutura SQL histórica, sem comandos completos de transição PO/IP nesta API; definir estados e pré-condições. |
 | DEV16 Alocações | `[ ]` | Sem alocação quantitativa oficial; depende de linha/quantidade TOTVS confirmada. |
 | DEV17 Invoices | `[ ]` | Sem invoice operacional e comparação; definir vínculos, moedas e não comparabilidade. |
@@ -192,7 +197,29 @@ reaproveitado.
    snapshot final, plano de retorno e aprovações de Importação, Compras, Fiscal
    e Logística. Só então declarar o plano concluído.
 
-## Próxima validação verificável
+## Validação concluída em 2026-10-03
+
+M016 e M017 foram aplicadas na VPS após backup verificável e restauração em cópia
+isolada. O ledger operacional ficou em 17/17, os grants de menor privilégio da
+view de histórico foram conferidos e a API foi instalada/reiniciada com rollback
+da versão anterior preservado em `/var/backups/import-erp/m017-api-20261003T173254Z`.
+O backup usado foi `/var/backups/import-erp/erp_po_totvs_test_20261003T173247Z.dump`.
+
+## Aceite autenticado de solicitações em 2026-10-03
+
+Captura fornecida pelo usuário confirma sessão com papel `Consulta`, escopo
+`ELETRA CWB`, `ELETRA FOR` e `ELETRA MATRIZ`, acesso à página de solicitações,
+ausência do formulário de criação e ausência de erro de autorização. A lista
+informou que não há solicitações nativas registradas. A correção de permissão
+`requests.read` para Consulta, Gestor e Logística está no commit `c98c03d`,
+enviado a `production/main` e aplicada pelo console da VPS; não exigiu migration.
+Após a reinicialização, a API respondeu `live 200`, `ready 401` sem token e
+`ready 200` com token. Backup de código VPS:
+`/var/backups/import-erp/request-read-policy-20261003T225946Z`.
+Este aceite cobre apenas a leitura da lista pelo perfil Consulta e a interface;
+não comprova escrita negada por chamada direta nem acesso a recursos fora do escopo.
+
+## Registro anterior de próxima validação (superado)
 
 Casos executados e decisões de produto/TOTVS estão registrados no plano, seções
 24.4–24.5. O resumo da carteira foi publicado na API da VPS e na UI Vercel; as
