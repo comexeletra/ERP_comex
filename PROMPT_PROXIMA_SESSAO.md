@@ -12,13 +12,14 @@
   caminhos de recuperação estão em [deploy/hostinger/README.md](deploy/hostinger/README.md).
 - O frontend público serve `/admin/outbox` e os bundles de histórico/CSV. Rotas
   da API sem sessão retornam 401. Web CI e API CI passaram para `6d4f75b`; a
-  Source Preview CI passou para `fa7c67e`. Ainda falta teste autenticado das
+  Source Preview CI passou para `fa7c67e`. A API CI de `1d1d771` passou com
+  upgrade isolado e preservação de evento de teste. Ainda falta teste autenticado das
   telas novas com perfis reais e aceite formal do escopo.
 - O arquivo local `Follow Up Import 2026 - Copiar.xlsx` difere do hash aprovado
   no importador. A CLI de inventário/comparação é somente leitura; não promover
   nem importar esse arquivo sem identificar e homologar a versão de origem.
 - Próximas ações independentes da planilha: ambiente segregado de integração,
-  gate repetível de upgrade, testes de escopo com identidade restrita real,
+  contratos de API/frontend, testes de escopo com identidade restrita real,
   política/destino do consumidor da outbox e storage privado. Campos oficiais
   TOTVS, workflow, rateio, moeda e colunas adicionais da origem aguardam decisão
   registrada de negócio.

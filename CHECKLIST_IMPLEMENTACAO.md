@@ -33,6 +33,9 @@ na coluna **Evidência**. Produção só é marcada depois de homologação form
 - `67e3a16`, `2e9c9a5`, `6d4f75b`: monitor de metadados da outbox para Master
   (M014), validação em cópia restaurada, backup e release na VPS.
   [API CI verde após M014](https://github.com/comexeletra/ERP_comex/actions/runs/37083924733).
+- `1d1d771`: API CI agora aplica o esquema anterior em banco isolado, grava um
+  evento na outbox e confere sua preservação após a migration mais recente.
+  [Gate de upgrade verde](https://github.com/comexeletra/ERP_comex/actions/runs/37084359277).
 - API ativa, ledger M001–M014 completo, grants das views M013/M014 testados
   com a role de runtime; Vercel pública respondeu 200 em `/admin/outbox` e 401
   na API sem sessão. As telas novas ainda não tiveram aceite autenticado.

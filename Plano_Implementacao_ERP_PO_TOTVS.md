@@ -7,7 +7,8 @@ API Fastify na VPS, frontend Next.js na Vercel e login local em uso. M013
 entrega histórico de solicitações; M014 entrega monitor da outbox ao Master.
 As duas migrations passaram em cópias restauradas antes do release, com backups
 verificados. API CI e Web CI passaram no último commit de implementação
-`6d4f75b`; a Vercel pública entregou a nova tela, mas falta validação
+`6d4f75b`; a API CI de `1d1d771` também passou no teste de upgrade isolado
+com evento de teste preservado. A Vercel pública entregou a nova tela, mas falta validação
 autenticada com perfis reais. OIDC/PKCE está no código, mas a autenticação
 corporativa não foi homologada.
 Trechos abaixo que descrevem M008 pendente, ausência de API publicada ou da

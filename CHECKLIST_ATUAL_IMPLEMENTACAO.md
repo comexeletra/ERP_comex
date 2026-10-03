@@ -19,7 +19,9 @@ documentos de entrega e evidências registradas no checklist histórico até
 verificados após M013/M014: migrations 14/14, serviço ativo, health 200 e grants
 das views. Na Vercel pública, `/admin/outbox` respondeu 200, o bundle contém a
 tela nova e a API sem sessão respondeu 401; a interface autenticada ainda precisa
-de teste com perfil real. Web CI e API CI passaram para `6d4f75b`; as três CIs
+de teste com perfil real. Web CI e API CI passaram para `6d4f75b`; a API CI
+passou novamente para `1d1d771`, incluindo upgrade isolado de M013 para M014
+com evento de teste preservado. As três CIs
 passaram para `fa7c67e`. Os demais módulos não foram revalidados remotamente
 nesta revisão. O commit `2ea54a5` dos cabeçalhos foi enviado
 a `production/main`, mas não há evidência nesta revisão de que a API VPS o tenha
@@ -39,7 +41,7 @@ recebeu `[x]` integral apenas por existir na fase .NET/SQLite ou no plano.
 | Autenticação | Login local e sessões PostgreSQL em uso; OIDC/PKCE existe no código | Homologar provedor corporativo e testar sessão/escopo com identidade restrita real. |
 | Importação | `deploy/hostinger/import-historical-workbook.py` usa Python/openpyxl e hash do arquivo aprovado; a origem bruta é preservada | Criar prévia, reconciliação e promoção versionada da próxima planilha; não pressupor importador Node já existente. |
 | Jobs e arquivos | Outbox no PostgreSQL; sem consumidor operacional ou object storage escolhido | Definir executor persistente/agenda na VPS ou serviço gerenciado, storage privado e políticas de retry/retensão antes de documentos e integrações. |
-| CI | `.github/workflows/api-ci.yml` compila/testa API e aplica migrations em PostgreSQL isolado; `.github/workflows/web-ci.yml` executa testes, ESLint e build; `source-preview-ci.yml` testa a prévia. As três passaram para `fa7c67e`; Web CI e API CI passaram novamente para `6d4f75b`. | Acrescentar integração, contratos, segurança e E2E relevantes. |
+| CI | `.github/workflows/api-ci.yml` compila/testa API, instala migrations do zero e testa upgrade com dado em PostgreSQL isolado; `.github/workflows/web-ci.yml` executa testes, ESLint e build; `source-preview-ci.yml` testa a prévia. As três passaram para `fa7c67e`; Web CI e API CI passaram para `6d4f75b`, e o gate de upgrade passou para `1d1d771`. | Acrescentar integração, contratos, segurança e E2E relevantes. |
 | BI | Sem banco analítico ou projeto Power BI versionado | Implementar depois de fixar grãos, moeda e fonte de cada indicador. |
 
 **Cobertura de colunas do arquivo aprovado:** o importador fixa o SHA-256 do
@@ -91,7 +93,7 @@ reaproveitado.
 | DEV02 Ambiente | `[-]` | Node 24 e PostgreSQL/VPS operacionais; CI web ativa e verde. Falta separar desenvolvimento/Preview do banco operacional. |
 | DEV03 OIDC/sessão | `[-]` | Login local e sessões ativos; OIDC/PKCE no código. Homologar issuer corporativo, callback, expiração, CSRF e logout. |
 | DEV04 Permissões | `[-]` | Papéis/grants e filtros SQL existem; validar casos negativos e 404 fora do escopo com usuário restrito real. |
-| DEV05 Migrations | `[-]` | Runner Node e M001–M014; M013/M014 validadas em cópia restaurada, backup e grants operacionais conferidos. API CI passou para M014; faltam gates permanentes de upgrade/release. |
+| DEV05 Migrations | `[-]` | Runner Node e M001–M014; M013/M014 validadas em cópia restaurada, backup e grants operacionais conferidos. API CI instala do zero e testa upgrade da última migration em banco isolado com evento de teste preservado. Faltam gates de release para migrações futuras com dados reais. |
 | DEV06 Cadastros/aliases | `[-]` | M010 e fluxo manual revisado; faltam identidades oficiais, aliases conflitantes e homologação de dados reais. |
 | DEV07 Lote de origem | `[-]` | Snapshot, hash e linhas brutas persistidos; CLI local de inventário/comparação por coordenada versionada. Faltam recebimento, armazenamento e prévia reconciliada por entidade. |
 | DEV08 Leitura Excel | `[-]` | Python/openpyxl lê valores salvos do arquivo aprovado; avaliar os 11 cabeçalhos Pré além de `AZ` já presentes e generalizar leitura de versões novas. |
@@ -146,7 +148,7 @@ reaproveitado.
 Priorizar o registro dos casos de homologação já executados e das decisões de
 produto/TOTVS, pois elas determinam o modelo dos itens oficiais. A próxima
 entrega técnica independente da planilha é preparar ambiente segregado de
-integração e tornar repetível o teste de upgrade das migrations. Validar a tela
+integração e ampliar os contratos de teste de API e frontend. Validar a tela
 de histórico e o monitor com perfis reais quando houver sessões disponíveis.
 Nenhuma contagem histórica ou evidência .NET/SQLite substitui o aceite dos novos
 comandos na API Fastify e no PostgreSQL.
