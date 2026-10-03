@@ -16,7 +16,12 @@ importador existe em PO/IP operacional. Solicitação, itens, recibo idempotente
 auditoria e outbox são gravados numa única transação. Repetição do mesmo payload
 retorna a solicitação existente; mesma chave com payload diferente retorna 409.
 Lista e detalhe aplicam o escopo antes de revelar solicitações. GETs devolvem
-ETag baseado em `version`; ainda não existe PATCH ou comando de workflow.
+ETag baseado em `version`. M012 acrescentou PATCH com `If-Match` para editar
+solicitações `SUBMITTED` no escopo do usuário, mantendo itens, auditoria e
+outbox na mesma transação. M013 acrescenta
+`GET /api/v1/requests/{id}/history`, com paginação e resumo dos campos alterados,
+após validar o escopo antes de consultar a auditoria. Ainda não existe comando
+de transição de status.
 
 Tela: `/requests`. Permite registrar itens como descrições fornecidas pelo
 solicitante e consultar as solicitações recentes. A tela declara que finalidade
@@ -30,8 +35,8 @@ histórica cria uma solicitação ou ganha associação por este corte.
 - Aprovar catálogo e regras de finalidade, centro de custo, unidade, produto e
   captura de quantidade/data necessária. Esses campos não foram fabricados nem
   promovidos da planilha.
-- Definir workflow, transições, cancelamento, edição com `If-Match`, permissões,
-  eventos e pré-condições antes de habilitar alterações após submissão.
+- Definir workflow, transições, cancelamento, permissões, eventos e
+  pré-condições antes de habilitar mudanças de status.
 - Definir regra de conversão das linhas históricas sem IP/sem PO e evidência da
   identidade do destino; tratar status legado entregue/cancelado e concorrência.
   Até lá, filas continuam de leitura e não alimentam solicitações nativas.

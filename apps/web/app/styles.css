@@ -150,6 +150,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .source-values dt { background: #f3f7f8; border-radius: 6px 0 0 6px; color: #536b78; font-size: .78rem; font-weight: 700; overflow-wrap: anywhere; }
 .source-values dd { background: #fbfcfd; border-radius: 0 6px 6px 0; color: #263b46; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .review-history { border: 1px solid #e1e9ed; }
+.request-history { margin-top: 20px; }
+.request-history-list { list-style: none; margin: 12px 0 0; padding: 0; }
+.request-history-list li { border-left: 3px solid #0d7885; margin: 0 0 14px 5px; padding: 2px 0 8px 16px; }
+.request-history-list strong { display: block; }
+.request-history-list .muted { display: block; font-size: .82rem; margin-top: 3px; overflow-wrap: anywhere; }
+.request-history-list p { margin: 5px 0 0; overflow-wrap: anywhere; }
 .process { border-color: #e1e8ed; padding: 18px 0; }
 .process h3 { color: #1c5260; font-size: 1.05rem; }
 .process h3 span { background: #f0f5f7; border-radius: 999px; display: inline-block; margin: 4px 0 0 6px; padding: 5px 9px; }

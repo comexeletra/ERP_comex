@@ -35,7 +35,7 @@ recebeu `[x]` integral apenas por existir na fase .NET/SQLite ou no plano.
 | Autenticação | Login local e sessões PostgreSQL em uso; OIDC/PKCE existe no código | Homologar provedor corporativo e testar sessão/escopo com identidade restrita real. |
 | Importação | `deploy/hostinger/import-historical-workbook.py` usa Python/openpyxl e hash do arquivo aprovado; a origem bruta é preservada | Criar prévia, reconciliação e promoção versionada da próxima planilha; não pressupor importador Node já existente. |
 | Jobs e arquivos | Outbox no PostgreSQL; sem consumidor operacional ou object storage escolhido | Definir executor persistente/agenda na VPS ou serviço gerenciado, storage privado e políticas de retry/retensão antes de documentos e integrações. |
-| CI | `.github/workflows/api-ci.yml` instala, compila e testa API e aplica migrations em PostgreSQL isolado; a contagem de migrations foi tornada dinâmica nesta revisão | Confirmar execução no GitHub; acrescentar web, integração, contratos, segurança e E2E relevantes. |
+| CI | `.github/workflows/api-ci.yml` compila/testa API e aplica migrations em PostgreSQL isolado; `.github/workflows/web-ci.yml` instala, executa ESLint e compila o frontend | Confirmar execução no GitHub; acrescentar integração, contratos, segurança e E2E relevantes. |
 | BI | Sem banco analítico ou projeto Power BI versionado | Implementar depois de fixar grãos, moeda e fonte de cada indicador. |
 
 **Cobertura de colunas do arquivo aprovado:** o arquivo local
@@ -68,7 +68,7 @@ política aprovada. Datas visíveis seguem `MM/DD/YYYY` e, com horário,
 | RF09 Desembaraço | `[ ]` | DUIMP, NF e datas históricas preservadas no bruto. | Processo fiscal, documentos, armazenagem, marcos e entrega com regras aprovadas. |
 | RF10 Custos | `[-]` | 422 custos históricos deduplicados por IP. | Lançamentos novos, aprovação, reversão, conciliação por moeda e rateio por PO aprovado. |
 | RF11 Documentos | `[ ]` | Nenhum fluxo de upload/download operacional. | Storage privado, versões, autorização, vínculo e restauração. |
-| RF12 Histórico/auditoria | `[-]` | Origem imutável, revisão de qualidade, auditoria e outbox em comandos existentes. | Timeline unificada por entidade/campo/ator, cobertura de novos comandos e consumidor da outbox. |
+| RF12 Histórico/auditoria | `[-]` | Origem imutável, revisão de qualidade, auditoria e outbox em comandos existentes. M013 e a tela/API de histórico de solicitações estão versionadas, ainda sem aplicação operacional. | Aplicar/validar M013, ampliar timeline às demais entidades e criar consumidor da outbox. |
 | RF13 Histórico Excel | `[-]` | Carga idempotente do snapshot aprovado; `/source-audit` com abas Pré/Pós, filtros e cabeçalhos; revisão de qualidade. | Decidir cobertura dos 11 cabeçalhos Pré além de `AZ` já no arquivo aprovado; depois prévia/reconciliação de versões novas, promoção sem sobrescrita e aceite dos erros de cálculo. |
 | RF14 Painéis | `[ ]` | Sem painel operacional completo. | Catálogo de KPIs por grão/moeda, filtros, atualização e relatórios. |
 | RF15 Administração | `[-]` | Master gerencia usuários, papéis e escopos. | Parâmetros operacionais, acompanhamento de jobs e autorização completa para novos módulos. |
@@ -105,7 +105,7 @@ reaproveitado.
 | DEV21 Custos | `[-]` | Custos legados por IP; faltam custo novo, reversão e rateio versionado. |
 | DEV22 Regras fiscais | `[ ]` | Sem cálculo/regra de benefício aprovada; depende do Fiscal. |
 | DEV23 Documentos | `[ ]` | Selecionar storage privado e construir fluxo autorizado/versionado. |
-| DEV24 Auditoria/outbox | `[-]` | Escrita atômica nos comandos existentes; sem consumidor, retries e monitoramento operacional. |
+| DEV24 Auditoria/outbox | `[-]` | Escrita atômica nos comandos existentes; leitura de histórico de solicitações versionada em M013, ainda sem release. Faltam consumidor, retries e monitoramento operacional. |
 | DEV25 Dashboard | `[ ]` | Sem painel/exportação completos; definir indicadores por grão e referência temporal. |
 | DEV26 ETL | `[ ]` | Sem carga analítica; criar dimensões, watermark, reexecução e reconciliação. |
 | DEV27 Fatos/medidas | `[ ]` | Sem fatos e medidas; impedir ligação fato a fato e soma entre moedas. |

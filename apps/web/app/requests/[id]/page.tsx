@@ -12,6 +12,9 @@ type RequestDetail = { id: string; requestNumber: string; importer: string; sour
     purposeText: string | null; costCenterText: string | null; sourceKind: string }> };
 type DraftItem = { id?: string; description: string; purposeText: string; costCenterText: string };
 type RequestDraft = { requesterReference: string; reason: string; notes: string; items: DraftItem[] };
+type HistoryEntry = { id: string; operation: string; changedFields: string[]; actor: string;
+  occurredAt: string; reason: string | null };
+type HistoryPage = { page: number; pageSize: number; totalCount: number; items: HistoryEntry[] };
 const blankItem = (): DraftItem => ({ description: "", purposeText: "", costCenterText: "" });
 
 export default function RequestDetailPage() {
@@ -22,6 +25,12 @@ export default function RequestDetailPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyRevision, setHistoryRevision] = useState(0);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -38,6 +47,27 @@ export default function RequestDetailPage() {
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [id]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    apiFetch(`/api/v1/requests/${encodeURIComponent(id)}/history?page=${historyPage}&pageSize=25`,
+      { signal: controller.signal })
+      .then(async response => {
+        if (!response.ok) throw new Error("Não foi possível carregar o histórico da solicitação.");
+        return await response.json() as HistoryPage;
+      })
+      .then(data => {
+        if (controller.signal.aborted) return;
+        setHistory(current => historyPage === 1 ? data.items : [...current, ...data.items]);
+        setHistoryTotal(data.totalCount);
+        setHistoryError("");
+      })
+      .catch(cause => {
+        if (!controller.signal.aborted) setHistoryError(cause instanceof Error ? cause.message : "Erro inesperado.");
+      })
+      .finally(() => { if (!controller.signal.aborted) setHistoryLoading(false); });
+    return () => controller.abort();
+  }, [id, historyPage, historyRevision]);
 
   function beginEditing() {
     if (!request || request.status !== "SUBMITTED") return;
@@ -68,6 +98,7 @@ export default function RequestDetailPage() {
         throw new Error(data.detail || "Não foi possível salvar a solicitação.");
       }
       setRequest(data); setDraft(undefined); setNotice("Alterações salvas.");
+      setHistoryPage(1); setHistoryRevision(value => value + 1);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setSaving(false); }
   }
@@ -136,5 +167,23 @@ export default function RequestDetailPage() {
         </form>}
       </>}
     </section>
+    {request && <section className="card request-history" aria-label="Histórico da solicitação">
+      <h2>Histórico da solicitação</h2>
+      {historyError && <p className="notice error" role="alert">{historyError}</p>}
+      {historyLoading && history.length === 0 && <p role="status">Carregando histórico…</p>}
+      {!historyLoading && !historyError && history.length === 0 && <p className="muted">Nenhum evento registrado.</p>}
+      <ol className="request-history-list">
+        {history.map(entry => <li key={entry.id}>
+          <strong>{entry.operation === "CREATE" ? "Solicitação criada" : "Solicitação alterada"}</strong>
+          <span className="muted">{formatUsDateTime(entry.occurredAt)} · {entry.actor}</span>
+          {entry.changedFields.length > 0 && <p>Campos: {entry.changedFields.join(", ")}</p>}
+          {entry.reason && <p>Motivo registrado: {entry.reason}</p>}
+        </li>)}
+      </ol>
+      {history.length < historyTotal && <button className="button secondary" type="button" disabled={historyLoading}
+        onClick={() => { setHistoryLoading(true); setHistoryPage(value => value + 1); }}>
+        {historyLoading ? "Carregando…" : "Carregar eventos anteriores"}
+      </button>}
+    </section>}
   </main>;
 }

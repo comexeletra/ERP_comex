@@ -36,6 +36,19 @@ type RequestItem = { id: string; line_number: number; description: string; sourc
 type RequestRow = { id: string; request_number: string; importer: string;
   source_kind: "NATIVE"; requester_reference: string; reason: string; notes: string; status: string; version: string;
   created_at: Date; updated_at: Date; item_count?: number };
+type RequestHistoryRow = { id: string; operation: string; field_name: string | null;
+  old_value: Record<string, unknown> | null; new_value: Record<string, unknown> | null;
+  actor_id: string; occurred_at: string; reason: string | null };
+
+function changedRequestFields(row: RequestHistoryRow): string[] {
+  if (row.operation === "CREATE") return ["Criação"];
+  const fields: Array<[string, string]> = [
+    ["requesterReference", "Solicitante"], ["reason", "Motivo"],
+    ["notes", "Observações"], ["items", "Itens"],
+  ];
+  return fields.filter(([key]) => canonicalJson(row.old_value?.[key]) !== canonicalJson(row.new_value?.[key]))
+    .map(([, label]) => label);
+}
 
 function problem(reply: FastifyReply, status: number, code: string, detail: string) {
   return reply.code(status).send({ type: "about:blank", title: detail, status, detail,
@@ -182,6 +195,33 @@ export async function registerRequestRoutes(app: FastifyInstance, pool: Pool): P
       "SELECT * FROM procurement.import_request_item WHERE request_id = $1 ORDER BY line_number", [id.data]);
     reply.header("ETag", `"${found.rows[0].version}"`);
     return presentRequest(found.rows[0], lines.rows);
+  });
+
+  app.get<{ Params: { id: string } }>("/api/v1/requests/:id/history", { config: permissionConfig("requests.read") }, async (request, reply) => {
+    const id = z.uuid().safeParse(request.params.id);
+    const parsed = requestQuery.safeParse(request.query);
+    if (!id.success || !parsed.success) return problem(reply, 400, "INVALID_QUERY", "Solicitação ou paginação inválida.");
+    const scopes = request.authorizationContext?.importerScopes ?? [];
+    const visible = await pool.query<{ id: string }>(
+      `SELECT id FROM procurement.import_request WHERE id = $1 AND importer = ANY($2::text[])`,
+      [id.data, scopes]);
+    if (!visible.rows[0]) return problem(reply, 404, "RESOURCE_NOT_FOUND", "Solicitação não encontrada.");
+    const { page, pageSize } = parsed.data;
+    const history = await pool.query<{ total_count: number; items: RequestHistoryRow[] }>(
+      `WITH page AS (
+         SELECT id, operation, field_name, old_value, new_value, actor_id, occurred_at, reason
+         FROM audit.import_request_history WHERE aggregate_id = $1
+         ORDER BY occurred_at DESC, id DESC LIMIT $2 OFFSET $3
+       )
+       SELECT (SELECT count(*)::int FROM audit.import_request_history WHERE aggregate_id = $1) AS total_count,
+         coalesce(jsonb_agg(to_jsonb(page) ORDER BY page.occurred_at DESC, page.id DESC)
+           FILTER (WHERE page.id IS NOT NULL), '[]'::jsonb) AS items FROM page`,
+      [id.data, pageSize, (page - 1) * pageSize]);
+    return { page, pageSize, totalCount: Number(history.rows[0]?.total_count ?? 0),
+      items: (history.rows[0]?.items ?? []).map(row => ({
+        id: row.id, operation: row.operation, changedFields: changedRequestFields(row),
+        actor: row.actor_id, occurredAt: row.occurred_at, reason: row.reason,
+      })) };
   });
 
   app.patch<{ Params: { id: string } }>("/api/v1/requests/:id", { config: permissionConfig("requests.write") }, async (request, reply) => {

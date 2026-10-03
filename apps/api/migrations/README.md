@@ -68,6 +68,12 @@ published to `comexeletra/ERP_comex`; Vercel deployment
 `dpl_35azfjEXCUmqmBgV9AmHDnHXckx5` reached `READY` and serves the
 `fup-comex-eletra.vercel.app` alias.
 
+`M013_request_history_read.sql` exposes a read-only view of native request audit
+events to the API role. The request-history handler verifies importer scope before
+querying it. The view and grant are versioned here but have not been applied to
+the operational database in this checkout; apply and verify M013 on a restored
+copy before an operational release.
+
 The API never runs migrations at startup. From `apps/api`, build the API, then
 set `MIGRATION_ENV=isolated` in the shell or `.env` before running
 `pnpm migrate:status` to inspect the target without creating the ledger. For a
