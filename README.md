@@ -11,7 +11,7 @@ A API Fastify roda na VPS com PostgreSQL, gateway HTTPS, sessões no banco e
 login por contas locais. Duas contas Master foram criadas para administrar os
 demais usuários, seus papéis e seus escopos de importadoras. O frontend Next.js
 roda na Vercel e usa o proxy server-side para a API. O histórico registra
-M001–M012 aplicadas no banco operacional `erp_po_totvs_test`. OIDC/PKCE continua
+M001–M013 aplicadas no banco operacional `erp_po_totvs_test`. OIDC/PKCE continua
 no código para integração futura. O estado vigente e as pendências estão em
 [CHECKLIST_ATUAL_IMPLEMENTACAO.md](CHECKLIST_ATUAL_IMPLEMENTACAO.md); a cronologia
 está em [CHECKLIST_IMPLEMENTACAO.md](CHECKLIST_IMPLEMENTACAO.md) e o produto
@@ -48,7 +48,7 @@ do computador pessoal. Detalhes e limites estão em [VERCEL_SETUP.md](VERCEL_SET
 
 As migrations PostgreSQL reaproveitáveis estão em `apps/api/migrations` e são
 aplicadas pelo runner explícito em `apps/api/src/migrate.ts`. Não são executadas
-automaticamente no startup. O histórico registra M012 validada em cópia restaurada
+automaticamente no startup. O histórico registra M013 validada em cópia restaurada
 e aplicada ao banco operacional após backup. O runner exige
 `MIGRATION_ENV` e uma credencial dedicada para produção. Consulte o runbook
 antes de aplicar novas migrations.

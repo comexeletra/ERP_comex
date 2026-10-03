@@ -70,9 +70,10 @@ published to `comexeletra/ERP_comex`; Vercel deployment
 
 `M013_request_history_read.sql` exposes a read-only view of native request audit
 events to the API role. The request-history handler verifies importer scope before
-querying it. The view and grant are versioned here but have not been applied to
-the operational database in this checkout; apply and verify M013 on a restored
-copy before an operational release.
+querying it. On 2026-10-02, M013 passed on a restored copy after a verified
+backup, then was applied to the operational database. The ledger records M001–M013
+with zero pending migrations. The API code was installed after a controlled
+retry of the health check; see `deploy/hostinger/README.md` for evidence.
 
 The API never runs migrations at startup. From `apps/api`, build the API, then
 set `MIGRATION_ENV=isolated` in the shell or `.env` before running

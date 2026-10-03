@@ -13,11 +13,12 @@ Um item daquele histórico não está concluído na stack atual sem evidência a
 - `[ ]` Não há implementação operacional correspondente no repositório atual.
 - `[!]` Depende de decisão ou fonte externa identificada.
 
-**Fontes deste retrato:** código e configuração do checkout, migrations M001–M012,
+**Fontes deste retrato:** código e configuração do checkout, migrations M001–M013,
 documentos de entrega e evidências registradas no checklist histórico até
 2026-10-02. A aplicação em `erp_po_totvs_test`, a API na VPS e os deployments
-Vercel são fatos registrados nas entregas anteriores; esta revisão documental
-não consultou os ambientes remotos. O commit `2ea54a5` dos cabeçalhos foi enviado
+Vercel são fatos registrados nas entregas anteriores. Nesta revisão, a VPS foi
+consultada para M013, saúde da API e grant da view; os demais módulos e o deploy
+Vercel não foram revalidados remotamente. O commit `2ea54a5` dos cabeçalhos foi enviado
 a `production/main`, mas não há evidência nesta revisão de que a API VPS o tenha
 recebido. Aceites com usuários reais foram informados pelo usuário sem perfil,
 importador e casos detalhados; não equivalem à validação de escopo restrito.
@@ -31,7 +32,7 @@ recebeu `[x]` integral apenas por existir na fase .NET/SQLite ou no plano.
 |---|---|---|
 | Frontend | Next.js 16.3.6, React 19.3.0, TypeScript 5.9.3, CSS próprio; `fetch` em componentes e `proxy.ts` same-origin; Vercel `apps/web` | Manter esta base. Tailwind, shadcn/ui, TanStack Query, React Hook Form, Vitest e Playwright são propostas do plano e **não estão instalados**. Adotá-los só quando uma entrega exigir. |
 | API | Node 24, Fastify 5, TypeScript, Zod, `pg`; serviço `systemd` na VPS, HTTPS via Traefik, token de gateway | Completar contratos e workflows no serviço persistente. Não há backend .NET ativo. |
-| Banco | PostgreSQL da VPS; `erp_po_totvs_test` é operacional apesar do nome; SQL M001–M012 versionado, runner explícito | Separar banco de CI/homologação do operacional; validar cada nova migration em cópia restaurada e manter backup. Não usar SQLite como evidência atual. |
+| Banco | PostgreSQL da VPS; `erp_po_totvs_test` é operacional apesar do nome; SQL M001–M013 versionado, runner explícito | Separar banco de CI/homologação do operacional; validar cada nova migration em cópia restaurada e manter backup. Não usar SQLite como evidência atual. |
 | Autenticação | Login local e sessões PostgreSQL em uso; OIDC/PKCE existe no código | Homologar provedor corporativo e testar sessão/escopo com identidade restrita real. |
 | Importação | `deploy/hostinger/import-historical-workbook.py` usa Python/openpyxl e hash do arquivo aprovado; a origem bruta é preservada | Criar prévia, reconciliação e promoção versionada da próxima planilha; não pressupor importador Node já existente. |
 | Jobs e arquivos | Outbox no PostgreSQL; sem consumidor operacional ou object storage escolhido | Definir executor persistente/agenda na VPS ou serviço gerenciado, storage privado e políticas de retry/retensão antes de documentos e integrações. |
@@ -68,7 +69,7 @@ política aprovada. Datas visíveis seguem `MM/DD/YYYY` e, com horário,
 | RF09 Desembaraço | `[ ]` | DUIMP, NF e datas históricas preservadas no bruto. | Processo fiscal, documentos, armazenagem, marcos e entrega com regras aprovadas. |
 | RF10 Custos | `[-]` | 422 custos históricos deduplicados por IP. | Lançamentos novos, aprovação, reversão, conciliação por moeda e rateio por PO aprovado. |
 | RF11 Documentos | `[ ]` | Nenhum fluxo de upload/download operacional. | Storage privado, versões, autorização, vínculo e restauração. |
-| RF12 Histórico/auditoria | `[-]` | Origem imutável, revisão de qualidade, auditoria e outbox em comandos existentes. M013 e a tela/API de histórico de solicitações estão versionadas, ainda sem aplicação operacional. | Aplicar/validar M013, ampliar timeline às demais entidades e criar consumidor da outbox. |
+| RF12 Histórico/auditoria | `[-]` | Origem imutável, revisão de qualidade, auditoria e outbox em comandos existentes. M013 aplicada após backup/cópia restaurada; a API de histórico de solicitações está ativa na VPS. | Ampliar timeline às demais entidades e criar consumidor da outbox; homologar a tela com usuário restrito real. |
 | RF13 Histórico Excel | `[-]` | Carga idempotente do snapshot aprovado; `/source-audit` com abas Pré/Pós, filtros e cabeçalhos; revisão de qualidade. CLI de inventário/comparação posicional de versões sem escrita no banco. | Decidir cobertura dos 11 cabeçalhos Pré além de `AZ` já no arquivo aprovado; reconciliar entidades de versões novas, promover sem sobrescrita e aceitar os erros de cálculo. |
 | RF14 Painéis | `[-]` | Exportação CSV da carteira filtrada e restrita ao escopo foi versionada; ainda não há painel operacional completo. | Catálogo de KPIs por grão/moeda, filtros, atualização e relatórios completos. |
 | RF15 Administração | `[-]` | Master gerencia usuários, papéis e escopos. | Parâmetros operacionais, acompanhamento de jobs e autorização completa para novos módulos. |
@@ -86,7 +87,7 @@ reaproveitado.
 | DEV02 Ambiente | `[-]` | Node 24 e PostgreSQL/VPS operacionais; separar desenvolvimento/Preview do banco operacional e completar CI web. |
 | DEV03 OIDC/sessão | `[-]` | Login local e sessões ativos; OIDC/PKCE no código. Homologar issuer corporativo, callback, expiração, CSRF e logout. |
 | DEV04 Permissões | `[-]` | Papéis/grants e filtros SQL existem; validar casos negativos e 404 fora do escopo com usuário restrito real. |
-| DEV05 Migrations | `[-]` | Runner Node e M001–M012; cópias/backup registrados. Confirmar CI dinâmica no GitHub e gates de upgrade/release. |
+| DEV05 Migrations | `[-]` | Runner Node e M001–M013; M013 validada em cópia restaurada, backup e grant operacional conferidos. Confirmar CI dinâmica no GitHub e gates de upgrade/release. |
 | DEV06 Cadastros/aliases | `[-]` | M010 e fluxo manual revisado; faltam identidades oficiais, aliases conflitantes e homologação de dados reais. |
 | DEV07 Lote de origem | `[-]` | Snapshot, hash e linhas brutas persistidos; CLI local de inventário/comparação por coordenada versionada. Faltam recebimento, armazenamento e prévia reconciliada por entidade. |
 | DEV08 Leitura Excel | `[-]` | Python/openpyxl lê valores salvos do arquivo aprovado; avaliar os 11 cabeçalhos Pré além de `AZ` já presentes e generalizar leitura de versões novas. |
@@ -105,7 +106,7 @@ reaproveitado.
 | DEV21 Custos | `[-]` | Custos legados por IP; faltam custo novo, reversão e rateio versionado. |
 | DEV22 Regras fiscais | `[ ]` | Sem cálculo/regra de benefício aprovada; depende do Fiscal. |
 | DEV23 Documentos | `[ ]` | Selecionar storage privado e construir fluxo autorizado/versionado. |
-| DEV24 Auditoria/outbox | `[-]` | Escrita atômica nos comandos existentes; leitura de histórico de solicitações versionada em M013, ainda sem release. Faltam consumidor, retries e monitoramento operacional. |
+| DEV24 Auditoria/outbox | `[-]` | Escrita atômica nos comandos existentes; leitura de histórico de solicitações instalada com M013. Faltam consumidor, retries e monitoramento operacional. |
 | DEV25 Dashboard | `[-]` | CSV filtrado da carteira de POs versionado, sem valores ou saldos oficiais. Faltam painel, indicadores por grão/moeda e referência temporal. |
 | DEV26 ETL | `[ ]` | Sem carga analítica; criar dimensões, watermark, reexecução e reconciliação. |
 | DEV27 Fatos/medidas | `[ ]` | Sem fatos e medidas; impedir ligação fato a fato e soma entre moedas. |

@@ -1,7 +1,7 @@
 # API ERP na VPS Hostinger
 
 > As seções de migrations abaixo são registros de releases anteriores.
-> [O checklist vigente](../../CHECKLIST_ATUAL_IMPLEMENTACAO.md) registra M001–M012
+> [O checklist vigente](../../CHECKLIST_ATUAL_IMPLEMENTACAO.md) registra M001–M013
 > no histórico operacional. Confira o ledger real antes do próximo release.
 
 ## Release M013: histórico de solicitações
@@ -22,7 +22,19 @@ restaura cópia isolada, aplica M013 na cópia, verifica o grant de leitura da v
 para `import_erp_app`, aplica M013 no operacional e instala a rota da API. O código
 anterior é guardado em `/var/backups/import-erp/m013-api-*`; em falha de saúde,
 o script restaura somente o código. A migration aditiva permanece aplicada.
-Não publique o frontend com a timeline antes de concluir esse release.
+Se M013 for aplicada mas a instalação da API falhar, a retomada exige
+`ERP_M013_RESUME=true`, `ERP_M013_BACKUP` e `ERP_M013_BACKUP_SHA256`; o script
+confere o backup antes de instalar o código. O verificador de saúde normaliza
+finais de linha do arquivo de staging, necessários em checkouts Windows.
+
+Em 2026-10-02, M013 passou na cópia restaurada e foi aplicada ao banco
+operacional. Backup verificado:
+`/var/backups/import-erp/erp_po_totvs_test_20261003T003743Z.dump`, SHA-256
+`4668a29297b3e506dd3ca76c8e266ca5e79b5fe1ff2469d21f8d6ef8bf712515`.
+A primeira checagem de saúde falhou somente pelo CRLF do script de staging e
+restaurou o código da API; a retomada controlada instalou a nova rota. Código
+anterior em `/var/backups/import-erp/m013-api-20261003T004012Z`.
+`verify-m013-operational.sh` confirma ledger, grant e consulta com a role da API.
 
 Esta instalação usa a VPS `matheusproserv` e o banco operacional `erp_po_totvs_test` escolhido pelo usuário. O computador corporativo não executa componentes de produção. O código da API fica em `/opt/import-erp/apps/api`; configurações e segredos ficam em `/etc/import-erp`.
 
