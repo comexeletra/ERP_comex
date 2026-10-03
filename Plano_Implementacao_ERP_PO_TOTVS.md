@@ -2,15 +2,17 @@
 
 **Atualização do plano — 03/10/2026:** o controle vigente de implementação é
 [CHECKLIST_ATUAL_IMPLEMENTACAO.md](CHECKLIST_ATUAL_IMPLEMENTACAO.md). O banco
-`erp_po_totvs_test` é operacional apesar do nome. M001–M014 estão aplicadas,
-API Fastify na VPS, frontend Next.js na Vercel e login local em uso. M013
+`erp_po_totvs_test` é operacional apesar do nome. M001–M015 estão aplicadas;
+M016 está versionada e ainda pendente na VPS. A API Fastify roda na VPS,
+frontend Next.js na Vercel e login local em uso. M013
 entrega histórico de solicitações; M014 entrega monitor da outbox ao Master.
 As duas migrations passaram em cópias restauradas antes do release, com backups
-verificados. API CI e Web CI passaram em `ae9bd6b`; o resumo da carteira foi
-publicado na API da VPS e validado em leitura no banco operacional. A Vercel
-marcou `f41b2bc` como `READY` e associou o deploy ao domínio de produção. Ainda
-falta validação da interface autenticada com perfis reais. OIDC/PKCE está no
-código, mas a autenticação corporativa não foi homologada.
+verificados. API CI passou em `915244b`; Web CI passou em `70714ba`. O resumo da
+carteira e seu timestamp de captura estão publicados na API da VPS e validados
+em leitura no banco operacional. A Vercel marcou `915244b` como `READY` e
+associou o deploy ao domínio de produção. Ainda falta validação da interface
+autenticada com perfis reais. OIDC/PKCE está no código, mas a autenticação
+corporativa não foi homologada.
 Trechos abaixo que descrevem M008 pendente, ausência de API publicada ou da
 escrita operacional são evidências datadas da fase inicial, não o estado vigente.
 
@@ -1141,12 +1143,12 @@ e E2E autenticado, incluindo isolamento entre importadores e rollback real.
 
 | Ambiente/caso | Perfil ou dados | Resultado | Limite da evidência |
 |---|---|---|---|
-| API CI, commit `ae9bd6b` | PostgreSQL isolado da CI; fixture sintética de POs/linhas | Build, testes unitários e integração do resumo passaram; cobre 401, 403, filtros e escopo antes da agregação. | Não substitui reconciliação de KPIs de negócio nem sessão real no browser. |
-| Web CI, commit `ae9bd6b` | Serialização de filtros do resumo e lista | Três testes e build Next.js passaram; lint terminou sem erros, com 22 avisos. | Não é teste E2E autenticado. |
-| Banco operacional na VPS | Transação `REPEATABLE READ READ ONLY`, encerrada com `ROLLBACK`; Master ativo selecionado do banco | Resumo respondeu 336 POs, 6.796 linhas e 7 páginas; 401 sem identidade e 403 sem grant. A API manteve custos no grão do IP. | Não houve escrita nem mudança de migration. A contagem do resumo é histórica, sem saldo ou valor oficial. |
+| API CI, commit `915244b` | PostgreSQL isolado da CI; fixture sintética de POs/linhas | Build, testes unitários, integração do resumo e upgrade de M015 para M016 passaram; cobre 401, 403, filtros e escopo antes da agregação. | Não substitui reconciliação de KPIs de negócio nem sessão real no browser. |
+| Web CI, commit `70714ba` | Serialização de filtros do resumo e lista | Três testes e build Next.js passaram; lint terminou sem erros, com 22 avisos. | Não é teste E2E autenticado. |
+| Banco operacional na VPS | Transação `REPEATABLE READ READ ONLY`, encerrada com `ROLLBACK`; Master ativo selecionado do banco | Resumo respondeu 336 POs, 6.796 linhas e 7 páginas; timestamp de captura de `source_row` é válido; 401 sem identidade e 403 sem grant. A API manteve custos no grão do IP. | Não houve escrita nem mudança de migration. A contagem do resumo é histórica, sem saldo ou valor oficial. |
 | Escopo de importador na VPS | Identidade sintética injetada somente no Fastify isolado; grant de uma importadora; restante dos dados lido na mesma transação read-only | Lista e resumo ficaram limitados à importadora; PO de outra importadora retornou 404. | Não criou usuário nem grant no banco. Não havia grant restrito real ativo; o teste com usuário restrito real foi pulado. |
 | Casos de histórico na VPS | POs 18751, 18223 e 6817; linhas e IPs existentes | Linhagem/paginação conferidas; fornecedores conflitantes ficaram como observações históricas; custos de IP permaneceram no grão do processo compartilhado. | Não aprova fornecedor, item oficial, quantidade, atendimento ou rateio. |
-| Vercel Production, commit `f41b2bc` | Deploy associado ao domínio de produção | Estado `READY`; domínio público e API de saúde responderam HTTP 200; endpoint sem sessão retornou 401. | Disponibilidade anônima não comprova jornada autenticada nem aceite visual por usuário. |
+| Vercel Production, commit `915244b` | Deploy associado ao domínio de produção | Estado `READY`; domínio público e API de saúde responderam HTTP 200; endpoint sem sessão retornou 401. | Disponibilidade anônima não comprova jornada autenticada nem aceite visual por usuário. |
 
 ### 24.5 Registro das decisões de produto/TOTVS
 

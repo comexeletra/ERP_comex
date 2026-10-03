@@ -98,7 +98,7 @@ política aprovada. Datas visíveis seguem `MM/DD/YYYY` e, com horário,
 | RF11 Documentos | `[ ]` | Nenhum fluxo de upload/download operacional. | Storage privado, versões, autorização, vínculo e restauração. |
 | RF12 Histórico/auditoria | `[-]` | Origem imutável, revisão de qualidade, auditoria e outbox em comandos existentes. M013 aplicada após backup/cópia restaurada; histórico de solicitações ativo. M017 e endpoint/tela de histórico de cadastros estão locais, ainda sem CI/release. A fila de qualidade prepara a linha do tempo completa das revisões por pendência. | Ampliar timeline às demais entidades e criar consumidor da outbox; homologar as telas com usuário restrito real. |
 | RF13 Histórico Excel | `[-]` | Carga idempotente do snapshot aprovado; `/source-audit` com abas Pré/Pós, filtros e cabeçalhos; revisão de qualidade. CLI de inventário/comparação posicional de versões sem escrita no banco. | Decidir cobertura dos 11 cabeçalhos Pré além de `AZ` já no arquivo aprovado; reconciliar entidades de versões novas, promover sem sobrescrita e aceitar os erros de cálculo. |
-| RF14 Painéis | `[-]` | API publicada na VPS e UI/CSV publicados na Vercel em 2026-10-03; CI de API/Web passou no commit `ae9bd6b`. Consulta somente leitura no banco real confirmou 336 POs e 6.796 linhas, com autorização e escopo validados. Incremento local mostra o `created_at` mais recente das linhas de origem ligadas ao recorte; ainda sem CI/release. | Catálogo de KPIs oficiais por grão/moeda, referência temporal do TOTVS, relatórios completos e aceite dos valores. O resumo histórico não é saldo, atendimento oficial, valor comercial nem horário de promoção do lote. |
+| RF14 Painéis | `[-]` | API publicada na VPS; UI/CSV publicados na Vercel. API CI passou em `915244b` e Web CI em `70714ba`. Leitura no banco real confirmou 336 POs, 6.796 linhas, escopo e timestamp `source_row.created_at` do recorte. | Catálogo de KPIs oficiais por grão/moeda, referência temporal do TOTVS, relatórios completos e aceite dos valores. O resumo histórico não é saldo, atendimento oficial, valor comercial nem atualização do TOTVS. |
 | RF15 Administração | `[-]` | Master gerencia usuários, papéis e escopos e pode consultar metadados da outbox. | Parâmetros operacionais, acompanhamento dos demais jobs e autorização completa para novos módulos. |
 | RF16 Analítico | `[ ]` | Sem DW/ETL/modelo semântico ativo no repositório. | Banco analítico, cargas reconciliadas, fatos/dimensões, Power BI e RLS. |
 
@@ -134,7 +134,7 @@ reaproveitado.
 | DEV22 Regras fiscais | `[ ]` | Sem cálculo/regra de benefício aprovada; depende do Fiscal. |
 | DEV23 Documentos | `[ ]` | Selecionar storage privado e construir fluxo autorizado/versionado. |
 | DEV24 Auditoria/outbox | `[-]` | Escrita atômica nos comandos existentes, histórico de solicitações M013 e monitor Master da fila M014 instalados. Faltam consumidor, política de retries e retenção. |
-| DEV25 Dashboard | `[-]` | API publicada na VPS e UI/CSV na Vercel em 2026-10-03; CI de API/Web passou no commit `ae9bd6b`; resumo validado em leitura no banco real. Incremento local inclui a data/hora mais recente de criação de linha de origem por recorte, não a promoção do lote; falta CI, publicação e aceite. | Painel operacional, indicadores oficiais por grão/moeda, referência temporal do TOTVS, atualização e aceite com dados reconciliados. |
+| DEV25 Dashboard | `[-]` | API VPS e UI Vercel publicadas; API CI passou em `915244b`, Web CI em `70714ba`; timestamp de captura da origem está validado no banco real. | Painel operacional, indicadores oficiais por grão/moeda, referência temporal do TOTVS, atualização e aceite com dados reconciliados. |
 | DEV26 ETL | `[ ]` | Sem carga analítica; criar dimensões, watermark, reexecução e reconciliação. |
 | DEV27 Fatos/medidas | `[ ]` | Sem fatos e medidas; impedir ligação fato a fato e soma entre moedas. |
 | DEV28 Power BI/RLS | `[ ]` | Sem PBIP, refresh ou RLS; validar acesso por importador real. |
@@ -168,20 +168,21 @@ reaproveitado.
 
 Casos executados e decisões de produto/TOTVS estão registrados no plano, seções
 24.4–24.5. O resumo da carteira foi publicado na API da VPS e na UI Vercel; as
-CIs de API e Web passaram no commit `ae9bd6b`, e o deploy final está `READY` em
-`f41b2bc`. A consulta de produção foi somente leitura. Preview continua
-desconectado do banco operacional. Este incremento adiciona o horário de origem
-da carteira e o histórico de cadastros; suas mudanças ainda não têm CI registrada.
-M016/M017 exigem CI, cópia restaurada e release controlado antes de serem tratadas
-como operacionais. Depois disso, o próximo aceite funcional é validar a interface
-e o isolamento com uma conta restrita real; não havia grant restrito ativo no
-banco durante a última verificação. As decisões de fonte/empresa/filial, itens
-oficiais e workflow seguem com Compras/TI TOTVS e Product Owner.
+API CI passou em `915244b`, Web CI em `70714ba`, e o deploy Vercel está `READY`
+em `915244b`. O timestamp de captura é lido de `source_row.created_at`, validado
+no banco operacional em transação somente leitura e não requer migration. M016
+passou na CI, mas permanece pendente na VPS; o resumo publicado não depende dela.
+Preview continua desconectado do banco operacional. A mudança M017 de histórico
+de cadastros está local e ainda exige CI, cópia restaurada e release controlado.
+O próximo aceite funcional é validar a interface e o isolamento com uma conta
+restrita real; não havia grant restrito ativo no banco durante a última
+verificação. As decisões de fonte/empresa/filial, itens oficiais e workflow
+seguem com Compras/TI TOTVS e Product Owner.
 
-**Validação local registrada antes deste incremento em 2026-10-03:** Node 24; build e 29 testes unitários da API
-passaram; lint da web terminou sem erros (22 avisos), os 3 testes da web passaram
-e o build Next.js passou. A fixture PostgreSQL passou na CI hospedada, junto com
-as CIs de API e Web. API e UI estão publicadas na VPS/Vercel. Essa evidência não
-cobre as mudanças locais deste incremento. A matriz dos casos de homologação está
-no plano §24.4–24.5. Nenhuma contagem histórica ou evidência .NET/SQLite substitui
-o aceite dos novos comandos na API Fastify e no PostgreSQL.
+**Validação em 2026-10-03:** builds Node/API e Next.js passaram; testes locais
+anteriores passaram (29 API e 3 Web; lint sem erros, 22 avisos). API CI executou
+com sucesso a fixture PostgreSQL e o upgrade M015→M016 em `915244b`; Web CI passou
+em `70714ba`. API e UI estão publicadas. A atualização do timestamp foi
+confirmada no banco real por consulta read-only. M017 de histórico do catálogo
+permanece apenas no checkout. A matriz dos casos de homologação está no plano
+§24.4–24.5; nenhum resultado histórico substitui o aceite funcional e de negócio.
