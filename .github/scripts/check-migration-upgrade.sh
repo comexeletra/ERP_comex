@@ -65,7 +65,8 @@ status="$(corepack pnpm migrate:status)"
 printf '%s\n' "$status"
 grep -Fq "Migrations: ${#migrations[@]} aplicadas, 0 pendentes." <<< "$status"
 
-if [[ $latest_migration == migrations/M016_import_batch_snapshot_read.sql ]]; then
+if [[ $latest_migration == migrations/M016_import_batch_snapshot_read.sql \
+      || $latest_migration == migrations/M017_catalog_entry_history.sql ]]; then
 psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
 DO $$
 BEGIN
@@ -76,6 +77,25 @@ BEGIN
   END IF;
 END;
 $$;
+SQL
+fi
+
+if [[ $latest_migration == migrations/M017_catalog_entry_history.sql ]]; then
+psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+DO $$
+BEGIN
+  IF NOT has_schema_privilege('import_erp_app', 'audit', 'USAGE')
+     OR NOT has_table_privilege('import_erp_app', 'audit.catalog_entry_history', 'SELECT')
+     OR has_table_privilege('import_erp_app', 'audit.audit_log', 'SELECT')
+     OR position('CATALOG_ENTRY' in pg_get_viewdef('audit.catalog_entry_history'::regclass, true)) = 0 THEN
+    RAISE EXCEPTION 'M017 catalog history view or runtime grants are missing';
+  END IF;
+END;
+$$;
+BEGIN;
+SET LOCAL ROLE import_erp_app;
+SELECT count(*) FROM audit.catalog_entry_history;
+ROLLBACK;
 SQL
 fi
 
