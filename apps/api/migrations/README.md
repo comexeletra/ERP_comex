@@ -75,6 +75,10 @@ backup, then was applied to the operational database. The ledger records M001–
 with zero pending migrations. The API code was installed after a controlled
 retry of the health check; see `deploy/hostinger/README.md` for evidence.
 
+`M014_outbox_monitor.sql` adds a metadata-only view for the Master outbox
+monitor. It grants no access to event payloads or error text. This migration is
+versioned but awaits restored-copy validation and operational release.
+
 The API never runs migrations at startup. From `apps/api`, build the API, then
 set `MIGRATION_ENV=isolated` in the shell or `.env` before running
 `pnpm migrate:status` to inspect the target without creating the ledger. For a

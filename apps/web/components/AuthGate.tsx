@@ -55,6 +55,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     <div className="session-bar">
       <span>{identity.user.displayName ?? "Usuário autenticado"}</span>
       {identity.roles.includes("Master") && <Link className="text-link" href="/admin/users">Gerenciar acessos</Link>}
+      {identity.roles.includes("Master") && <Link className="text-link" href="/admin/outbox">Fila de eventos</Link>}
       <Link className="text-link" href="/change-password">Trocar senha</Link>
       <button className="button secondary" type="button" onClick={() => void logout()}>Sair</button>
     </div>

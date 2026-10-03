@@ -106,7 +106,7 @@ reaproveitado.
 | DEV21 Custos | `[-]` | Custos legados por IP; faltam custo novo, reversão e rateio versionado. |
 | DEV22 Regras fiscais | `[ ]` | Sem cálculo/regra de benefício aprovada; depende do Fiscal. |
 | DEV23 Documentos | `[ ]` | Selecionar storage privado e construir fluxo autorizado/versionado. |
-| DEV24 Auditoria/outbox | `[-]` | Escrita atômica nos comandos existentes; leitura de histórico de solicitações instalada com M013. Faltam consumidor, retries e monitoramento operacional. |
+| DEV24 Auditoria/outbox | `[-]` | Escrita atômica nos comandos existentes e histórico de solicitações com M013. Monitor Master da fila e view M014 versionados, ainda sem release. Faltam consumidor, política de retries e retenção. |
 | DEV25 Dashboard | `[-]` | CSV filtrado da carteira de POs versionado, sem valores ou saldos oficiais. Faltam painel, indicadores por grão/moeda e referência temporal. |
 | DEV26 ETL | `[ ]` | Sem carga analítica; criar dimensões, watermark, reexecução e reconciliação. |
 | DEV27 Fatos/medidas | `[ ]` | Sem fatos e medidas; impedir ligação fato a fato e soma entre moedas. |
