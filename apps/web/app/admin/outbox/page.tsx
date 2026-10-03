@@ -18,16 +18,33 @@ const labels: Record<string, string> = {
 };
 
 export default function OutboxPage() {
+  const [isMaster, setIsMaster] = useState<boolean | null>(null);
+  const [accessError, setAccessError] = useState("");
   const [summary, setSummary] = useState<OutboxSummary>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
 
   useEffect(() => {
+    let active = true;
+    apiFetch("/auth/me")
+      .then(async response => {
+        if (!response.ok) throw new Error("Não foi possível verificar seu acesso.");
+        return await response.json() as { roles: string[] };
+      })
+      .then(identity => { if (active) setIsMaster(identity.roles.includes("Master")); })
+      .catch(cause => {
+        if (active) setAccessError(cause instanceof Error ? cause.message : "Erro inesperado.");
+      });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (isMaster !== true) return;
     const controller = new AbortController();
+    setLoading(true);
     apiFetch("/api/v1/admin/outbox", { signal: controller.signal })
       .then(async response => {
-        if (response.status === 403) throw new Error("Somente Master pode consultar a fila.");
         if (!response.ok) throw new Error("Não foi possível carregar a fila.");
         return await response.json() as OutboxSummary;
       })
@@ -35,7 +52,21 @@ export default function OutboxPage() {
       .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro inesperado."); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [revision]);
+  }, [isMaster, revision]);
+
+  if (isMaster === null) return <main className="shell">
+    <p className={accessError ? "notice error" : "notice"} role={accessError ? "alert" : "status"}>
+      {accessError || "Verificando acesso..."}
+    </p>
+    {accessError && <Link className="text-link" href="/">Voltar à carteira</Link>}
+  </main>;
+
+  if (!isMaster) return <main className="shell">
+    <header className="page-header"><p className="eyebrow">ERP Comex · Administração</p><h1>Fila de eventos</h1>
+      <Link className="text-link" href="/">Voltar à carteira</Link>
+    </header>
+    <p className="notice">Esta área é restrita a usuários Master. Entre em contato com o administrador do sistema.</p>
+  </main>;
 
   return <main className="shell">
     <header className="page-header">

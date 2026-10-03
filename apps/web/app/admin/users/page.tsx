@@ -12,6 +12,8 @@ type User = {
 };
 
 export default function UsersPage() {
+  const [isMaster, setIsMaster] = useState<boolean | null>(null);
+  const [accessError, setAccessError] = useState("");
   const [users, setUsers] = useState<User[]>([]);
   const [importers, setImporters] = useState<string[]>([]);
   const [email, setEmail] = useState("");
@@ -32,7 +34,24 @@ export default function UsersPage() {
     setImporters((await importersResponse.json() as { items: string[] }).items);
   }
 
-  useEffect(() => { void load().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Erro inesperado.")); }, []);
+  useEffect(() => {
+    let active = true;
+    apiFetch("/auth/me")
+      .then(async response => {
+        if (!response.ok) throw new Error("Não foi possível verificar seu acesso.");
+        return await response.json() as { roles: string[] };
+      })
+      .then(identity => { if (active) setIsMaster(identity.roles.includes("Master")); })
+      .catch(reason => {
+        if (active) setAccessError(reason instanceof Error ? reason.message : "Erro inesperado.");
+      });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (isMaster !== true) return;
+    void load().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Erro inesperado."));
+  }, [isMaster]);
 
   function resetForm() {
     setEditingId(undefined); setEmail(""); setDisplayName(""); setRole("Consulta"); setScopes([]);
@@ -92,6 +111,20 @@ export default function UsersPage() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Erro inesperado."); }
     finally { setBusy(false); }
   }
+
+  if (isMaster === null) return <main className="shell">
+    <p className={accessError ? "notice error" : "notice"} role={accessError ? "alert" : "status"}>
+      {accessError || "Verificando acesso..."}
+    </p>
+    {accessError && <Link className="text-link" href="/">Voltar à carteira</Link>}
+  </main>;
+
+  if (!isMaster) return <main className="shell">
+    <header className="page-header"><p className="eyebrow">ERP Comex</p><h1>Gerenciar acessos</h1>
+      <Link className="text-link" href="/">← Voltar à carteira</Link>
+    </header>
+    <p className="notice">Esta área é restrita a usuários Master. Entre em contato com o administrador do sistema.</p>
+  </main>;
 
   return <main className="shell">
     <header className="page-header"><p className="eyebrow">ERP Comex</p><h1>Gerenciar acessos</h1>
