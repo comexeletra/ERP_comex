@@ -13,6 +13,8 @@ const resources: ReadonlyArray<{ path: string; kind: Kind; sourceColumn: string 
 const listQuery = z.object({ importer: z.string().trim().min(1).max(120).optional(),
   search: z.string().trim().max(120).optional(), page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25) }).strict();
+const historyQuery = z.object({ page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25) }).strict();
 const createBody = z.object({ importer: z.string().trim().min(1).max(120),
   code: z.string().min(1).max(120).refine(value => value.trim().length > 0),
   name: z.string().trim().min(1).max(240), evidence: z.string().trim().min(8).max(2000),
@@ -139,6 +141,34 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
       if (!result.rows[0]) return problem(reply, 404, "RESOURCE_NOT_FOUND", "Cadastro não encontrado.");
       reply.header("ETag", `"${result.rows[0].version}"`);
       return present(result.rows[0]);
+    });
+
+    app.get<{ Params: { id: string } }>(`${base}/:id/history`, { config: permissionConfig("catalog.read") }, async (request, reply) => {
+      const id = z.uuid().safeParse(request.params.id);
+      const parsed = historyQuery.safeParse(request.query);
+      if (!id.success || !parsed.success) return problem(reply, 400, "INVALID_QUERY", "Identificador ou paginação inválidos.");
+      const visible = await pool.query<{ id: string }>(
+        `SELECT id FROM catalog.entry WHERE id = $1 AND kind = $2
+         AND importer = ANY($3::text[]) LIMIT 1`,
+        [id.data, kind, request.authorizationContext?.importerScopes ?? []]);
+      if (!visible.rowCount) return problem(reply, 404, "RESOURCE_NOT_FOUND", "Cadastro não encontrado.");
+      const { page, pageSize } = parsed.data;
+      const history = await pool.query<{ total_count: number | string; items: Array<Record<string, unknown>> }>(
+        `WITH page AS (
+           SELECT id, operation, field_name, old_value, new_value, actor_id, occurred_at, reason
+           FROM audit.catalog_entry_history WHERE aggregate_id = $1
+           ORDER BY occurred_at DESC, id DESC LIMIT $2 OFFSET $3
+         )
+         SELECT (SELECT count(*)::int FROM audit.catalog_entry_history WHERE aggregate_id = $1) AS total_count,
+           coalesce(jsonb_agg(to_jsonb(page) ORDER BY page.occurred_at DESC, page.id DESC)
+             FILTER (WHERE page.id IS NOT NULL), '[]'::jsonb) AS items FROM page`,
+        [id.data, pageSize, (page - 1) * pageSize]);
+      return { page, pageSize, totalCount: Number(history.rows[0]?.total_count ?? 0),
+        items: (history.rows[0]?.items ?? []).map(event => ({
+          id: event.id, operation: event.operation, fieldName: event.field_name,
+          oldValue: event.old_value, newValue: event.new_value,
+          actor: event.actor_id, occurredAt: event.occurred_at, reason: event.reason,
+        })) };
     });
 
     app.post(base, { config: permissionConfig("catalog.write") }, async (request, reply) => {

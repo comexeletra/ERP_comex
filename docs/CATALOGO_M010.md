@@ -49,6 +49,17 @@ permanece restrito aos próprios grants. `catalog.entry`, alias, recibo de
 idempotência, auditoria por campo e outbox são gravados na mesma transação. A
 chave de idempotência é única por ator. O log de auditoria é append-only.
 
+## Histórico de alterações — M017
+
+Cada linha operacional da tela **Cadastros** oferece a consulta paginada de seu
+histórico. `GET /api/v1/{suppliers|products|ncms}/{id}/history` exige
+`catalog.read`; a API confirma o tipo e o importador do registro no escopo da
+sessão antes de consultar a view `audit.catalog_entry_history`. A view contém
+somente eventos `CATALOG_ENTRY` e não concede acesso à tabela de auditoria.
+Eventos são exibidos do mais recente ao mais antigo, com campo, valores anterior
+e novo, ator, instante e motivo. A M017 e a interface permanecem locais até
+passarem pela CI e pelo release revisado `deploy/hostinger/release-m017.sh`.
+
 ## Aceite e pendências
 
 Na cópia restaurada, conferir candidatos, escopo restrito, 401/403/404, código

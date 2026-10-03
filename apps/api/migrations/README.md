@@ -100,6 +100,14 @@ update passed restored-copy validation before release. The operational verifier
 confirmed 15 migrations, 277 marked source rows, and 306 marked cells, matching
 the 306 immutable issue records.
 
+`M016_import_batch_snapshot_read.sql` grants the API role access only to the
+promoted batch identifier and timestamp used by the PO portfolio snapshot label.
+`M017_catalog_entry_history.sql` exposes catalog audit events through a filtered
+read-only view; the API checks that the entry is visible in the caller's importer
+scope before reading its paginated history. These migrations are versioned in
+the checkout; operational application still requires restored-copy validation,
+a verified backup, and the production migration gate.
+
 ## Initial Master accounts
 
 `bootstrap:masters` is a one-time VPS command after M009. It requires the

@@ -13,9 +13,9 @@ Um item daquele histórico não está concluído na stack atual sem evidência a
 - `[ ]` Não há implementação operacional correspondente no repositório atual.
 - `[!]` Depende de decisão ou fonte externa identificada.
 
-**Fontes deste retrato:** código e configuração do checkout, migrations M001–M015,
-documentos de entrega e evidências registradas no checklist histórico até
-2026-10-03. O banco operacional `erp_po_totvs_test` e a API na VPS foram
+**Fontes deste retrato:** código/configuração do checkout, migrations M001–M016,
+incremento local M017, documentos de entrega e evidências registradas no checklist
+histórico até 2026-10-03. O banco operacional `erp_po_totvs_test` e a API na VPS foram
 verificados após M013–M015: migration M015 confirmada aplicada (ledger 15/15),
 serviço ativo, health 200 e flags de 277 linhas/306 células de erro conferidas
 com os registros imutáveis de qualidade. Os grants das views também foram conferidos. Na Vercel pública, `/admin/outbox` respondeu 200, o bundle contém a
@@ -39,7 +39,7 @@ recebeu `[x]` integral apenas por existir na fase .NET/SQLite ou no plano.
 |---|---|---|
 | Frontend | Next.js 16.3.6, React 19.3.0, TypeScript 5.9.3, CSS próprio; `fetch` em componentes e `proxy.ts` same-origin; Vercel `apps/web` | Manter esta base. Tailwind, shadcn/ui, TanStack Query, React Hook Form, Vitest e Playwright são propostas do plano e **não estão instalados**. Adotá-los só quando uma entrega exigir. |
 | API | Node 24, Fastify 5, TypeScript, Zod, `pg`; serviço `systemd` na VPS, HTTPS via Traefik, token de gateway | Completar contratos e workflows no serviço persistente. Não há backend .NET ativo. |
-| Banco | PostgreSQL da VPS; `erp_po_totvs_test` é operacional apesar do nome; SQL M001–M015 versionado, runner explícito | Separar banco de CI/homologação do operacional; validar cada nova migration em cópia restaurada e manter backup. Não usar SQLite como evidência atual. |
+| Banco | PostgreSQL da VPS; `erp_po_totvs_test` é operacional apesar do nome; M001–M015 têm evidência de aplicação operacional. M016 está versionada e M017 em implementação local; não há evidência de aplicação de M016/M017 na VPS. | Separar banco de CI/homologação do operacional; validar M016–M017 em cópia restaurada e manter backup antes do release. Não usar SQLite como evidência atual. |
 | Autenticação | Login local e sessões PostgreSQL em uso; OIDC/PKCE existe no código | Homologar provedor corporativo e testar sessão/escopo com identidade restrita real. |
 | Importação | `deploy/hostinger/import-historical-workbook.py` usa Python/openpyxl e hash do arquivo aprovado; a origem bruta é preservada | Criar prévia, reconciliação e promoção versionada da próxima planilha; não pressupor importador Node já existente. |
 | Jobs e arquivos | Outbox no PostgreSQL; sem consumidor operacional ou object storage escolhido | Definir executor persistente/agenda na VPS ou serviço gerenciado, storage privado e políticas de retry/retensão antes de documentos e integrações. |
@@ -55,6 +55,25 @@ aba Pré aprovada já tem 11 cabeçalhos nomeados fora desse intervalo: `BB:BH` 
 entram na origem auditável e, se entrarem, expandir extração, cabeçalhos e grade
 em lote versionado. A aba Pós não tem cabeçalho nomeado após `AS` na linha 4.
 
+## Divergências identificadas neste incremento
+
+- **Data do snapshot na carteira:** a versão anterior consultava
+  `import_batch.promoted_at` e rotulava a data como promoção. O incremento atual
+  calcula o maior `source_row.created_at` entre as linhas de origem ligadas às
+  POs do recorte e alterou o rótulo para “Snapshot histórico registrado”. A data
+  exibida representa a criação mais recente de uma linha de origem no recorte;
+  não representa promoção do lote nem atualização do TOTVS. A migration M016
+  continua concedendo leitura de `id`/`promoted_at` ao papel da API, mas esta
+  consulta não usa esses campos.
+- **Numeração das migrations:** já existe `M016_import_batch_snapshot_read.sql`.
+  O histórico de cadastros preparado como M016 colidia com ela; foi renumerado
+  para M017. Scripts de validação e release foram alinhados para aplicar M016 e
+  M017 em ordem. A VPS segue comprovada em M015; M016/M017 aguardam CI, validação
+  em cópia restaurada e release controlado.
+- **Escopo da auditoria de cadastros:** o endpoint e a tela de histórico estão
+  no checkout, enquanto o acesso da API ao view depende de M017. Não contar a
+  funcionalidade como publicada ou operacional antes da migration e do deploy.
+
 Os dados históricos da planilha permanecem a fonte mestra até um corte formal.
 Valores da origem são preservados; apenas erros de cálculo do Excel pedem revisão
 histórica. Uma PO é a entrada central, mas um IP pode atender várias POs e uma PO
@@ -67,7 +86,7 @@ política aprovada. Datas visíveis seguem `MM/DD/YYYY` e, com horário,
 | RF | Estado | O que já existe na stack atual | O que falta para concluir |
 |---|---|---|---|
 | RF01 Acesso | `[-]` | Login local, sessões, Master, administração de usuários, papéis e filtros por importador na API. | Homologar OIDC corporativo, sessão/CSRF/logout e isolamento com usuário restrito real; registrar perfil/importador/casos. |
-| RF02 Cadastros | `[-]` | M010, `/catalog`, candidatos históricos separados de registros operacionais, criação/edição/inativação auditadas com idempotência e versão. | Identidade oficial de importadora/empresa/filial, fornecedor, aliases conflitantes, produto/unidade e NCM/vigência aprovados; homologação de cadastro real. |
+| RF02 Cadastros | `[-]` | M010, `/catalog`, candidatos históricos separados de registros operacionais, criação/edição/inativação auditadas com idempotência e versão. Incremento local M017 acrescenta histórico paginado de mudanças do cadastro e tela de consulta. | Identidade oficial de importadora/empresa/filial, fornecedor, aliases conflitantes, produto/unidade e NCM/vigência aprovados; validar migration/API/UI na CI e homologar cadastro real. |
 | RF03 Solicitações | `[-]` | M011/M012, criação nativa com itens descritos, listagem/detalhe, paginação e edição de `SUBMITTED` com `If-Match`, auditoria/outbox; filas legadas separadas. | Decidir campos obrigatórios, estados/transições, cancelamento, permissões e regra de associação auditada das linhas legadas; aceite completo. |
 | RF04 IP | `[-]` | Lista/detalhe de 200 IPs, POs vinculadas, linhas e custos históricos, filas sem IP/PO em leitura. | Comandos para criar/editar/priorizar/cancelar/reabrir/encerrar, versões, pré-condições e associação legada segura. |
 | RF05 Itens | `[-]` | 6.796 observações históricas acessíveis na PO; itens descritivos de solicitação nativa. | Produto, unidade, quantidade, preço, moeda, finalidade, centro de custo e itens oficiais/operacionais com autoridade de fonte definida. |
@@ -77,9 +96,9 @@ política aprovada. Datas visíveis seguem `MM/DD/YYYY` e, com horário,
 | RF09 Desembaraço | `[ ]` | DUIMP, NF e datas históricas preservadas no bruto. | Processo fiscal, documentos, armazenagem, marcos e entrega com regras aprovadas. |
 | RF10 Custos | `[-]` | 422 custos históricos deduplicados por IP. | Lançamentos novos, aprovação, reversão, conciliação por moeda e rateio por PO aprovado. |
 | RF11 Documentos | `[ ]` | Nenhum fluxo de upload/download operacional. | Storage privado, versões, autorização, vínculo e restauração. |
-| RF12 Histórico/auditoria | `[-]` | Origem imutável, revisão de qualidade, auditoria e outbox em comandos existentes. M013 aplicada após backup/cópia restaurada; histórico de solicitações ativo. A fila de qualidade agora prepara a linha do tempo completa das revisões registradas por pendência; mudança local ainda sem CI/release. | Ampliar timeline às demais entidades e criar consumidor da outbox; homologar as telas com usuário restrito real. |
+| RF12 Histórico/auditoria | `[-]` | Origem imutável, revisão de qualidade, auditoria e outbox em comandos existentes. M013 aplicada após backup/cópia restaurada; histórico de solicitações ativo. M017 e endpoint/tela de histórico de cadastros estão locais, ainda sem CI/release. A fila de qualidade prepara a linha do tempo completa das revisões por pendência. | Ampliar timeline às demais entidades e criar consumidor da outbox; homologar as telas com usuário restrito real. |
 | RF13 Histórico Excel | `[-]` | Carga idempotente do snapshot aprovado; `/source-audit` com abas Pré/Pós, filtros e cabeçalhos; revisão de qualidade. CLI de inventário/comparação posicional de versões sem escrita no banco. | Decidir cobertura dos 11 cabeçalhos Pré além de `AZ` já no arquivo aprovado; reconciliar entidades de versões novas, promover sem sobrescrita e aceitar os erros de cálculo. |
-| RF14 Painéis | `[-]` | API publicada na VPS e UI/CSV publicados na Vercel em 2026-10-03; CI de API/Web passou no commit `ae9bd6b`. Consulta somente leitura no banco real confirmou 336 POs e 6.796 linhas, com autorização e escopo validados. A interface agora apresenta a promoção mais recente do snapshot histórico do recorte atual; implementação ainda sem CI/release registrado. | Catálogo de KPIs oficiais por grão/moeda, referência temporal do TOTVS, relatórios completos e aceite dos valores. O resumo histórico não é saldo, atendimento oficial nem valor comercial. |
+| RF14 Painéis | `[-]` | API publicada na VPS e UI/CSV publicados na Vercel em 2026-10-03; CI de API/Web passou no commit `ae9bd6b`. Consulta somente leitura no banco real confirmou 336 POs e 6.796 linhas, com autorização e escopo validados. Incremento local mostra o `created_at` mais recente das linhas de origem ligadas ao recorte; ainda sem CI/release. | Catálogo de KPIs oficiais por grão/moeda, referência temporal do TOTVS, relatórios completos e aceite dos valores. O resumo histórico não é saldo, atendimento oficial, valor comercial nem horário de promoção do lote. |
 | RF15 Administração | `[-]` | Master gerencia usuários, papéis e escopos e pode consultar metadados da outbox. | Parâmetros operacionais, acompanhamento dos demais jobs e autorização completa para novos módulos. |
 | RF16 Analítico | `[ ]` | Sem DW/ETL/modelo semântico ativo no repositório. | Banco analítico, cargas reconciliadas, fatos/dimensões, Power BI e RLS. |
 
@@ -95,7 +114,7 @@ reaproveitado.
 | DEV02 Ambiente | `[-]` | Node 24 e PostgreSQL/VPS operacionais; CI web ativa e verde. Falta separar desenvolvimento/Preview do banco operacional. |
 | DEV03 OIDC/sessão | `[-]` | Login local e sessões ativos; OIDC/PKCE no código. Homologar issuer corporativo, callback, expiração, CSRF e logout. |
 | DEV04 Permissões | `[-]` | Papéis/grants e filtros SQL existem; validar casos negativos e 404 fora do escopo com usuário restrito real. |
-| DEV05 Migrations | `[-]` | Runner Node e M001–M015; M013–M015 validadas em cópia restaurada, backup e grants operacionais conferidos. API CI instala do zero e testa upgrade da última migration em banco isolado com evento de teste preservado. Faltam gates de release para migrações futuras com dados reais. |
+| DEV05 Migrations | `[-]` | Runner Node; M001–M016 versionadas; M013–M015 validadas em cópia restaurada, backup e grants operacionais conferidos. M017 cria a view de histórico do catálogo e aguarda CI/cópia restaurada. API CI instala do zero e testa upgrade em banco isolado. Faltam gates de release para migrações futuras com dados reais. |
 | DEV06 Cadastros/aliases | `[-]` | M010 e fluxo manual revisado; faltam identidades oficiais, aliases conflitantes e homologação de dados reais. |
 | DEV07 Lote de origem | `[-]` | Snapshot, hash e linhas brutas persistidos; CLI local de inventário/comparação por coordenada versionada. Faltam recebimento, armazenamento e prévia reconciliada por entidade. |
 | DEV08 Leitura Excel | `[-]` | Python/openpyxl lê valores salvos do arquivo aprovado; avaliar os 11 cabeçalhos Pré além de `AZ` já presentes e generalizar leitura de versões novas. |
@@ -115,7 +134,7 @@ reaproveitado.
 | DEV22 Regras fiscais | `[ ]` | Sem cálculo/regra de benefício aprovada; depende do Fiscal. |
 | DEV23 Documentos | `[ ]` | Selecionar storage privado e construir fluxo autorizado/versionado. |
 | DEV24 Auditoria/outbox | `[-]` | Escrita atômica nos comandos existentes, histórico de solicitações M013 e monitor Master da fila M014 instalados. Faltam consumidor, política de retries e retenção. |
-| DEV25 Dashboard | `[-]` | API publicada na VPS e UI/CSV na Vercel em 2026-10-03; CI de API/Web passou no commit `ae9bd6b`; resumo validado em leitura no banco real. Incremento local inclui a data/hora do snapshot da origem por recorte; falta CI, publicação e aceite. | Painel operacional, indicadores oficiais por grão/moeda, referência temporal do TOTVS, atualização e aceite com dados reconciliados. |
+| DEV25 Dashboard | `[-]` | API publicada na VPS e UI/CSV na Vercel em 2026-10-03; CI de API/Web passou no commit `ae9bd6b`; resumo validado em leitura no banco real. Incremento local inclui a data/hora mais recente de criação de linha de origem por recorte, não a promoção do lote; falta CI, publicação e aceite. | Painel operacional, indicadores oficiais por grão/moeda, referência temporal do TOTVS, atualização e aceite com dados reconciliados. |
 | DEV26 ETL | `[ ]` | Sem carga analítica; criar dimensões, watermark, reexecução e reconciliação. |
 | DEV27 Fatos/medidas | `[ ]` | Sem fatos e medidas; impedir ligação fato a fato e soma entre moedas. |
 | DEV28 Power BI/RLS | `[ ]` | Sem PBIP, refresh ou RLS; validar acesso por importador real. |
@@ -145,21 +164,24 @@ reaproveitado.
    snapshot final, plano de retorno e aprovações de Importação, Compras, Fiscal
    e Logística. Só então declarar o plano concluído.
 
-## Próximo incremento verificável
+## Próxima validação verificável
 
 Casos executados e decisões de produto/TOTVS estão registrados no plano, seções
 24.4–24.5. O resumo da carteira foi publicado na API da VPS e na UI Vercel; as
 CIs de API e Web passaram no commit `ae9bd6b`, e o deploy final está `READY` em
 `f41b2bc`. A consulta de produção foi somente leitura. Preview continua
-desconectado do banco operacional. O próximo bloqueio funcional é validar a
-interface e o isolamento com uma conta restrita real; não havia grant restrito
-ativo no banco durante a última verificação. As decisões de fonte/empresa/filial,
-itens oficiais e workflow seguem com Compras/TI TOTVS e Product Owner.
+desconectado do banco operacional. Este incremento adiciona o horário de origem
+da carteira e o histórico de cadastros; suas mudanças ainda não têm CI registrada.
+M016/M017 exigem CI, cópia restaurada e release controlado antes de serem tratadas
+como operacionais. Depois disso, o próximo aceite funcional é validar a interface
+e o isolamento com uma conta restrita real; não havia grant restrito ativo no
+banco durante a última verificação. As decisões de fonte/empresa/filial, itens
+oficiais e workflow seguem com Compras/TI TOTVS e Product Owner.
 
-**Validação local em 2026-10-03:** Node 24; build e 29 testes unitários da API
+**Validação local registrada antes deste incremento em 2026-10-03:** Node 24; build e 29 testes unitários da API
 passaram; lint da web terminou sem erros (22 avisos), os 3 testes da web passaram
 e o build Next.js passou. A fixture PostgreSQL passou na CI hospedada, junto com
-as CIs de API e Web. API e UI estão publicadas na VPS/Vercel. A matriz dos casos
-de homologação está no plano §24.4–24.5. Nenhuma contagem
-histórica ou evidência .NET/SQLite substitui o aceite dos novos comandos na API
-Fastify e no PostgreSQL.
+as CIs de API e Web. API e UI estão publicadas na VPS/Vercel. Essa evidência não
+cobre as mudanças locais deste incremento. A matriz dos casos de homologação está
+no plano §24.4–24.5. Nenhuma contagem histórica ou evidência .NET/SQLite substitui
+o aceite dos novos comandos na API Fastify e no PostgreSQL.

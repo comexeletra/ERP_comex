@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../lib/api";
-import { formatUsDate, parseUsDate } from "../../lib/date-format";
+import { formatUsDate, formatUsDateTime, parseUsDate } from "../../lib/date-format";
 
 type Resource = "suppliers" | "products" | "ncms";
 type Importer = { code: string; historicalPoCount: number; status: string };
@@ -11,6 +11,9 @@ type Candidate = { importer: string; rawCode: string; observationCount: number;
   sampleSourceRowId: string; sampleSheetName: string; sampleRowNumber: number; eligibleFormat: boolean };
 type Entry = { id: string; importer: string; code: string; name: string; status: string;
   evidence: string; validFrom: string | null; validTo: string | null; version: string; provenance: string };
+type AuditEvent = { id: string; operation: string; fieldName: string | null; oldValue: unknown;
+  newValue: unknown; actor: string; occurredAt: string; reason: string | null };
+type AuditPage = { page: number; pageSize: number; totalCount: number; items: AuditEvent[] };
 type Page<T> = { page: number; totalCount: number; items: T[] };
 const labels: Record<Resource, string> = { suppliers: "Fornecedores", products: "Produtos", ncms: "NCM" };
 
@@ -39,6 +42,11 @@ export default function CatalogPage() {
   const [roles, setRoles] = useState<string[]>([]);
   const [draft, setDraft] = useState({ code: "", name: "", evidence: "", reason: "", validFrom: "" });
   const [editing, setEditing] = useState<Entry>();
+  const [historyEntry, setHistoryEntry] = useState<Entry>();
+  const [history, setHistory] = useState<AuditPage>();
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const historyRequest = useRef(0);
   const [editDraft, setEditDraft] = useState({ name: "", status: "ACTIVE", evidence: "", reason: "" });
 
   useEffect(() => {
@@ -64,7 +72,7 @@ export default function CatalogPage() {
     return () => controller.abort();
   }, [resource, importer, search, page, refresh]);
 
-  function chooseResource(next: Resource) { setResource(next); setPage(1); setDraft({ code: "", name: "", evidence: "", reason: "", validFrom: "" }); setEditing(undefined); }
+  function chooseResource(next: Resource) { historyRequest.current += 1; setHistoryLoading(false); setResource(next); setPage(1); setDraft({ code: "", name: "", evidence: "", reason: "", validFrom: "" }); setEditing(undefined); setHistoryEntry(undefined); setHistory(undefined); }
   function chooseCandidate(candidate: Candidate) {
     setDraft({ code: candidate.rawCode, name: resource === "ncms" ? candidate.rawCode : "",
       evidence: `Origem ${candidate.sampleSheetName}, linha ${candidate.sampleRowNumber}; documento de confirmação: `,
@@ -104,6 +112,21 @@ export default function CatalogPage() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Erro ao atualizar."); }
     finally { setSaving(false); }
   }
+  async function loadHistory(entry: Entry, nextPage = 1) {
+    const requestId = ++historyRequest.current;
+    setHistoryEntry(entry); setHistoryLoading(true); setHistoryError("");
+    try {
+      const query = new URLSearchParams({ page: String(nextPage), pageSize: "25" });
+      const response = await apiFetch(`/api/v1/${resource}/${entry.id}/history?${query}`);
+      const data = await responseJson<AuditPage>(response);
+      if (historyRequest.current === requestId) setHistory(data);
+    } catch (reason) {
+      if (historyRequest.current === requestId) {
+        setHistory(undefined);
+        setHistoryError(reason instanceof Error ? reason.message : "Erro ao carregar histórico.");
+      }
+    } finally { if (historyRequest.current === requestId) setHistoryLoading(false); }
+  }
 
   const canWrite = roles.includes("Master") || roles.includes("Administrador")
     || roles.includes(resource === "ncms" ? "Fiscal" : "Compras");
@@ -114,7 +137,7 @@ export default function CatalogPage() {
     <section className="card catalog-controls">
       <div role="group" aria-label="Tipo de cadastro">{(Object.keys(labels) as Resource[]).map(key =>
         <button type="button" key={key} className={`button ${resource === key ? "" : "secondary"}`} onClick={() => chooseResource(key)}>{labels[key]}</button>)}</div>
-      <label>Importador<select value={importer} onChange={event => { setImporter(event.target.value); setPage(1); }}>
+      <label>Importador<select value={importer} onChange={event => { historyRequest.current += 1; setHistoryLoading(false); setImporter(event.target.value); setPage(1); setHistoryEntry(undefined); setHistory(undefined); }}>
         {importers.map(value => <option key={value.code} value={value.code}>{value.code} · {value.historicalPoCount} POs históricas</option>)}
       </select></label>
       <label>Pesquisar código ou nome<input value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} /></label>
@@ -129,9 +152,30 @@ export default function CatalogPage() {
         {!!registered?.items.length && <div className="table-scroll"><table><thead><tr><th>Código</th><th>Nome</th><th>Situação</th><th>Vigência</th><th>Versão</th><th>Ação</th></tr></thead><tbody>
           {registered.items.map(entry => <tr key={entry.id}><td>{entry.code}</td><td>{entry.name}</td><td>{entry.status === "ACTIVE" ? "Ativo" : "Inativo"}</td>
             <td>{formatUsDate(entry.validFrom) || "—"}{entry.validTo ? ` a ${formatUsDate(entry.validTo)}` : ""}</td><td>{entry.version}</td>
-            <td>{canWrite && <button className="button secondary" type="button" onClick={() => startEdit(entry)}>Editar</button>}</td></tr>)}
+            <td><button className="button secondary" type="button" disabled={historyLoading} onClick={() => void loadHistory(entry)}>Histórico</button>
+              {canWrite && <button className="button secondary" type="button" onClick={() => startEdit(entry)}>Editar</button>}</td></tr>)}
         </tbody></table></div>}
       </section>
+      {historyEntry && <section className="card request-history" aria-label={`Histórico do cadastro ${historyEntry.code}`}>
+        <div className="quality-heading"><h2>Histórico: {historyEntry.code} · {historyEntry.name}</h2>
+          <button className="button secondary" type="button" onClick={() => { historyRequest.current += 1; setHistoryLoading(false); setHistoryEntry(undefined); setHistory(undefined); }}>Fechar</button></div>
+        {historyError && <p className="notice error" role="alert">{historyError}</p>}
+        {historyLoading && <p role="status">Carregando histórico…</p>}
+        {!historyLoading && history && <>
+          {history.items.length === 0 && <p className="muted">Nenhuma alteração auditada para este cadastro.</p>}
+          <ol className="request-history-list">{history.items.map(event => <li key={event.id}>
+            <strong>{event.fieldName ?? event.operation}</strong>
+            <span className="muted">{event.actor} · {formatUsDateTime(event.occurredAt)}</span>
+            <p>Antes: {formatAuditValue(event.oldValue)} · Depois: {formatAuditValue(event.newValue)}</p>
+            {event.reason && <p className="muted">Motivo: {event.reason}</p>}
+          </li>)}</ol>
+          {history.totalCount > history.pageSize && <nav className="pagination" aria-label="Páginas do histórico">
+            <button className="button secondary" disabled={history.page <= 1} onClick={() => void loadHistory(historyEntry, history.page - 1)}>Anterior</button>
+            <span>Página {history.page} de {Math.ceil(history.totalCount / history.pageSize)}</span>
+            <button className="button" disabled={history.page * history.pageSize >= history.totalCount} onClick={() => void loadHistory(historyEntry, history.page + 1)}>Próxima</button>
+          </nav>}
+        </>}
+      </section>}
       <section className="card"><h2>Candidatos históricos</h2><p className="muted">{candidates?.totalCount ?? 0} valores distintos nesta busca. A contagem é de observações vinculadas a PO; pode haver nomes ou classificações conflitantes.</p>
         {candidates?.items.length === 0 && <p>Nenhum candidato encontrado.</p>}
         {!!candidates?.items.length && <div className="table-scroll"><table><thead><tr><th>Valor literal</th><th>Observações</th><th>Origem</th><th>Ação</th></tr></thead><tbody>
@@ -161,4 +205,9 @@ export default function CatalogPage() {
         <div><button className="button" disabled={saving} type="submit">Salvar alteração</button><button className="button secondary" type="button" onClick={() => setEditing(undefined)}>Cancelar</button></div>
       </form></section>}
   </main>;
+}
+
+function formatAuditValue(value: unknown): string {
+  if (value == null) return "—";
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
