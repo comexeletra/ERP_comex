@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
+import { formatUsDateTime } from "../lib/date-format";
 import { purchaseOrdersCsv, type ExportPurchaseOrder } from "../lib/po-export";
 import { portfolioFilterQuery, purchaseOrderListQuery, type PortfolioFilters } from "../lib/portfolio-query";
 
@@ -14,7 +15,8 @@ type PurchaseOrder = ExportPurchaseOrder & {
 };
 type PurchaseOrderPage = { page: number; pageSize: number; totalCount: number; items: PurchaseOrder[] };
 type PortfolioSummary = { purchaseOrders: number; linkedProcesses: number; lines: number;
-  linesWithoutIp: number; byImporter: Array<{ importer: string; purchaseOrders: number }> };
+  linesWithoutIp: number; sourceSnapshotAt: string | null;
+  byImporter: Array<{ importer: string; purchaseOrders: number }> };
 type PortfolioSummaryState = { query: string; value: PortfolioSummary };
 type PortfolioSummaryFailure = { query: string; message: string };
 const emptyFilters: Filters = { number: "", importer: "", product: "", ipNumber: "" };
@@ -171,6 +173,8 @@ export default function PortfolioPage() {
         <div className="metric"><span>Linhas da planilha</span><strong>{summaryLoading ? "…" : summary?.lines.toLocaleString("pt-BR") ?? "—"}</strong></div>
         <div className="metric"><span>Linhas sem IP</span><strong>{summaryLoading ? "…" : summary?.linesWithoutIp.toLocaleString("pt-BR") ?? "—"}</strong></div>
       </div>
+      {summary && <p className="muted">Snapshot histórico da planilha: {summary.sourceSnapshotAt
+        ? formatUsDateTime(summary.sourceSnapshotAt) : "sem carga promovida no recorte"}. Isso não representa atualização do TOTVS.</p>}
       {summaryError && <p className="notice error" role="alert">{summaryError}</p>}
       {summary && summary.byImporter.length > 1 && <div className="card">
         <h2>POs por importador</h2>

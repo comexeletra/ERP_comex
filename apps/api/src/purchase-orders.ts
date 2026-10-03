@@ -146,6 +146,7 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
     const result = await pool.query<{
       purchase_orders: number; linked_processes: number; lines: number;
       lines_without_ip: number; by_importer: Array<{ importer: string; purchaseOrders: number }>;
+      source_snapshot_at: Date | null;
     }>(
       `WITH filtered_po AS MATERIALIZED (
          SELECT po.id, po.importer FROM procurement.purchase_order AS po
@@ -167,11 +168,18 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
        ), importer_counts AS (
          SELECT importer, count(*)::int AS purchase_orders
          FROM filtered_po GROUP BY importer
+       ), source_version AS (
+         SELECT max(batch.promoted_at) AS source_snapshot_at
+         FROM filtered_po AS po
+         JOIN procurement.po_line_observation AS obs ON obs.purchase_order_id = po.id
+         JOIN migration.source_row AS source ON source.id = obs.source_row_id
+         JOIN migration.import_batch AS batch ON batch.id = source.batch_id
        )
        SELECT (SELECT count(*)::int FROM filtered_po) AS purchase_orders,
               (SELECT total FROM linked) AS linked_processes,
               (SELECT total FROM lines) AS lines,
               (SELECT without_ip FROM lines) AS lines_without_ip,
+              (SELECT source_snapshot_at FROM source_version) AS source_snapshot_at,
               coalesce((SELECT jsonb_agg(jsonb_build_object(
                 'importer', importer, 'purchaseOrders', purchase_orders)
                 ORDER BY importer) FROM importer_counts), '[]'::jsonb) AS by_importer`,
@@ -184,6 +192,7 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
       linkedProcesses: Number(row?.linked_processes ?? 0),
       lines: Number(row?.lines ?? 0),
       linesWithoutIp: Number(row?.lines_without_ip ?? 0),
+      sourceSnapshotAt: row?.source_snapshot_at ?? null,
       byImporter: row?.by_importer ?? [],
     };
   });

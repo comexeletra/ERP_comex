@@ -6,7 +6,7 @@ import { apiFetch } from "../../lib/api";
 import { formatUsDateTime } from "../../lib/date-format";
 
 type Review = { id: string; outcome: string; reviewer: string; notes: string; evidence: Record<string, unknown>; proposedPurchaseOrder?: string; proposedIpNumber?: string; recordedAt: string };
-type QualityItem = { id: string; sourceRowId: string; code: string; severity: string; status: string; evidence: Record<string, unknown>; fieldName?: string; sheetName?: string; sourceRowNumber?: number; sourceValues: Record<string, unknown>; sourceColumnHeaders: Record<string, string>; latestReview?: Review };
+type QualityItem = { id: string; sourceRowId: string; code: string; severity: string; status: string; evidence: Record<string, unknown>; fieldName?: string; sheetName?: string; sourceRowNumber?: number; sourceValues: Record<string, unknown>; sourceColumnHeaders: Record<string, string>; latestReview?: Review; reviewHistory?: Review[] };
 type QualityPageData = { page: number; pageSize: number; totalCount: number; openCount: number; resolvedCount: number; items: QualityItem[] };
 
 export default function QualityPage() {
@@ -71,7 +71,14 @@ export default function QualityPage() {
       <p>Severidade: <strong>{item.severity}</strong></p>{item.fieldName && <p className="muted">Campo de origem: <strong>{item.fieldName}</strong></p>}
       <details className="source-disclosure"><summary>Ver evidência original</summary><dl className="source-field-grid">{Object.entries(item.evidence).map(([name, value]) => <div className="source-field" key={name}><dt>{name}</dt><dd>{formatFieldValue(value)}</dd></div>)}</dl></details>
       <details className="source-disclosure"><summary>Ver valores preservados da origem</summary><dl className="source-field-grid">{Object.entries(item.sourceValues).map(([name, value]) => <div className="source-field" key={name}><dt>{item.sourceColumnHeaders?.[name] || "Campo sem cabeçalho"}<small>{name}{item.sourceRowNumber}</small></dt><dd>{formatFieldValue(value)}</dd></div>)}</dl></details>
-      {item.latestReview && <section className="review-history"><h3>Última revisão</h3><p><strong>{item.latestReview.outcome}</strong> por {item.latestReview.reviewer} em {formatUsDateTime(item.latestReview.recordedAt)}</p><p>{item.latestReview.notes}</p><p className="muted">PO proposta: {item.latestReview.proposedPurchaseOrder ?? "—"} · IP proposto: {item.latestReview.proposedIpNumber ?? "—"}</p></section>}
+      {(() => {
+        const reviews = item.reviewHistory?.length ? item.reviewHistory : item.latestReview ? [item.latestReview] : [];
+        return reviews.length > 0 && <section className="review-history"><h3>Histórico de revisões ({reviews.length})</h3><ol className="request-history-list">{reviews.map(review => <li key={review.id}>
+          <strong>{review.outcome}</strong><span className="muted">{review.reviewer} · {formatUsDateTime(review.recordedAt)}</span>
+          <p>{review.notes}</p><p className="muted">PO proposta: {review.proposedPurchaseOrder ?? "—"} · IP proposto: {review.proposedIpNumber ?? "—"}</p>
+          <details><summary>Evidência registrada</summary><pre>{JSON.stringify(review.evidence, null, 2)}</pre></details>
+        </li>)}</ol></section>;
+      })()}
       {reviewing === item.id ? <form className="review-form" onSubmit={event => { event.preventDefault(); void submitReview(item, event.currentTarget); }}><label>Evidência da resolução (objeto JSON)<textarea name="evidence" required placeholder='{"referencia":"documento ou evidência conferida"}' /></label><label>Justificativa<textarea name="reason" required /></label><label>PO proposta (opcional)<input name="proposedPurchaseOrder" /></label><label>IP proposto (opcional)<input name="proposedIpNumber" /></label><div><button className="button" type="submit" disabled={submitting}>{submitting ? "Registrando…" : "Resolver pendência"}</button><button className="button secondary" type="button" disabled={submitting} onClick={() => { setReviewing(undefined); setIdempotencyKey(undefined); }}>Cancelar</button></div></form> : item.status === "OPEN" && <button className="button" type="button" onClick={() => { setReviewing(item.id); setIdempotencyKey(crypto.randomUUID()); }}>Revisar pendência</button>}
     </article>)}
   </main>;

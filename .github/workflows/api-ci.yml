@@ -62,6 +62,8 @@ jobs:
           output="$(corepack pnpm migrate:status)"
           printf '%s\n' "$output"
           grep -Fq "Migrations: 0 aplicadas, ${migration_count} pendentes." <<< "$output"
+      - name: Provision runtime role for least-privilege migration checks
+        run: psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE import_erp_app NOLOGIN"
       - name: Apply migrations to isolated PostgreSQL
         working-directory: apps/api
         run: corepack pnpm migrate:up

@@ -55,6 +55,20 @@ VALUES
 SQL
 fi
 
+if [[ $latest_migration == migrations/M016_import_batch_snapshot_read.sql ]]; then
+psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+DO $$
+BEGIN
+  IF NOT has_column_privilege('import_erp_app', 'migration.import_batch', 'id', 'SELECT')
+     OR NOT has_column_privilege('import_erp_app', 'migration.import_batch', 'promoted_at', 'SELECT')
+     OR has_column_privilege('import_erp_app', 'migration.import_batch', 'file_name', 'SELECT') THEN
+    RAISE EXCEPTION 'M016 snapshot read grants are missing or too broad';
+  END IF;
+END;
+$$;
+SQL
+fi
+
 previous_count="$((${#migrations[@]} - 1))"
 status="$(corepack pnpm migrate:status)"
 printf '%s\n' "$status"

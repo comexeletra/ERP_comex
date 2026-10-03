@@ -1,6 +1,6 @@
 # Checklist atual de implementação — stack Node/Vercel/VPS
 
-Atualizado em 2026-10-02. Este é o controle vigente para concluir o plano em
+Atualizado em 2026-10-03. Este é o controle vigente para concluir o plano em
 [Plano_Implementacao_ERP_PO_TOTVS.md](Plano_Implementacao_ERP_PO_TOTVS.md).
 [CHECKLIST_IMPLEMENTACAO.md](CHECKLIST_IMPLEMENTACAO.md) conserva a cronologia e
 as evidências antigas, inclusive da implementação .NET/SQLite retirada do código.
@@ -13,13 +13,15 @@ Um item daquele histórico não está concluído na stack atual sem evidência a
 - `[ ]` Não há implementação operacional correspondente no repositório atual.
 - `[!]` Depende de decisão ou fonte externa identificada.
 
-**Fontes deste retrato:** código e configuração do checkout, migrations M001–M014,
+**Fontes deste retrato:** código e configuração do checkout, migrations M001–M015,
 documentos de entrega e evidências registradas no checklist histórico até
-2026-10-02. O banco operacional `erp_po_totvs_test` e a API na VPS foram
-verificados após M013/M014: migrations 14/14, serviço ativo, health 200 e grants
-das views. Na Vercel pública, `/admin/outbox` respondeu 200, o bundle contém a
-tela nova e a API sem sessão respondeu 401; a interface autenticada ainda precisa
-de teste com perfil real. Web CI e API CI passaram para `6d4f75b`; a API CI
+2026-10-03. O banco operacional `erp_po_totvs_test` e a API na VPS foram
+verificados após M013–M015: migration M015 confirmada aplicada (ledger 15/15),
+serviço ativo, health 200 e flags de 277 linhas/306 células de erro conferidas
+com os registros imutáveis de qualidade. Os grants das views também foram conferidos. Na Vercel pública, `/admin/outbox` respondeu 200, o bundle contém a
+carteira nova está publicada e a API sem sessão respondeu 401; a interface
+autenticada ainda precisa de teste com perfil real. Web CI e API CI passaram para
+`ae9bd6b`; o deploy Vercel de `f41b2bc` está `READY`. A API CI
 passou novamente para `1d1d771`, incluindo upgrade isolado de M013 para M014
 com evento de teste preservado. As três CIs
 passaram para `fa7c67e`. Os demais módulos não foram revalidados remotamente
@@ -37,7 +39,7 @@ recebeu `[x]` integral apenas por existir na fase .NET/SQLite ou no plano.
 |---|---|---|
 | Frontend | Next.js 16.3.6, React 19.3.0, TypeScript 5.9.3, CSS próprio; `fetch` em componentes e `proxy.ts` same-origin; Vercel `apps/web` | Manter esta base. Tailwind, shadcn/ui, TanStack Query, React Hook Form, Vitest e Playwright são propostas do plano e **não estão instalados**. Adotá-los só quando uma entrega exigir. |
 | API | Node 24, Fastify 5, TypeScript, Zod, `pg`; serviço `systemd` na VPS, HTTPS via Traefik, token de gateway | Completar contratos e workflows no serviço persistente. Não há backend .NET ativo. |
-| Banco | PostgreSQL da VPS; `erp_po_totvs_test` é operacional apesar do nome; SQL M001–M014 versionado, runner explícito | Separar banco de CI/homologação do operacional; validar cada nova migration em cópia restaurada e manter backup. Não usar SQLite como evidência atual. |
+| Banco | PostgreSQL da VPS; `erp_po_totvs_test` é operacional apesar do nome; SQL M001–M015 versionado, runner explícito | Separar banco de CI/homologação do operacional; validar cada nova migration em cópia restaurada e manter backup. Não usar SQLite como evidência atual. |
 | Autenticação | Login local e sessões PostgreSQL em uso; OIDC/PKCE existe no código | Homologar provedor corporativo e testar sessão/escopo com identidade restrita real. |
 | Importação | `deploy/hostinger/import-historical-workbook.py` usa Python/openpyxl e hash do arquivo aprovado; a origem bruta é preservada | Criar prévia, reconciliação e promoção versionada da próxima planilha; não pressupor importador Node já existente. |
 | Jobs e arquivos | Outbox no PostgreSQL; sem consumidor operacional ou object storage escolhido | Definir executor persistente/agenda na VPS ou serviço gerenciado, storage privado e políticas de retry/retensão antes de documentos e integrações. |
@@ -75,9 +77,9 @@ política aprovada. Datas visíveis seguem `MM/DD/YYYY` e, com horário,
 | RF09 Desembaraço | `[ ]` | DUIMP, NF e datas históricas preservadas no bruto. | Processo fiscal, documentos, armazenagem, marcos e entrega com regras aprovadas. |
 | RF10 Custos | `[-]` | 422 custos históricos deduplicados por IP. | Lançamentos novos, aprovação, reversão, conciliação por moeda e rateio por PO aprovado. |
 | RF11 Documentos | `[ ]` | Nenhum fluxo de upload/download operacional. | Storage privado, versões, autorização, vínculo e restauração. |
-| RF12 Histórico/auditoria | `[-]` | Origem imutável, revisão de qualidade, auditoria e outbox em comandos existentes. M013 aplicada após backup/cópia restaurada; a API de histórico de solicitações está ativa na VPS. | Ampliar timeline às demais entidades e criar consumidor da outbox; homologar a tela com usuário restrito real. |
+| RF12 Histórico/auditoria | `[-]` | Origem imutável, revisão de qualidade, auditoria e outbox em comandos existentes. M013 aplicada após backup/cópia restaurada; histórico de solicitações ativo. A fila de qualidade agora prepara a linha do tempo completa das revisões registradas por pendência; mudança local ainda sem CI/release. | Ampliar timeline às demais entidades e criar consumidor da outbox; homologar as telas com usuário restrito real. |
 | RF13 Histórico Excel | `[-]` | Carga idempotente do snapshot aprovado; `/source-audit` com abas Pré/Pós, filtros e cabeçalhos; revisão de qualidade. CLI de inventário/comparação posicional de versões sem escrita no banco. | Decidir cobertura dos 11 cabeçalhos Pré além de `AZ` já no arquivo aprovado; reconciliar entidades de versões novas, promover sem sobrescrita e aceitar os erros de cálculo. |
-| RF14 Painéis | `[-]` | API publicada na VPS e UI/CSV publicados na Vercel em 2026-10-03; CI de API/Web passou no commit `ae9bd6b`. Consulta somente leitura no banco real confirmou 336 POs e 6.796 linhas, com autorização e escopo validados. | Catálogo de KPIs oficiais por grão/moeda, referência temporal de atualização, relatórios completos e aceite dos valores. O resumo histórico não é saldo, atendimento oficial nem valor comercial. |
+| RF14 Painéis | `[-]` | API publicada na VPS e UI/CSV publicados na Vercel em 2026-10-03; CI de API/Web passou no commit `ae9bd6b`. Consulta somente leitura no banco real confirmou 336 POs e 6.796 linhas, com autorização e escopo validados. A interface agora apresenta a promoção mais recente do snapshot histórico do recorte atual; implementação ainda sem CI/release registrado. | Catálogo de KPIs oficiais por grão/moeda, referência temporal do TOTVS, relatórios completos e aceite dos valores. O resumo histórico não é saldo, atendimento oficial nem valor comercial. |
 | RF15 Administração | `[-]` | Master gerencia usuários, papéis e escopos e pode consultar metadados da outbox. | Parâmetros operacionais, acompanhamento dos demais jobs e autorização completa para novos módulos. |
 | RF16 Analítico | `[ ]` | Sem DW/ETL/modelo semântico ativo no repositório. | Banco analítico, cargas reconciliadas, fatos/dimensões, Power BI e RLS. |
 
@@ -93,14 +95,14 @@ reaproveitado.
 | DEV02 Ambiente | `[-]` | Node 24 e PostgreSQL/VPS operacionais; CI web ativa e verde. Falta separar desenvolvimento/Preview do banco operacional. |
 | DEV03 OIDC/sessão | `[-]` | Login local e sessões ativos; OIDC/PKCE no código. Homologar issuer corporativo, callback, expiração, CSRF e logout. |
 | DEV04 Permissões | `[-]` | Papéis/grants e filtros SQL existem; validar casos negativos e 404 fora do escopo com usuário restrito real. |
-| DEV05 Migrations | `[-]` | Runner Node e M001–M014; M013/M014 validadas em cópia restaurada, backup e grants operacionais conferidos. API CI instala do zero e testa upgrade da última migration em banco isolado com evento de teste preservado. Faltam gates de release para migrações futuras com dados reais. |
+| DEV05 Migrations | `[-]` | Runner Node e M001–M015; M013–M015 validadas em cópia restaurada, backup e grants operacionais conferidos. API CI instala do zero e testa upgrade da última migration em banco isolado com evento de teste preservado. Faltam gates de release para migrações futuras com dados reais. |
 | DEV06 Cadastros/aliases | `[-]` | M010 e fluxo manual revisado; faltam identidades oficiais, aliases conflitantes e homologação de dados reais. |
 | DEV07 Lote de origem | `[-]` | Snapshot, hash e linhas brutas persistidos; CLI local de inventário/comparação por coordenada versionada. Faltam recebimento, armazenamento e prévia reconciliada por entidade. |
 | DEV08 Leitura Excel | `[-]` | Python/openpyxl lê valores salvos do arquivo aprovado; avaliar os 11 cabeçalhos Pré além de `AZ` já presentes e generalizar leitura de versões novas. |
 | DEV09 Tipagem | `[-]` | Conversões conservadoras do importador atual; completar fixtures e regras para novos cadastros, sem alterar o bruto. |
 | DEV10 Reconciliação | `[-]` | Pré/Pós conciliados no snapshot aceito; há relatório reproduzível de diferenças por célula entre arquivos. Faltam deltas por PO/IP/custo e aprovação de cada lote novo. |
 | DEV11 Promoção | `[-]` | Reexecução histórica idempotente registrada; criar aprovação, falha/retomada e promoção de novos lotes. |
-| DEV12 Qualidade | `[-]` | M008, API/tela de issues e resolução auditada; homologar perfis reais e cobertura dos novos lotes. |
+| DEV12 Qualidade | `[-]` | M008, API/tela de issues, resolução auditada e apresentação local da linha do tempo completa de revisões por pendência; falta CI/release e homologação com perfis reais e novos lotes. |
 | DEV13 PO | `[-]` | Carteira/detalhe em leitura; faltam itens oficiais, saldo, atendimento e vínculo quantitativo. |
 | DEV14 Solicitações | `[-]` | M011/M012, criação, edição de `SUBMITTED` e filas em leitura; faltam workflow e associação legada. |
 | DEV15 Workflow | `[ ]` | Há estrutura SQL histórica, sem comandos completos de transição PO/IP nesta API; definir estados e pré-condições. |
@@ -113,7 +115,7 @@ reaproveitado.
 | DEV22 Regras fiscais | `[ ]` | Sem cálculo/regra de benefício aprovada; depende do Fiscal. |
 | DEV23 Documentos | `[ ]` | Selecionar storage privado e construir fluxo autorizado/versionado. |
 | DEV24 Auditoria/outbox | `[-]` | Escrita atômica nos comandos existentes, histórico de solicitações M013 e monitor Master da fila M014 instalados. Faltam consumidor, política de retries e retenção. |
-| DEV25 Dashboard | `[-]` | API publicada na VPS e UI/CSV na Vercel em 2026-10-03; CI de API/Web passou no commit `ae9bd6b`; resumo validado em leitura no banco real. | Painel operacional, indicadores oficiais por grão/moeda, referência temporal, atualização e aceite com dados reconciliados. |
+| DEV25 Dashboard | `[-]` | API publicada na VPS e UI/CSV na Vercel em 2026-10-03; CI de API/Web passou no commit `ae9bd6b`; resumo validado em leitura no banco real. Incremento local inclui a data/hora do snapshot da origem por recorte; falta CI, publicação e aceite. | Painel operacional, indicadores oficiais por grão/moeda, referência temporal do TOTVS, atualização e aceite com dados reconciliados. |
 | DEV26 ETL | `[ ]` | Sem carga analítica; criar dimensões, watermark, reexecução e reconciliação. |
 | DEV27 Fatos/medidas | `[ ]` | Sem fatos e medidas; impedir ligação fato a fato e soma entre moedas. |
 | DEV28 Power BI/RLS | `[ ]` | Sem PBIP, refresh ou RLS; validar acesso por importador real. |
@@ -145,20 +147,19 @@ reaproveitado.
 
 ## Próximo incremento verificável
 
-Priorizar o registro dos casos de homologação já executados e das decisões de
-produto/TOTVS, pois elas determinam o modelo dos itens oficiais. A CI da API usa
-PostgreSQL descartável e aplica as migrations nesse banco isolado; a CI web
-executa testes próprios. O checkout acrescenta contrato de autorização/escopo,
-fixture sintética para SQL de agregação em PostgreSQL e contrato de filtros do
-frontend para o resumo da carteira. A API foi publicada na VPS e a UI na Vercel
-em 2026-10-03; as CIs de API e Web passaram no commit `ae9bd6b`. O resumo foi
-validado em consulta somente leitura no banco real. Preview continua desconectado
-do banco operacional. Validar a tela de histórico e o monitor com perfis reais
-quando houver sessões disponíveis.
+Casos executados e decisões de produto/TOTVS estão registrados no plano, seções
+24.4–24.5. O resumo da carteira foi publicado na API da VPS e na UI Vercel; as
+CIs de API e Web passaram no commit `ae9bd6b`, e o deploy final está `READY` em
+`f41b2bc`. A consulta de produção foi somente leitura. Preview continua
+desconectado do banco operacional. O próximo bloqueio funcional é validar a
+interface e o isolamento com uma conta restrita real; não havia grant restrito
+ativo no banco durante a última verificação. As decisões de fonte/empresa/filial,
+itens oficiais e workflow seguem com Compras/TI TOTVS e Product Owner.
 
 **Validação local em 2026-10-03:** Node 24; build e 29 testes unitários da API
 passaram; lint da web terminou sem erros (22 avisos), os 3 testes da web passaram
 e o build Next.js passou. A fixture PostgreSQL passou na CI hospedada, junto com
-as CIs de API e Web. API e UI estão publicadas na VPS/Vercel. Nenhuma contagem
+as CIs de API e Web. API e UI estão publicadas na VPS/Vercel. A matriz dos casos
+de homologação está no plano §24.4–24.5. Nenhuma contagem
 histórica ou evidência .NET/SQLite substitui o aceite dos novos comandos na API
 Fastify e no PostgreSQL.

@@ -106,7 +106,22 @@ export async function registerDataIssueRoutes(app: FastifyInstance, pool: Pool):
                          AND review.source_row_id = filtered.source_row_id
                          AND review.issue_code = filtered.issue_code)
                   ORDER BY (review.data_issue_id = filtered.id) DESC NULLS LAST,
-                           review.recorded_at DESC, review.id DESC LIMIT 1) AS latest_review
+                           review.recorded_at DESC, review.id DESC LIMIT 1) AS latest_review,
+                  coalesce((SELECT jsonb_agg(jsonb_build_object(
+                    'id', review.id,
+                    'outcome', review.outcome,
+                    'reviewer', review.reviewer,
+                    'notes', review.notes,
+                    'evidence', review.resolution_evidence,
+                    'proposedPurchaseOrder', review.proposed_purchase_order,
+                    'proposedIpNumber', review.proposed_ip_number,
+                    'recordedAt', review.recorded_at
+                  ) ORDER BY review.recorded_at, review.id)
+                  FROM migration.quality_review AS review
+                  WHERE review.data_issue_id = filtered.id
+                     OR (review.data_issue_id IS NULL
+                         AND review.source_row_id = filtered.source_row_id
+                         AND review.issue_code = filtered.issue_code)), '[]'::jsonb) AS review_history
            FROM filtered
            ORDER BY created_at DESC, id
            LIMIT $${visible.values.length + 3} OFFSET $${visible.values.length + 4}
@@ -126,7 +141,8 @@ export async function registerDataIssueRoutes(app: FastifyInstance, pool: Pool):
                   'sheetName', page.sheet_name,
                   'sourceRowNumber', page.row_number,
                   'sourceValues', page.source_values,
-                  'latestReview', page.latest_review
+                  'latestReview', page.latest_review,
+                  'reviewHistory', page.review_history
                 ) ORDER BY page.created_at DESC, page.id) FILTER (WHERE page.id IS NOT NULL), '[]'::jsonb) AS items
          FROM page`,
         [...visible.values, code, status, pageSize, offset],

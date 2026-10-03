@@ -93,6 +93,13 @@ test targets also require `ALLOW_REMOTE_MIGRATIONS=true`; production additionall
 backup, and a reviewed release remain required.
 Never point the runner at the operational database as a development shortcut.
 
+`M015_excel_error_columns.sql` restores the Excel calculation-error column
+markers in `migration.source_row` from immutable `EXCEL_CELL_ERROR` issue
+records without changing preserved raw values. The migration and importer
+update passed restored-copy validation before release. The operational verifier
+confirmed 15 migrations, 277 marked source rows, and 306 marked cells, matching
+the 306 immutable issue records.
+
 ## Initial Master accounts
 
 `bootstrap:masters` is a one-time VPS command after M009. It requires the

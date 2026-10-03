@@ -1,16 +1,16 @@
 # Plano completo do ERP de acompanhamento de POs TOTVS e importações
 
-**Atualização do plano — 02/10/2026:** o controle vigente de implementação é
+**Atualização do plano — 03/10/2026:** o controle vigente de implementação é
 [CHECKLIST_ATUAL_IMPLEMENTACAO.md](CHECKLIST_ATUAL_IMPLEMENTACAO.md). O banco
 `erp_po_totvs_test` é operacional apesar do nome. M001–M014 estão aplicadas,
 API Fastify na VPS, frontend Next.js na Vercel e login local em uso. M013
 entrega histórico de solicitações; M014 entrega monitor da outbox ao Master.
 As duas migrations passaram em cópias restauradas antes do release, com backups
-verificados. API CI e Web CI passaram no último commit de implementação
-`6d4f75b`; a API CI de `1d1d771` também passou no teste de upgrade isolado
-com evento de teste preservado. A Vercel pública entregou a nova tela, mas falta validação
-autenticada com perfis reais. OIDC/PKCE está no código, mas a autenticação
-corporativa não foi homologada.
+verificados. API CI e Web CI passaram em `ae9bd6b`; o resumo da carteira foi
+publicado na API da VPS e validado em leitura no banco operacional. A Vercel
+marcou `f41b2bc` como `READY` e associou o deploy ao domínio de produção. Ainda
+falta validação da interface autenticada com perfis reais. OIDC/PKCE está no
+código, mas a autenticação corporativa não foi homologada.
 Trechos abaixo que descrevem M008 pendente, ausência de API publicada ou da
 escrita operacional são evidências datadas da fase inicial, não o estado vigente.
 
@@ -1015,7 +1015,7 @@ Fixar CPU, memória, tamanho de dados e concorrência do benchmark no relatório
 
 ## 22 Integração contínua e entrega
 
-O workflow versionado `.github/workflows/api-ci.yml` já instala dependências travadas, compila e testa a API e aplica migrations em PostgreSQL isolado; nesta revisão a contagem de migrations passou a ser calculada pelos arquivos, em vez de fixada em sete. Confirmar sua execução no GitHub. Completar a CI com typecheck/build web, lint válido, contratos de API, integrações PostgreSQL, análise de dependências/segredos e E2E das jornadas principais. Não há build .NET na stack atual.
+Os workflows versionados de API e Web passaram em `ae9bd6b`. A API CI instala dependências travadas, compila e testa a API, aplica migrations em PostgreSQL isolado e executa a integração do resumo nesse banco. A Web CI executa lint, testes e build. Permanecem E2E autenticado das jornadas, análise de dependências/segredos e cobertura completa de segurança, acessibilidade, carga e recuperação. Não há build .NET na stack atual.
 
 O projeto Vercel publica a branch principal; Preview ainda precisa de API, credenciais e dados segregados para testes autenticados. Cada release deve associar commit, build e versão de migrations. Nenhum segredo entra em camada de imagem, bundle cliente, artefato público ou argumento de build.
 
@@ -1136,6 +1136,36 @@ serviço local escutando em `127.0.0.1:5432`. M008 segue pendente e DEV12 parcia
 Próxima etapa: confirmar o alvo isolado `erp_po_totvs_test` (ou outro banco
 descartável), validar ledger 7/0, aplicar M008 e executar integração PostgreSQL
 e E2E autenticado, incluindo isolamento entre importadores e rollback real.
+
+### 24.4 Homologação executada — carteira histórica (2026-10-03)
+
+| Ambiente/caso | Perfil ou dados | Resultado | Limite da evidência |
+|---|---|---|---|
+| API CI, commit `ae9bd6b` | PostgreSQL isolado da CI; fixture sintética de POs/linhas | Build, testes unitários e integração do resumo passaram; cobre 401, 403, filtros e escopo antes da agregação. | Não substitui reconciliação de KPIs de negócio nem sessão real no browser. |
+| Web CI, commit `ae9bd6b` | Serialização de filtros do resumo e lista | Três testes e build Next.js passaram; lint terminou sem erros, com 22 avisos. | Não é teste E2E autenticado. |
+| Banco operacional na VPS | Transação `REPEATABLE READ READ ONLY`, encerrada com `ROLLBACK`; Master ativo selecionado do banco | Resumo respondeu 336 POs, 6.796 linhas e 7 páginas; 401 sem identidade e 403 sem grant. A API manteve custos no grão do IP. | Não houve escrita nem mudança de migration. A contagem do resumo é histórica, sem saldo ou valor oficial. |
+| Escopo de importador na VPS | Identidade sintética injetada somente no Fastify isolado; grant de uma importadora; restante dos dados lido na mesma transação read-only | Lista e resumo ficaram limitados à importadora; PO de outra importadora retornou 404. | Não criou usuário nem grant no banco. Não havia grant restrito real ativo; o teste com usuário restrito real foi pulado. |
+| Casos de histórico na VPS | POs 18751, 18223 e 6817; linhas e IPs existentes | Linhagem/paginação conferidas; fornecedores conflitantes ficaram como observações históricas; custos de IP permaneceram no grão do processo compartilhado. | Não aprova fornecedor, item oficial, quantidade, atendimento ou rateio. |
+| Vercel Production, commit `f41b2bc` | Deploy associado ao domínio de produção | Estado `READY`; domínio público e API de saúde responderam HTTP 200; endpoint sem sessão retornou 401. | Disponibilidade anônima não comprova jornada autenticada nem aceite visual por usuário. |
+
+### 24.5 Registro das decisões de produto/TOTVS
+
+O registro separa as restrições de modelagem já usadas pela implementação das
+decisões que dependem dos responsáveis externos. Evidência técnica não vale como
+aprovação de Compras, TI TOTVS, Fiscal ou Product Owner.
+
+| Tema | Diretriz já registrada no plano | Estado e responsável pela decisão final |
+|---|---|---|
+| Entidade central | PO TOTVS governa a jornada comercial; IP representa execução logística e pode compartilhar custos. | Diretriz de produto adotada; validar o fluxo final com Importação/Compras antes do corte. |
+| Fonte e identidade da PO | A chave deve incluir instância ERP, empresa, filial e número; a planilha não é fonte mestre da PO. | Pendente de Compras/TI TOTVS: produto/interface de origem, códigos oficiais de empresa/filial e linha externa. |
+| Itens e atendimento | Observações da planilha são históricas; não provam quantidade/unidade pedida nem saldo oficial. Não inferir item canônico a partir de descrição. | Pendente de Compras/TI TOTVS: linhas, produto, quantidade, unidade, preço, moeda e regra de atendimento/alocação. |
+| Divergência de fornecedor | POs 18751 e 18223 preservam ambos os fornecedores observados e ficam com qualidade pendente; fornecedor não participa da chave para mascarar conflito. | Tratamento conservador implementado; Compras precisa aprovar o valor mestre antes de promover dados oficiais. |
+| Workflow e solicitação | Estados históricos permanecem separados do workflow; transições precisam de precondições e auditoria. | Pendente do Product Owner de Importação: campos, estados, transições, cancelamento, permissões e associação do legado. |
+| Regras monetárias/fiscais | Sem conversão entre moedas, rateio presumido ou cálculo fiscal sem taxa/regra aprovada. | Pendente de Financeiro/Fiscal: fonte e data cambial, arredondamento, rateio, NCM, impostos, benefícios e vigências. |
+
+Próximo passo verificável: recolher essas decisões com responsável, data e
+evidência de aprovação; até lá, manter `quantity_scope=LEGACY_UNCONFIRMED`,
+fornecedor conflitante como qualidade pendente e sem saldo oficial.
 
 ## 25 Responsabilidades
 

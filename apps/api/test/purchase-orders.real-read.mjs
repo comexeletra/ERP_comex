@@ -82,6 +82,7 @@ try {
   const summary = summaryResponse.json();
   assert.equal(summary.purchaseOrders, 336);
   assert.equal(summary.lines, 6796);
+  assert.ok(typeof summary.sourceSnapshotAt === "string" && !Number.isNaN(Date.parse(summary.sourceSnapshotAt)));
   assert.ok(summary.linkedProcesses > 0 && summary.linkedProcesses <= 200);
   assert.ok(summary.linesWithoutIp >= 0 && summary.linesWithoutIp <= summary.lines);
   assert.equal(summary.byImporter.reduce((total, row) => total + row.purchaseOrders, 0), 336);

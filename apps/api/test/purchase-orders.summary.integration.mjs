@@ -40,6 +40,18 @@ await registerPurchaseOrderReadRoutes(app, pool);
 
 try {
   await client.query("BEGIN");
+  const runtimeRole = await client.query(
+    "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'import_erp_app') AS present",
+  );
+  if (runtimeRole.rows[0].present) {
+    const snapshotGrant = await client.query(`SELECT
+      has_column_privilege('import_erp_app', 'migration.import_batch', 'id', 'SELECT') AS id_read,
+      has_column_privilege('import_erp_app', 'migration.import_batch', 'promoted_at', 'SELECT') AS promoted_at_read,
+      has_column_privilege('import_erp_app', 'migration.import_batch', 'file_name', 'SELECT') AS file_name_read`);
+    assert.deepEqual(snapshotGrant.rows[0], { id_read: true, promoted_at_read: true, file_name_read: false });
+  } else if (databaseName.endsWith("_ci")) {
+    assert.fail("API CI must provision import_erp_app to verify snapshot column grants");
+  }
   await client.query(
     `INSERT INTO identity.erp_user (id, issuer, subject, display_name)
      VALUES ($1, $2, $3, $4)`,
@@ -48,8 +60,8 @@ try {
   await client.query("INSERT INTO identity.erp_user_role (user_id, role) VALUES ($1, 'Consulta')", [userId]);
   await client.query("INSERT INTO identity.erp_user_importer_scope (user_id, importer_code) VALUES ($1, $2)", [userId, importer]);
   await client.query(
-    `INSERT INTO migration.import_batch (id, file_name, file_sha256, mapping_version, state)
-     VALUES ($1, 'portfolio-summary-ci.xlsx', $2, 'portfolio-summary-ci-v1', 'PROMOTED')`,
+    `INSERT INTO migration.import_batch (id, file_name, file_sha256, mapping_version, state, promoted_at)
+     VALUES ($1, 'portfolio-summary-ci.xlsx', $2, 'portfolio-summary-ci-v1', 'PROMOTED', '2026-01-15T12:00:00Z')`,
     [batchId, randomUUID().replaceAll("-", "").padEnd(64, "0")],
   );
   await client.query(
@@ -103,6 +115,7 @@ try {
     linkedProcesses: 2,
     lines: 3,
     linesWithoutIp: 2,
+    sourceSnapshotAt: "2026-01-15T12:00:00.000Z",
     byImporter: [{ importer, purchaseOrders: 2 }],
   });
 
@@ -113,13 +126,15 @@ try {
     linkedProcesses: 1,
     lines: 2,
     linesWithoutIp: 1,
+    sourceSnapshotAt: "2026-01-15T12:00:00.000Z",
     byImporter: [{ importer, purchaseOrders: 1 }],
   });
 
   const outsideScope = await get("/api/v1/purchase-orders/summary?importer=other");
   assert.equal(outsideScope.statusCode, 200);
   assert.deepEqual(outsideScope.json(), {
-    purchaseOrders: 0, linkedProcesses: 0, lines: 0, linesWithoutIp: 0, byImporter: [],
+    purchaseOrders: 0, linkedProcesses: 0, lines: 0, linesWithoutIp: 0,
+    sourceSnapshotAt: null, byImporter: [],
   });
   assert.equal((await get("/api/v1/purchase-orders/summary?page=1")).statusCode, 400);
   console.log("PO portfolio summary PostgreSQL integration contract passed.");
