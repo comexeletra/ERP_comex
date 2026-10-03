@@ -105,8 +105,11 @@ promoted batch identifier and timestamp used by the PO portfolio snapshot label.
 `M017_catalog_entry_history.sql` exposes catalog audit events through a filtered
 read-only view; the API checks that the entry is visible in the caller's importer
 scope before reading its paginated history. These migrations are versioned in
-the checkout; operational application still requires restored-copy validation,
-a verified backup, and the production migration gate.
+the checkout. On 2026-10-03, both passed validation on an isolated restored copy
+after a verified backup, then were applied to the operational database. The
+ledger is M001–M017; the API release preserved the prior code for rollback. The
+runtime role was verified to read the history view without direct SELECT on the
+audit table.
 
 ## Initial Master accounts
 

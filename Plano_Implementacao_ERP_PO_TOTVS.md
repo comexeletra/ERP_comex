@@ -2,17 +2,16 @@
 
 **Atualização do plano — 03/10/2026:** o controle vigente de implementação é
 [CHECKLIST_ATUAL_IMPLEMENTACAO.md](CHECKLIST_ATUAL_IMPLEMENTACAO.md). O banco
-`erp_po_totvs_test` é operacional apesar do nome. M001–M015 estão aplicadas;
-M016 está versionada e ainda pendente na VPS. A API Fastify roda na VPS,
-frontend Next.js na Vercel e login local em uso. M013
-entrega histórico de solicitações; M014 entrega monitor da outbox ao Master.
-As duas migrations passaram em cópias restauradas antes do release, com backups
-verificados. API CI passou em `915244b`; Web CI passou em `70714ba`. O resumo da
-carteira e seu timestamp de captura estão publicados na API da VPS e validados
-em leitura no banco operacional. A Vercel marcou `915244b` como `READY` e
-associou o deploy ao domínio de produção. Ainda falta validação da interface
-autenticada com perfis reais. OIDC/PKCE está no código, mas a autenticação
-corporativa não foi homologada.
+`erp_po_totvs_test` é operacional apesar do nome. M001–M017 estão aplicadas;
+M016/M017 foram validadas em cópia restaurada após backup verificado, e a API
+foi liberada com rollback preservado. A API Fastify roda na VPS, o frontend
+Next.js na Vercel e o login local está em uso. M013 entrega histórico de
+solicitações, M014 o monitor da outbox e M017 o histórico de cadastros. As CIs
+Web/API e a CI de prévia passaram nas revisões registradas no checklist atual.
+A carteira está publicada. Ainda falta validar a interface e o isolamento com
+um perfil restrito real; OIDC/PKCE está no código, mas a autenticação corporativa
+não foi homologada.
+
 Trechos abaixo que descrevem M008 pendente, ausência de API publicada ou da
 escrita operacional são evidências datadas da fase inicial, não o estado vigente.
 

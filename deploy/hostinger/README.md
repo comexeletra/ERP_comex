@@ -1,8 +1,17 @@
 # API ERP na VPS Hostinger
 
-> As seções de migrations abaixo são registros de releases anteriores.
-> [O checklist vigente](../../CHECKLIST_ATUAL_IMPLEMENTACAO.md) registra M001–M014
-> no histórico operacional. Confira o ledger real antes do próximo release.
+> O [checklist vigente](../../CHECKLIST_ATUAL_IMPLEMENTACAO.md) registra M001–M017 aplicadas no banco operacional. As instruções de release M013/M014 abaixo são históricas. Confira o ledger real antes de qualquer release futuro.
+
+## Estado após o release M016/M017 (2026-10-03)
+
+M016 e M017 passaram pela validação em cópia restaurada e isolada após backup
+verificado; depois foram aplicadas ao banco operacional. O ledger ficou em
+17/17. A role de runtime da API foi conferida com leitura da view de histórico
+e sem SELECT direto na tabela de auditoria. A versão anterior da API foi
+preservada em `/var/backups/import-erp/m017-api-20261003T173254Z`; o backup usado
+foi `/var/backups/import-erp/erp_po_totvs_test_20261003T173247Z.dump`. A evidência
+completa está no checklist vigente. A próxima validação operacional é o aceite
+autenticado da interface e do escopo com perfil restrito real.
 
 ## Release M014: monitor da outbox
 
@@ -76,46 +85,23 @@ O provedor Hostinger permite 22, 80 e 443 e bloqueia as outras portas públicas.
 
 ### Acesso SSH temporário para RF06 (2026-09-30)
 
-Na sessão de 2026-09-30, o par temporário estava em
-`.local-keys/rf06_ed25519` (privada) e `.local-keys/rf06_ed25519.pub` (pública).
-A pasta inteira está no `.gitignore` e **não** entra no pacote de release nem
-no Git. Fingerprint da pública: `SHA256:S5y5JFC6znJh9aId1V6GLzIjYsnQ9x963Pti7wL7ivs`.
-No checkout verificado em 2026-10-03, esse arquivo não estava disponível e não
-havia identidade carregada no `ssh-agent`; a validação/remessa à VPS depende de
-restaurar um meio de acesso autorizado.
+A chave anterior de RF06 não estava neste checkout. Em 2026-10-03 foi gerado
+um par substituto em `.local-keys/rf06_m017_recovery_ed25519` (privada) e
+`.local-keys/rf06_m017_recovery_ed25519.pub` (pública), fingerprint
+`SHA256:TGiM4/V33UAHRLOXjWU0qikrq7bHR/Qn4mRH+kmjcBU`. O par está ignorado pelo
+Git. A chave pública foi cadastrada na VPS pelo console administrativo; a
+validação M016/M017 e o release foram concluídos em seguida. Preserve a chave
+privada somente no checkout autorizado; não a transfira nem a inclua em releases.
+
 O host conhecido é `srv1054123.hstgr.cloud` (`72.60.250.212`), usuário `root`.
-Use o OpenSSH com `-i .local-keys/rf06_ed25519 -o IdentitiesOnly=yes` a partir
-da raiz do checkout. Se o host estiver salvo em `known_hosts` somente pelo IP,
-adicione `-o HostKeyAlias=72.60.250.212` para manter a verificação estrita e usar
-a mesma identidade pública já conhecida. Exemplo de consulta somente leitura:
+Use `HostKeyAlias=72.60.250.212` quando necessário para conferir a chave de host
+já registrada pelo IP:
 
 ```powershell
 ssh -o BatchMode=yes -o HostKeyAlias=72.60.250.212 `
   -i .local-keys/rf06_m017_recovery_ed25519 -o IdentitiesOnly=yes `
   root@srv1054123.hstgr.cloud hostname
 ```
-
-Em 2026-09-30, a conexão autenticada confirmou o host
-`matheusproserv`. O usuário pediu para conservar o par local para sessões
-futuras; ele deve permanecer ignorado pelo Git e não ser copiado para artefatos
-de release. A revogação na VPS fica para quando esse acesso deixar de ser
-necessário.
-
-Para restaurar o acesso, recupere a chave privada do cofre/local autorizado para
-`.local-keys/rf06_ed25519` (não a envie pelo chat nem a adicione ao Git) ou carregue
-essa identidade no `ssh-agent`. Confirme o fingerprint público esperado acima e
-use `ssh -o BatchMode=yes -i .local-keys/rf06_ed25519 -o IdentitiesOnly=yes`
-para o teste de conexão. A chave substituta abaixo só autentica depois que sua
-chave pública for cadastrada no servidor.
-
-Em 2026-10-03, como a chave anterior não estava disponível, foi gerado um par
-local substituto em `.local-keys/rf06_m017_recovery_ed25519`; a chave pública
-está no arquivo `.pub` ao lado e tem fingerprint
-`SHA256:TGiM4/V33UAHRLOXjWU0qikrq7bHR/Qn4mRH+kmjcBU`. O par é ignorado pelo Git.
-Esse candidato ainda **não está autorizado na VPS**: cadastre somente a chave
-pública no `authorized_keys` de root pelo console administrativo, depois use o
-comando acima. Não transfira a privada nem a inclua no pacote de release.
-
 `/etc/import-erp/api.env` contém `DATABASE_URL`, `DATABASE_POOL_MAX`, `GATEWAY_TOKEN`, `AUTH_SESSION_SECRET`, `APP_PUBLIC_ORIGIN`, `HOST` e `PORT`; ele pertence a `root:import-erp` com modo `0640`. A URL do PostgreSQL usa `127.0.0.1` **da VPS** e TLS verificado pelo certificado fixado em `/etc/import-erp/postgres-root.crt`. O serviço não lê a credencial de migrations.
 
 `/etc/import-erp/migration-release.env` contém a URL da role de migrations, pertence a `root:root` e tem modo `0600`. Não envie o conteúdo desses arquivos a chats, logs ou ao Git. No painel Vercel Production, `VPS_API_URL=https://api.72-60-250-212.sslip.io` e `VPS_API_TOKEN` deve ter o mesmo valor do `GATEWAY_TOKEN`. O token deve ser do tipo Secret. Não configure `DATABASE_URL` na Vercel.
