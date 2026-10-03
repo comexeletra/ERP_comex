@@ -85,7 +85,17 @@ havia identidade carregada no `ssh-agent`; a validação/remessa à VPS depende 
 restaurar um meio de acesso autorizado.
 O host conhecido é `srv1054123.hstgr.cloud` (`72.60.250.212`), usuário `root`.
 Use o OpenSSH com `-i .local-keys/rf06_ed25519 -o IdentitiesOnly=yes` a partir
-da raiz do checkout. Em 2026-09-30, a conexão autenticada confirmou o host
+da raiz do checkout. Se o host estiver salvo em `known_hosts` somente pelo IP,
+adicione `-o HostKeyAlias=72.60.250.212` para manter a verificação estrita e usar
+a mesma identidade pública já conhecida. Exemplo de consulta somente leitura:
+
+```powershell
+ssh -o BatchMode=yes -o HostKeyAlias=72.60.250.212 `
+  -i .local-keys/rf06_ed25519 -o IdentitiesOnly=yes `
+  root@srv1054123.hstgr.cloud hostname
+```
+
+Em 2026-09-30, a conexão autenticada confirmou o host
 `matheusproserv`. O usuário pediu para conservar o par local para sessões
 futuras; ele deve permanecer ignorado pelo Git e não ser copiado para artefatos
 de release. A revogação na VPS fica para quando esse acesso deixar de ser

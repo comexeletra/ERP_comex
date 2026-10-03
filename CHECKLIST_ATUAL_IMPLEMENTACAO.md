@@ -76,12 +76,16 @@ em lote versionado. A aba Pós não tem cabeçalho nomeado após `AS` na linha 4
 - **Escopo da auditoria de cadastros:** o endpoint e a tela de histórico estão
   no checkout, enquanto o acesso da API ao view depende de M017. Não contar a
   funcionalidade como publicada ou operacional antes da migration e do deploy.
-- **Acesso para validar na VPS:** o runbook registra a chave temporária em
-  `.local-keys/rf06_ed25519`, mas esse arquivo não existe no checkout atual e o
-  `ssh-agent` não tem identidade carregada. Não foi possível executar a validação
-  em cópia restaurada; nenhum backup remoto foi criado e nenhuma migration foi
-  aplicada ao banco operacional. Restaurar o acesso SSH é necessário antes de
-  continuar o release M016/M017.
+- **Credencial SSH do cliente:** o usuário confirmou que o acesso à VPS está
+  autorizado. A validação estrita da chave do servidor passou pelo IP
+  `72.60.250.212`, já presente em `known_hosts`; o FQDN não tem entrada local,
+  então o runbook agora orienta `HostKeyAlias=72.60.250.212`, sem desativar a
+  verificação do host. A autenticação do cliente foi recusada para os usuários
+  `root` e padrão (`publickey,password`): a chave privada documentada não existe
+  no checkout atual nem no checkout anterior registrado, e não há identidade no
+  `ssh-agent`. Ainda não foi possível criar backup remoto ou validar a cópia; não
+  houve alteração no banco operacional. É necessário restaurar a chave privada
+  autorizada ou provisionar uma substituta na VPS antes de continuar M016/M017.
 - **Dependências do runner M017:** a revisão prévia para retomar o release mostrou
   que o migrador em `/tmp` resolve módulos pelo diretório do pacote e não encontra
   automaticamente `node_modules` instalado em `/opt/import-erp/apps/api`. O runner
