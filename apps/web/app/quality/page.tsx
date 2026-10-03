@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api";
 import { formatUsDateTime } from "../../lib/date-format";
+import { canResolveQuality } from "../../lib/quality-permissions";
 
 type Review = { id: string; outcome: string; reviewer: string; notes: string; evidence: Record<string, unknown>; proposedPurchaseOrder?: string; proposedIpNumber?: string; recordedAt: string };
 type QualityItem = { id: string; sourceRowId: string; code: string; severity: string; status: string; evidence: Record<string, unknown>; fieldName?: string; sheetName?: string; sourceRowNumber?: number; sourceValues: Record<string, unknown>; sourceColumnHeaders: Record<string, string>; latestReview?: Review; reviewHistory?: Review[] };
@@ -11,6 +12,7 @@ type QualityPageData = { page: number; pageSize: number; totalCount: number; ope
 
 export default function QualityPage() {
   const [data, setData] = useState<QualityPageData>();
+  const [roles, setRoles] = useState<string[]>();
   const [status, setStatus] = useState("open");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string>();
@@ -20,19 +22,29 @@ export default function QualityPage() {
 
   const load = () => {
     setError(undefined);
+    setRoles(undefined);
     const query = new URLSearchParams({ status, pageSize: "50" });
     if (code.trim()) query.set("code", code.trim());
-    return apiFetch(`/api/v1/data-issues?${query}`)
-      .then(async response => {
-        if (!response.ok) throw new Error("Não foi possível carregar a fila de qualidade.");
+    return Promise.all([
+      apiFetch("/auth/me"), apiFetch("/api/v1/data-issues?" + query.toString()),
+    ])
+      .then(async ([identityResponse, response]) => {
+        if (!identityResponse.ok) throw new Error("Sua sess\u00e3o expirou. Entre novamente.");
+        const identity = await identityResponse.json() as { roles: string[] };
+        setRoles(identity.roles);
+        if (!response.ok) {
+          throw new Error(response.status === 403
+            ? "Seu perfil n\u00e3o tem acesso \u00e0 fila de qualidade. Entre em contato com o administrador do sistema."
+            : "N\u00e3o foi poss\u00edvel carregar a fila de qualidade.");
+        }
         setData(await response.json() as QualityPageData);
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Erro inesperado."));
   };
-
   useEffect(() => { void load(); }, [status]);
   function applyFilter(event: FormEvent<HTMLFormElement>) { event.preventDefault(); void load(); }
   async function submitReview(item: QualityItem, form: HTMLFormElement) {
+    if (!canResolveQuality(roles ?? [])) return;
     const fields = new FormData(form);
     let evidence: Record<string, unknown>;
     try {
@@ -62,6 +74,7 @@ export default function QualityPage() {
     <Link href="/" className="back">← Carteira de POs</Link>
     <header className="page-header"><p className="eyebrow">Histórico Excel · fila de revisão</p><h1>Qualidade dos dados</h1><p>As decisões não alteram a planilha nem a carga bruta. Propostas de PO ou IP ficam registradas como revisão e exigem confirmação operacional posterior.</p></header>
     {error && <p className="notice error">{error}</p>}
+    {roles && !canResolveQuality(roles) && <p className="notice">{"Seu perfil permite apenas consultar a fila. Para solicitar permiss\u00e3o para revisar pend\u00eancias, entre em contato com o administrador do sistema."}</p>}
     <section className="metric-grid" aria-label="Resumo da fila de qualidade"><Metric label="Pendências abertas" value={data?.openCount ?? "…"} /><Metric label="Pendências resolvidas" value={data?.resolvedCount ?? "…"} /><Metric label="Itens no filtro" value={data?.totalCount ?? "…"} /><Metric label="Linhas por página" value={data?.pageSize ?? 50} /></section>
     <section className="card"><form className="quality-filter" onSubmit={applyFilter}><label>Status<select value={status} onChange={event => setStatus(event.target.value)}><option value="open">Abertas</option><option value="resolved">Resolvidas</option><option value="all">Todas</option></select></label><label>Código<input value={code} onChange={event => setCode(event.target.value)} placeholder="EXCEL_ERROR" /></label><button className="button" type="submit">Filtrar</button></form></section>
     {!data && !error && <p>Carregando fila…</p>}
@@ -79,7 +92,7 @@ export default function QualityPage() {
           <details><summary>Evidência registrada</summary><pre>{JSON.stringify(review.evidence, null, 2)}</pre></details>
         </li>)}</ol></section>;
       })()}
-      {reviewing === item.id ? <form className="review-form" onSubmit={event => { event.preventDefault(); void submitReview(item, event.currentTarget); }}><label>Evidência da resolução (objeto JSON)<textarea name="evidence" required placeholder='{"referencia":"documento ou evidência conferida"}' /></label><label>Justificativa<textarea name="reason" required /></label><label>PO proposta (opcional)<input name="proposedPurchaseOrder" /></label><label>IP proposto (opcional)<input name="proposedIpNumber" /></label><div><button className="button" type="submit" disabled={submitting}>{submitting ? "Registrando…" : "Resolver pendência"}</button><button className="button secondary" type="button" disabled={submitting} onClick={() => { setReviewing(undefined); setIdempotencyKey(undefined); }}>Cancelar</button></div></form> : item.status === "OPEN" && <button className="button" type="button" onClick={() => { setReviewing(item.id); setIdempotencyKey(crypto.randomUUID()); }}>Revisar pendência</button>}
+      {reviewing === item.id && canResolveQuality(roles ?? []) ? <form className="review-form" onSubmit={event => { event.preventDefault(); void submitReview(item, event.currentTarget); }}><label>Evidência da resolução (objeto JSON)<textarea name="evidence" required placeholder='{"referencia":"documento ou evidência conferida"}' /></label><label>Justificativa<textarea name="reason" required /></label><label>PO proposta (opcional)<input name="proposedPurchaseOrder" /></label><label>IP proposto (opcional)<input name="proposedIpNumber" /></label><div><button className="button" type="submit" disabled={submitting}>{submitting ? "Registrando…" : "Resolver pendência"}</button><button className="button secondary" type="button" disabled={submitting} onClick={() => { setReviewing(undefined); setIdempotencyKey(undefined); }}>Cancelar</button></div></form> : item.status === "OPEN" && canResolveQuality(roles ?? []) && <button className="button" type="button" onClick={() => { setReviewing(item.id); setIdempotencyKey(crypto.randomUUID()); }}>Revisar pendência</button>}
     </article>)}
   </main>;
 }
