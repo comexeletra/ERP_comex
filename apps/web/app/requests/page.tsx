@@ -79,10 +79,10 @@ export default function RequestsPage() {
         : "Consulte as solicitações disponíveis no seu escopo. Solicitações não são criadas a partir das linhas históricas da planilha."}</p>
       <Link className="text-link" href="/">← Carteira de POs</Link>
     </header>
+    {error && <div className="notice error" role="alert">{error} <button className="button secondary" type="button" onClick={() => setReload(value => value + 1)}>Tentar novamente</button></div>}
     {canWriteRequests(roles) ? <section className="card">
       <h2>Nova solicitação</h2>
       <p className="muted">O número é gerado pelo servidor. Produto, quantidade/unidade, finalidade e centro de custo oficiais ainda dependem de confirmação. Finalidade e centro de custo abaixo são referências livres informadas pelo solicitante.</p>
-      {error && <div className="notice error" role="alert">{error} <button className="button secondary" type="button" onClick={() => setReload(value => value + 1)}>Tentar novamente</button></div>}
       {notice && <p className="notice success" role="status">{notice}</p>}
       <form className="stack-form request-form" onSubmit={submit}>
         <label>Importador<select required value={importer} onChange={event => setImporter(event.target.value)}>
