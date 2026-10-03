@@ -91,7 +91,7 @@ a mesma identidade pública já conhecida. Exemplo de consulta somente leitura:
 
 ```powershell
 ssh -o BatchMode=yes -o HostKeyAlias=72.60.250.212 `
-  -i .local-keys/rf06_ed25519 -o IdentitiesOnly=yes `
+  -i .local-keys/rf06_m017_recovery_ed25519 -o IdentitiesOnly=yes `
   root@srv1054123.hstgr.cloud hostname
 ```
 
@@ -105,8 +105,16 @@ Para restaurar o acesso, recupere a chave privada do cofre/local autorizado para
 `.local-keys/rf06_ed25519` (não a envie pelo chat nem a adicione ao Git) ou carregue
 essa identidade no `ssh-agent`. Confirme o fingerprint público esperado acima e
 use `ssh -o BatchMode=yes -i .local-keys/rf06_ed25519 -o IdentitiesOnly=yes`
-para o teste de conexão. Não gere uma chave substituta sem provisionar e aprovar
-a chave pública correspondente no servidor.
+para o teste de conexão. A chave substituta abaixo só autentica depois que sua
+chave pública for cadastrada no servidor.
+
+Em 2026-10-03, como a chave anterior não estava disponível, foi gerado um par
+local substituto em `.local-keys/rf06_m017_recovery_ed25519`; a chave pública
+está no arquivo `.pub` ao lado e tem fingerprint
+`SHA256:TGiM4/V33UAHRLOXjWU0qikrq7bHR/Qn4mRH+kmjcBU`. O par é ignorado pelo Git.
+Esse candidato ainda **não está autorizado na VPS**: cadastre somente a chave
+pública no `authorized_keys` de root pelo console administrativo, depois use o
+comando acima. Não transfira a privada nem a inclua no pacote de release.
 
 `/etc/import-erp/api.env` contém `DATABASE_URL`, `DATABASE_POOL_MAX`, `GATEWAY_TOKEN`, `AUTH_SESSION_SECRET`, `APP_PUBLIC_ORIGIN`, `HOST` e `PORT`; ele pertence a `root:import-erp` com modo `0640`. A URL do PostgreSQL usa `127.0.0.1` **da VPS** e TLS verificado pelo certificado fixado em `/etc/import-erp/postgres-root.crt`. O serviço não lê a credencial de migrations.
 

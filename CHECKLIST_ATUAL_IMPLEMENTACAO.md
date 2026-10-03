@@ -83,9 +83,11 @@ em lote versionado. A aba Pós não tem cabeçalho nomeado após `AS` na linha 4
   verificação do host. A autenticação do cliente foi recusada para os usuários
   `root` e padrão (`publickey,password`): a chave privada documentada não existe
   no checkout atual nem no checkout anterior registrado, e não há identidade no
-  `ssh-agent`. Ainda não foi possível criar backup remoto ou validar a cópia; não
-  houve alteração no banco operacional. É necessário restaurar a chave privada
-  autorizada ou provisionar uma substituta na VPS antes de continuar M016/M017.
+  `ssh-agent`. Foi gerado o candidato local `.local-keys/rf06_m017_recovery_ed25519`
+  (fingerprint público `SHA256:TGiM4/V33UAHRLOXjWU0qikrq7bHR/Qn4mRH+kmjcBU`), mas
+  sua chave pública ainda precisa ser cadastrada na VPS pelo console administrativo.
+  Ainda não foi possível criar backup remoto ou validar a cópia; não houve alteração
+  no banco operacional. Após provisionar a chave pública, retomar a validação M016/M017.
 - **Dependências do runner M017:** a revisão prévia para retomar o release mostrou
   que o migrador em `/tmp` resolve módulos pelo diretório do pacote e não encontra
   automaticamente `node_modules` instalado em `/opt/import-erp/apps/api`. O runner
