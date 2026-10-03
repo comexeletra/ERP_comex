@@ -76,6 +76,12 @@ em lote versionado. A aba Pós não tem cabeçalho nomeado após `AS` na linha 4
 - **Escopo da auditoria de cadastros:** o endpoint e a tela de histórico estão
   no checkout, enquanto o acesso da API ao view depende de M017. Não contar a
   funcionalidade como publicada ou operacional antes da migration e do deploy.
+- **Acesso para validar na VPS:** o runbook registra a chave temporária em
+  `.local-keys/rf06_ed25519`, mas esse arquivo não existe no checkout atual e o
+  `ssh-agent` não tem identidade carregada. Não foi possível executar a validação
+  em cópia restaurada; nenhum backup remoto foi criado e nenhuma migration foi
+  aplicada ao banco operacional. Restaurar o acesso SSH é necessário antes de
+  continuar o release M016/M017.
 
 Os dados históricos da planilha permanecem a fonte mestra até um corte formal.
 Valores da origem são preservados; apenas erros de cálculo do Excel pedem revisão
@@ -178,6 +184,8 @@ passou na CI, mas permanece pendente na VPS; o resumo publicado não depende del
 Preview continua desconectado do banco operacional. A mudança M017 de histórico
 de cadastros passou na API/Web CI e no teste local do contrato; a API CI `51f345d`
 passou o upgrade M016→M017. Faltam cópia restaurada e release controlado.
+O acesso SSH documentado não está disponível neste checkout; restaurá-lo é
+pré-requisito para validar a cópia na VPS.
 O próximo aceite funcional é validar a interface e o isolamento com uma conta
 restrita real; não havia grant restrito ativo no banco durante a última
 verificação. As decisões de fonte/empresa/filial, itens oficiais e workflow

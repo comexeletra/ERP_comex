@@ -76,10 +76,13 @@ O provedor Hostinger permite 22, 80 e 443 e bloqueia as outras portas públicas.
 
 ### Acesso SSH temporário para RF06 (2026-09-30)
 
-No checkout local deste repositório, o par temporário está em
+Na sessão de 2026-09-30, o par temporário estava em
 `.local-keys/rf06_ed25519` (privada) e `.local-keys/rf06_ed25519.pub` (pública).
 A pasta inteira está no `.gitignore` e **não** entra no pacote de release nem
 no Git. Fingerprint da pública: `SHA256:S5y5JFC6znJh9aId1V6GLzIjYsnQ9x963Pti7wL7ivs`.
+No checkout verificado em 2026-10-03, esse arquivo não estava disponível e não
+havia identidade carregada no `ssh-agent`; a validação/remessa à VPS depende de
+restaurar um meio de acesso autorizado.
 O host conhecido é `srv1054123.hstgr.cloud` (`72.60.250.212`), usuário `root`.
 Use o OpenSSH com `-i .local-keys/rf06_ed25519 -o IdentitiesOnly=yes` a partir
 da raiz do checkout. Em 2026-09-30, a conexão autenticada confirmou o host
