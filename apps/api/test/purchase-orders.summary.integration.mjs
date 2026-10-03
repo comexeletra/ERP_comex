@@ -83,8 +83,8 @@ try {
   );
   for (let index = 0; index < sourceRows.length; index += 1) {
     await client.query(
-      `INSERT INTO migration.source_row (id, batch_id, sheet_name, row_number, raw_values, row_hash)
-       VALUES ($1, $2, 'CI', $3, '{}'::jsonb, $4)`,
+      `INSERT INTO migration.source_row (id, batch_id, sheet_name, row_number, raw_values, row_hash, created_at)
+       VALUES ($1, $2, 'CI', $3, '{}'::jsonb, $4, '2026-01-15T12:00:00Z')`,
       [sourceRows[index], batchId, index + 1, randomUUID().replaceAll("-", "").padEnd(64, "0")],
     );
   }

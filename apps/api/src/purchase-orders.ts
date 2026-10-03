@@ -169,11 +169,10 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
          SELECT importer, count(*)::int AS purchase_orders
          FROM filtered_po GROUP BY importer
        ), source_version AS (
-         SELECT max(batch.promoted_at) AS source_snapshot_at
+         SELECT max(source.created_at) AS source_snapshot_at
          FROM filtered_po AS po
          JOIN procurement.po_line_observation AS obs ON obs.purchase_order_id = po.id
          JOIN migration.source_row AS source ON source.id = obs.source_row_id
-         JOIN migration.import_batch AS batch ON batch.id = source.batch_id
        )
        SELECT (SELECT count(*)::int FROM filtered_po) AS purchase_orders,
               (SELECT total FROM linked) AS linked_processes,
