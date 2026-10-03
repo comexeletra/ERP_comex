@@ -20,6 +20,9 @@ coverage/
 *.xlsx
 *.xlsm
 *.xlsb
+*.workbook-preview.json
+__pycache__/
+*.pyc
 
 # Local services
 data/local/

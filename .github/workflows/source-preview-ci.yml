@@ -1,0 +1,30 @@
+name: Source Preview CI
+
+on:
+  pull_request:
+    paths:
+      - "deploy/hostinger/preview-historical-workbook.py"
+      - "deploy/hostinger/test_preview_historical_workbook.py"
+      - ".github/workflows/source-preview-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "deploy/hostinger/preview-historical-workbook.py"
+      - "deploy/hostinger/test_preview_historical_workbook.py"
+      - ".github/workflows/source-preview-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install workbook reader
+        run: python -m pip install openpyxl==3.1.5
+      - name: Test read-only inventory and comparison
+        run: python -m unittest discover -s deploy/hostinger -p test_preview_historical_workbook.py -v

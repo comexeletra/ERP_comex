@@ -69,7 +69,7 @@ política aprovada. Datas visíveis seguem `MM/DD/YYYY` e, com horário,
 | RF10 Custos | `[-]` | 422 custos históricos deduplicados por IP. | Lançamentos novos, aprovação, reversão, conciliação por moeda e rateio por PO aprovado. |
 | RF11 Documentos | `[ ]` | Nenhum fluxo de upload/download operacional. | Storage privado, versões, autorização, vínculo e restauração. |
 | RF12 Histórico/auditoria | `[-]` | Origem imutável, revisão de qualidade, auditoria e outbox em comandos existentes. M013 e a tela/API de histórico de solicitações estão versionadas, ainda sem aplicação operacional. | Aplicar/validar M013, ampliar timeline às demais entidades e criar consumidor da outbox. |
-| RF13 Histórico Excel | `[-]` | Carga idempotente do snapshot aprovado; `/source-audit` com abas Pré/Pós, filtros e cabeçalhos; revisão de qualidade. | Decidir cobertura dos 11 cabeçalhos Pré além de `AZ` já no arquivo aprovado; depois prévia/reconciliação de versões novas, promoção sem sobrescrita e aceite dos erros de cálculo. |
+| RF13 Histórico Excel | `[-]` | Carga idempotente do snapshot aprovado; `/source-audit` com abas Pré/Pós, filtros e cabeçalhos; revisão de qualidade. CLI de inventário/comparação posicional de versões sem escrita no banco. | Decidir cobertura dos 11 cabeçalhos Pré além de `AZ` já no arquivo aprovado; reconciliar entidades de versões novas, promover sem sobrescrita e aceitar os erros de cálculo. |
 | RF14 Painéis | `[ ]` | Sem painel operacional completo. | Catálogo de KPIs por grão/moeda, filtros, atualização e relatórios. |
 | RF15 Administração | `[-]` | Master gerencia usuários, papéis e escopos. | Parâmetros operacionais, acompanhamento de jobs e autorização completa para novos módulos. |
 | RF16 Analítico | `[ ]` | Sem DW/ETL/modelo semântico ativo no repositório. | Banco analítico, cargas reconciliadas, fatos/dimensões, Power BI e RLS. |
@@ -88,10 +88,10 @@ reaproveitado.
 | DEV04 Permissões | `[-]` | Papéis/grants e filtros SQL existem; validar casos negativos e 404 fora do escopo com usuário restrito real. |
 | DEV05 Migrations | `[-]` | Runner Node e M001–M012; cópias/backup registrados. Confirmar CI dinâmica no GitHub e gates de upgrade/release. |
 | DEV06 Cadastros/aliases | `[-]` | M010 e fluxo manual revisado; faltam identidades oficiais, aliases conflitantes e homologação de dados reais. |
-| DEV07 Lote de origem | `[-]` | Snapshot, hash e linhas brutas persistidos; falta receber/armazenar e comparar novas versões com prévia. |
+| DEV07 Lote de origem | `[-]` | Snapshot, hash e linhas brutas persistidos; CLI local de inventário/comparação por coordenada versionada. Faltam recebimento, armazenamento e prévia reconciliada por entidade. |
 | DEV08 Leitura Excel | `[-]` | Python/openpyxl lê valores salvos do arquivo aprovado; avaliar os 11 cabeçalhos Pré além de `AZ` já presentes e generalizar leitura de versões novas. |
 | DEV09 Tipagem | `[-]` | Conversões conservadoras do importador atual; completar fixtures e regras para novos cadastros, sem alterar o bruto. |
-| DEV10 Reconciliação | `[-]` | Pré/Pós conciliados no snapshot aceito; gerar relatório reproduzível de deltas para cada lote novo. |
+| DEV10 Reconciliação | `[-]` | Pré/Pós conciliados no snapshot aceito; há relatório reproduzível de diferenças por célula entre arquivos. Faltam deltas por PO/IP/custo e aprovação de cada lote novo. |
 | DEV11 Promoção | `[-]` | Reexecução histórica idempotente registrada; criar aprovação, falha/retomada e promoção de novos lotes. |
 | DEV12 Qualidade | `[-]` | M008, API/tela de issues e resolução auditada; homologar perfis reais e cobertura dos novos lotes. |
 | DEV13 PO | `[-]` | Carteira/detalhe em leitura; faltam itens oficiais, saldo, atendimento e vínculo quantitativo. |
