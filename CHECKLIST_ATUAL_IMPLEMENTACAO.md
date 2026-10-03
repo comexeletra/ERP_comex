@@ -68,10 +68,10 @@ em lote versionado. A aba Pós não tem cabeçalho nomeado após `AS` na linha 4
 - **Numeração das migrations:** já existe `M016_import_batch_snapshot_read.sql`.
   O histórico de cadastros preparado como M016 colidia com ela; foi renumerado
   para M017. Scripts de validação e release foram alinhados para aplicar M016 e
-  M017 em ordem. API/Web CI passaram em `5962c5a` com M017 aplicado do zero; a
-  API CI ainda não verificava a view no cenário de upgrade M016→M017. O gate agora
-  inclui esses grants e a proteção da tabela de auditoria; aguarda nova CI. A VPS
-  segue comprovada em M015; validação em cópia restaurada e release controlado
+  M017 em ordem. API/Web CI passaram em `5962c5a` com M017 aplicado do zero. A API
+  CI passou novamente em `51f345d`; o upgrade M016→M017 verificou grants da view,
+  filtro de eventos e ausência de SELECT na tabela de auditoria. A VPS segue
+  comprovada em M015; validação em cópia restaurada e release controlado
   continuam pendentes.
 - **Escopo da auditoria de cadastros:** o endpoint e a tela de histórico estão
   no checkout, enquanto o acesso da API ao view depende de M017. Não contar a
@@ -99,7 +99,7 @@ política aprovada. Datas visíveis seguem `MM/DD/YYYY` e, com horário,
 | RF09 Desembaraço | `[ ]` | DUIMP, NF e datas históricas preservadas no bruto. | Processo fiscal, documentos, armazenagem, marcos e entrega com regras aprovadas. |
 | RF10 Custos | `[-]` | 422 custos históricos deduplicados por IP. | Lançamentos novos, aprovação, reversão, conciliação por moeda e rateio por PO aprovado. |
 | RF11 Documentos | `[ ]` | Nenhum fluxo de upload/download operacional. | Storage privado, versões, autorização, vínculo e restauração. |
-| RF12 Histórico/auditoria | `[-]` | Origem imutável, revisão de qualidade, auditoria e outbox em comandos existentes. M013 aplicada após backup/cópia restaurada; histórico de solicitações ativo. API/Web CI passaram em `5962c5a`; o contrato do endpoint também passou localmente. Novo gate de upgrade aguarda CI; M017/código ainda não foram publicados. A fila de qualidade prepara a linha do tempo das revisões por pendência. | Ampliar timeline às demais entidades e criar consumidor da outbox; validar cópia restaurada e homologar as telas com usuário restrito real. |
+| RF12 Histórico/auditoria | `[-]` | Origem imutável, revisão de qualidade, auditoria e outbox em comandos existentes. M013 aplicada após backup/cópia restaurada; histórico de solicitações ativo. API/Web CI passaram em `5962c5a`; API CI de upgrade e o contrato local do endpoint passaram. M017/código ainda não foram publicados. A fila de qualidade prepara a linha do tempo das revisões por pendência. | Ampliar timeline às demais entidades e criar consumidor da outbox; validar cópia restaurada e homologar as telas com usuário restrito real. |
 | RF13 Histórico Excel | `[-]` | Carga idempotente do snapshot aprovado; `/source-audit` com abas Pré/Pós, filtros e cabeçalhos; revisão de qualidade. CLI de inventário/comparação posicional de versões sem escrita no banco. | Decidir cobertura dos 11 cabeçalhos Pré além de `AZ` já no arquivo aprovado; reconciliar entidades de versões novas, promover sem sobrescrita e aceitar os erros de cálculo. |
 | RF14 Painéis | `[-]` | API publicada na VPS; UI/CSV publicados na Vercel. API/Web CI passaram em `5962c5a`. Leitura no banco real confirmou 336 POs, 6.796 linhas, escopo e timestamp `source_row.created_at` do recorte. | Catálogo de KPIs oficiais por grão/moeda, referência temporal do TOTVS, relatórios completos e aceite dos valores. O resumo histórico não é saldo, atendimento oficial, valor comercial nem atualização do TOTVS. |
 | RF15 Administração | `[-]` | Master gerencia usuários, papéis e escopos e pode consultar metadados da outbox. | Parâmetros operacionais, acompanhamento dos demais jobs e autorização completa para novos módulos. |
@@ -117,7 +117,7 @@ reaproveitado.
 | DEV02 Ambiente | `[-]` | Node 24 e PostgreSQL/VPS operacionais; CI web ativa e verde. Falta separar desenvolvimento/Preview do banco operacional. |
 | DEV03 OIDC/sessão | `[-]` | Login local e sessões ativos; OIDC/PKCE no código. Homologar issuer corporativo, callback, expiração, CSRF e logout. |
 | DEV04 Permissões | `[-]` | Papéis/grants e filtros SQL existem; validar casos negativos e 404 fora do escopo com usuário restrito real. |
-| DEV05 Migrations | `[-]` | Runner Node; M001–M016 versionadas; M013–M015 validadas em cópia restaurada, backup e grants operacionais conferidos. M017 aplica do zero na API CI; o novo gate M016→M017 verifica grants da view e nega SELECT na tabela de auditoria. Aguarda CI do gate e cópia restaurada antes do release. |
+| DEV05 Migrations | `[-]` | Runner Node; M001–M016 versionadas; M013–M015 validadas em cópia restaurada, backup e grants operacionais conferidos. M017 aplica do zero e o upgrade M016→M017 passou na API CI `51f345d`, verificando grants da view e negando SELECT na tabela de auditoria. Falta validar em cópia restaurada antes do release. |
 | DEV06 Cadastros/aliases | `[-]` | M010 e fluxo manual revisado; faltam identidades oficiais, aliases conflitantes e homologação de dados reais. |
 | DEV07 Lote de origem | `[-]` | Snapshot, hash e linhas brutas persistidos; CLI local de inventário/comparação por coordenada versionada. Faltam recebimento, armazenamento e prévia reconciliada por entidade. |
 | DEV08 Leitura Excel | `[-]` | Python/openpyxl lê valores salvos do arquivo aprovado; avaliar os 11 cabeçalhos Pré além de `AZ` já presentes e generalizar leitura de versões novas. |
@@ -176,8 +176,8 @@ em `5962c5a`. O timestamp de captura é lido de `source_row.created_at`, validad
 no banco operacional em transação somente leitura e não requer migration. M016
 passou na CI, mas permanece pendente na VPS; o resumo publicado não depende dela.
 Preview continua desconectado do banco operacional. A mudança M017 de histórico
-de cadastros passou na API/Web CI e no teste local do contrato; um novo teste do
-upgrade M016→M017 aguarda CI. Depois faltam cópia restaurada e release controlado.
+de cadastros passou na API/Web CI e no teste local do contrato; a API CI `51f345d`
+passou o upgrade M016→M017. Faltam cópia restaurada e release controlado.
 O próximo aceite funcional é validar a interface e o isolamento com uma conta
 restrita real; não havia grant restrito ativo no banco durante a última
 verificação. As decisões de fonte/empresa/filial, itens oficiais e workflow
@@ -186,7 +186,7 @@ seguem com Compras/TI TOTVS e Product Owner.
 **Validação em 2026-10-03:** builds Node/API e Next.js passaram; testes locais
 anteriores passaram (29 API e 3 Web; lint sem erros, 22 avisos). Neste incremento,
 build da API e 30 testes passaram, incluindo o contrato de histórico de cadastros.
-API CI/Web CI passaram em `5962c5a`; o gate M016→M017 foi ampliado e aguarda nova
-execução na CI. API e UI publicadas incluem carteira e timestamp; M017 segue sem
-release. A matriz dos casos de homologação está no plano §24.4–24.5; nenhum
+API CI/Web CI passaram em `5962c5a`; API CI passou em `51f345d` com o gate
+M016→M017. API e UI publicadas incluem carteira e timestamp; M017 segue sem
+validação em cópia restaurada ou release. A matriz dos casos de homologação está no plano §24.4–24.5; nenhum
 resultado histórico substitui o aceite funcional e de negócio.
