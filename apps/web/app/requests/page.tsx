@@ -39,7 +39,9 @@ export default function RequestsPage() {
       if (!identityResponse.ok || !importerResponse.ok || !requestResponse.ok) {
         const response = !identityResponse.ok ? identityResponse : !importerResponse.ok ? importerResponse : requestResponse;
         throw new Error(response.status === 401 ? "Sua sessão expirou. Entre novamente." :
-          response.status === 403 ? "Seu perfil não pode consultar solicitações." : "Não foi possível carregar os dados.");
+          response.status === 403
+            ? "Seu perfil não tem acesso às solicitações. Entre em contato com o administrador do sistema para conferir seu papel e a importadora autorizada."
+            : "Não foi possível carregar os dados.");
       }
       const identity = await identityResponse.json() as { roles: string[] };
       const importerData = await importerResponse.json() as { items: Array<{ code: string }> };
@@ -107,7 +109,7 @@ export default function RequestsPage() {
         {lines.length < 100 && <button className="button secondary" type="button" onClick={() => setLines(current => [...current, blankLine()])}>Adicionar item</button>}
         <button className="button" disabled={saving || !importer}>{saving ? "Registrando…" : "Registrar solicitação"}</button>
       </form>
-    </section> : <p className="notice">Seu perfil permite consultar solicitações. Para registrar uma solicitação, peça ao Master para revisar seu acesso.</p>}
+    </section> : <p className="notice">Seu perfil permite apenas consultar solicitações. Para solicitar permissão para criar solicitações, entre em contato com o administrador do sistema.</p>}
     <section className="card" aria-live="polite">
       <h2>Solicitações recentes</h2>
       {loading && <p role="status">Carregando…</p>}
