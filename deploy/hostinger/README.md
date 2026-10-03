@@ -4,6 +4,23 @@
 > [O checklist vigente](../../CHECKLIST_ATUAL_IMPLEMENTACAO.md) registra M001–M013
 > no histórico operacional. Confira o ledger real antes do próximo release.
 
+## Release M014: monitor da outbox
+
+Prepare um staging sob `/tmp` com as migrations M001–M014, `dist/migrate.js`,
+`dist/server.js`, `dist/admin-outbox.js`, os fontes correspondentes e
+`validate-m014-on-copy.py`, `release-m014.sh`, `verify-api-ready.sh`.
+Use o `node_modules` instalado na VPS e execute:
+
+```bash
+ERP_STAGE_DIR=/tmp/erp-m014-release bash /tmp/erp-m014-release/deploy/hostinger/release-m014.sh
+```
+
+O script exige M001–M013 aplicadas e M014 pendente. Ele faz backup verificável,
+restaura uma cópia, aplica M014 nela, testa o grant e a leitura da view com a role
+da API, depois migra o banco operacional e instala os arquivos da rota. Se a
+checagem de saúde falhar, o `server.js` anterior é restaurado; M014 permanece.
+Uma retomada exige `ERP_M014_RESUME=true` e o caminho/hash do backup verificado.
+
 ## Release M013: histórico de solicitações
 
 O código e a migration M013 devem ser enviados juntos à VPS. Monte um diretório
