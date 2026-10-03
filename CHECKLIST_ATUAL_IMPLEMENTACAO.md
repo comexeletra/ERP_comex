@@ -82,6 +82,13 @@ em lote versionado. A aba Pós não tem cabeçalho nomeado após `AS` na linha 4
   em cópia restaurada; nenhum backup remoto foi criado e nenhuma migration foi
   aplicada ao banco operacional. Restaurar o acesso SSH é necessário antes de
   continuar o release M016/M017.
+- **Cobertura da prévia de planilhas:** o inventário já lia cabeçalhos fora da
+  faixa atual, mas não os destacava como alerta. O relatório agora expõe
+  `headersOutsideCurrentExtraction` (inventário) e
+  `candidateHeadersOutsideCurrentExtraction` (comparação), considerando Pré
+  `B:AZ` e Pós `B:AS`. No arquivo aprovado, os 11 cabeçalhos Pré em `BB:BH` e
+  `BJ:BM` continuam fora da origem importada e seguem aguardando decisão de
+  escopo; o alerta não os inclui nem altera dados automaticamente.
 
 Os dados históricos da planilha permanecem a fonte mestra até um corte formal.
 Valores da origem são preservados; apenas erros de cálculo do Excel pedem revisão

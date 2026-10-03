@@ -21,6 +21,10 @@ from openpyxl.utils import column_index_from_string, get_column_letter
 SOURCE_SHEETS = ("Pré Embarque", "Pós Embarque")
 HEADER_ROW = 4
 FIRST_DATA_ROW = 5
+EXTRACTED_COLUMN_RANGES = {
+    "Pré Embarque": ("B", "AZ"),
+    "Pós Embarque": ("B", "AS"),
+}
 
 
 def normalized(value: object) -> object:
@@ -84,6 +88,14 @@ def compare_snapshots(baseline: dict, candidate: dict, sample_limit: int = 25) -
             result["sheets"][name] = {"status": "missing in baseline" if old is None else "missing in candidate"}
             continue
         old_headers, new_headers = old["headers"], new["headers"]
+        first_column, last_column = EXTRACTED_COLUMN_RANGES[name]
+        first_imported_index = column_index_from_string(first_column)
+        last_imported_index = column_index_from_string(last_column)
+        outside_headers = [
+            {"column": column, "header": header}
+            for column, header in sorted(new_headers.items(), key=lambda item: column_index_from_string(item[0]))
+            if not first_imported_index <= column_index_from_string(column) <= last_imported_index
+        ]
         header_changes = [
             {"column": column, "before": old_headers.get(column), "after": new_headers.get(column)}
             for column in sorted(set(old_headers) | set(new_headers), key=column_index_from_string)
@@ -115,6 +127,8 @@ def compare_snapshots(baseline: dict, candidate: dict, sample_limit: int = 25) -
         ]
         result["sheets"][name] = {
             "status": "compared", "headerChanges": header_changes,
+            "currentExtractionRange": f"{first_column}:{last_column}",
+            "candidateHeadersOutsideCurrentExtraction": outside_headers,
             "baselineRows": len(old_rows), "candidateRows": len(new_rows),
             "addedRowPositions": len(new_positions - old_positions),
             "removedRowPositions": len(old_positions - new_positions),
@@ -128,14 +142,27 @@ def compare_snapshots(baseline: dict, candidate: dict, sample_limit: int = 25) -
 
 
 def inventory(snapshot: dict) -> dict:
+    sheets = {}
+    for name, sheet in snapshot["sheets"].items():
+        first_column, last_column = EXTRACTED_COLUMN_RANGES[name]
+        first_imported_index = column_index_from_string(first_column)
+        last_imported_index = column_index_from_string(last_column)
+        outside_headers = [
+            {"column": column, "header": header}
+            for column, header in sorted(sheet["headers"].items(), key=lambda item: column_index_from_string(item[0]))
+            if not first_imported_index <= column_index_from_string(column) <= last_imported_index
+        ]
+        sheets[name] = {
+            "dataRows": len(sheet["rows"]),
+            "headers": sheet["headers"],
+            "formulaCells": len(sheet["formulas"]),
+            "currentExtractionRange": f"{first_column}:{last_column}",
+            "headersOutsideCurrentExtraction": outside_headers,
+        }
     return {
         "path": snapshot["path"], "sha256": snapshot["sha256"],
         "sheetNames": snapshot["sheetNames"],
-        "sheets": {
-            name: {"dataRows": len(sheet["rows"]), "headers": sheet["headers"],
-                   "formulaCells": len(sheet["formulas"])}
-            for name, sheet in snapshot["sheets"].items()
-        },
+        "sheets": sheets,
     }
 
 

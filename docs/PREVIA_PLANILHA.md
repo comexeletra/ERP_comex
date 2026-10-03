@@ -24,6 +24,10 @@ na linha 4, contagens de linhas a partir da linha 5, células alteradas por colu
 fórmulas alteradas e até 25 exemplos de valores anteriores/novos. `--sample-limit`
 aceita de 0 a 100. Todos os cabeçalhos e células das abas `Pré Embarque` e
 `Pós Embarque` são lidos, inclusive fora do intervalo importado hoje.
+O inventário lista explicitamente `headersOutsideCurrentExtraction` por aba:
+Pré `B:AZ` e Pós `B:AS`. A comparação inclui
+`candidateHeadersOutsideCurrentExtraction` para a versão nova, para que campos
+fora da faixa não passem despercebidos entre diferenças posicionais.
 
 A comparação é **por posição de linha e célula**, não por identidade de PO/IP.
 Uma linha inserida pode deslocar as seguintes e aumentar as diferenças. Fórmulas
