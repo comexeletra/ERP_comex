@@ -77,7 +77,7 @@ política aprovada. Datas visíveis seguem `MM/DD/YYYY` e, com horário,
 | RF11 Documentos | `[ ]` | Nenhum fluxo de upload/download operacional. | Storage privado, versões, autorização, vínculo e restauração. |
 | RF12 Histórico/auditoria | `[-]` | Origem imutável, revisão de qualidade, auditoria e outbox em comandos existentes. M013 aplicada após backup/cópia restaurada; a API de histórico de solicitações está ativa na VPS. | Ampliar timeline às demais entidades e criar consumidor da outbox; homologar a tela com usuário restrito real. |
 | RF13 Histórico Excel | `[-]` | Carga idempotente do snapshot aprovado; `/source-audit` com abas Pré/Pós, filtros e cabeçalhos; revisão de qualidade. CLI de inventário/comparação posicional de versões sem escrita no banco. | Decidir cobertura dos 11 cabeçalhos Pré além de `AZ` já no arquivo aprovado; reconciliar entidades de versões novas, promover sem sobrescrita e aceitar os erros de cálculo. |
-| RF14 Painéis | `[-]` | Exportação CSV da carteira filtrada e restrita ao escopo foi versionada; ainda não há painel operacional completo. | Catálogo de KPIs por grão/moeda, filtros, atualização e relatórios completos. |
+| RF14 Painéis | `[-]` | API do resumo histórico publicada na VPS em 2026-10-03; consulta somente leitura do banco real passou (336 POs, 6.796 linhas), com autorização e escopo validados. UI/CSV e testes locais estão no checkout; build/testes locais passaram. | Catálogo de KPIs oficiais por grão/moeda, referência temporal de atualização, relatórios completos, publicação da UI e aceite dos valores. O resumo histórico não é saldo, atendimento oficial nem valor comercial. |
 | RF15 Administração | `[-]` | Master gerencia usuários, papéis e escopos e pode consultar metadados da outbox. | Parâmetros operacionais, acompanhamento dos demais jobs e autorização completa para novos módulos. |
 | RF16 Analítico | `[ ]` | Sem DW/ETL/modelo semântico ativo no repositório. | Banco analítico, cargas reconciliadas, fatos/dimensões, Power BI e RLS. |
 
@@ -113,7 +113,7 @@ reaproveitado.
 | DEV22 Regras fiscais | `[ ]` | Sem cálculo/regra de benefício aprovada; depende do Fiscal. |
 | DEV23 Documentos | `[ ]` | Selecionar storage privado e construir fluxo autorizado/versionado. |
 | DEV24 Auditoria/outbox | `[-]` | Escrita atômica nos comandos existentes, histórico de solicitações M013 e monitor Master da fila M014 instalados. Faltam consumidor, política de retries e retenção. |
-| DEV25 Dashboard | `[-]` | CSV filtrado da carteira de POs versionado, sem valores ou saldos oficiais. Faltam painel, indicadores por grão/moeda e referência temporal. |
+| DEV25 Dashboard | `[-]` | API do resumo histórico publicada na VPS em 2026-10-03 e validada em leitura no banco real; CSV, UI e contrato de query do frontend estão no checkout. | Painel operacional, indicadores oficiais por grão/moeda, referência temporal, CI completa, publicação da UI, atualização e aceite com dados reconciliados. |
 | DEV26 ETL | `[ ]` | Sem carga analítica; criar dimensões, watermark, reexecução e reconciliação. |
 | DEV27 Fatos/medidas | `[ ]` | Sem fatos e medidas; impedir ligação fato a fato e soma entre moedas. |
 | DEV28 Power BI/RLS | `[ ]` | Sem PBIP, refresh ou RLS; validar acesso por importador real. |
@@ -146,9 +146,19 @@ reaproveitado.
 ## Próximo incremento verificável
 
 Priorizar o registro dos casos de homologação já executados e das decisões de
-produto/TOTVS, pois elas determinam o modelo dos itens oficiais. A próxima
-entrega técnica independente da planilha é preparar ambiente segregado de
-integração e ampliar os contratos de teste de API e frontend. Validar a tela
-de histórico e o monitor com perfis reais quando houver sessões disponíveis.
-Nenhuma contagem histórica ou evidência .NET/SQLite substitui o aceite dos novos
-comandos na API Fastify e no PostgreSQL.
+produto/TOTVS, pois elas determinam o modelo dos itens oficiais. A CI da API usa
+PostgreSQL descartável e aplica as migrations nesse banco isolado; a CI web
+executa testes próprios. O checkout acrescenta contrato de autorização/escopo,
+fixture sintética para SQL de agregação em PostgreSQL e contrato de filtros do
+frontend para o resumo da carteira. A API do resumo foi publicada na VPS em
+2026-10-03 e validada em leitura somente leitura no banco real; Preview continua
+desconectado do banco operacional. Ainda falta executar as CIs. Validar a tela de
+histórico e o monitor com perfis reais quando houver sessões disponíveis.
+
+**Validação local em 2026-10-03:** Node 24; build e 29 testes unitários da API
+passaram; lint da web terminou sem erros (22 avisos), os 3 testes da web passaram
+e o build Next.js passou. A integração com PostgreSQL descartável não foi
+executada porque o Docker daemon não está disponível neste computador. A CI
+hospedada também permanece pendente. A rota da API está publicada na VPS; a UI
+continua apenas no checkout. Nenhuma contagem histórica ou evidência .NET/SQLite
+substitui o aceite dos novos comandos na API Fastify e no PostgreSQL.

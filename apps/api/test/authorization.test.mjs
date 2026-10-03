@@ -269,6 +269,46 @@ test("production PO list passes all four filters with pagination inside the impo
   assert.equal(queries.length, 2);
 });
 
+test("portfolio summary uses the same filters and importer scope before aggregation", async t => {
+  const queries = [];
+  const pool = {
+    async query(sql, values) {
+      queries.push({ sql, values });
+      if (sql.includes("identity.erp_user_role")) {
+        return { rows: [{ role: "Consulta", importer_code: "ELETRA MATRIZ" }] };
+      }
+      assert.match(sql, /WITH filtered_po AS MATERIALIZED/u);
+      assert.match(sql, /WHERE po\.importer = ANY\(\$1::text\[\]\)/u);
+      assert.match(sql, /process\.importer = ANY\(\$1::text\[\]\)/u);
+      assert.deepEqual(values, [["ELETRA MATRIZ"], "18751", "eletra", "motor", "IP-20"]);
+      return { rows: [{ purchase_orders: 1, linked_processes: 2, lines: 8,
+        lines_without_ip: 1, by_importer: [{ importer: "ELETRA MATRIZ", purchaseOrders: 1 }] }] };
+    },
+  };
+  const app = Fastify();
+  app.decorateRequest("authContext", null);
+  await registerAuthorization(app, pool);
+  app.addHook("onRequest", async request => {
+    if (request.headers["x-test-subject"] === "reader") {
+      request.authContext = { issuer: "issuer:reader", subject: "reader", userId: "u1",
+        displayName: null, sessionToken: "test" };
+    }
+  });
+  await registerPurchaseOrderReadRoutes(app, pool);
+  t.after(() => app.close());
+
+  assert.equal((await app.inject({ method: "GET", url: "/api/v1/purchase-orders/summary" })).statusCode, 401);
+  assert.equal(queries.length, 0);
+  const response = await app.inject({ method: "GET",
+    url: "/api/v1/purchase-orders/summary?number=18751&importer=eletra&product=motor&ipNumber=IP-20",
+    headers: { "x-test-subject": "reader" } });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers["cache-control"], "no-store");
+  assert.deepEqual(response.json(), { purchaseOrders: 1, linkedProcesses: 2, lines: 8,
+    linesWithoutIp: 1, byImporter: [{ importer: "ELETRA MATRIZ", purchaseOrders: 1 }] });
+  assert.equal(queries.length, 2);
+});
+
 test("production history lookup applies PO scope in the ID query and returns 404 when hidden", async (t) => {
   const queries = [];
   const visibleId = "00000000-0000-4000-8000-000000000001";

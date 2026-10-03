@@ -74,6 +74,17 @@ try {
   const get = (url, identity = "master") => app.inject({ method: "GET", url, headers: identity ? { "x-test-identity": identity } : {} });
   assert.equal((await get("/api/v1/purchase-orders", "")).statusCode, 401);
   assert.equal((await get("/api/v1/purchase-orders", "no-grant")).statusCode, 403);
+  assert.equal((await get("/api/v1/purchase-orders/summary", "")).statusCode, 401);
+  assert.equal((await get("/api/v1/purchase-orders/summary", "no-grant")).statusCode, 403);
+
+  const summaryResponse = await get("/api/v1/purchase-orders/summary");
+  assert.equal(summaryResponse.statusCode, 200);
+  const summary = summaryResponse.json();
+  assert.equal(summary.purchaseOrders, 336);
+  assert.equal(summary.lines, 6796);
+  assert.ok(summary.linkedProcesses > 0 && summary.linkedProcesses <= 200);
+  assert.ok(summary.linesWithoutIp >= 0 && summary.linesWithoutIp <= summary.lines);
+  assert.equal(summary.byImporter.reduce((total, row) => total + row.purchaseOrders, 0), 336);
 
   const first = await get("/api/v1/purchase-orders?page=1&pageSize=50");
   assert.equal(first.statusCode, 200);
@@ -126,6 +137,10 @@ try {
   const ipFilter = await get("/api/v1/purchase-orders?ipNumber=NH-017%2F2025");
   assert.equal(ipFilter.statusCode, 200);
   assert.equal(ipFilter.json().totalCount, 4);
+  const ipSummary = await get("/api/v1/purchase-orders/summary?ipNumber=NH-017%2F2025");
+  assert.equal(ipSummary.statusCode, 200);
+  assert.equal(ipSummary.json().purchaseOrders, ipFilter.json().totalCount);
+  assert.ok(ipSummary.json().linkedProcesses >= 1);
   const importerFilter = await get("/api/v1/purchase-orders?importer=matriz");
   assert.equal(importerFilter.statusCode, 200);
   assert.ok(importerFilter.json().totalCount > 0);
@@ -159,6 +174,10 @@ try {
   assert.equal(scopedList.statusCode, 200);
   assert.ok(scopedList.json().totalCount > 0 && scopedList.json().totalCount < 336);
   assert.ok(scopedList.json().items.every(item => item.importer === syntheticImporter));
+  const scopedSummary = await get("/api/v1/purchase-orders/summary", "scoped");
+  assert.equal(scopedSummary.statusCode, 200);
+  assert.equal(scopedSummary.json().purchaseOrders, scopedList.json().totalCount);
+  assert.deepEqual(scopedSummary.json().byImporter.map(item => item.importer), [syntheticImporter]);
   assert.equal((await get(`/api/v1/purchase-orders/${outsideSyntheticScope.rows[0].id}/overview`, "scoped")).statusCode, 404);
   assert.equal((await get(`/api/v1/purchase-orders/${outsideSyntheticScope.rows[0].id}/history-items`, "scoped")).statusCode, 404);
   console.log("Synthetic single-importer grant on real data: scoped list and hidden PO 404 passed.");

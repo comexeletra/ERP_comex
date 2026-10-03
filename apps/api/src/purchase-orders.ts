@@ -4,14 +4,37 @@ import { z } from "zod";
 import { importerScopePredicate, permissionConfig } from "./authorization.js";
 import { sourceColumnHeadersFor } from "./source-audit.js";
 
-const listQuery = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(200).default(50),
+const portfolioFilterFields = {
   number: z.string().trim().max(80).optional(),
   importer: z.string().trim().max(120).optional(),
   product: z.string().trim().max(200).optional(),
   ipNumber: z.string().trim().max(80).optional(),
+};
+const listQuery = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(50),
+  ...portfolioFilterFields,
 }).strict();
+const summaryQuery = z.object(portfolioFilterFields).strict();
+
+function portfolioWhere(scopeSql: string): string {
+  return `WHERE ${scopeSql}
+    AND ($2::text IS NULL OR strpos(po.normalized_number, upper($2)) > 0)
+    AND ($3::text IS NULL OR strpos(lower(po.importer), lower($3)) > 0)
+    AND ($4::text IS NULL OR EXISTS (
+      SELECT 1 FROM procurement.po_line_observation AS obs
+      WHERE obs.purchase_order_id = po.id
+        AND (strpos(lower(coalesce(obs.product_code_snapshot, '')), lower($4)) > 0
+             OR strpos(lower(coalesce(obs.description_snapshot, '')), lower($4)) > 0)
+    ))
+    AND ($5::text IS NULL OR EXISTS (
+      SELECT 1 FROM procurement.process_purchase_order AS link
+      JOIN imports.import_process AS process ON process.id = link.process_id
+      WHERE link.purchase_order_id = po.id
+        AND process.importer = ANY($1::text[])
+        AND strpos(lower(process.ip_number), lower($5)) > 0
+    ))`;
+}
 
 type PurchaseOrderListRow = {
   total_count: number | string;
@@ -75,23 +98,7 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
                    ON obs.source_row_id = issue.source_row_id
                  WHERE obs.purchase_order_id = po.id AND issue.status = 'OPEN') AS unresolved_issue_count
          FROM procurement.purchase_order AS po
-         WHERE ${scoped.sql}
-           AND ($2::text IS NULL OR strpos(po.normalized_number, upper($2)) > 0)
-           AND ($3::text IS NULL OR strpos(lower(po.importer), lower($3)) > 0)
-           AND ($4::text IS NULL OR EXISTS (
-             SELECT 1 FROM procurement.po_line_observation AS obs
-             WHERE obs.purchase_order_id = po.id
-               AND (strpos(lower(coalesce(obs.product_code_snapshot, '')), lower($4)) > 0
-                    OR strpos(lower(coalesce(obs.description_snapshot, '')), lower($4)) > 0)
-           ))
-           AND ($5::text IS NULL OR EXISTS (
-             SELECT 1
-             FROM procurement.process_purchase_order AS link
-             JOIN imports.import_process AS process ON process.id = link.process_id
-             WHERE link.purchase_order_id = po.id
-               AND process.importer = ANY($1::text[])
-               AND strpos(lower(process.ip_number), lower($5)) > 0
-           ))
+         ${portfolioWhere(scoped.sql)}
        ), page AS (
          SELECT * FROM filtered
          ORDER BY normalized_number, id
@@ -124,6 +131,60 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
       pageSize,
       totalCount: Number(result.rows[0]?.total_count ?? 0),
       items: result.rows[0]?.items ?? [],
+    };
+  });
+
+  app.get("/api/v1/purchase-orders/summary", {
+    config: permissionConfig("purchase-orders.read"),
+  }, async (request, reply) => {
+    const parsed = summaryQuery.safeParse(request.query);
+    if (!parsed.success) return badQuery(reply, parsed.error.flatten().fieldErrors);
+    const { number, importer, product, ipNumber } = parsed.data;
+    const scoped = importerScopePredicate(
+      "po.importer", 1, request.authorizationContext?.importerScopes ?? [],
+    );
+    const result = await pool.query<{
+      purchase_orders: number; linked_processes: number; lines: number;
+      lines_without_ip: number; by_importer: Array<{ importer: string; purchaseOrders: number }>;
+    }>(
+      `WITH filtered_po AS MATERIALIZED (
+         SELECT po.id, po.importer FROM procurement.purchase_order AS po
+         ${portfolioWhere(scoped.sql)}
+       ), lines AS (
+         SELECT count(*)::int AS total,
+                count(*) FILTER (WHERE
+                  NULLIF(btrim(obs.source_ip_text), '') IS NULL
+                  OR upper(btrim(obs.source_ip_text)) IN ('CANCELLED', 'CANCELED')
+                  OR left(btrim(obs.source_ip_text), 1) = '#')::int AS without_ip
+         FROM filtered_po AS po
+         JOIN procurement.po_line_observation AS obs ON obs.purchase_order_id = po.id
+       ), linked AS (
+         SELECT count(DISTINCT process.id)::int AS total
+         FROM filtered_po AS po
+         JOIN procurement.process_purchase_order AS link ON link.purchase_order_id = po.id
+         JOIN imports.import_process AS process ON process.id = link.process_id
+         WHERE process.importer = ANY($1::text[])
+       ), importer_counts AS (
+         SELECT importer, count(*)::int AS purchase_orders
+         FROM filtered_po GROUP BY importer
+       )
+       SELECT (SELECT count(*)::int FROM filtered_po) AS purchase_orders,
+              (SELECT total FROM linked) AS linked_processes,
+              (SELECT total FROM lines) AS lines,
+              (SELECT without_ip FROM lines) AS lines_without_ip,
+              coalesce((SELECT jsonb_agg(jsonb_build_object(
+                'importer', importer, 'purchaseOrders', purchase_orders)
+                ORDER BY importer) FROM importer_counts), '[]'::jsonb) AS by_importer`,
+      [scoped.values[0], number || null, importer || null, product || null, ipNumber || null],
+    );
+    const row = result.rows[0];
+    reply.header("Cache-Control", "no-store");
+    return {
+      purchaseOrders: Number(row?.purchase_orders ?? 0),
+      linkedProcesses: Number(row?.linked_processes ?? 0),
+      lines: Number(row?.lines ?? 0),
+      linesWithoutIp: Number(row?.lines_without_ip ?? 0),
+      byImporter: row?.by_importer ?? [],
     };
   });
 

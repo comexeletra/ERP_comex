@@ -714,6 +714,29 @@ Transição:
 
 Paginação: `items`, `page`, `pageSize`, `totalCount`, `hasNext`. Para exportação, devolver `jobId` e endpoint de acompanhamento; jamais carregar todas as linhas no navegador para filtrar.
 
+### 13.4 Resumo inicial da carteira
+
+`GET /api/v1/purchase-orders/summary` aceita os mesmos filtros de negócio da
+carteira (`number`, `importer`, `product`, `ipNumber`), sem paginação. O
+backend aplica o escopo de importadores antes de agregar e exige
+`purchase-orders.read`. A tela envia o mesmo conjunto de filtros para lista e
+resumo.
+
+O primeiro resumo é estritamente histórico: `purchaseOrders` conta POs distintas
+no recorte; `linkedProcesses` conta IPs distintos vinculados; `lines` conta
+observações históricas da planilha; `linesWithoutIp` conta observações sem IP
+válido segundo a classificação já usada pela carteira; e `byImporter` divide a
+contagem de POs por importador visível. Esses números não representam linhas
+oficiais TOTVS, quantidade atendida, saldo, custo ou valor comercial. A primeira
+entrega não mistura moedas e não informa ainda uma referência temporal de
+atualização; por isso RF14/DEV25 continuam parciais.
+
+O contrato da rota tem cobertura de autorização, filtros e isolamento por
+importador em teste de API; a consulta SQL também tem fixture sintética para o
+PostgreSQL descartável da CI. O frontend cobre a serialização e a paridade dos
+filtros de lista/resumo. Esses testes precisam passar na CI antes de considerar
+essa entrega pronta; não substituem o aceite dos indicadores com dados de negócio.
+
 ## 14 Interface e experiência de uso
 
 ### 14.1 Navegação

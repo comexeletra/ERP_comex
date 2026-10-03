@@ -4,23 +4,24 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { purchaseOrdersCsv, type ExportPurchaseOrder } from "../lib/po-export";
+import { portfolioFilterQuery, purchaseOrderListQuery, type PortfolioFilters } from "../lib/portfolio-query";
 
-type Filters = { number: string; importer: string; product: string; ipNumber: string };
+type Filters = PortfolioFilters;
 type PurchaseOrder = ExportPurchaseOrder & {
   officialItemsKnown: boolean; historicalItemCount: number; linkedProcessCount: number;
   historicalItemsWithIp: number; historicalItemsWithoutIp: number;
   unresolvedIssueCount: number; balanceAvailable: boolean;
 };
 type PurchaseOrderPage = { page: number; pageSize: number; totalCount: number; items: PurchaseOrder[] };
+type PortfolioSummary = { purchaseOrders: number; linkedProcesses: number; lines: number;
+  linesWithoutIp: number; byImporter: Array<{ importer: string; purchaseOrders: number }> };
+type PortfolioSummaryState = { query: string; value: PortfolioSummary };
+type PortfolioSummaryFailure = { query: string; message: string };
 const emptyFilters: Filters = { number: "", importer: "", product: "", ipNumber: "" };
 const pageSize = 50;
 
 function queryFor(filters: Filters, page: number, size = pageSize) {
-  const query = new URLSearchParams({ page: String(page), pageSize: String(size) });
-  for (const key of Object.keys(emptyFilters) as (keyof Filters)[]) {
-    if (filters[key].trim()) query.set(key, filters[key].trim());
-  }
-  return query;
+  return purchaseOrderListQuery(filters, page, size);
 }
 
 export default function PortfolioPage() {
@@ -34,6 +35,12 @@ export default function PortfolioPage() {
   const [retry, setRetry] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
+  const [summaryState, setSummaryState] = useState<PortfolioSummaryState>();
+  const [summaryFailure, setSummaryFailure] = useState<PortfolioSummaryFailure>();
+  const summaryQuery = portfolioFilterQuery(applied).toString();
+  const summary = summaryState?.query === summaryQuery ? summaryState.value : undefined;
+  const summaryError = summaryFailure?.query === summaryQuery ? summaryFailure.message : "";
+  const summaryLoading = !ready || (!summary && !summaryError);
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
@@ -68,6 +75,29 @@ export default function PortfolioPage() {
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [applied, page, ready, retry]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const controller = new AbortController();
+    const query = portfolioFilterQuery(applied).toString();
+    apiFetch(`/api/v1/purchase-orders/summary?${query}`, { signal: controller.signal })
+      .then(async response => {
+        if (!response.ok) throw new Error("Não foi possível carregar os indicadores da carteira.");
+        return await response.json() as PortfolioSummary;
+      })
+      .then(data => {
+        if (!controller.signal.aborted) {
+          setSummaryState({ query, value: data });
+          setSummaryFailure(current => current?.query === query ? undefined : current);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setSummaryFailure({ query, message: "Indicadores indisponíveis no momento." });
+        }
+      });
+    return () => controller.abort();
+  }, [applied, ready, retry]);
 
   function navigate(filters: Filters, nextPage: number) {
     setApplied(filters);
@@ -120,19 +150,34 @@ export default function PortfolioPage() {
   return <main className="shell">
     <header className="page-header">
       <p className="eyebrow">ERP Comex</p><h1>Carteira de POs TOTVS</h1>
-      <p>Uma linha por pedido. Abra a PO para consultar observações históricas, IPs vinculados e pendências.</p>
-      <Link className="text-link" href="/source-audit">Tabela de auditoria →</Link> · <Link className="text-link" href="/requests">Solicitações →</Link> · <Link className="text-link" href="/processes">Consultar IPs →</Link> · <Link className="text-link" href="/pending-import-items">Linhas sem IP →</Link> · <Link className="text-link" href="/unassigned-po-items">Linhas sem PO →</Link> · <Link className="text-link" href="/quality">Revisar qualidade →</Link> · <Link className="text-link" href="/catalog">Cadastros →</Link>
+      <p>Uma linha por pedido. Abra a PO para consultar suas linhas, IPs vinculados e pendências.</p>
+      <Link className="text-link" href="/source-audit">Planilha de origem →</Link> · <Link className="text-link" href="/requests">Solicitações →</Link> · <Link className="text-link" href="/processes">Consultar IPs →</Link> · <Link className="text-link" href="/pending-import-items">Linhas sem IP →</Link> · <Link className="text-link" href="/unassigned-po-items">Linhas sem PO →</Link> · <Link className="text-link" href="/quality">Revisar qualidade →</Link> · <Link className="text-link" href="/catalog">Cadastros →</Link>
     </header>
     <section className="card">
       <form className="portfolio-filter" onSubmit={filter}>
         <label>Número da PO<input value={draft.number} onChange={event => setDraft(value => ({ ...value, number: event.target.value }))} placeholder="18751" /></label>
         <label>Importador<input value={draft.importer} onChange={event => setDraft(value => ({ ...value, importer: event.target.value }))} placeholder="Parte do nome" /></label>
-        <label>Produto na origem<input value={draft.product} onChange={event => setDraft(value => ({ ...value, product: event.target.value }))} placeholder="Código ou descrição" /></label>
+        <label>Produto<input value={draft.product} onChange={event => setDraft(value => ({ ...value, product: event.target.value }))} placeholder="Código ou descrição" /></label>
         <label>IP vinculado<input value={draft.ipNumber} onChange={event => setDraft(value => ({ ...value, ipNumber: event.target.value }))} placeholder="Número do IP" /></label>
         <button className="button" type="submit">Aplicar filtros</button>
         <button className="button secondary" type="button" onClick={() => { setDraft(emptyFilters); navigate(emptyFilters, 1); }}>Limpar</button>
       </form>
-      <p className="muted">Produto pesquisa código ou descrição nas observações de origem. Fornecedor e saldo oficiais ainda não estão confirmados.</p>
+      <p className="muted">A busca por produto usa o código ou a descrição das linhas da planilha. Não há saldo calculado nesta carteira.</p>
+    </section>
+    <section aria-label="Visão da carteira" aria-live="polite">
+      <div className="metric-grid">
+        <div className="metric"><span>POs no recorte</span><strong>{summaryLoading ? "…" : summary?.purchaseOrders.toLocaleString("pt-BR") ?? "—"}</strong></div>
+        <div className="metric"><span>IPs das POs encontradas</span><strong>{summaryLoading ? "…" : summary?.linkedProcesses.toLocaleString("pt-BR") ?? "—"}</strong></div>
+        <div className="metric"><span>Linhas da planilha</span><strong>{summaryLoading ? "…" : summary?.lines.toLocaleString("pt-BR") ?? "—"}</strong></div>
+        <div className="metric"><span>Linhas sem IP</span><strong>{summaryLoading ? "…" : summary?.linesWithoutIp.toLocaleString("pt-BR") ?? "—"}</strong></div>
+      </div>
+      {summaryError && <p className="notice error" role="alert">{summaryError}</p>}
+      {summary && summary.byImporter.length > 1 && <div className="card">
+        <h2>POs por importador</h2>
+        <div className="table-scroll"><table><thead><tr><th>Importador</th><th>POs</th></tr></thead>
+          <tbody>{summary.byImporter.map(item => <tr key={item.importer}><td>{item.importer}</td>
+            <td>{item.purchaseOrders.toLocaleString("pt-BR")}</td></tr>)}</tbody></table></div>
+      </div>}
     </section>
     <section className="card" aria-live="polite">
       {loading && <p role="status">Carregando carteira…</p>}
@@ -141,12 +186,12 @@ export default function PortfolioPage() {
         <p>{result.totalCount} POs encontradas{result.totalCount > 0 && ` · página ${page} de ${totalPages}`}</p>
         {result.totalCount > 0 && <p><button className="button secondary" type="button" disabled={exporting}
           onClick={() => void downloadCsv()}>{exporting ? "Preparando CSV…" : "Exportar carteira filtrada (CSV)"}</button></p>}
-        <p className="muted">O CSV contém somente campos históricos e contagens visíveis no seu escopo; não inclui saldo ou valores oficiais.</p>
+        <p className="muted">O CSV contém campos e contagens da carteira visíveis no seu escopo; não inclui saldo nem valores monetários.</p>
         {exportError && <p className="notice error" role="alert">{exportError}</p>}
         {result.items.length === 0 && result.totalCount > 0 ? <p>Esta página está fora do intervalo. <button className="button" onClick={() => navigate(applied, 1)}>Ir para a primeira página</button></p> : null}
         {result.totalCount === 0 ? <p>Nenhuma PO encontrada. Revise os filtros ou limpe a busca.</p> : null}
         {result.items.length > 0 && <div className="table-scroll"><table>
-          <thead><tr><th>PO TOTVS</th><th>Importador</th><th>Observações históricas</th><th>IPs</th><th>Linhas sem IP</th><th>Pendências</th><th>Ação</th></tr></thead>
+          <thead><tr><th>PO TOTVS</th><th>Importador</th><th>Linhas da planilha</th><th>IPs</th><th>Linhas sem IP</th><th>Pendências</th><th>Ação</th></tr></thead>
           <tbody>{result.items.map(order => <tr key={order.id}>
             <td><strong>{order.number}</strong></td><td>{order.importer}</td>
             <td>{order.historicalItemCount}</td><td>{order.linkedProcessCount}</td>
