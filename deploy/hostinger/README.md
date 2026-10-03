@@ -4,6 +4,26 @@
 > [O checklist vigente](../../CHECKLIST_ATUAL_IMPLEMENTACAO.md) registra M001–M012
 > no histórico operacional. Confira o ledger real antes do próximo release.
 
+## Release M013: histórico de solicitações
+
+O código e a migration M013 devem ser enviados juntos à VPS. Monte um diretório
+de staging sob `/tmp` com `apps/api/migrations/M001`–`M013`,
+`apps/api/dist/migrate.js`, `apps/api/dist/requests.js`,
+`apps/api/src/requests.ts` e os scripts `validate-m013-on-copy.py`,
+`release-m013.sh` e `verify-api-ready.sh` em `deploy/hostinger`. O staging usa
+`node_modules` já instalado na API da VPS. Depois de conferir o conteúdo:
+
+```bash
+ERP_STAGE_DIR=/tmp/erp-m013-release bash /tmp/erp-m013-release/deploy/hostinger/release-m013.sh
+```
+
+O script exige M001–M012 aplicadas e M013 pendente. Ele gera backup com hash,
+restaura cópia isolada, aplica M013 na cópia, verifica o grant de leitura da view
+para `import_erp_app`, aplica M013 no operacional e instala a rota da API. O código
+anterior é guardado em `/var/backups/import-erp/m013-api-*`; em falha de saúde,
+o script restaura somente o código. A migration aditiva permanece aplicada.
+Não publique o frontend com a timeline antes de concluir esse release.
+
 Esta instalação usa a VPS `matheusproserv` e o banco operacional `erp_po_totvs_test` escolhido pelo usuário. O computador corporativo não executa componentes de produção. O código da API fica em `/opt/import-erp/apps/api`; configurações e segredos ficam em `/etc/import-erp`.
 
 ## Serviços
