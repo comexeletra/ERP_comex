@@ -64,6 +64,12 @@ em lote versionado. A aba Pós não tem cabeçalho nomeado após `AS` na linha 4
 
 ## Divergências identificadas neste incremento
 
+- **Host canônico para sessão web:** a regra de redirecionamento dos aliases
+  `*.vercel.app` não era executada em `/requests`, `/processes`, `/catalog`,
+  `/source-audit` e nas duas filas legadas, porque essas páginas não estavam no
+  matcher de `proxy.ts`. O matcher foi ampliado para cobrir todas as páginas
+  operacionais atuais; as rotas `/auth/*` e `/api/v1/*` continuam no proxy para
+  preservar o fluxo same-origin e o token de gateway server-side.
 - **Data do snapshot na carteira:** a versão anterior consultava
   `import_batch.promoted_at` e rotulava a data como promoção. O incremento atual
   calcula o maior `source_row.created_at` entre as linhas de origem ligadas às
