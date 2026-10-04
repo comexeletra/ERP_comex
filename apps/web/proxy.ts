@@ -14,9 +14,29 @@ export function proxy(request: NextRequest) {
 
   const requestHost = request.headers.get("host")?.split(":", 1)[0]?.toLowerCase();
   const isVercelPreview = process.env.VERCEL_ENV === "preview";
+  if (isVercelPreview && !isGatewayPath(request.nextUrl.pathname)) {
+    const previewOriginValue = process.env.PREVIEW_PUBLIC_ORIGIN;
+    let previewOrigin: URL;
+    try {
+      previewOrigin = new URL(previewOriginValue ?? "");
+      if (previewOrigin.protocol !== "https:" || previewOrigin.username || previewOrigin.password
+        || previewOrigin.pathname !== "/" || previewOrigin.search || previewOrigin.hash) {
+        throw new Error("PREVIEW_PUBLIC_ORIGIN deve ser uma origem HTTPS.");
+      }
+    } catch {
+      return Response.json({ error: "Preview indisponível." }, { status: 503, headers: { "cache-control": "no-store" } });
+    }
+    if ((request.method === "GET" || request.method === "HEAD")
+      && requestHost !== previewOrigin.hostname.toLowerCase()) {
+      return NextResponse.redirect(
+        new URL(`${request.nextUrl.pathname}${request.nextUrl.search}`, previewOrigin),
+      );
+    }
+  }
+
   // Login sessions belong to the canonical hostname. Vercel also exposes
   // project and deployment hostnames, which must open the same login page.
-  // Preview deployments keep their own hostname so they use isolated sessions.
+  // Preview aliases use a stable Preview hostname for isolated sessions.
   if ((request.method === "GET" || request.method === "HEAD")
     && !isVercelPreview
     && requestHost?.endsWith(".vercel.app")

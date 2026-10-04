@@ -72,9 +72,10 @@ em lote versionado. A aba Pós não tem cabeçalho nomeado após `AS` na linha 4
   preservar o fluxo same-origin e o token de gateway server-side.
 - **Isolamento de Preview:** o proxy agora seleciona `PREVIEW_API_URL` e
   `PREVIEW_API_TOKEN` em deployments Vercel que não sejam Production, sem fallback
-  para as credenciais operacionais. O redirect de hostname canônico também é
-  ignorado em Preview, para manter as sessões no domínio da implantação. Sem
-  configuração própria, a API responde indisponível. A infraestrutura de staging
+  para as credenciais operacionais. `PREVIEW_PUBLIC_ORIGIN` fixa um alias HTTPS
+  para sessão/CSRF; os aliases de deployment redirecionam para ele e o backend
+  staging precisa usar a mesma origem em `APP_PUBLIC_ORIGIN`. Sem configuração
+  própria, as páginas ou rotas da API respondem 503. A infraestrutura de staging
   e o banco de teste ainda precisam ser provisionados antes de habilitar Preview
   funcional.
 - **Data do snapshot na carteira:** a versão anterior consultava
@@ -159,7 +160,7 @@ reaproveitado.
 | DEV | Estado | Base comprovada e lacuna de aceite |
 |---|---|---|
 | DEV01 Monorepo | `[-]` | Projetos web/API e lockfiles pnpm existem; reproduzir instalação/build em checkout limpo e documentar versões exatas. |
-| DEV02 Ambiente | `[-]` | Node 24 e PostgreSQL/VPS operacionais; CI web ativa e verde. Preview mantém hostname/sessão próprios e exige variáveis de API separadas, falhando fechado sem elas; ainda falta provisionar a API e o banco isolados de Preview. |
+| DEV02 Ambiente | `[-]` | Node 24 e PostgreSQL/VPS operacionais; CI web ativa e verde. Preview exige origem estável, variáveis de API separadas e falha fechado sem elas; ainda falta provisionar a API e o banco isolados de Preview. |
 | DEV03 OIDC/sessão | `[-]` | Login local e sessões ativos; OIDC/PKCE no código. Homologar issuer corporativo, callback, expiração, CSRF e logout. |
 | DEV04 Permissões | `[-]` | Papéis/grants e filtros SQL existem. Em 2026-10-03, perfil Consulta acessou a lista de solicitações no escopo de três importadores e não recebeu controles de criação. | Validar escrita negada diretamente na API e respostas 404 para recursos fora do escopo; cobrir as demais rotas com usuário restrito real. |
 | DEV05 Migrations | `[-]` | Runner Node; M001–M017 versionadas. M013–M017 foram validadas em cópia restaurada, backup e grants operacionais conferidos; o release M016/M017 verificou a view de histórico e negou SELECT na tabela de auditoria. |
