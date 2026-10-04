@@ -152,6 +152,7 @@ export default function SourceAuditPage() {
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [optionsError, setOptionsError] = useState<string>();
   const filterPopoverRef = useRef<HTMLElement>(null);
+  const filterTriggerRef = useRef<HTMLButtonElement>(null);
   const sheetTabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
@@ -208,7 +209,7 @@ export default function SourceAuditPage() {
     const closeOnScroll = (event: Event) => {
       const target = event.target;
       if (target instanceof Node && filterPopoverRef.current?.contains(target)) return;
-      setActiveColumn(undefined);
+      closeColumnFilter();
     };
     window.addEventListener("scroll", closeOnScroll, true);
     window.addEventListener("resize", closeOnScroll);
@@ -256,6 +257,7 @@ export default function SourceAuditPage() {
     setPageSize(size); setPage(1); updateUrl(sheet, applied, appliedColumnFilters, 1, size, sort);
   }
   function openColumnFilter(column: string, event: React.MouseEvent<HTMLButtonElement>) {
+    filterTriggerRef.current = event.currentTarget;
     const rect = event.currentTarget.getBoundingClientRect();
     const width = Math.min(360, window.innerWidth - 24);
     const height = Math.min(500, window.innerHeight - 24);
@@ -263,6 +265,10 @@ export default function SourceAuditPage() {
     const top = rect.bottom + height + 10 < window.innerHeight
       ? rect.bottom + 6 : Math.max(12, rect.top - height - 6);
     setFilterPosition({ left, top }); setValueSearch(""); setActiveColumn(column);
+  }
+  function closeColumnFilter() {
+    setActiveColumn(undefined);
+    filterTriggerRef.current?.focus();
   }
   function updateColumnFilter(column: string, update: (current: ColumnFilter) => ColumnFilter) {
     setDraftColumnFilters(current => {
@@ -292,6 +298,28 @@ export default function SourceAuditPage() {
   }
   function clearColumnFilter(column: string) {
     setDraftColumnFilters(current => { const next = { ...current }; delete next[column]; return next; });
+  }
+  function handleFilterDialogKeyDown(event: React.KeyboardEvent<HTMLElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeColumnFilter();
+      return;
+    }
+    if (event.key !== "Tab") return;
+
+    const focusable = filterPopoverRef.current?.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    if (!focusable?.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 
   const totalPages = result ? Math.ceil(result.totalCount / pageSize) : 0;
@@ -403,10 +431,11 @@ export default function SourceAuditPage() {
     </div>
 
     {activeColumn && filterPosition && typeof document !== "undefined" && createPortal(<>
-      <button className="source-filter-backdrop" aria-label="Fechar filtro" onClick={() => setActiveColumn(undefined)} />
-      <section ref={filterPopoverRef} className="source-filter-popover" role="dialog" aria-label={`Filtro da coluna ${activeColumn}`} style={filterPosition}>
+      <button className="source-filter-backdrop" aria-label="Fechar filtro" tabIndex={-1} onClick={closeColumnFilter} />
+      <section ref={filterPopoverRef} className="source-filter-popover" role="dialog" aria-modal="true"
+        aria-label={`Filtro da coluna ${activeColumn}`} onKeyDown={handleFilterDialogKeyDown} style={filterPosition}>
         <div className="source-filter-title"><strong>{activeColumn} · {result?.columnHeaders[activeColumn]}</strong>
-          <button type="button" className="source-filter-close" onClick={() => setActiveColumn(undefined)} aria-label="Fechar">×</button>
+          <button type="button" className="source-filter-close" onClick={closeColumnFilter} aria-label="Fechar">×</button>
         </div>
         <div className="source-sort-actions" aria-label="Ordenar valores">
           <button type="button" className={draftSort?.column === activeColumn && draftSort.direction === "asc" ? "selected" : ""}

@@ -80,8 +80,9 @@ em lote versionado. A aba Pós não tem cabeçalho nomeado após `AS` na linha 4
   funcional.
 - **Acessibilidade da auditoria de origem:** as abas de planilha agora seguem
   navegação por teclado com setas, Home e End, mantêm somente a aba selecionada
-  na ordem de tabulação e associam o painel à aba ativa. As demais verificações
-  WCAG e E2E continuam pendentes.
+  na ordem de tabulação e associam o painel à aba ativa. O diálogo de filtro por
+  coluna agora confina o foco, fecha com Escape e devolve o foco ao controle que
+  o abriu. As demais verificações WCAG e E2E continuam pendentes.
 - **Data do snapshot na carteira:** a versão anterior consultava
   `import_batch.promoted_at` e rotulava a data como promoção. O incremento atual
   calcula o maior `source_row.created_at` entre as linhas de origem ligadas às
