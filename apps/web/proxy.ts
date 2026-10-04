@@ -13,9 +13,12 @@ export function proxy(request: NextRequest) {
   if (process.env.NODE_ENV === "development") return NextResponse.next();
 
   const requestHost = request.headers.get("host")?.split(":", 1)[0]?.toLowerCase();
+  const isVercelPreview = process.env.VERCEL_ENV === "preview";
   // Login sessions belong to the canonical hostname. Vercel also exposes
   // project and deployment hostnames, which must open the same login page.
+  // Preview deployments keep their own hostname so they use isolated sessions.
   if ((request.method === "GET" || request.method === "HEAD")
+    && !isVercelPreview
     && requestHost?.endsWith(".vercel.app")
     && requestHost !== canonicalHost
     && !isGatewayPath(request.nextUrl.pathname)) {

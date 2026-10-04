@@ -28,8 +28,9 @@ Não use prefixo `NEXT_PUBLIC_`. Não configure `DATABASE_URL`, senha PostgreSQL
 O código exige `PREVIEW_API_URL` e `PREVIEW_API_TOKEN` em deployments Vercel
 que não sejam Production. Configure essas variáveis somente depois de provisionar
 uma API e um banco de teste isolados; o proxy não reutiliza as variáveis de
-Production como fallback. Enquanto Preview não estiver configurado, as rotas da
-API respondem 503.
+Production como fallback. Preview mantém o próprio hostname para que os cookies
+de sessão não sejam enviados ao domínio Production. Enquanto Preview não estiver
+configurado, as rotas da API respondem 503.
 
 Depois de alterar as variáveis, faça um novo deployment Production: os deployments existentes não passam a usar valores novos automaticamente. O projeto tem Root Directory `apps/web`, framework Next.js e branch `main`.
 
