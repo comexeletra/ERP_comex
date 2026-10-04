@@ -70,6 +70,11 @@ em lote versionado. A aba Pós não tem cabeçalho nomeado após `AS` na linha 4
   matcher de `proxy.ts`. O matcher foi ampliado para cobrir todas as páginas
   operacionais atuais; as rotas `/auth/*` e `/api/v1/*` continuam no proxy para
   preservar o fluxo same-origin e o token de gateway server-side.
+- **Isolamento de Preview:** o proxy agora seleciona `PREVIEW_API_URL` e
+  `PREVIEW_API_TOKEN` em deployments Vercel que não sejam Production, sem fallback
+  para as credenciais operacionais. Sem configuração própria, a API responde
+  indisponível. A infraestrutura de staging e o banco de teste ainda precisam
+  ser provisionados antes de habilitar Preview funcional.
 - **Data do snapshot na carteira:** a versão anterior consultava
   `import_batch.promoted_at` e rotulava a data como promoção. O incremento atual
   calcula o maior `source_row.created_at` entre as linhas de origem ligadas às
@@ -152,7 +157,7 @@ reaproveitado.
 | DEV | Estado | Base comprovada e lacuna de aceite |
 |---|---|---|
 | DEV01 Monorepo | `[-]` | Projetos web/API e lockfiles pnpm existem; reproduzir instalação/build em checkout limpo e documentar versões exatas. |
-| DEV02 Ambiente | `[-]` | Node 24 e PostgreSQL/VPS operacionais; CI web ativa e verde. Falta separar desenvolvimento/Preview do banco operacional. |
+| DEV02 Ambiente | `[-]` | Node 24 e PostgreSQL/VPS operacionais; CI web ativa e verde. O proxy agora exige variáveis próprias para deployments Vercel fora de Production e falha fechado sem elas; ainda falta provisionar a API e o banco isolados de Preview. |
 | DEV03 OIDC/sessão | `[-]` | Login local e sessões ativos; OIDC/PKCE no código. Homologar issuer corporativo, callback, expiração, CSRF e logout. |
 | DEV04 Permissões | `[-]` | Papéis/grants e filtros SQL existem. Em 2026-10-03, perfil Consulta acessou a lista de solicitações no escopo de três importadores e não recebeu controles de criação. | Validar escrita negada diretamente na API e respostas 404 para recursos fora do escopo; cobrir as demais rotas com usuário restrito real. |
 | DEV05 Migrations | `[-]` | Runner Node; M001–M017 versionadas. M013–M017 foram validadas em cópia restaurada, backup e grants operacionais conferidos; o release M016/M017 verificou a view de histórico e negou SELECT na tabela de auditoria. |

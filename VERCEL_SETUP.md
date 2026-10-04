@@ -25,6 +25,12 @@ No projeto que realmente atende `fup-comex-eletra.vercel.app`, configure **somen
 
 Não use prefixo `NEXT_PUBLIC_`. Não configure `DATABASE_URL`, senha PostgreSQL ou segredo OIDC na Vercel. O navegador chama `/auth/*` e `/api/v1/*` na origem da Vercel; o proxy Next.js envia as chamadas à API com o token no servidor. Preview fica sem acesso ao banco operacional até existir um ambiente isolado.
 
+O código exige `PREVIEW_API_URL` e `PREVIEW_API_TOKEN` em deployments Vercel
+que não sejam Production. Configure essas variáveis somente depois de provisionar
+uma API e um banco de teste isolados; o proxy não reutiliza as variáveis de
+Production como fallback. Enquanto Preview não estiver configurado, as rotas da
+API respondem 503.
+
 Depois de alterar as variáveis, faça um novo deployment Production: os deployments existentes não passam a usar valores novos automaticamente. O projeto tem Root Directory `apps/web`, framework Next.js e branch `main`.
 
 ## Login local e OIDC futuro

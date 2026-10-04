@@ -26,8 +26,16 @@ export function proxy(request: NextRequest) {
 
   if (!isGatewayPath(request.nextUrl.pathname)) return NextResponse.next();
 
-  const destination = process.env.VPS_API_URL;
-  const gatewayToken = process.env.VPS_API_TOKEN;
+  // Preview must have its own API endpoint and gateway token. If staging is
+  // not configured, fail closed instead of forwarding Preview to production.
+  const previewEnvironment = process.env.VERCEL_ENV !== undefined
+    && process.env.VERCEL_ENV !== "production";
+  const destination = previewEnvironment
+    ? process.env.PREVIEW_API_URL
+    : process.env.VPS_API_URL;
+  const gatewayToken = previewEnvironment
+    ? process.env.PREVIEW_API_TOKEN
+    : process.env.VPS_API_TOKEN;
   if (!destination || !gatewayToken) {
     return Response.json({ error: "API indisponível." }, { status: 503, headers: { "cache-control": "no-store" } });
   }
