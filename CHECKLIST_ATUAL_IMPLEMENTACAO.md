@@ -78,6 +78,10 @@ em lote versionado. A aba Pós não tem cabeçalho nomeado após `AS` na linha 4
   própria, as páginas ou rotas da API respondem 503. A infraestrutura de staging
   e o banco de teste ainda precisam ser provisionados antes de habilitar Preview
   funcional.
+- **Acessibilidade da auditoria de origem:** as abas de planilha agora seguem
+  navegação por teclado com setas, Home e End, mantêm somente a aba selecionada
+  na ordem de tabulação e associam o painel à aba ativa. As demais verificações
+  WCAG e E2E continuam pendentes.
 - **Data do snapshot na carteira:** a versão anterior consultava
   `import_batch.promoted_at` e rotulava a data como promoção. O incremento atual
   calcula o maior `source_row.created_at` entre as linhas de origem ligadas às

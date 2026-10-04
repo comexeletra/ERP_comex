@@ -152,6 +152,7 @@ export default function SourceAuditPage() {
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [optionsError, setOptionsError] = useState<string>();
   const filterPopoverRef = useRef<HTMLElement>(null);
+  const sheetTabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
     const state = readLocation();
@@ -232,6 +233,17 @@ export default function SourceAuditPage() {
     setDraftSort(null); setSort(null);
     updateUrl(nextSheet, applied, nextColumns, 1, pageSize, null);
   }
+  function moveSheetTab(index: number, event: React.KeyboardEvent<HTMLButtonElement>) {
+    let nextIndex: number;
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % sheetOptions.length;
+    else if (event.key === "ArrowLeft") nextIndex = (index - 1 + sheetOptions.length) % sheetOptions.length;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = sheetOptions.length - 1;
+    else return;
+    event.preventDefault();
+    sheetTabRefs.current[nextIndex]?.focus();
+    changeSheet(sheetOptions[nextIndex].value);
+  }
   function clearFilters() {
     setDraft(emptyFilters); setApplied(emptyFilters); setDraftColumnFilters({}); setAppliedColumnFilters({});
     setDraftSort(null); setSort(null); setPage(1);
@@ -297,12 +309,17 @@ export default function SourceAuditPage() {
     </header>
 
     <section className="source-audit-tabs" role="tablist" aria-label="Planilha de origem">
-      {sheetOptions.map(option => <button key={option.value} role="tab" aria-selected={sheet === option.value}
-        className={sheet === option.value ? "source-tab active" : "source-tab"} onClick={() => changeSheet(option.value)}>
+      {sheetOptions.map((option, index) => <button key={option.value} ref={element => { sheetTabRefs.current[index] = element; }}
+        id={`source-sheet-tab-${index}`} role="tab" aria-controls="source-audit-panel"
+        aria-selected={sheet === option.value} tabIndex={sheet === option.value ? 0 : -1}
+        className={sheet === option.value ? "source-tab active" : "source-tab"}
+        onClick={() => changeSheet(option.value)} onKeyDown={event => moveSheetTab(index, event)}>
         {option.label}
       </button>)}
     </section>
 
+    <div id="source-audit-panel" role="tabpanel"
+      aria-labelledby={`source-sheet-tab-${Math.max(0, sheetOptions.findIndex(option => option.value === sheet))}`} tabIndex={0}>
     <section className="card source-audit-controls">
       <form className="source-audit-filter" onSubmit={applyFilters}>
         <label>Importador<select value={draft.importer} onChange={event => setDraft(value => ({ ...value, importer: event.target.value }))}>
@@ -383,6 +400,7 @@ export default function SourceAuditPage() {
         </nav>}
       </>}
     </section>
+    </div>
 
     {activeColumn && filterPosition && typeof document !== "undefined" && createPortal(<>
       <button className="source-filter-backdrop" aria-label="Fechar filtro" onClick={() => setActiveColumn(undefined)} />
