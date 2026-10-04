@@ -1,10 +1,12 @@
 # Checklist atual de implementação — stack Node/Vercel/VPS
 
-Atualizado em 2026-10-03. Este é o controle vigente para concluir o plano em
+Atualizado em 2026-10-04. Este é o controle vigente para concluir o plano em
 [Plano_Implementacao_ERP_PO_TOTVS.md](Plano_Implementacao_ERP_PO_TOTVS.md).
 [CHECKLIST_IMPLEMENTACAO.md](CHECKLIST_IMPLEMENTACAO.md) conserva a cronologia e
 as evidências antigas, inclusive da implementação .NET/SQLite retirada do código.
 Um item daquele histórico não está concluído na stack atual sem evidência aqui.
+As evidências operacionais da VPS e o aceite autenticado mais recentes neste
+retrato são de 2026-10-03; a VPS não foi revalidada em 2026-10-04.
 
 ## Como ler o estado
 
@@ -22,7 +24,7 @@ conferidos, serviço ativo e release da API concluído em `m017-api-20261003T173
 As flags de 277 linhas/306 células de erro foram conferidas
 com os registros imutáveis de qualidade. Os grants das views também foram conferidos. Na Vercel pública, `/admin/outbox` respondeu 200, o bundle contém a
 carteira nova está publicada e a API sem sessão respondeu 401. Em 2026-10-03, a
-interface autenticada foi aceita com perfil real Consulta e escopo ELETRA CWB,
+interface autenticada foi validada com perfil real Consulta e escopo ELETRA CWB,
 ELETRA FOR e ELETRA MATRIZ: a lista de solicitações abriu sem erro e sem controles
 de criação; estava vazia, sem solicitações nativas registradas. A API também
 passou as verificações de saúde após aplicar c98c03d pelo console da VPS
