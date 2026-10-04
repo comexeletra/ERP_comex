@@ -209,13 +209,14 @@ export default function SourceAuditPage() {
     const closeOnScroll = (event: Event) => {
       const target = event.target;
       if (target instanceof Node && filterPopoverRef.current?.contains(target)) return;
-      closeColumnFilter();
+      closeColumnFilter(false);
     };
+    const closeOnResize = () => closeColumnFilter();
     window.addEventListener("scroll", closeOnScroll, true);
-    window.addEventListener("resize", closeOnScroll);
+    window.addEventListener("resize", closeOnResize);
     return () => {
       window.removeEventListener("scroll", closeOnScroll, true);
-      window.removeEventListener("resize", closeOnScroll);
+      window.removeEventListener("resize", closeOnResize);
     };
   }, [activeColumn]);
 
@@ -266,9 +267,9 @@ export default function SourceAuditPage() {
       ? rect.bottom + 6 : Math.max(12, rect.top - height - 6);
     setFilterPosition({ left, top }); setValueSearch(""); setActiveColumn(column);
   }
-  function closeColumnFilter() {
+  function closeColumnFilter(restoreFocus = true) {
     setActiveColumn(undefined);
-    filterTriggerRef.current?.focus();
+    if (restoreFocus) filterTriggerRef.current?.focus();
   }
   function updateColumnFilter(column: string, update: (current: ColumnFilter) => ColumnFilter) {
     setDraftColumnFilters(current => {
@@ -437,10 +438,12 @@ export default function SourceAuditPage() {
         <div className="source-filter-title"><strong>{activeColumn} · {result?.columnHeaders[activeColumn]}</strong>
           <button type="button" className="source-filter-close" onClick={closeColumnFilter} aria-label="Fechar">×</button>
         </div>
-        <div className="source-sort-actions" aria-label="Ordenar valores">
+        <div className="source-sort-actions" role="group" aria-label="Ordenar valores">
           <button type="button" className={draftSort?.column === activeColumn && draftSort.direction === "asc" ? "selected" : ""}
+            aria-pressed={draftSort?.column === activeColumn && draftSort.direction === "asc"}
             onClick={() => setDraftSort({ column: activeColumn, direction: "asc" })}>↑ Ordem crescente</button>
           <button type="button" className={draftSort?.column === activeColumn && draftSort.direction === "desc" ? "selected" : ""}
+            aria-pressed={draftSort?.column === activeColumn && draftSort.direction === "desc"}
             onClick={() => setDraftSort({ column: activeColumn, direction: "desc" })}>↓ Ordem decrescente</button>
         </div>
         <label className="source-filter-text-label">Filtrar por texto (contém)
