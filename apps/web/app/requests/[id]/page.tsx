@@ -164,7 +164,7 @@ export default function RequestDetailPage() {
               <label>Centro de custo informado (opcional)<input maxLength={160} value={item.costCenterText}
                 onChange={event => updateItem(index, { costCenterText: event.target.value })} /></label>
             </div>
-            {draft.items.length > 1 && <button className="button secondary" type="button"
+            {draft.items.length > 1 && <button className="button secondary" type="button" aria-label={`Remover item ${index + 1}`}
               onClick={() => setDraft(current => current && ({ ...current,
                 items: current.items.filter((_, itemIndex) => itemIndex !== index) }))}>Remover item</button>}
           </fieldset>)}

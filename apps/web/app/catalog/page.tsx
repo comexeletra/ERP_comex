@@ -152,8 +152,8 @@ export default function CatalogPage() {
         {!!registered?.items.length && <div className="table-scroll"><table><thead><tr><th>Código</th><th>Nome</th><th>Situação</th><th>Vigência</th><th>Versão</th><th>Ação</th></tr></thead><tbody>
           {registered.items.map(entry => <tr key={entry.id}><td>{entry.code}</td><td>{entry.name}</td><td>{entry.status === "ACTIVE" ? "Ativo" : "Inativo"}</td>
             <td>{formatUsDate(entry.validFrom) || "—"}{entry.validTo ? ` a ${formatUsDate(entry.validTo)}` : ""}</td><td>{entry.version}</td>
-            <td><button className="button secondary" type="button" disabled={historyLoading} onClick={() => void loadHistory(entry)}>Histórico</button>
-              {canWrite && <button className="button secondary" type="button" onClick={() => startEdit(entry)}>Editar</button>}</td></tr>)}
+            <td><button className="button secondary" type="button" aria-label={`Ver histórico de ${labels[resource].toLowerCase()} ${entry.code}`} disabled={historyLoading} onClick={() => void loadHistory(entry)}>Histórico</button>
+              {canWrite && <button className="button secondary" type="button" aria-label={`Editar ${labels[resource].toLowerCase()} ${entry.code}`} onClick={() => startEdit(entry)}>Editar</button>}</td></tr>)}
         </tbody></table></div>}
       </section>
       {historyEntry && <section className="card request-history" aria-label={`Histórico do cadastro ${historyEntry.code}`}>

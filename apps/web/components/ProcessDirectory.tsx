@@ -72,7 +72,7 @@ export default function ProcessDirectory() {
       {!loading && !error && data && <><p>{data.totalCount} IPs encontrados{pages > 0 && ` · página ${page} de ${pages}`}</p>
         {data.items.length === 0 && <p>{data.totalCount ? "Página fora do intervalo." : "Nenhum IP encontrado."}</p>}
         {data.items.length > 0 && <div className="table-scroll"><table><thead><tr><th>IP</th><th>Importador</th><th>Status logístico</th><th>Qualidade</th><th>POs</th><th>Linhas de origem</th><th>Custos históricos</th><th></th></tr></thead><tbody>
-          {data.items.map(item => <tr key={item.id}><td>{item.ipNumber}</td><td>{item.importer}</td><td>{item.logisticsStatus ?? "Não informado"}</td><td>{item.qualityStatus}</td><td>{item.purchaseOrderCount}</td><td>{item.historicalLineCount}</td><td>{item.historicalCostCount}</td><td><Link className="button" href={`/processes/${item.id}?return=${encodeURIComponent(returnPath)}`}>Abrir IP</Link></td></tr>)}
+          {data.items.map(item => <tr key={item.id}><td>{item.ipNumber}</td><td>{item.importer}</td><td>{item.logisticsStatus ?? "Não informado"}</td><td>{item.qualityStatus}</td><td>{item.purchaseOrderCount}</td><td>{item.historicalLineCount}</td><td>{item.historicalCostCount}</td><td><Link className="button" aria-label={`Abrir IP ${item.ipNumber}`} href={`/processes/${item.id}?return=${encodeURIComponent(returnPath)}`}>Abrir IP</Link></td></tr>)}
         </tbody></table></div>}
         {pages > 1 && <nav className="pagination"><button className="button secondary" disabled={page <= 1} onClick={() => navigate(filters, page - 1)}>Anterior</button><span>Página {page} de {pages}</span><button className="button" disabled={page >= pages} onClick={() => navigate(filters, page + 1)}>Próxima</button></nav>}
       </>}

@@ -83,8 +83,9 @@ em lote versionado. A aba Pós não tem cabeçalho nomeado após `AS` na linha 4
   na ordem de tabulação e associam o painel à aba ativa. O diálogo de filtro por
   coluna agora confina o foco, fecha com Escape e devolve o foco ao controle que
   o abriu; ao fechar por rolagem, não reposiciona a página. Os controles de ordem
-  anunciam o estado selecionado. As demais verificações WCAG e E2E continuam
-  pendentes.
+  anunciam o estado selecionado. Ações repetidas nas listas de usuários,
+  solicitações, cadastros, IPs e linhas históricas identificam o registro alvo
+  em seu nome acessível. As demais verificações WCAG e E2E continuam pendentes.
 - **Data do snapshot na carteira:** a versão anterior consultava
   `import_batch.promoted_at` e rotulava a data como promoção. O incremento atual
   calcula o maior `source_row.created_at` entre as linhas de origem ligadas às

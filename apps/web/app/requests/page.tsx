@@ -104,7 +104,7 @@ export default function RequestsPage() {
             <label>Centro de custo informado (opcional)<input maxLength={160} value={line.costCenterText}
               onChange={event => setLines(current => current.map((item, i) => i === index ? { ...item, costCenterText: event.target.value } : item))} /></label>
           </div>
-          {lines.length > 1 && <button className="button secondary" type="button" onClick={() => setLines(current => current.filter((_, i) => i !== index))}>Remover item</button>}
+          {lines.length > 1 && <button className="button secondary" type="button" aria-label={`Remover item ${index + 1}`} onClick={() => setLines(current => current.filter((_, i) => i !== index))}>Remover item</button>}
         </fieldset>)}
         {lines.length < 100 && <button className="button secondary" type="button" onClick={() => setLines(current => [...current, blankLine()])}>Adicionar item</button>}
         <button className="button" disabled={saving || !importer}>{saving ? "Registrando…" : "Registrar solicitação"}</button>
@@ -125,7 +125,7 @@ export default function RequestsPage() {
         <thead><tr><th>Número</th><th>Importador</th><th>Solicitante</th><th>Itens</th><th>Status</th><th>Data</th><th>Ação</th></tr></thead>
         <tbody>{requests.map(item => <tr key={item.id}><td><strong>{item.requestNumber}</strong></td><td>{item.importer}</td>
           <td>{item.requesterReference}</td><td>{item.itemCount}</td><td>{item.status}</td>
-          <td>{formatUsDateTime(item.createdAt)}</td><td><Link className="button" href={`/requests/${item.id}`}>Abrir</Link></td></tr>)}</tbody>
+          <td>{formatUsDateTime(item.createdAt)}</td><td><Link className="button" aria-label={`Abrir solicitação ${item.requestNumber}`} href={`/requests/${item.id}`}>Abrir</Link></td></tr>)}</tbody>
       </table></div>}
     </section>
   </main>;

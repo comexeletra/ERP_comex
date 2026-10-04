@@ -158,9 +158,9 @@ export default function UsersPage() {
       <td>{user.role}</td><td>{user.role === "Master" ? "Todas" : user.importerScopes.join(", ")}</td>
       <td>{user.isActive ? "Ativo" : "Inativo"}{user.mustChangePassword && <><br /><span className="muted">Troca de senha pendente</span></>}</td>
       <td>{user.role !== "Master" && <>
-        <button className="button secondary" disabled={busy} onClick={() => edit(user)}>Editar</button>
-        <button className="button secondary" disabled={busy} onClick={() => void updateStatus(user)}>{user.isActive ? "Desativar" : "Ativar"}</button>
-        <button className="button secondary" disabled={busy} onClick={() => void resetPassword(user)}>Redefinir senha</button>
+        <button className="button secondary" type="button" aria-label={`Editar ${user.displayName ?? user.email}`} disabled={busy} onClick={() => edit(user)}>Editar</button>
+        <button className="button secondary" type="button" aria-label={`${user.isActive ? "Desativar" : "Ativar"} ${user.displayName ?? user.email}`} disabled={busy} onClick={() => void updateStatus(user)}>{user.isActive ? "Desativar" : "Ativar"}</button>
+        <button className="button secondary" type="button" aria-label={`Redefinir senha de ${user.displayName ?? user.email}`} disabled={busy} onClick={() => void resetPassword(user)}>Redefinir senha</button>
       </>}</td>
     </tr>)}</tbody></table></section>
   </main>;
