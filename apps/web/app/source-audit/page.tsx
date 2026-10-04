@@ -432,11 +432,11 @@ export default function SourceAuditPage() {
     </div>
 
     {activeColumn && filterPosition && typeof document !== "undefined" && createPortal(<>
-      <button className="source-filter-backdrop" aria-label="Fechar filtro" tabIndex={-1} onClick={closeColumnFilter} />
+      <button className="source-filter-backdrop" aria-label="Fechar filtro" tabIndex={-1} onClick={() => closeColumnFilter()} />
       <section ref={filterPopoverRef} className="source-filter-popover" role="dialog" aria-modal="true"
         aria-label={`Filtro da coluna ${activeColumn}`} onKeyDown={handleFilterDialogKeyDown} style={filterPosition}>
         <div className="source-filter-title"><strong>{activeColumn} · {result?.columnHeaders[activeColumn]}</strong>
-          <button type="button" className="source-filter-close" onClick={closeColumnFilter} aria-label="Fechar">×</button>
+          <button type="button" className="source-filter-close" onClick={() => closeColumnFilter()} aria-label="Fechar">×</button>
         </div>
         <div className="source-sort-actions" role="group" aria-label="Ordenar valores">
           <button type="button" className={draftSort?.column === activeColumn && draftSort.direction === "asc" ? "selected" : ""}
