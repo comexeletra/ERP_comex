@@ -33,6 +33,13 @@ history-view grants, then runs both `operations.integration.mjs` and
 across two IPs with independent invoice quantities, ETAs and delivery dates,
 an IP shared by multiple POs, quantity limits, concurrent allocations, edits,
 cancellation and event history. It drops only the disposable restored copy.
+`M023_process_closure.sql` adds an explicit open/closed lifecycle to each IP,
+separate from its logistics status. The analyst can close or reopen an IP with
+a reason regardless of its logistics stage. Closed IPs remain visible, and
+their operational data and allocations are read-only until reopened. M023 is
+implemented locally and has not been validated on a restored copy or applied to
+the operational database.
+
 `M002` is the PostgreSQL counterpart for quality-review records. Each file is
 applied in its own transaction and recorded with a SHA-256 checksum in
 `migration.schema_migration`; an applied file whose checksum changes stops the

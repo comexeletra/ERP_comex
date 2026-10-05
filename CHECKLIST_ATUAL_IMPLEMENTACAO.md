@@ -11,6 +11,14 @@ Detalhes e rollback em [deploy/hostinger/README.md](deploy/hostinger/README.md).
 O aceite do perfil real que deve cadastrar POs continua dependendo do papel e
 escopo atribuídos por um Master.
 
+**M023 em desenvolvimento local:** cada IP passa a ter ciclo explícito Aberto /
+Encerrado, separado do status logístico. O analista pode encerrar ou reabrir com
+justificativa, sem depender da etapa logística; IP encerrado fica bloqueado para
+edição e novas alterações nas distribuições. Pré Embarque é acompanhado por PO;
+Pós Embarque tem uma linha por IP e agrega as POs/itens da operação. A migration
+M023 e a interface/API ainda não foram validadas em cópia restaurada nem
+publicadas.
+
 **Incremento M019–M020 publicado em 2026-10-04:** os campos complementares de
 item/IP, documentos individuais de Invoice/BL/NF e os cálculos automáticos estão
 na API e na página da PO. O release passou em cópia restaurada com backup

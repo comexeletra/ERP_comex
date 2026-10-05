@@ -1,5 +1,13 @@
 # Primeiro fluxo operacional de PO e IP
 
+## Grão do acompanhamento
+
+O Pré Embarque acompanha cada PO. O Pós Embarque acompanha cada IP: há uma linha
+por IP com os dados da operação e todas as POs/itens relacionados. Um IP que
+atenda mais de uma PO continua sendo uma única operação no Pós Embarque.
+Encerrar ou reabrir o ciclo do IP é uma decisão do analista e permanece
+separada do status logístico.
+
 Publicado em 2026-10-04 na VPS e na Vercel. **Ainda falta o aceite funcional com
 analistas antes de substituir a ferramenta de preenchimento.** A migration M018
 passou em PostgreSQL isolado, em cópia restaurada do banco operacional e no banco

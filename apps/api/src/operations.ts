@@ -39,6 +39,7 @@ const createAllocation = allocationFields.extend({
   itemId: z.uuid(), processId: z.uuid(),
 });
 const cancelAllocation = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
+const closeProcess = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
 const uuid = z.uuid();
 
 export class BusinessError extends Error {
@@ -332,6 +333,69 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
       }, 201);
     });
 
+  app.post<{ Params: { id: string } }>("/api/v1/processes/:id/close",
+    { config: permissionConfig("processes.write") }, async (request, reply) => {
+      const id = uuid.safeParse(request.params.id);
+      const parsed = closeProcess.safeParse(request.body);
+      if (!id.success || !parsed.success) {
+        return problem(reply, 400, "INVALID_CLOSURE", "Informe uma justificativa para encerrar o IP.");
+      }
+      let expected: string; let auth: ReturnType<typeof actorAndScopes>;
+      try { expected = versionFrom(request); auth = actorAndScopes(request); }
+      catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
+      return transaction(pool, reply, async client => {
+        const found = await client.query<Record<string, unknown>>(
+          `SELECT * FROM imports.import_process
+           WHERE id = $1 AND importer = ANY($2::text[]) FOR UPDATE`, [id.data, auth.scopes]);
+        if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "IP não encontrado.");
+        checkVersion(found.rows[0], expected);
+        if (found.rows[0].lifecycle_status === "CLOSED") {
+          throw new BusinessError(409, "PROCESS_ALREADY_CLOSED", "Este IP já está encerrado.");
+        }
+        const actor = `${auth.actor.issuer}#${auth.actor.subject}`;
+        const closed = await client.query<{ version: string; closed_at: Date }>(
+          `UPDATE imports.import_process SET lifecycle_status = 'CLOSED', closed_at = now(),
+             closed_by = $2, close_reason = $3, version = version + 1, updated_at = now()
+           WHERE id = $1 RETURNING version::text, closed_at`,
+          [id.data, actor, parsed.data.reason]);
+        await record(client, "IMPORT_PROCESS", id.data, "IMPORT_PROCESS", id.data, "CLOSE",
+          found.rows[0], { lifecycleStatus: "CLOSED", closedBy: actor, reason: parsed.data.reason },
+          auth.actor, parsed.data.reason);
+        return { id: id.data, lifecycleStatus: "CLOSED", version: closed.rows[0].version,
+          closedAt: closed.rows[0].closed_at };
+      });
+    });
+
+  app.post<{ Params: { id: string } }>("/api/v1/processes/:id/reopen",
+    { config: permissionConfig("processes.write") }, async (request, reply) => {
+      const id = uuid.safeParse(request.params.id);
+      const parsed = closeProcess.safeParse(request.body);
+      if (!id.success || !parsed.success) {
+        return problem(reply, 400, "INVALID_REOPEN", "Informe uma justificativa para reabrir o IP.");
+      }
+      let expected: string; let auth: ReturnType<typeof actorAndScopes>;
+      try { expected = versionFrom(request); auth = actorAndScopes(request); }
+      catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
+      return transaction(pool, reply, async client => {
+        const found = await client.query<Record<string, unknown>>(
+          `SELECT * FROM imports.import_process
+           WHERE id = $1 AND importer = ANY($2::text[]) FOR UPDATE`, [id.data, auth.scopes]);
+        if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "IP não encontrado.");
+        checkVersion(found.rows[0], expected);
+        if (found.rows[0].lifecycle_status !== "CLOSED") {
+          throw new BusinessError(409, "PROCESS_NOT_CLOSED", "Este IP não está encerrado.");
+        }
+        const reopened = await client.query<{ version: string }>(
+          `UPDATE imports.import_process SET lifecycle_status = 'OPEN', closed_at = NULL,
+             closed_by = NULL, close_reason = NULL, version = version + 1, updated_at = now()
+           WHERE id = $1 RETURNING version::text`, [id.data]);
+        await record(client, "IMPORT_PROCESS", id.data, "IMPORT_PROCESS", id.data, "REOPEN",
+          found.rows[0], { lifecycleStatus: "OPEN", reason: parsed.data.reason },
+          auth.actor, parsed.data.reason);
+        return { id: id.data, lifecycleStatus: "OPEN", version: reopened.rows[0].version };
+      });
+    });
+
   app.patch<{ Params: { id: string } }>("/api/v1/processes/:id",
     { config: permissionConfig("processes.write") }, async (request, reply) => {
       const id = uuid.safeParse(request.params.id); const parsed = processFields.safeParse(request.body);
@@ -345,6 +409,9 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           [id.data, auth.scopes]);
         if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "IP não encontrado.");
         checkVersion(found.rows[0], expected);
+        if (found.rows[0].lifecycle_status === "CLOSED") {
+          throw new BusinessError(409, "PROCESS_CLOSED", "Reabra o IP antes de editar seus dados.");
+        }
         const body = parsed.data;
         if (found.rows[0].source_kind !== "MANUAL" && body.ipNumber !== found.rows[0].ip_number) {
           throw new BusinessError(409, "HISTORICAL_IDENTITY", "A identidade do IP histórico exige reconciliação da origem.");
@@ -387,6 +454,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const process = await client.query(
           `SELECT id FROM imports.import_process WHERE id = $1 AND importer = $2
            AND importer = ANY($3::text[])
+           AND lifecycle_status = 'OPEN'
            AND upper(coalesce(logistics_status, '')) NOT IN ('CANCELLED', 'CANCELED')
            FOR UPDATE`,
           [body.processId, po.importer, auth.scopes]);
@@ -427,9 +495,11 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const found = await client.query<Record<string, unknown>>(
           `SELECT a.* FROM procurement.po_item_allocation a
            JOIN procurement.purchase_order_item item ON item.id = a.purchase_order_item_id
-           WHERE a.id = $1 AND item.purchase_order_id = $2 AND a.status = 'ACTIVE' FOR UPDATE OF a`,
+           JOIN imports.import_process process ON process.id = a.process_id
+           WHERE a.id = $1 AND item.purchase_order_id = $2 AND a.status = 'ACTIVE'
+             AND process.lifecycle_status = 'OPEN' FOR UPDATE OF a, process`,
           [allocationId.data, id.data]);
-        if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Distribuição não encontrada.");
+        if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Distribuição não encontrada ou IP encerrado.");
         checkVersion(found.rows[0], expected);
         const body = parsed.data;
         const updated = await client.query<{ version: string }>(
@@ -460,9 +530,11 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const found = await client.query<Record<string, unknown>>(
           `SELECT a.* FROM procurement.po_item_allocation a
            JOIN procurement.purchase_order_item item ON item.id = a.purchase_order_item_id
-           WHERE a.id = $1 AND item.purchase_order_id = $2 AND a.status = 'ACTIVE' FOR UPDATE OF a`,
+           JOIN imports.import_process process ON process.id = a.process_id
+           WHERE a.id = $1 AND item.purchase_order_id = $2 AND a.status = 'ACTIVE'
+             AND process.lifecycle_status = 'OPEN' FOR UPDATE OF a, process`,
           [allocationId.data, id.data]);
-        if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Distribuição não encontrada.");
+        if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Distribuição não encontrada ou IP encerrado.");
         checkVersion(found.rows[0], expected);
         await client.query(
           `UPDATE procurement.po_item_allocation SET status = 'CANCELLED',

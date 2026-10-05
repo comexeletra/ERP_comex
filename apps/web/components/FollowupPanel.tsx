@@ -41,7 +41,8 @@ type Calculated = Record<string, string | number | boolean | null | Record<strin
 type Shipment = { allocationId: string; allocationQuantity: string; itemId: string;
   process: DataRow & { id: string; ipNumber: string; version: string };
   calculated: Calculated };
-type ProcessDetail = { process: DataRow & { id: string; ipNumber: string; version: string };
+type ProcessDetail = { process: DataRow & { id: string; ipNumber: string; version: string;
+  lifecycleStatus?: "OPEN" | "CLOSED"; closedAt?: string | null; closeReason?: string | null };
   documents: Document[]; invoiceTotals: { amounts: { currency: string; amount: string }[]; incompleteLines: number } };
 type EventRecord = { id: string; aggregateType: "PURCHASE_ORDER" | "IMPORT_PROCESS"; aggregateLabel: string;
   relatedLabel: string | null;
@@ -102,7 +103,7 @@ const eventEntityLabels: Record<string, string> = {
   PURCHASE_ORDER: "Dados da PO", PURCHASE_ORDER_ITEM: "Item da PO", PO_ITEM_ALLOCATION: "Distribuição PO–IP",
   IMPORT_PROCESS: "Dados logísticos do IP", PROCESS_DOCUMENT: "Documento do IP",
 };
-const eventOperationLabels: Record<string, string> = { CREATE: "cadastrado", UPDATE: "alterado", FOLLOWUP_UPDATE: "dados atualizados", CANCEL: "cancelado" };
+const eventOperationLabels: Record<string, string> = { CREATE: "cadastrado", UPDATE: "alterado", FOLLOWUP_UPDATE: "dados atualizados", CANCEL: "cancelado", CLOSE: "encerrado", REOPEN: "reaberto" };
 function eventSnapshot(value: unknown) { return value == null ? "Sem valor anterior" : JSON.stringify(value, null, 2); }
 function eventDate(value: string) { return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short",
   timeZone: "America/Sao_Paulo" }).format(new Date(value)); }
@@ -203,10 +204,12 @@ export default function FollowupPanel({ id }: { id: string }) {
       })}
       {processes.map(entry => {
         const p = entry.process; const d = docDrafts[p.id] ?? blankDoc(); const activeId = editingDoc[p.id];
+        const canEditThisProcess = canWriteProcess && p.lifecycleStatus !== "CLOSED";
         const availableItems = data.items.filter(item => data.shipments.some(link => link.process.id === p.id && link.itemId === item.id));
         return <details key={p.id}><summary>Dados do IP {p.ipNumber} e documentos</summary>
           <p className="muted">O IP pode atender várias POs. Alterações aqui aparecem para todas elas. Informe cada Invoice, BL ou NF separadamente.</p>
-          {canWriteProcess ? <form className="stack-form" onSubmit={event => saveProcess(event, p.id, p.version)}>
+          {p.lifecycleStatus === "CLOSED" && <p className="notice">IP encerrado. Reabra o IP para editar os dados do Pós Embarque ou os documentos.</p>}
+          {canEditThisProcess ? <form className="stack-form" onSubmit={event => saveProcess(event, p.id, p.version)}>
             <FieldEditor fields={processFields} values={processDrafts[p.id] ?? {}} options={options} setValues={values => setProcessDrafts(previous => ({ ...previous, [p.id]: values }))} />
             <button className="button" disabled={busy || reason.trim().length < 3}>Salvar dados do IP</button></form> :
             <dl className="followup-grid">{processFields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{value(p[field.key])}</dd></div>)}</dl>}
@@ -218,7 +221,7 @@ export default function FollowupPanel({ id }: { id: string }) {
             <strong>{doc.kind} {doc.number}</strong> · {doc.issueDate ?? "sem data"} · {doc.purchaseOrderItemId ? data.items.find(item => item.id === doc.purchaseOrderItemId)?.productCode ?? "Item de outra PO" : "IP geral"}
             {doc.kind === "INVOICE" && <> · {doc.quantity ?? "—"} × {doc.unitPrice ?? "—"} · Valor {doc.amount ?? "calculado se possível"} {doc.currencyCode ?? ""}</>}
             {doc.kind === "NF" && <> · Homologação {doc.homologationDate ?? "—"}</>}
-            {canWriteProcess && <div className="operational-actions"><button className="button secondary" type="button" onClick={() => {
+            {canEditThisProcess && <div className="operational-actions"><button className="button secondary" type="button" onClick={() => {
               setEditingDoc(previous => ({ ...previous, [p.id]: doc.id }));
               setDocDrafts(previous => ({ ...previous, [p.id]: { kind: doc.kind, purchaseOrderItemId: doc.purchaseOrderItemId ?? "",
                 number: doc.number, issueDate: doc.issueDate ?? "", homologationDate: doc.homologationDate ?? "",
@@ -226,7 +229,7 @@ export default function FollowupPanel({ id }: { id: string }) {
             }}>Editar</button><button className="button secondary" type="button" disabled={busy || reason.trim().length < 3}
               onClick={() => void save(() => send(`/api/v1/processes/${p.id}/documents/${doc.id}`, "DELETE", { reason }, doc.version), "Documento cancelado.")}>Cancelar</button></div>}
           </div>)}
-          {canWriteProcess && <form className="stack-form" onSubmit={event => saveDoc(event, p.id, entry.documents)}>
+          {canEditThisProcess && <form className="stack-form" onSubmit={event => saveDoc(event, p.id, entry.documents)}>
             <h4>{activeId ? "Editar documento" : "Adicionar documento"}</h4>
             <div className="operational-fields">
               <label>Tipo<select disabled={Boolean(activeId)} value={d.kind} onChange={event => setDocDrafts(previous => ({ ...previous, [p.id]: { ...d, kind: event.target.value as DocDraft["kind"] } }))}>

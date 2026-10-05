@@ -10,7 +10,9 @@ type Order = { id: string; number: string; importer: string; linkSource: string 
 type OperationalAllocation = { id: string; poId: string; poNumber: string; productCode: string; quantity: string; unit: string };
 type Process = { id: string; ipNumber: string; importer: string; logisticsStatus: string | null;
   qualityStatus: string; sourceKind: string; priority: string | null; notes: string;
-  version: string; purchaseOrders: Order[]; historicalCosts: Cost[];
+  version: string; lifecycleStatus: "OPEN" | "CLOSED"; closedAt: string | null;
+  closedBy: string | null; closeReason: string | null;
+  purchaseOrders: Order[]; historicalCosts: Cost[];
   operationalAllocations: OperationalAllocation[] };
 type Line = { id: string; sourceSheetName: string; sourceRowNumber: number; sourceValues: Record<string, unknown>; sourceColumnHeaders: Record<string, string>; purchaseOrderId: string | null; poNumber: string | null; productCode: string | null; productDescription: string | null; quantityFromSource: string | null; legacyStatus: string | null };
 type LinePage = { page: number; pageSize: number; totalCount: number; items: Line[] };
@@ -31,6 +33,10 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
   const [notesDraft, setNotesDraft] = useState("");
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
+  const [closeReason, setCloseReason] = useState("");
+  const [closing, setClosing] = useState(false);
+  const [reopenReason, setReopenReason] = useState("");
+  const [reopening, setReopening] = useState(false);
   const [notice, setNotice] = useState("");
   const [operationalOptions, setOperationalOptions] = useState<OperationalOption[]>([]);
   useEffect(() => {
@@ -71,19 +77,54 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
     } catch (cause) { setSaveError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setSaving(false); }
   }
+  async function closeProcess(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!process) return;
+    setClosing(true); setSaveError(undefined); setNotice("");
+    try {
+      const response = await apiFetch(`/api/v1/processes/${id}/close`, { method: "POST",
+        headers: { "content-type": "application/json", "If-Match": `"${process.version}"` },
+        body: JSON.stringify({ reason: closeReason }) });
+      const body = await response.json() as { detail?: string };
+      if (!response.ok) throw new Error(body.detail || "Não foi possível encerrar o IP.");
+      setNotice("IP encerrado."); setCloseReason(""); setRetry(value => value + 1);
+    } catch (cause) { setSaveError(cause instanceof Error ? cause.message : "Erro inesperado."); }
+    finally { setClosing(false); }
+  }
+  async function reopenProcess(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!process) return;
+    setReopening(true); setSaveError(undefined); setNotice("");
+    try {
+      const response = await apiFetch(`/api/v1/processes/${id}/reopen`, { method: "POST",
+        headers: { "content-type": "application/json", "If-Match": `"${process.version}"` },
+        body: JSON.stringify({ reason: reopenReason }) });
+      const body = await response.json() as { detail?: string };
+      if (!response.ok) throw new Error(body.detail || "Não foi possível reabrir o IP.");
+      setNotice("IP reaberto."); setReopenReason(""); setRetry(value => value + 1);
+    } catch (cause) { setSaveError(cause instanceof Error ? cause.message : "Erro inesperado."); }
+    finally { setReopening(false); }
+  }
   const canWrite = roles.some(role => ["Master", "Administrador", "Importação"].includes(role));
 
   return <main className="shell"><Link className="back" href={returnPath}>← Lista de IPs</Link>
     {loading && <p role="status">Carregando IP…</p>}
     {error && <div className="notice error" role="alert"><p>{error}</p><button className="button" onClick={() => setRetry(value => value + 1)}>Tentar novamente</button></div>}
     {!loading && !error && process && lines && <>
-      <header className="page-header"><p className="eyebrow">IP · {process.importer}</p><h1>{process.ipNumber}</h1><p>Status logístico: {process.logisticsStatus ?? "não informado"}. Qualidade: {process.qualityStatus}. Origem: {process.sourceKind}.</p></header>
+      <header className="page-header"><p className="eyebrow">IP · {process.importer}</p><h1>{process.ipNumber}</h1><p>Status logístico: {process.logisticsStatus ?? "não informado"}. Ciclo do IP: {process.lifecycleStatus === "CLOSED" ? "encerrado" : "aberto"}. Qualidade: {process.qualityStatus}. Origem: {process.sourceKind}.</p></header>
       <section className="metric-grid"><Metric label="POs vinculadas" value={process.purchaseOrders.length} /><Metric label="Linhas históricas" value={lines.totalCount} /><Metric label="Custos históricos" value={process.historicalCosts.length} /></section>
       <section className="card"><h2>Dados operacionais do IP</h2>
         <p>Prioridade: {process.priority ?? "não informada"}. Observações: {process.notes || "—"}.</p>
         {notice && <p className="notice success" role="status">{notice}</p>}
         {saveError && <p className="notice error" role="alert">{saveError}</p>}
-        {canWrite && <details><summary>Editar IP</summary><form className="stack-form" onSubmit={saveProcess}>
+        {process.lifecycleStatus === "CLOSED" && <>
+          <p className="notice">IP encerrado em {process.closedAt ? new Date(process.closedAt).toLocaleString("pt-BR") : "data indisponível"}. Justificativa: {process.closeReason || "—"}</p>
+          {canWrite && <details><summary>Reabrir IP</summary><form className="stack-form" onSubmit={reopenProcess}>
+            <label>Justificativa<input required minLength={3} maxLength={1000} value={reopenReason}
+              onChange={event => setReopenReason(event.target.value)} /></label>
+            <button className="button" disabled={reopening}>{reopening ? "Reabrindo…" : "Reabrir IP"}</button>
+          </form></details>}
+        </>}
+        {canWrite && process.lifecycleStatus === "OPEN" && <>
+          <details><summary>Editar IP</summary><form className="stack-form" onSubmit={saveProcess}>
           <label>Número do IP<input required maxLength={80} disabled={process.sourceKind !== "MANUAL"}
             value={ipNumberDraft} onChange={event => setIpNumberDraft(event.target.value)} /></label>
           <label>Status logístico<OperationalOptionSelect entity="logistics_status" value={statusDraft} values={operationalOptions} onChange={setStatusDraft} /></label>
@@ -91,7 +132,14 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
           <label>Observações<textarea maxLength={4000} value={notesDraft} onChange={event => setNotesDraft(event.target.value)} /></label>
           <label>Justificativa<input required minLength={3} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} /></label>
           <button className="button" disabled={saving}>{saving ? "Salvando…" : "Salvar IP"}</button>
-        </form></details>}
+          </form></details>
+          <details><summary>Encerrar IP</summary><form className="stack-form" onSubmit={closeProcess}>
+            <p>O encerramento fica a critério do analista e não depende do status logístico. Depois de encerrado, os dados e as distribuições ficam bloqueados para edição.</p>
+            <label>Justificativa<input required minLength={3} maxLength={1000} value={closeReason}
+              onChange={event => setCloseReason(event.target.value)} /></label>
+            <button className="button" disabled={closing}>{closing ? "Encerrando…" : "Encerrar IP"}</button>
+          </form></details>
+        </>}
       </section>
       <section className="card"><h2>POs vinculadas</h2><p className="muted">Vínculos históricos e operacionais. O IP pode atender várias POs, e uma PO pode aparecer em vários IPs.</p>
         {process.purchaseOrders.length === 0 && <p>Nenhuma PO vinculada. Linhas sem PO podem aparecer nas observações.</p>}

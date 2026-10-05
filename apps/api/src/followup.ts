@@ -210,6 +210,8 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
         const found = await client.query(`SELECT * FROM imports.import_process WHERE id=$1 AND importer=ANY($2::text[]) FOR UPDATE`, [id.data, auth.scopes]);
         if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "IP não encontrado.");
         checkVersion(found.rows[0], auth.version!);
+        if (found.rows[0].lifecycle_status === "CLOSED")
+          throw new BusinessError(409, "PROCESS_CLOSED", "Reabra o IP antes de editar os dados do Pós Embarque.");
         const keys = Object.keys(fields); const sql = keys.map((key, index) => `${processFields[key][0]}=$${index + 2}`).join(",");
         const changed = await client.query(`UPDATE imports.import_process SET ${sql},version=version+1,updated_at=now() WHERE id=$1 RETURNING version::text`,
           [id.data, ...keys.map(key => fields[key])]);
@@ -227,6 +229,8 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
       return transaction(pool, reply, async client => {
         const process = await client.query(`SELECT * FROM imports.import_process WHERE id=$1 AND importer=ANY($2::text[]) FOR UPDATE`, [id.data, auth.scopes]);
         if (!process.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "IP não encontrado.");
+        if (process.rows[0].lifecycle_status === "CLOSED")
+          throw new BusinessError(409, "PROCESS_CLOSED", "Reabra o IP antes de alterar seus documentos.");
         const claim = await receipt(client, auth.actor.userId, auth.key!, "PROCESS_DOCUMENT", { processId: id.data, ...body.data });
         if (claim.existingId) return { id: claim.existingId, replayed: true };
         const d = body.data; const docId = randomUUID();
@@ -251,8 +255,9 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
       try { auth = context(request, true); } catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
       return transaction(pool, reply, async client => {
         const found = await client.query(`SELECT d.* FROM imports.process_document d JOIN imports.import_process p ON p.id=d.process_id
-          WHERE d.id=$1 AND d.process_id=$2 AND d.status='ACTIVE' AND p.importer=ANY($3::text[]) FOR UPDATE OF d`, [docId.data, id.data, auth.scopes]);
-        if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Documento não encontrado.");
+          WHERE d.id=$1 AND d.process_id=$2 AND d.status='ACTIVE' AND p.importer=ANY($3::text[])
+            AND p.lifecycle_status='OPEN' FOR UPDATE OF d, p`, [docId.data, id.data, auth.scopes]);
+        if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Documento não encontrado ou IP encerrado.");
         checkVersion(found.rows[0], auth.version!);
         const d = body.data;
         if (found.rows[0].kind !== "INVOICE" && (d.quantity !== null || d.unitPrice !== null || d.amount !== null || d.currencyCode !== null))
@@ -278,8 +283,9 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
       try { auth = context(request, true); } catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
       return transaction(pool, reply, async client => {
         const found = await client.query(`SELECT d.* FROM imports.process_document d JOIN imports.import_process p ON p.id=d.process_id
-          WHERE d.id=$1 AND d.process_id=$2 AND d.status='ACTIVE' AND p.importer=ANY($3::text[]) FOR UPDATE OF d`, [docId.data, id.data, auth.scopes]);
-        if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Documento não encontrado.");
+          WHERE d.id=$1 AND d.process_id=$2 AND d.status='ACTIVE' AND p.importer=ANY($3::text[])
+            AND p.lifecycle_status='OPEN' FOR UPDATE OF d, p`, [docId.data, id.data, auth.scopes]);
+        if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Documento não encontrado ou IP encerrado.");
         checkVersion(found.rows[0], auth.version!);
         await client.query(`UPDATE imports.process_document SET status='CANCELLED',version=version+1,updated_at=now() WHERE id=$1`, [docId.data]);
         await client.query(`UPDATE imports.import_process SET version=version+1,updated_at=now() WHERE id=$1`, [id.data]);
