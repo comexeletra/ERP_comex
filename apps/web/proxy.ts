@@ -88,7 +88,7 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     "/", "/login", "/change-password", "/quality", "/purchase-orders/:path*",
-    "/requests/:path*", "/processes/:path*", "/catalog", "/source-audit",
+    "/requests/:path*", "/processes/:path*", "/catalog", "/catalog/:path*", "/source-audit",
     "/pending-import-items", "/unassigned-po-items", "/admin/:path*",
     "/auth/:path*", "/api/v1/:path*",
   ],

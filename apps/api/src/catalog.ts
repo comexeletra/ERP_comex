@@ -10,6 +10,16 @@ const resources: ReadonlyArray<{ path: string; kind: Kind; sourceColumn: string 
   { path: "products", kind: "PRODUCT", sourceColumn: "T" },
   { path: "ncms", kind: "NCM", sourceColumn: "V" },
 ];
+const operationalValueKeys = new Set([
+  "IMPORTER", "INCOTERM", "TRANSPORT_MODE", "PORT_LOADING", "PORT_DISCHARGE", "CURRENCY",
+  "CATEGORY", "PRODUCT_GROUP", "PURPOSE", "DEMAND", "LOGISTICS_STATUS",
+  "CUSTOMS_CHANNEL", "CONTAINER_TYPE",
+]);
+const operationalValueMax: Record<string, number> = {
+  IMPORTER: 120, INCOTERM: 20, TRANSPORT_MODE: 40, PORT_LOADING: 160, PORT_DISCHARGE: 160,
+  CURRENCY: 3, CATEGORY: 120, PRODUCT_GROUP: 120, PURPOSE: 160, DEMAND: 160,
+  LOGISTICS_STATUS: 40, CUSTOMS_CHANNEL: 80, CONTAINER_TYPE: 80,
+};
 const listQuery = z.object({ importer: z.string().trim().min(1).max(120).optional(),
   search: z.string().trim().max(120).optional(), page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25) }).strict();
@@ -60,13 +70,119 @@ function isUniqueError(error: unknown): boolean {
 }
 
 export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): Promise<void> {
+  app.get("/api/v1/operational-values", { config: permissionConfig("catalog.read") }, async (request) => {
+    const result = await pool.query<{ entity_key: string; value: string; created_by: string | null }>(
+      `SELECT entity_key, value, created_by FROM catalog.operational_value
+       ORDER BY entity_key, normalized_value`);
+    const scopes = request.authorizationContext?.importerScopes ?? [];
+    const canViewAllImporters = request.authorizationContext?.roles.some(role => ["Master", "Administrador"].includes(role)) ?? false;
+    const userId = request.authContext?.userId;
+    return { items: result.rows.filter(row => row.entity_key !== "IMPORTER" || canViewAllImporters
+      || scopes.includes(row.value) || row.created_by === userId)
+      .map(row => ({ entity: row.entity_key.toLowerCase(), value: row.value })) };
+  });
+
+  app.post("/api/v1/operational-values", { config: permissionConfig("catalog.write") }, async (request, reply) => {
+    const body = z.object({ entity: z.string().trim().toUpperCase(), value: z.string().trim().min(1).max(240),
+      reason: z.string().trim().min(8).max(500) }).strict().safeParse(request.body);
+    const actor = request.authContext;
+    if (!body.success || !operationalValueKeys.has(body.data.entity)) {
+      return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "Selecione uma entidade e informe um valor vÃ¡lido.");
+    }
+    if (body.data.value.length > operationalValueMax[body.data.entity]
+      || (body.data.entity === "CURRENCY" && !/^[A-Z]{3}$/u.test(body.data.value))) {
+      return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "O valor nÃ£o respeita o formato do campo escolhido.");
+    }
+    if (!actor) return problem(reply, 401, "AUTHENTICATION_REQUIRED", "SessÃ£o ausente.");
+    if (!request.authorizationContext?.roles.some(role => ["Master", "Administrador", "Compras"].includes(role))) {
+      return problem(reply, 403, "PERMISSION_DENIED", "Perfil sem permissÃ£o para administrar valores das entidades.");
+    }
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const id = randomUUID();
+      const inserted = await client.query<{ id: string; entity_key: string; value: string }>(
+        `INSERT INTO catalog.operational_value (id, entity_key, value, created_by)
+         VALUES ($1,$2,$3,$4) RETURNING id, entity_key, value`,
+        [id, body.data.entity, body.data.value, actor.userId]);
+      const correlationId = randomUUID();
+      await client.query(
+        `INSERT INTO audit.audit_log
+          (id,aggregate_type,aggregate_id,entity_type,entity_id,operation,field_name,old_value,new_value,actor_id,occurred_at,reason,correlation_id)
+         VALUES ($1,'OPERATIONAL_VALUE',$2,'OPERATIONAL_VALUE',$2,'CREATE','value',NULL,$3::jsonb,$4,now(),$5,$6)`,
+        [randomUUID(), id, JSON.stringify({ entity: body.data.entity.toLowerCase(), value: body.data.value }),
+          `${actor.issuer}#${actor.subject}`, body.data.reason, correlationId]);
+      await client.query(
+        `INSERT INTO audit.outbox_message (event_id,event_type,aggregate_type,aggregate_id,payload,occurred_at)
+         VALUES ($1,'catalog.operational_value.created','OPERATIONAL_VALUE',$2,$3::jsonb,now())`,
+        [correlationId, id, JSON.stringify({ id, entity: body.data.entity.toLowerCase() })]);
+      await client.query("COMMIT");
+      return reply.code(201).send({ id: inserted.rows[0].id,
+        entity: inserted.rows[0].entity_key.toLowerCase(), value: inserted.rows[0].value });
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      if (isUniqueError(error)) return problem(reply, 409, "DUPLICATE_OPERATIONAL_VALUE", "Esse valor jÃ¡ existe para a entidade.");
+      throw error;
+    } finally { client.release(); }
+  });
+
+  for (const { path, kind, sourceColumn } of resources.filter(resource => resource.kind !== "NCM")) {
+    app.get<{ Querystring: { importer?: string } }>(`/api/v1/${path}/options`,
+      { config: permissionConfig("catalog.read") }, async (request, reply) => {
+        const parsed = z.object({ importer: z.string().trim().min(1).max(120) }).safeParse(request.query);
+        if (!parsed.success) return problem(reply, 400, "INVALID_QUERY", "Selecione a importadora.");
+        const scopes = request.authorizationContext?.importerScopes ?? [];
+        if (!hasScope(scopes, parsed.data.importer)) return problem(reply, 404, "RESOURCE_NOT_FOUND", "Importadora fora do seu escopo.");
+        const descriptionColumn = kind === "PRODUCT" ? "U" : sourceColumn;
+        const result = await pool.query<{ code: string; name: string; status: string }>(
+          `WITH historical AS (
+             SELECT btrim(CASE WHEN $4 = 'SUPPLIER' AND source.sheet_name = 'Pós Embarque'
+                       THEN obs.raw_values ->> 'G' ELSE obs.raw_values ->> $1 END) AS code,
+                    btrim(CASE WHEN $4 = 'SUPPLIER' THEN
+                       CASE WHEN source.sheet_name = 'Pós Embarque' THEN obs.raw_values ->> 'G'
+                            ELSE obs.raw_values ->> $1 END
+                       ELSE obs.raw_values ->> $2 END) AS name, count(*)::int AS uses
+             FROM procurement.po_line_observation obs
+             JOIN procurement.purchase_order po ON po.id = obs.purchase_order_id
+             JOIN migration.source_row source ON source.id = obs.source_row_id
+             WHERE po.importer = $3
+               AND (($4 = 'SUPPLIER' AND source.sheet_name IN ('Pré Embarque','Pós Embarque'))
+                 OR ($4 = 'PRODUCT' AND source.sheet_name = 'Pré Embarque'))
+               AND nullif(btrim(CASE WHEN $4 = 'SUPPLIER' AND source.sheet_name = 'Pós Embarque'
+                         THEN obs.raw_values ->> 'G' ELSE obs.raw_values ->> $1 END), '') IS NOT NULL
+               AND nullif(btrim(CASE WHEN $4 = 'SUPPLIER' THEN
+                         CASE WHEN source.sheet_name = 'Pós Embarque' THEN obs.raw_values ->> 'G'
+                              ELSE obs.raw_values ->> $1 END
+                         ELSE obs.raw_values ->> $2 END), '') IS NOT NULL
+               AND upper(btrim(CASE WHEN $4 = 'SUPPLIER' AND source.sheet_name = 'Pós Embarque'
+                         THEN obs.raw_values ->> 'G' ELSE obs.raw_values ->> $1 END)) NOT IN ('#N/A','#REF!','#VALUE!')
+             GROUP BY 1,2
+           ), ranked AS (
+             SELECT code,name,row_number() OVER (PARTITION BY upper(code) ORDER BY uses DESC,name) AS rank
+             FROM historical
+           ), curated AS (
+             SELECT code,name,status FROM catalog.entry
+             WHERE importer = $3 AND kind = $4 AND status = 'ACTIVE'
+           ), candidates AS (
+             SELECT ranked.code,ranked.name,'HISTORICAL_CANDIDATE'::text AS status FROM ranked
+             WHERE ranked.rank=1 AND NOT EXISTS (
+               SELECT 1 FROM curated WHERE upper(btrim(curated.code))=upper(ranked.code))
+           )
+           SELECT * FROM curated UNION ALL SELECT * FROM candidates ORDER BY name,code`,
+          [sourceColumn, descriptionColumn, parsed.data.importer, kind]);
+        return { items: result.rows };
+      });
+  }
+
   app.get("/api/v1/importers", { config: permissionConfig("catalog.read") }, async (request) => {
     const scopes = request.authorizationContext?.importerScopes ?? [];
     const result = await pool.query<{ importer: string; po_count: number }>(
       `SELECT available.importer,
               count(po.id) FILTER (WHERE po.source_kind = 'HISTORICAL_EXCEL')::int AS po_count
        FROM (SELECT importer FROM procurement.purchase_order
-             UNION SELECT importer FROM imports.import_process) AS available
+             UNION SELECT importer FROM imports.import_process
+             UNION SELECT value AS importer FROM catalog.operational_value
+                    WHERE entity_key = 'IMPORTER' AND value = ANY($1::text[])) AS available
        LEFT JOIN procurement.purchase_order AS po ON po.importer = available.importer
        WHERE available.importer = ANY($1::text[])
        GROUP BY available.importer ORDER BY available.importer`, [scopes]);

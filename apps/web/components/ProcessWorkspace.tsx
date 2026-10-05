@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, Fragment, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
+import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 
 type Cost = { id: string; type: string; currency: string; amount: string; status: string; sourceSheetName: string; sourceRowNumber: number; sourceColumn: string };
 type Order = { id: string; number: string; importer: string; linkSource: string };
@@ -31,20 +32,22 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const [operationalOptions, setOperationalOptions] = useState<OperationalOption[]>([]);
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError(undefined);
     Promise.all([
       apiFetch(`/api/v1/processes/${id}`, { signal: controller.signal }),
       apiFetch(`/api/v1/processes/${id}/items?page=${page}&pageSize=50`, { signal: controller.signal }),
       apiFetch("/auth/me", { signal: controller.signal }),
-    ]).then(async ([detail, items, identity]) => {
+      loadOperationalOptions(),
+    ]).then(async ([detail, items, identity, options]) => {
       if (detail.status === 401 || items.status === 401 || identity.status === 401) throw new Error("Sua sessão expirou. Entre novamente.");
       if (detail.status === 403 || items.status === 403) throw new Error("Seu acesso não permite consultar este IP.");
       if (detail.status === 404 || items.status === 404) throw new Error("IP não encontrado ou fora do seu escopo.");
       if (!detail.ok || !items.ok || !identity.ok) throw new Error("Não foi possível carregar o IP.");
       const [processValue, lineValue, user] = await Promise.all([detail.json() as Promise<Process>, items.json() as Promise<LinePage>, identity.json() as Promise<{ roles: string[] }>]);
       if (!controller.signal.aborted) {
-        setProcess(processValue); setLines(lineValue); setRoles(user.roles);
+        setProcess(processValue); setLines(lineValue); setRoles(user.roles); setOperationalOptions(options);
         setIpNumberDraft(processValue.ipNumber);
         setStatusDraft(processValue.logisticsStatus ?? ""); setPriorityDraft(processValue.priority ?? "");
         setNotesDraft(processValue.notes);
@@ -83,7 +86,7 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
         {canWrite && <details><summary>Editar IP</summary><form className="stack-form" onSubmit={saveProcess}>
           <label>Número do IP<input required maxLength={80} disabled={process.sourceKind !== "MANUAL"}
             value={ipNumberDraft} onChange={event => setIpNumberDraft(event.target.value)} /></label>
-          <label>Status logístico<input maxLength={40} value={statusDraft} onChange={event => setStatusDraft(event.target.value)} /></label>
+          <label>Status logístico<OperationalOptionSelect entity="logistics_status" value={statusDraft} values={operationalOptions} onChange={setStatusDraft} /></label>
           <label>Prioridade<input maxLength={20} value={priorityDraft} onChange={event => setPriorityDraft(event.target.value)} /></label>
           <label>Observações<textarea maxLength={4000} value={notesDraft} onChange={event => setNotesDraft(event.target.value)} /></label>
           <label>Justificativa<input required minLength={3} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} /></label>

@@ -12,7 +12,7 @@ const itemFields: Record<string, [string, FieldType, number?]> = {
   necessityDate: ["necessity_date", "date"], priority: ["priority", "text", 20],
   demand: ["demand", "text", 160], requester: ["requester", "text", 160],
   scNumber: ["sc_number", "text", 80], scApprovalDate: ["sc_approval_date", "date"],
-  purpose: ["purpose", "text", 160], costCenter: ["cost_center", "text", 80],
+  purpose: ["purpose", "text", 160], productGroup: ["product_group", "text", 120], costCenter: ["cost_center", "text", 80],
   draftPo: ["draft_po", "text", 80], poApprovalDate: ["po_approval_date", "date"],
   poSentDate: ["po_sent_date", "date"], category: ["category", "text", 120],
   ncm: ["ncm", "text", 16], remarks: ["remarks", "text", 4000],
@@ -25,6 +25,7 @@ const itemFields: Record<string, [string, FieldType, number?]> = {
   actualPortDepartureDate: ["actual_port_departure_date", "date"],
 };
 const processFields: Record<string, [string, FieldType, number?]> = {
+  logisticsStatus: ["logistics_status", "text", 40],
   priority: ["priority", "text", 20], ipTotvsDate: ["ip_totvs_date", "date"],
   transportMode: ["transport_mode", "text", 40],
   incoterm: ["incoterm", "text", 20], broker: ["broker", "text", 160],

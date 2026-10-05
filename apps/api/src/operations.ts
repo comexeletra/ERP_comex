@@ -130,7 +130,9 @@ export async function record(client: PoolClient, aggregateType: string, aggregat
 async function knownImporter(client: PoolClient, importer: string) {
   const result = await client.query(
     `SELECT importer FROM procurement.purchase_order WHERE importer = $1
-     UNION SELECT importer FROM imports.import_process WHERE importer = $1 LIMIT 1`, [importer]);
+     UNION SELECT importer FROM imports.import_process WHERE importer = $1
+     UNION SELECT value AS importer FROM catalog.operational_value WHERE entity_key = 'IMPORTER' AND value = $1
+     LIMIT 1`, [importer]);
   if (!result.rowCount) throw new BusinessError(404, "UNKNOWN_IMPORTER", "Importadora ainda não cadastrada.");
 }
 export async function lockedPo(client: PoolClient, id: string, scopes: string[]) {

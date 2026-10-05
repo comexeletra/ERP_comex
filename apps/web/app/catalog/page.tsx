@@ -133,7 +133,8 @@ export default function CatalogPage() {
   return <main className="shell">
     <header className="page-header"><p className="eyebrow">ERP Comex</p><h1>Cadastros e candidatos da origem</h1>
       <p>Confirme cadastros operacionais com evidência. Códigos observados na planilha são apenas candidatos; nenhum vínculo oficial de PO ou item é criado aqui.</p>
-      <Link className="text-link" href="/">← Carteira de POs</Link></header>
+      <div className="catalog-links"><Link className="text-link" href="/">← Carteira de POs</Link>
+        <Link className="text-link" href="/catalog/values">Adicionar valores às entidades</Link></div></header>
     <section className="card catalog-controls">
       <div role="group" aria-label="Tipo de cadastro">{(Object.keys(labels) as Resource[]).map(key =>
         <button type="button" key={key} className={`button ${resource === key ? "" : "secondary"}`} onClick={() => chooseResource(key)}>{labels[key]}</button>)}</div>

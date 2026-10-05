@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
+import { CatalogChoice, loadCatalogChoices, loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 
 type Item = { id: string; lineNumber: number; externalLineReference: string | null;
   productCode: string; description: string; orderedQuantity: string; unit: string;
@@ -49,6 +50,9 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [reload, setReload] = useState(0);
+  const [products, setProducts] = useState<CatalogChoice[]>([]);
+  const [suppliers, setSuppliers] = useState<CatalogChoice[]>([]);
+  const [options, setOptions] = useState<OperationalOption[]>([]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -56,11 +60,16 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     Promise.all([
       apiFetch(`/api/v1/purchase-orders/${id}/operational`, { signal: controller.signal }),
       apiFetch("/auth/me", { signal: controller.signal }),
-    ]).then(async ([poResponse, identityResponse]) => {
+      loadOperationalOptions(),
+    ]).then(async ([poResponse, identityResponse, optionValues]) => {
       const po = await responseData<OperationalPo>(poResponse);
       const identity = await responseData<{ roles: string[] }>(identityResponse);
+      const [productChoices, supplierChoices] = await Promise.all([
+        loadCatalogChoices("products", po.importer), loadCatalogChoices("suppliers", po.importer),
+      ]);
       if (controller.signal.aborted) return;
-      setData(po); setRoles(identity.roles);
+      setData(po); setRoles(identity.roles); setOptions(optionValues);
+      setProducts(productChoices); setSuppliers(supplierChoices);
       setNumber(po.number);
       setSupplier(po.supplierText ?? ""); setOrderDate(po.orderDate ?? ""); setNotes(po.notes);
       setItemId(current => po.items.some(item => item.id === current) ? current : po.items[0]?.id ?? "");
@@ -139,6 +148,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     {notice && <p className="notice success" role="status">{notice}</p>}
     {!loading && data && <>
       <p className="muted">Origem: {data.sourceKind} · versão {data.version}</p>
+      <p className="muted">Cadastre fornecedores e produtos em <Link className="text-link" href="/catalog">Cadastros</Link> e os demais valores em <Link className="text-link" href="/catalog/values">Valores das entidades</Link>.</p>
       <dl className="operational-summary"><div><dt>Fornecedor informado</dt><dd>{data.supplierText ?? "—"}</dd></div>
         <div><dt>Data da PO</dt><dd>{data.orderDate ?? "—"}</dd></div><div><dt>Observações</dt><dd>{data.notes || "—"}</dd></div></dl>
       {(canWritePo || canAllocate) && <label className="operational-reason">Justificativa da alteração
@@ -148,7 +158,10 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         <form className="stack-form" onSubmit={saveHeader}>
           <label>Número da PO no TOTVS<input required maxLength={80} disabled={data.sourceKind !== "MANUAL_TOTVS_REFERENCE"}
             value={number} onChange={event => setNumber(event.target.value)} /></label>
-          <label>Fornecedor informado<input maxLength={240} value={supplier} onChange={event => setSupplier(event.target.value)} /></label>
+          <label>Fornecedor<select value={supplier} onChange={event => setSupplier(event.target.value)}>
+            <option value="">Selecione</option>{!suppliers.some(item => item.code === supplier) && supplier && <option value={supplier}>{supplier} (valor atual)</option>}
+            {suppliers.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
+          </select></label>
           <label>Data da PO<input type="date" value={orderDate} onChange={event => setOrderDate(event.target.value)} /></label>
           <label>Observações<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
           <button className="button" disabled={saving || reason.trim().length < 3}>Salvar PO</button>
@@ -171,10 +184,16 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         <form className="stack-form" onSubmit={saveItem}>
           <label>Linha no TOTVS, se conhecida<input maxLength={80} value={itemDraft.externalLineReference}
             onChange={event => setItemDraft({ ...itemDraft, externalLineReference: event.target.value })} /></label>
-          <label>Código do produto<input required maxLength={120} value={itemDraft.productCode}
-            onChange={event => setItemDraft({ ...itemDraft, productCode: event.target.value })} /></label>
-          <label>Descrição<input required maxLength={1000} value={itemDraft.description}
-            onChange={event => setItemDraft({ ...itemDraft, description: event.target.value })} /></label>
+          <label>Descrição do produto<select required value={itemDraft.productCode} onChange={event => {
+            const product = products.find(option => option.code === event.target.value);
+            setItemDraft({ ...itemDraft, productCode: product?.code ?? "", description: product?.name ?? "" });
+          }}><option value="">Selecione</option>
+            {!products.some(item => item.code === itemDraft.productCode) && itemDraft.productCode &&
+              <option value={itemDraft.productCode}>{itemDraft.description || itemDraft.productCode} (valor atual)</option>}
+            {products.map(product => <option key={product.code} value={product.code}>{product.name}</option>)}
+          </select></label>
+          <label>Código do produto<input required readOnly value={itemDraft.productCode} /></label>
+          <label>Descrição<input required readOnly maxLength={1000} value={itemDraft.description} /></label>
           <div className="operational-fields">
             <label>Quantidade pedida<input required inputMode="decimal" value={itemDraft.orderedQuantity}
               onChange={event => setItemDraft({ ...itemDraft, orderedQuantity: event.target.value })} placeholder="100 ou 100,5" /></label>
@@ -182,8 +201,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
               onChange={event => setItemDraft({ ...itemDraft, unit: event.target.value })} placeholder="PC" /></label>
             <label>Preço unitário, se conhecido<input inputMode="decimal" value={itemDraft.unitPrice}
               onChange={event => setItemDraft({ ...itemDraft, unitPrice: event.target.value })} /></label>
-            <label>Moeda do preço<input maxLength={3} value={itemDraft.currency}
-              onChange={event => setItemDraft({ ...itemDraft, currency: event.target.value.toUpperCase() })} placeholder="USD" /></label>
+            <label>Moeda do preço<OperationalOptionSelect entity="currency" value={itemDraft.currency} values={options}
+              onChange={currency => setItemDraft({ ...itemDraft, currency })} /></label>
           </div>
           <button className="button" disabled={saving || reason.trim().length < 3}>Salvar item</button>
           {editingItem && <button className="button secondary" type="button" onClick={() => {

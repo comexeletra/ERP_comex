@@ -16,6 +16,12 @@ field map and rules. Run both migrations together before starting the new API.
 M019–M020 passed a restored-copy test and were applied to the operational VPS
 database on 2026-10-04, after a verified backup. The ledger is 20/20; release
 evidence and rollback paths are in `deploy/hostinger/README.md`.
+`M021_operational_selectors.sql` adds the selectable-value entities used by
+PO/IP forms, seeds their initial values from workbook source columns, and adds
+the PO-item product group. Apply it before deploying the UI/API changes. Values
+are administered in `/catalog/values`; product and supplier selectors include
+source observations and reviewed active entries, which remain managed in
+`/catalog`.
 `M002` is the PostgreSQL counterpart for quality-review records. Each file is
 applied in its own transaction and recorded with a SHA-256 checksum in
 `migration.schema_migration`; an applied file whose checksum changes stops the

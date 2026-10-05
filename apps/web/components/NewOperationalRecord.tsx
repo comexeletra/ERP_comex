@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "../lib/api";
+import { CatalogChoice, loadCatalogChoices, loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 
 const poRoles = new Set(["Master", "Administrador", "Importação", "Compras"]);
 const ipRoles = new Set(["Master", "Administrador", "Importação"]);
@@ -23,20 +24,31 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [suppliers, setSuppliers] = useState<CatalogChoice[]>([]);
+  const [options, setOptions] = useState<OperationalOption[]>([]);
 
   useEffect(() => {
-    Promise.all([apiFetch("/auth/me"), apiFetch("/api/v1/importers")])
-      .then(async ([identity, list]) => {
+    Promise.all([apiFetch("/auth/me"), apiFetch("/api/v1/importers"), loadOperationalOptions()])
+      .then(async ([identity, list, optionValues]) => {
         if (!identity.ok || !list.ok) throw new Error("Não foi possível consultar suas permissões e importadoras.");
         const user = await identity.json() as { roles: string[] };
         const data = await list.json() as { items: Array<{ code: string }> };
         setRoles(user.roles);
+        setOptions(optionValues);
         setImporters(data.items.map(item => item.code));
         if (data.items[0]) setImporter(data.items[0].code);
       })
       .catch(cause => setError(cause instanceof Error ? cause.message : "Erro inesperado."))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!importer) { setSuppliers([]); return; }
+    let active = true;
+    loadCatalogChoices("suppliers", importer).then(items => { if (active) setSuppliers(items); })
+      .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : "Erro ao carregar fornecedores."); });
+    return () => { active = false; };
+  }, [importer]);
 
   const allowed = roles.some(role => (kind === "po" ? poRoles : ipRoles).has(role));
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -73,10 +85,12 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
         <label>{kind === "po" ? "Número da PO no TOTVS" : "Número do IP"}
           <input required maxLength={80} value={number} onChange={event => setNumber(event.target.value)} /></label>
         {kind === "po" ? <>
-          <label>Fornecedor informado<input maxLength={240} value={supplier} onChange={event => setSupplier(event.target.value)} /></label>
+          <label>Fornecedor<select value={supplier} onChange={event => setSupplier(event.target.value)}>
+            <option value="">Selecione</option>{suppliers.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
+          </select></label>
           <label>Data da PO<input type="date" value={orderDate} onChange={event => setOrderDate(event.target.value)} /></label>
         </> : <>
-          <label>Status logístico<input maxLength={40} value={status} onChange={event => setStatus(event.target.value)} /></label>
+          <label>Status logístico<OperationalOptionSelect entity="logistics_status" value={status} values={options} onChange={setStatus} /></label>
           <label>Prioridade<input maxLength={20} value={priority} onChange={event => setPriority(event.target.value)} /></label>
         </>}
         <label>Observações<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>

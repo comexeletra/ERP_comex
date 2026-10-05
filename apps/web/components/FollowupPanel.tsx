@@ -3,16 +3,18 @@
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "../lib/api";
+import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 
-type Field = { key: string; label: string; type?: "date" | "number" | "money" | "boolean"; max?: number };
+type Field = { key: string; label: string; type?: "date" | "number" | "money" | "boolean" | "select"; max?: number; entity?: string };
 const itemFields: Field[] = [
   { key: "necessityDate", label: "Data de necessidade", type: "date" },
-  { key: "priority", label: "Prioridade", max: 20 }, { key: "demand", label: "Demanda", max: 160 },
+  { key: "priority", label: "Prioridade", max: 20 }, { key: "demand", label: "Demanda", type: "select", entity: "demand" },
   { key: "requester", label: "Solicitante", max: 160 }, { key: "scNumber", label: "SC TOTVS", max: 80 },
   { key: "scApprovalDate", label: "Aprovação da SC", type: "date" },
-  { key: "purpose", label: "Finalidade", max: 160 }, { key: "costCenter", label: "Centro de custo", max: 80 },
+  { key: "purpose", label: "Finalidade", type: "select", entity: "purpose" }, { key: "costCenter", label: "Centro de custo", max: 80 },
   { key: "draftPo", label: "Draft PO", max: 80 }, { key: "poApprovalDate", label: "Aprovação da PO", type: "date" },
-  { key: "poSentDate", label: "Envio da PO", type: "date" }, { key: "category", label: "Categoria", max: 120 },
+  { key: "poSentDate", label: "Envio da PO", type: "date" }, { key: "category", label: "Categoria", type: "select", entity: "category" },
+  { key: "productGroup", label: "Grupo", type: "select", entity: "product_group" },
   { key: "ncm", label: "NCM", max: 16 }, { key: "remarks", label: "Observações do item", max: 4000 },
   { key: "commercialPlanReceivedDate", label: "Plano comercial recebido", type: "date" },
   { key: "mrpCompletedDate", label: "MRP concluído", type: "date" },
@@ -26,20 +28,21 @@ const itemFields: Field[] = [
   { key: "actualPortDepartureDate", label: "Saída do porto de origem", type: "date" },
 ];
 const processFields: Field[] = [
+  { key: "logisticsStatus", label: "Status", type: "select", entity: "logistics_status" },
   { key: "priority", label: "Prioridade do IP", max: 20 },
   { key: "ipTotvsDate", label: "Data do IP no TOTVS", type: "date" },
-  { key: "transportMode", label: "Modal (SEA, AIR...) ", max: 40 },
-  { key: "incoterm", label: "Incoterm", max: 20 }, { key: "broker", label: "Despachante", max: 160 },
-  { key: "portLoading", label: "POL / origem", max: 160 }, { key: "portDischarge", label: "POD / destino", max: 160 },
+  { key: "transportMode", label: "Modal (SEA, AIR...) ", type: "select", entity: "transport_mode" },
+  { key: "incoterm", label: "Incoterm", type: "select", entity: "incoterm" }, { key: "broker", label: "Despachante", max: 160 },
+  { key: "portLoading", label: "POL / origem", type: "select", entity: "port_loading" }, { key: "portDischarge", label: "POD / destino", type: "select", entity: "port_discharge" },
   { key: "etd", label: "ETD", type: "date" }, { key: "etaConfirmed", label: "ETA confirmada", type: "date" },
   { key: "arrivalDate", label: "Chegada efetiva", type: "date" },
   { key: "duimpNumber", label: "DUIMP", max: 100 }, { key: "duimpDate", label: "Registro da DUIMP", type: "date" },
-  { key: "customsChannel", label: "Canal", max: 80 }, { key: "clearanceDate", label: "Desembaraço", type: "date" },
+  { key: "customsChannel", label: "Canal", type: "select", entity: "customs_channel" }, { key: "clearanceDate", label: "Desembaraço", type: "date" },
   { key: "eteConfirmed", label: "ETE confirmada", type: "date" },
   { key: "nfRequestDate", label: "Solicitação da NF", type: "date" },
   { key: "deliveryDate", label: "Entrega efetiva", type: "date" },
-  { key: "freightCurrency", label: "Moeda do frete", max: 3 }, { key: "freightCost", label: "Frete", type: "money" },
-  { key: "containerNumber", label: "Container", max: 120 }, { key: "containerType", label: "Tipo do container", max: 80 },
+  { key: "freightCurrency", label: "Moeda do frete", type: "select", entity: "currency" }, { key: "freightCost", label: "Frete", type: "money" },
+  { key: "containerNumber", label: "Container", max: 120 }, { key: "containerType", label: "Tipo do container", type: "select", entity: "container_type" },
   { key: "containerQuantity", label: "Qtd. containers", type: "number" },
   { key: "forwarder", label: "Agente de carga", max: 160 },
   { key: "documentsOk", label: "Documentação conferida", type: "boolean" },
@@ -76,10 +79,12 @@ function payload(fields: Field[], values: Draft) {
         field.type === "money" ? value.replace(",", ".") : value];
   }));
 }
-function FieldEditor({ fields, values, setValues }: { fields: Field[]; values: Draft; setValues: (value: Draft) => void }) {
+function FieldEditor({ fields, values, setValues, options }: { fields: Field[]; values: Draft; setValues: (value: Draft) => void; options: OperationalOption[] }) {
   return <div className="operational-fields">{fields.map(field => <label key={field.key}>{field.label}
     {field.type === "boolean" ? <select value={values[field.key] ?? ""} onChange={event => setValues({ ...values, [field.key]: event.target.value })}>
       <option value="">Não informado</option><option value="true">Sim</option><option value="false">Não</option></select> :
+      field.type === "select" ? <OperationalOptionSelect entity={field.entity ?? ""} value={values[field.key] ?? ""} values={options}
+        onChange={value => setValues({ ...values, [field.key]: value })} /> :
       <input type={field.type === "date" ? "date" : field.type === "number" ? "number" : "text"}
         min={field.type === "number" ? 0 : undefined} maxLength={field.max}
         inputMode={field.type === "money" ? "decimal" : undefined}
@@ -123,13 +128,14 @@ export default function FollowupPanel({ id }: { id: string }) {
   const [processDrafts, setProcessDrafts] = useState<Record<string, Draft>>({});
   const [docDrafts, setDocDrafts] = useState<Record<string, DocDraft>>({});
   const [editingDoc, setEditingDoc] = useState<Record<string, string>>({});
+  const [options, setOptions] = useState<OperationalOption[]>([]);
   useEffect(() => {
     const controller = new AbortController();
     Promise.all([apiFetch(`/api/v1/purchase-orders/${id}/followup`, { signal: controller.signal }),
-      apiFetch("/auth/me", { signal: controller.signal })]).then(async ([followup, me]) => {
+      apiFetch("/auth/me", { signal: controller.signal }), loadOperationalOptions()]).then(async ([followup, me, optionValues]) => {
       const result = await read<Followup>(followup); const identity = await read<{ roles: string[] }>(me);
       if (controller.signal.aborted) return;
-      setData(result); setRoles(identity.roles);
+      setData(result); setRoles(identity.roles); setOptions(optionValues);
       setItemDrafts(Object.fromEntries(result.items.map(item => [item.id, draft(item, itemFields)])));
       setProcessDrafts(Object.fromEntries(result.processes.map(entry => [entry.process.id, draft(entry.process, processFields)])));
     }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro inesperado."); })
@@ -182,6 +188,7 @@ export default function FollowupPanel({ id }: { id: string }) {
   return <section className="card operational-panel" aria-label="Acompanhamento da PO">
     <h2>Acompanhamento da PO</h2>
     <p className="muted">Preencha os dados de cada item e dos IPs vinculados. Prazos, valores, status e alertas são calculados automaticamente. Campos sem dados suficientes aparecem como —. Os valores históricos continuam separados.</p>
+    <p className="muted">Para adicionar opções aos seletores, acesse <Link className="text-link" href="/catalog/values">Valores das entidades</Link>; fornecedores e produtos ficam em <Link className="text-link" href="/catalog">Cadastros</Link>.</p>
     {loading && <p role="status">Carregando acompanhamento…</p>}
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
@@ -193,7 +200,7 @@ export default function FollowupPanel({ id }: { id: string }) {
       {data.items.length === 0 && <p>Cadastre o primeiro item da PO no painel acima.</p>}
       {data.items.map(item => <details key={item.id}><summary>Linha {item.lineNumber} · {item.productCode} · {item.orderedQuantity} {item.currencyCode ?? ""}</summary>
         {canWriteItem ? <form className="stack-form" onSubmit={event => saveItem(event, item.id)}>
-          <FieldEditor fields={itemFields} values={itemDrafts[item.id] ?? {}} setValues={values => setItemDrafts(previous => ({ ...previous, [item.id]: values }))} />
+          <FieldEditor fields={itemFields} values={itemDrafts[item.id] ?? {}} options={options} setValues={values => setItemDrafts(previous => ({ ...previous, [item.id]: values }))} />
           <button className="button" disabled={busy || reason.trim().length < 3}>Salvar dados do item</button></form> :
           <dl className="followup-grid">{itemFields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{value(item[field.key])}</dd></div>)}</dl>}
       </details>)}
@@ -215,7 +222,7 @@ export default function FollowupPanel({ id }: { id: string }) {
         return <details key={p.id}><summary>Dados do IP {p.ipNumber} e documentos</summary>
           <p className="muted">O IP pode atender várias POs. Alterações aqui aparecem para todas elas. Informe cada Invoice, BL ou NF separadamente.</p>
           {canWriteProcess ? <form className="stack-form" onSubmit={event => saveProcess(event, p.id, p.version)}>
-            <FieldEditor fields={processFields} values={processDrafts[p.id] ?? {}} setValues={values => setProcessDrafts(previous => ({ ...previous, [p.id]: values }))} />
+            <FieldEditor fields={processFields} values={processDrafts[p.id] ?? {}} options={options} setValues={values => setProcessDrafts(previous => ({ ...previous, [p.id]: values }))} />
             <button className="button" disabled={busy || reason.trim().length < 3}>Salvar dados do IP</button></form> :
             <dl className="followup-grid">{processFields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{value(p[field.key])}</dd></div>)}</dl>}
           <h4>Invoice, BL e NF</h4>
@@ -247,7 +254,8 @@ export default function FollowupPanel({ id }: { id: string }) {
               {d.kind === "INVOICE" && <><label>Quantidade<input inputMode="decimal" value={d.quantity} onChange={event => setDocDrafts(previous => ({ ...previous, [p.id]: { ...d, quantity: event.target.value } }))} /></label>
                 <label>Preço unitário<input inputMode="decimal" value={d.unitPrice} onChange={event => setDocDrafts(previous => ({ ...previous, [p.id]: { ...d, unitPrice: event.target.value } }))} /></label>
                 <label>Valor informado da Invoice<input inputMode="decimal" value={d.amount} onChange={event => setDocDrafts(previous => ({ ...previous, [p.id]: { ...d, amount: event.target.value } }))} /></label>
-                <label>Moeda<input maxLength={3} value={d.currencyCode} onChange={event => setDocDrafts(previous => ({ ...previous, [p.id]: { ...d, currencyCode: event.target.value.toUpperCase() } }))} /></label></>}
+                <label>Moeda<OperationalOptionSelect entity="currency" value={d.currencyCode} values={options}
+                  onChange={currencyCode => setDocDrafts(previous => ({ ...previous, [p.id]: { ...d, currencyCode } }))} /></label></>}
             </div>
             <label>Observações<textarea maxLength={4000} value={d.notes} onChange={event => setDocDrafts(previous => ({ ...previous, [p.id]: { ...d, notes: event.target.value } }))} /></label>
             <button className="button" disabled={busy || reason.trim().length < 3}>{activeId ? "Salvar documento" : "Adicionar documento"}</button>

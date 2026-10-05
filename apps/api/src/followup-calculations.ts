@@ -66,7 +66,7 @@ export function calculateFollowup(item: Row, process: Row, documents: Row[],
   const eta = date(process.etaConfirmed) ?? (mode ? addDays(process.etd, sea ? 55 : 10) : null);
   const ete = date(process.eteConfirmed) ?? addDays(eta, 10);
   const cancelled = /^(CANCELLED|CANCELED|CANCELADO)$/i.test(String(process.logisticsStatus ?? ""));
-  const delivered = Boolean(date(process.deliveryDate));
+  const delivered = Boolean(date(process.deliveryDate)) || /^(DELIVERED|ENTREGUE)$/i.test(String(process.logisticsStatus ?? "").trim());
   const status = cancelled ? "CANCELADO" : delivered ? "ENTREGUE" : !invoices.length ? "AGUARDANDO PRODUÇÃO" :
     !firstBillDate ? "AGUARDANDO EMBARQUE" : !date(process.arrivalDate) ? "AGUARDANDO CHEGADA" :
       "DESEMBARAÇO";
@@ -112,7 +112,8 @@ export function calculateFollowup(item: Row, process: Row, documents: Row[],
     totalPrice: moneyProduct(item.orderedQuantity, item.unitPrice), currency: item.currencyCode ?? null,
     eta, ete, transitDays: daysBetween(process.etd, eta),
     storageDueDate: date(process.storageDueOverride) ?? (mode ? addDays(process.arrivalDate, sea ? 9 : 5) : null),
-    status, alert, ruptureRisk: risk,
+    status: typeof process.logisticsStatus === "string" && process.logisticsStatus.trim() ? process.logisticsStatus.trim() : status,
+    alert, ruptureRisk: risk,
     leadTimeDays: daysBetween(item.poSentDate, process.deliveryDate),
     poApprovalDays: daysBetween(scApproval, item.poApprovalDate),
     poAfterScDays: daysBetween(scApproval, poSent),

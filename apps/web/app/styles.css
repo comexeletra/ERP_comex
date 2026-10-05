@@ -212,3 +212,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .followup-grid dt { color: #617985; font-size: .76rem; font-weight: 700; }
 .followup-grid dd { margin: 4px 0 0; overflow-wrap: anywhere; }
 .followup-document { border-bottom: 1px solid #dce6eb; padding: 10px 0; }
+.catalog-links { display: flex; flex-wrap: wrap; gap: 10px 22px; }
+.entity-value-list { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.entity-value-list li { background: #edf5f6; border: 1px solid #d3e4e6; border-radius: 999px; color: #264650; padding: 6px 11px; }
