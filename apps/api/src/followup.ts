@@ -22,11 +22,11 @@ const itemFields: Record<string, [string, FieldType, number?]> = {
   targetShipmentDays: ["target_shipment_days", "integer"], targetPortDays: ["target_port_days", "integer"],
   targetTransitDays: ["target_transit_days", "integer"], targetCustomsDays: ["target_customs_days", "integer"],
   actualFactoryShipDate: ["actual_factory_ship_date", "date"],
-  actualPortDepartureDate: ["actual_port_departure_date", "date"],
 };
 const processFields: Record<string, [string, FieldType, number?]> = {
   logisticsStatus: ["logistics_status", "text", 40],
   priority: ["priority", "text", 20], ipTotvsDate: ["ip_totvs_date", "date"],
+  actualPortDepartureDate: ["actual_port_departure_date", "date"],
   transportMode: ["transport_mode", "text", 40],
   incoterm: ["incoterm", "text", 20], broker: ["broker", "text", 160],
   portLoading: ["port_loading", "text", 160], portDischarge: ["port_discharge", "text", 160],
@@ -96,6 +96,77 @@ const docPatch = documentBase.omit({ kind: true, purchaseOrderItemId: true })
   .refine(data => data.quantity === null || !/^0(?:\.0+)?$/.test(data.quantity));
 
 export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
+  app.get<{ Params: { id: string } }>("/api/v1/processes/:id/followup",
+    { config: permissionConfig("processes.read") }, async (request, reply) => {
+      const id = z.uuid().safeParse(request.params.id);
+      if (!id.success) return problem(reply, 400, "INVALID_ID", "IP inválido.");
+      const scopes = request.authorizationContext?.importerScopes ?? [];
+      const found = await pool.query(`SELECT p.* FROM imports.import_process p
+        WHERE p.id=$1 AND p.importer=ANY($2::text[])`, [id.data, scopes]);
+      if (!found.rows[0]) return problem(reply, 404, "RESOURCE_NOT_FOUND", "IP não encontrado.");
+      const process = camel(found.rows[0]);
+      const purchaseOrders = await pool.query(`SELECT po.id, po.external_number AS number, po.importer,
+          link.source_kind AS "linkSource"
+        FROM procurement.process_purchase_order link
+        JOIN procurement.purchase_order po ON po.id=link.purchase_order_id
+        WHERE link.process_id=$1 AND po.importer=ANY($2::text[])
+        UNION
+        SELECT po.id, po.external_number AS number, po.importer, 'OPERATIONAL' AS "linkSource"
+        FROM procurement.po_item_allocation a
+        JOIN procurement.purchase_order_item item ON item.id=a.purchase_order_item_id
+        JOIN procurement.purchase_order po ON po.id=item.purchase_order_id
+        WHERE a.process_id=$1 AND a.status='ACTIVE' AND po.importer=ANY($2::text[])
+        ORDER BY number, id`, [id.data, scopes]);
+      const allocations = await pool.query(`SELECT a.id, a.quantity::text AS "allocationQuantity", a.notes,
+          item.id AS item_id, item.line_number, item.external_line_reference, item.product_code,
+          item.description, item.ordered_quantity::text AS ordered_quantity, item.unit,
+          item.unit_price::text AS unit_price, item.currency_code, item.necessity_date,
+          item.priority AS item_priority, item.demand, item.requester, item.sc_number,
+          item.sc_approval_date, item.purpose, item.product_group, item.cost_center,
+          item.draft_po, item.po_approval_date, item.po_sent_date, item.category, item.ncm,
+          item.remarks, item.commercial_plan_received_date, item.mrp_completed_date,
+          item.target_mrp_days, item.target_order_days, item.target_shipment_days,
+          item.target_port_days, item.target_transit_days, item.target_customs_days,
+          item.actual_factory_ship_date,
+          po.id AS po_id, po.external_number AS po_number, po.importer
+        FROM procurement.po_item_allocation a
+        JOIN procurement.purchase_order_item item ON item.id=a.purchase_order_item_id
+        JOIN procurement.purchase_order po ON po.id=item.purchase_order_id
+        WHERE a.process_id=$1 AND a.status='ACTIVE' AND po.importer=ANY($2::text[])
+        ORDER BY po.normalized_number, item.line_number, a.id`, [id.data, scopes]);
+      const documents = await pool.query(`SELECT * FROM imports.process_document
+        WHERE process_id=$1 AND status='ACTIVE' ORDER BY kind, number, id`, [id.data]);
+      const docs = documents.rows.map(camel);
+      const allocationItems = allocations.rows.map(row => {
+        const item = camel({
+          id: row.item_id, line_number: row.line_number,
+          external_line_reference: row.external_line_reference, product_code: row.product_code,
+          description: row.description, ordered_quantity: row.ordered_quantity, unit: row.unit,
+          unit_price: row.unit_price, currency_code: row.currency_code, necessity_date: row.necessity_date,
+          priority: row.item_priority, demand: row.demand, requester: row.requester, sc_number: row.sc_number,
+          sc_approval_date: row.sc_approval_date, purpose: row.purpose, product_group: row.product_group,
+          cost_center: row.cost_center, draft_po: row.draft_po, po_approval_date: row.po_approval_date,
+          po_sent_date: row.po_sent_date, category: row.category, ncm: row.ncm, remarks: row.remarks,
+          commercial_plan_received_date: row.commercial_plan_received_date,
+          mrp_completed_date: row.mrp_completed_date, target_mrp_days: row.target_mrp_days,
+          target_order_days: row.target_order_days, target_shipment_days: row.target_shipment_days,
+          target_port_days: row.target_port_days, target_transit_days: row.target_transit_days,
+          target_customs_days: row.target_customs_days, actual_factory_ship_date: row.actual_factory_ship_date,
+        });
+        const calculated = calculateFollowup({ ...item, allocationQuantity: row.allocationQuantity }, process, docs);
+        return { id: row.id, allocationQuantity: row.allocationQuantity, notes: row.notes,
+          purchaseOrder: { id: row.po_id, number: row.po_number, importer: row.importer }, item, calculated };
+      });
+      const events = await pool.query(`SELECT id, entity_type AS "entityType", entity_id AS "entityId",
+          operation, old_value AS "oldValue", new_value AS "newValue", actor_id AS "actorId",
+          occurred_at AS "occurredAt", reason
+        FROM audit.import_process_operational_history
+        WHERE aggregate_id=$1 ORDER BY occurred_at DESC, id DESC`, [id.data]);
+      reply.header("ETag", `"${process.version}"`);
+      return { process, purchaseOrders: purchaseOrders.rows, allocations: allocationItems,
+        documents: docs, invoiceTotals: invoiceTotals(docs), events: events.rows };
+    });
+
   app.get<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/followup",
     { config: permissionConfig("purchase-orders.read") }, async (request, reply) => {
       const id = z.uuid().safeParse(request.params.id);

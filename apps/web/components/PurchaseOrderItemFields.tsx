@@ -37,7 +37,6 @@ export const purchaseOrderItemFields: OperationalField[] = [
   { key: "targetTransitDays", label: "Meta de trânsito (dias)", type: "number" },
   { key: "targetCustomsDays", label: "Meta de desembaraço (dias)", type: "number" },
   { key: "actualFactoryShipDate", label: "Data de saída da fábrica", type: "date" },
-  { key: "actualPortDepartureDate", label: "Data de saída do porto de origem", type: "date" },
 ];
 
 const sharedItemFieldKeys = new Set([

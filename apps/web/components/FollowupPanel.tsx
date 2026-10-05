@@ -190,7 +190,7 @@ export default function FollowupPanel({ id }: { id: string }) {
           <p><Link className="text-link" href={`/processes/${entry.process.id}`}>Abrir IP {entry.process.ipNumber}</Link></p>
           <h4>Marcos deste vínculo PO–IP</h4>
           <dl className="followup-grid shipment-milestones">
-            {([["ETD", entry.process.etd], ["ETA", entry.calculated.eta], ["Arrival", entry.process.arrivalDate],
+            {([["ETD", entry.process.etd], ["Saída efetiva", entry.process.actualPortDepartureDate], ["ETA", entry.calculated.eta], ["Arrival", entry.process.arrivalDate],
               ["DUIMP", entry.process.duimpDate], ["Desembaraço", entry.process.clearanceDate],
               ["Entrega", entry.process.deliveryDate]] as [string, unknown][]).map(([label, date]) =>
               <div key={String(label)}><dt>{label}</dt><dd>{value(date)}</dd></div>)}
@@ -202,56 +202,16 @@ export default function FollowupPanel({ id }: { id: string }) {
             <div key={name}><dt>{name.toUpperCase()}</dt><dd>Meta {value(stage.targetDays)} · Real {value(stage.actualDays)} · Desvio {value(stage.delayDays)} dias</dd></div>)}</dl>
         </details>;
       })}
+      <h3>Operações de Pós Embarque por IP</h3>
+      <p className="muted">Os campos e documentos do Pós Embarque são mantidos uma única vez no IP. Acesse o IP para editar a operação compartilhada por todas as POs vinculadas.</p>
       {processes.map(entry => {
-        const p = entry.process; const d = docDrafts[p.id] ?? blankDoc(); const activeId = editingDoc[p.id];
-        const canEditThisProcess = canWriteProcess && p.lifecycleStatus !== "CLOSED";
-        const availableItems = data.items.filter(item => data.shipments.some(link => link.process.id === p.id && link.itemId === item.id));
-        return <details key={p.id}><summary>Dados do IP {p.ipNumber} e documentos</summary>
-          <p className="muted">O IP pode atender várias POs. Alterações aqui aparecem para todas elas. Informe cada Invoice, BL ou NF separadamente.</p>
-          {p.lifecycleStatus === "CLOSED" && <p className="notice">IP encerrado. Reabra o IP para editar os dados do Pós Embarque ou os documentos.</p>}
-          {canEditThisProcess ? <form className="stack-form" onSubmit={event => saveProcess(event, p.id, p.version)}>
-            <FieldEditor fields={processFields} values={processDrafts[p.id] ?? {}} options={options} setValues={values => setProcessDrafts(previous => ({ ...previous, [p.id]: values }))} />
-            <button className="button" disabled={busy || reason.trim().length < 3}>Salvar dados do IP</button></form> :
-            <dl className="followup-grid">{processFields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{value(p[field.key])}</dd></div>)}</dl>}
-          <h4>Invoice, BL e NF</h4>
-          <p>Valor das Invoices deste IP: {entry.invoiceTotals.amounts.length ? entry.invoiceTotals.amounts.map(total => `${total.amount} ${total.currency}`).join(" · ") : "—"}
-            {entry.invoiceTotals.incompleteLines > 0 && ` · ${entry.invoiceTotals.incompleteLines} linha(s) sem valor/moeda`}</p>
-          {entry.documents.length === 0 && <p>Nenhum documento cadastrado.</p>}
-          {entry.documents.map(doc => <div className="followup-document" key={doc.id}>
-            <strong>{doc.kind} {doc.number}</strong> · {doc.issueDate ?? "sem data"} · {doc.purchaseOrderItemId ? data.items.find(item => item.id === doc.purchaseOrderItemId)?.productCode ?? "Item de outra PO" : "IP geral"}
-            {doc.kind === "INVOICE" && <> · {doc.quantity ?? "—"} × {doc.unitPrice ?? "—"} · Valor {doc.amount ?? "calculado se possível"} {doc.currencyCode ?? ""}</>}
-            {doc.kind === "NF" && <> · Homologação {doc.homologationDate ?? "—"}</>}
-            {canEditThisProcess && <div className="operational-actions"><button className="button secondary" type="button" onClick={() => {
-              setEditingDoc(previous => ({ ...previous, [p.id]: doc.id }));
-              setDocDrafts(previous => ({ ...previous, [p.id]: { kind: doc.kind, purchaseOrderItemId: doc.purchaseOrderItemId ?? "",
-                number: doc.number, issueDate: doc.issueDate ?? "", homologationDate: doc.homologationDate ?? "",
-                quantity: doc.quantity ?? "", unitPrice: doc.unitPrice ?? "", amount: doc.amount ?? "", currencyCode: doc.currencyCode ?? "", notes: doc.notes } }));
-            }}>Editar</button><button className="button secondary" type="button" disabled={busy || reason.trim().length < 3}
-              onClick={() => void save(() => send(`/api/v1/processes/${p.id}/documents/${doc.id}`, "DELETE", { reason }, doc.version), "Documento cancelado.")}>Cancelar</button></div>}
-          </div>)}
-          {canEditThisProcess && <form className="stack-form" onSubmit={event => saveDoc(event, p.id, entry.documents)}>
-            <h4>{activeId ? "Editar documento" : "Adicionar documento"}</h4>
-            <div className="operational-fields">
-              <label>Tipo<select disabled={Boolean(activeId)} value={d.kind} onChange={event => setDocDrafts(previous => ({ ...previous, [p.id]: { ...d, kind: event.target.value as DocDraft["kind"] } }))}>
-                <option value="INVOICE">Invoice</option><option value="BL">BL</option><option value="NF">NF</option></select></label>
-              <label>Item da PO<select disabled={Boolean(activeId)} value={d.purchaseOrderItemId} onChange={event => setDocDrafts(previous => ({ ...previous, [p.id]: { ...d, purchaseOrderItemId: event.target.value } }))}>
-                <option value="">Documento geral do IP</option>{availableItems.map(item => <option key={item.id} value={item.id}>{item.productCode} · linha {item.lineNumber}</option>)}</select></label>
-              <label>Número<input required maxLength={120} value={d.number} onChange={event => setDocDrafts(previous => ({ ...previous, [p.id]: { ...d, number: event.target.value } }))} /></label>
-              <label>Emissão<input type="date" value={d.issueDate} onChange={event => setDocDrafts(previous => ({ ...previous, [p.id]: { ...d, issueDate: event.target.value } }))} /></label>
-              {d.kind === "NF" && <label>Homologação<input type="date" value={d.homologationDate} onChange={event => setDocDrafts(previous => ({ ...previous, [p.id]: { ...d, homologationDate: event.target.value } }))} /></label>}
-              {d.kind === "INVOICE" && <><label>Quantidade<input inputMode="decimal" value={d.quantity} onChange={event => setDocDrafts(previous => ({ ...previous, [p.id]: { ...d, quantity: event.target.value } }))} /></label>
-                <label>Preço unitário<input inputMode="decimal" value={d.unitPrice} onChange={event => setDocDrafts(previous => ({ ...previous, [p.id]: { ...d, unitPrice: event.target.value } }))} /></label>
-                <label>Valor informado da Invoice<input inputMode="decimal" value={d.amount} onChange={event => setDocDrafts(previous => ({ ...previous, [p.id]: { ...d, amount: event.target.value } }))} /></label>
-                <label>Moeda<OperationalOptionSelect entity="currency" value={d.currencyCode} values={options}
-                  onChange={currencyCode => setDocDrafts(previous => ({ ...previous, [p.id]: { ...d, currencyCode } }))} /></label></>}
-            </div>
-            <label>Observações<textarea maxLength={4000} value={d.notes} onChange={event => setDocDrafts(previous => ({ ...previous, [p.id]: { ...d, notes: event.target.value } }))} /></label>
-            <button className="button" disabled={busy || reason.trim().length < 3}>{activeId ? "Salvar documento" : "Adicionar documento"}</button>
-            {activeId && <button className="button secondary" type="button" onClick={() => {
-              setEditingDoc(previous => ({ ...previous, [p.id]: "" })); setDocDrafts(previous => ({ ...previous, [p.id]: blankDoc() }));
-            }}>Cancelar edição</button>}
-          </form>}
-        </details>;
+        const p = entry.process;
+        const totals = entry.invoiceTotals.amounts.map(total => `${total.amount} ${total.currency}`).join(" · ") || "—";
+        return <article className="followup-document" key={p.id}>
+          <h4>IP {p.ipNumber} · {p.lifecycleStatus === "CLOSED" ? "encerrado" : "aberto"}</h4>
+          <p>{entry.documents.length} documento(s) · Invoices: {totals}{entry.invoiceTotals.incompleteLines ? ` · ${entry.invoiceTotals.incompleteLines} incompleta(s)` : ""}</p>
+          <Link className="button" href={`/processes/${p.id}`}>Abrir Pós Embarque do IP {p.ipNumber}</Link>
+        </article>;
       })}
       <h3>Registro de eventos da PO e dos IPs</h3>
       <p className="muted">Cada alteração operacional é registrada com data, justificativa e valores anteriores/novos. Eventos do IP são compartilhados com todas as POs ligadas àquele IP; quantidades permanecem no vínculo de cada produto com cada IP.</p>

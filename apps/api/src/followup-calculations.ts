@@ -91,8 +91,8 @@ export function calculateFollowup(item: Row, process: Row, documents: Row[],
   const mrp = stage(received, item.mrpCompletedDate, item.targetMrpDays);
   const order = stage(scApproval, item.poApprovalDate, item.targetOrderDays);
   const shipment = stage(process.etd, firstBillDate, item.targetShipmentDays);
-  const port = stage(item.actualFactoryShipDate, item.actualPortDepartureDate, item.targetPortDays);
-  const transit = stage(item.actualPortDepartureDate ?? process.etd, process.arrivalDate, item.targetTransitDays);
+  const port = stage(item.actualFactoryShipDate, process.actualPortDepartureDate, item.targetPortDays);
+  const transit = stage(process.actualPortDepartureDate ?? process.etd, process.arrivalDate, item.targetTransitDays);
   const customs = stage(process.arrivalDate, process.deliveryDate, item.targetCustomsDays);
   const stages = { mrp, order, shipment, port, transit, customs };
   const targets = Object.values(stages).map(value => value.targetDays);
@@ -125,7 +125,7 @@ export function calculateFollowup(item: Row, process: Row, documents: Row[],
     commercialDeadline, commercialDeviationDays: daysBetween(commercialDeadline, received),
     mrpTargetDate: mrpTarget,
     portTargetDate: addDays(item.actualFactoryShipDate, numeric(item.targetPortDays)),
-    arrivalTargetDate: addDays(item.actualPortDepartureDate ?? process.etd, numeric(item.targetTransitDays)),
+    arrivalTargetDate: addDays(process.actualPortDepartureDate ?? process.etd, numeric(item.targetTransitDays)),
     deliveryTargetDate: addDays(process.arrivalDate, numeric(item.targetCustomsDays)),
     billDate: firstBillDate, nfIssueDate: firstNfDate,
     nfHomologationDate: nfs.map(doc => date(doc.homologationDate)).filter((v): v is string => Boolean(v)).sort()[0] ?? null,

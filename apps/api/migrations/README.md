@@ -183,3 +183,8 @@ zero); the probe table and ledger row were then removed, returning the isolated
 database to M001–M007 applied/zero pending. Those checks do not validate TLS or
 CI. The product migration M008 was applied later, on 2026-09-29, after backup
 and verification against a restored copy.
+`M024_ip_specific_port_departure.sql` stores actual port departure on the IP,
+so a PO item split over different IPs can carry independent actual departure,
+ETD, ETA, BL, arrival, and delivery dates. Existing PO-item departure values
+are retained and are not copied to IPs automatically because one source date
+cannot safely identify multiple shipment dates.

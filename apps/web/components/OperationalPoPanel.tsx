@@ -18,7 +18,7 @@ type Item = { id: string; lineNumber: number; externalLineReference: string | nu
   category: string | null; ncm: string | null; remarks: string | null; commercialPlanReceivedDate: string | null;
   mrpCompletedDate: string | null; targetMrpDays: number | null; targetOrderDays: number | null;
   targetShipmentDays: number | null; targetPortDays: number | null; targetTransitDays: number | null;
-  targetCustomsDays: number | null; actualFactoryShipDate: string | null; actualPortDepartureDate: string | null;
+  targetCustomsDays: number | null; actualFactoryShipDate: string | null;
   allocatedQuantity: string; remainingQuantity: string };
 type Allocation = { id: string; itemId: string; processId: string; ipNumber: string;
   quantity: string; notes: string; version: string };

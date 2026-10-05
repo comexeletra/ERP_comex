@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { FormEvent, Fragment, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
-import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
+import ProcessPostShipmentPanel from "./ProcessPostShipmentPanel";
 
 type Cost = { id: string; type: string; currency: string; amount: string; status: string; sourceSheetName: string; sourceRowNumber: number; sourceColumn: string };
 type Order = { id: string; number: string; importer: string; linkSource: string };
@@ -28,8 +28,6 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
   const [retry, setRetry] = useState(0);
   const [roles, setRoles] = useState<string[]>([]);
   const [ipNumberDraft, setIpNumberDraft] = useState("");
-  const [statusDraft, setStatusDraft] = useState("");
-  const [priorityDraft, setPriorityDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
@@ -38,24 +36,21 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
   const [reopenReason, setReopenReason] = useState("");
   const [reopening, setReopening] = useState(false);
   const [notice, setNotice] = useState("");
-  const [operationalOptions, setOperationalOptions] = useState<OperationalOption[]>([]);
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError(undefined);
     Promise.all([
       apiFetch(`/api/v1/processes/${id}`, { signal: controller.signal }),
       apiFetch(`/api/v1/processes/${id}/items?page=${page}&pageSize=50`, { signal: controller.signal }),
       apiFetch("/auth/me", { signal: controller.signal }),
-      loadOperationalOptions(),
-    ]).then(async ([detail, items, identity, options]) => {
+    ]).then(async ([detail, items, identity]) => {
       if (detail.status === 401 || items.status === 401 || identity.status === 401) throw new Error("Sua sessão expirou. Entre novamente.");
       if (detail.status === 403 || items.status === 403) throw new Error("Seu acesso não permite consultar este IP.");
       if (detail.status === 404 || items.status === 404) throw new Error("IP não encontrado ou fora do seu escopo.");
       if (!detail.ok || !items.ok || !identity.ok) throw new Error("Não foi possível carregar o IP.");
       const [processValue, lineValue, user] = await Promise.all([detail.json() as Promise<Process>, items.json() as Promise<LinePage>, identity.json() as Promise<{ roles: string[] }>]);
       if (!controller.signal.aborted) {
-        setProcess(processValue); setLines(lineValue); setRoles(user.roles); setOperationalOptions(options);
+        setProcess(processValue); setLines(lineValue); setRoles(user.roles);
         setIpNumberDraft(processValue.ipNumber);
-        setStatusDraft(processValue.logisticsStatus ?? ""); setPriorityDraft(processValue.priority ?? "");
         setNotesDraft(processValue.notes);
       }
     }).catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Erro inesperado."); })
@@ -69,7 +64,7 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
     try {
       const response = await apiFetch(`/api/v1/processes/${id}`, { method: "PATCH",
         headers: { "content-type": "application/json", "If-Match": `"${process.version}"` },
-        body: JSON.stringify({ ipNumber: ipNumberDraft, logisticsStatus: statusDraft || null, priority: priorityDraft || null,
+        body: JSON.stringify({ ipNumber: ipNumberDraft, logisticsStatus: process.logisticsStatus, priority: process.priority,
           notes: notesDraft, reason }) });
       const body = await response.json() as { detail?: string };
       if (!response.ok) throw new Error(body.detail || "Não foi possível atualizar o IP.");
@@ -127,8 +122,6 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
           <details><summary>Editar IP</summary><form className="stack-form" onSubmit={saveProcess}>
           <label>Número do IP<input required maxLength={80} disabled={process.sourceKind !== "MANUAL"}
             value={ipNumberDraft} onChange={event => setIpNumberDraft(event.target.value)} /></label>
-          <label>Status logístico<OperationalOptionSelect entity="logistics_status" value={statusDraft} values={operationalOptions} onChange={setStatusDraft} /></label>
-          <label>Prioridade<input maxLength={20} value={priorityDraft} onChange={event => setPriorityDraft(event.target.value)} /></label>
           <label>Observações<textarea maxLength={4000} value={notesDraft} onChange={event => setNotesDraft(event.target.value)} /></label>
           <label>Justificativa<input required minLength={3} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} /></label>
           <button className="button" disabled={saving}>{saving ? "Salvando…" : "Salvar IP"}</button>
@@ -155,6 +148,7 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
             </tr>)}
           </tbody></table></div>}
       </section>
+      <ProcessPostShipmentPanel id={id} />
       <section className="card"><h2>Observações da origem</h2><p className="muted">Células do Excel; produto, quantidade e status abaixo não são dados oficiais de item ou saldo.</p>
         {lines.items.length === 0 && <p>Nenhuma linha nesta página.</p>}
         {lines.items.length > 0 && <div className="table-scroll"><table><thead><tr><th>Origem</th><th>PO</th><th>Produto de origem</th><th>Quantidade de origem</th><th>Status de origem</th><th>Células</th></tr></thead><tbody>
