@@ -1,6 +1,26 @@
 # API ERP na VPS Hostinger
 
-> O [checklist vigente](../../CHECKLIST_ATUAL_IMPLEMENTACAO.md) registra M001–M020 aplicadas no banco operacional. As instruções de release M013/M014 abaixo são históricas. Confira o ledger real antes de qualquer release futuro.
+> O [checklist vigente](../../CHECKLIST_ATUAL_IMPLEMENTACAO.md) registra M001–M021 aplicadas no banco operacional. As instruções de release M013/M014 abaixo são históricas. Confira o ledger real antes de qualquer release futuro.
+
+## Release M021: valores selecionáveis e campos operacionais (2026-10-05)
+
+M021 passou na validação em cópia restaurada, preservou as linhas históricas e
+confirmou os grants do runtime. Backup verificado:
+`/var/backups/import-erp/erp_po_totvs_test_20261005T131658Z.dump`, SHA-256
+`3c9c88038efa01a52f986bc8418338e0f3ff6896a31732a0125a67d07cf80c26`.
+O ledger operacional ficou em 21/21 e o catálogo contém 149 valores iniciais.
+
+Depois, `release-m021-api.sh` instalou a API compilada com troca controlada e
+rollback. O código anterior está preservado em
+`/var/backups/import-erp/m021-api-20261005T134442Z`. `import-erp-api` ficou
+`active`; `/health/ready` autenticado respondeu 200 e o build ativo contém a
+rota `operational-values`. A M021 permanece aplicada caso seja necessário
+reverter somente o código. O procedimento é repetível com o staging preparado
+em `/tmp/erp-m021-api-release` e conferido pela `verify-api-ready.sh`.
+
+O commit `ed1fc25` contém a interface e as rotas para os campos selecionáveis.
+Criação de PO continua restrita aos perfis Master, Administrador, Importação e
+Compras; ajuste de perfil deve ser feito por um Master quando necessário.
 
 ## Release M019–M020: campos e cálculos da PO (2026-10-04)
 
