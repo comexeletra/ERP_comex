@@ -54,6 +54,11 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   const [itemDrafts, setItemDrafts] = useState<Record<string, ItemDraft>>({});
   const [ipQuery, setIpQuery] = useState("");
   const [ipOptions, setIpOptions] = useState<ProcessOption[]>([]);
+  const [creatingIp, setCreatingIp] = useState(false);
+  const [newIpNumber, setNewIpNumber] = useState("");
+  const [newIpStatus, setNewIpStatus] = useState("");
+  const [newIpPriority, setNewIpPriority] = useState("");
+  const [newIpNotes, setNewIpNotes] = useState("");
   const [itemId, setItemId] = useState("");
   const [processId, setProcessId] = useState("");
   const [allocationQuantity, setAllocationQuantity] = useState("");
@@ -161,6 +166,23 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       setIpOptions(result.items.filter(item => item.importer === data.importer));
       if (!result.items.some(item => item.id === processId)) setProcessId("");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
+  }
+  async function createIp(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!data) return;
+    await save(async () => {
+      const created = await responseData<{ id: string; ipNumber: string }>(await apiFetch("/api/v1/processes", {
+        method: "POST",
+        headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ importer: data.importer, ipNumber: newIpNumber,
+          logisticsStatus: newIpStatus || null, priority: newIpPriority || null, notes: newIpNotes, reason }),
+      }));
+      setIpOptions(current => [...current.filter(option => option.id !== created.id),
+        { id: created.id, ipNumber: created.ipNumber, importer: data.importer }]);
+      setProcessId(created.id);
+      setIpQuery(created.ipNumber);
+      setNewIpNumber(""); setNewIpStatus(""); setNewIpPriority(""); setNewIpNotes("");
+      setCreatingIp(false);
+    }, "IP cadastrado e selecionado para distribuição.");
   }
   async function saveAllocation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -278,7 +300,22 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         {!editingAllocation && <form className="operational-search" onSubmit={searchIps}>
           <label>Buscar IP<input value={ipQuery} onChange={event => setIpQuery(event.target.value)} placeholder="Número ou parte do IP" /></label>
           <button className="button secondary">Buscar IPs</button>
-          <Link className="text-link" href="/processes/new">Criar IP</Link>
+          <button className="button secondary" type="button" onClick={() => setCreatingIp(value => !value)}>
+            {creatingIp ? "Fechar cadastro de IP" : "Cadastrar IP nesta PO"}</button>
+        </form>}
+        {!editingAllocation && creatingIp && <form className="stack-form inline-ip-form" onSubmit={createIp}>
+          <h5>Novo IP · importadora {data.importer}</h5>
+          <div className="operational-fields">
+            <label>Número do IP<input required maxLength={80} value={newIpNumber}
+              onChange={event => setNewIpNumber(event.target.value)} /></label>
+            <label>Status logístico<OperationalOptionSelect entity="logistics_status" value={newIpStatus}
+              values={options} onChange={setNewIpStatus} /></label>
+            <label>Prioridade<input maxLength={20} value={newIpPriority}
+              onChange={event => setNewIpPriority(event.target.value)} /></label>
+            <label>Observações<textarea maxLength={4000} value={newIpNotes}
+              onChange={event => setNewIpNotes(event.target.value)} /></label>
+          </div>
+          <button className="button" disabled={saving || reason.trim().length < 3}>Cadastrar IP e selecionar</button>
         </form>}
         <form className="stack-form" onSubmit={saveAllocation}>
           <label>Item<select required value={itemId} disabled={Boolean(editingAllocation)} onChange={event => setItemId(event.target.value)}>
