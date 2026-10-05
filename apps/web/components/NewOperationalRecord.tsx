@@ -28,6 +28,20 @@ type PoItemDraft = {
   operational: OperationalFieldDraft;
 };
 
+type PoDraft = {
+  importer: string;
+  number: string;
+  supplier: string;
+  orderDate: string;
+  notes: string;
+  reason: string;
+  items: PoItemDraft[];
+  commonItemFields: OperationalFieldDraft;
+  createdPoId: string;
+};
+
+const poDraftKey = "new-operational-record:po:v1";
+
 function blankPoItem(): PoItemDraft {
   return { externalLineReference: "", productCode: "", description: "", orderedQuantity: "",
     unit: "", unitPrice: "", currency: "", operational: blankPurchaseOrderItemFields() };
@@ -59,6 +73,38 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
   const [items, setItems] = useState<PoItemDraft[]>([blankPoItem()]);
   const [commonItemFields, setCommonItemFields] = useState<OperationalFieldDraft>(blankPurchaseOrderItemFields);
   const [createdPoId, setCreatedPoId] = useState("");
+  const [draftReady, setDraftReady] = useState(false);
+
+  useEffect(() => {
+    if (kind !== "po") { setDraftReady(true); return; }
+    try {
+      const raw = sessionStorage.getItem(poDraftKey);
+      if (raw) {
+        const draft = JSON.parse(raw) as Partial<PoDraft>;
+        if (Array.isArray(draft.items) && draft.items.length > 0) {
+          setImporter(typeof draft.importer === "string" ? draft.importer : "");
+          setNumber(typeof draft.number === "string" ? draft.number : "");
+          setSupplier(typeof draft.supplier === "string" ? draft.supplier : "");
+          setOrderDate(typeof draft.orderDate === "string" ? draft.orderDate : "");
+          setNotes(typeof draft.notes === "string" ? draft.notes : "");
+          setReason(typeof draft.reason === "string" ? draft.reason : "");
+          setItems(draft.items);
+          setCommonItemFields(draft.commonItemFields ?? blankPurchaseOrderItemFields);
+          setCreatedPoId(typeof draft.createdPoId === "string" ? draft.createdPoId : "");
+        }
+      }
+    } catch {
+      sessionStorage.removeItem(poDraftKey);
+    } finally {
+      setDraftReady(true);
+    }
+  }, [kind]);
+
+  useEffect(() => {
+    if (kind !== "po" || !draftReady) return;
+    const draft: PoDraft = { importer, number, supplier, orderDate, notes, reason, items, commonItemFields, createdPoId };
+    sessionStorage.setItem(poDraftKey, JSON.stringify(draft));
+  }, [kind, draftReady, importer, number, supplier, orderDate, notes, reason, items, commonItemFields, createdPoId]);
 
   useEffect(() => {
     Promise.all([apiFetch("/auth/me"), apiFetch("/api/v1/importers"), loadOperationalOptions()])
@@ -115,8 +161,12 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
     }));
     setCreatedPoId(header.id);
 
+    let saveStep = "itens da PO";
+    let itemNumber = 0;
     try {
-      for (const item of items) {
+      for (const [index, item] of items.entries()) {
+        itemNumber = index + 1;
+        saveStep = `item ${itemNumber}`;
         const createdItem = await readResponse<{ id: string }>(await apiFetch(`/api/v1/purchase-orders/${header.id}/items`, {
           method: "POST",
           headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
@@ -129,6 +179,7 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
 
         const fields = purchaseOrderItemFieldsPayload({ ...item.operational, ...commonItemFields });
         if (Object.keys(fields).length > 0) {
+          saveStep = `dados operacionais do item ${itemNumber}`;
           const operationalPo = await readResponse<{ version: string }>(
             await apiFetch(`/api/v1/purchase-orders/${header.id}/operational`));
           await readResponse(await apiFetch(`/api/v1/purchase-orders/${header.id}/items/${createdItem.id}/followup`, {
@@ -140,9 +191,11 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
       }
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : "Erro inesperado.";
-      setError(`A PO foi criada, mas o cadastro dos itens não terminou: ${detail}`);
+      setError(`A PO foi criada, mas houve falha ao salvar ${saveStep}. Os dados preenchidos ficaram guardados nesta aba. ${detail}`);
       return;
     }
+    setDraftReady(false);
+    sessionStorage.removeItem(poDraftKey);
     router.push(`/purchase-orders/${header.id}`);
   }
 
@@ -179,6 +232,7 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
         ? "Preencha os dados do pedido e de cada produto nesta tela. Datas, prazos e indicadores são calculados automaticamente quando houver informações suficientes."
         : "Cadastre o processo de importação. Ele poderá receber itens de várias POs da mesma importadora."}</p>
     </header>
+    {kind === "po" && <p className="muted">Rascunho guardado automaticamente nesta aba. Se o salvamento falhar, os dados preenchidos serão restaurados ao reabrir esta tela no mesmo navegador.</p>}
     {loading && <p role="status">Carregando seus dados…</p>}
     {error && <p className="notice error" role="alert">{error}</p>}
     {!loading && !allowed && <p className="notice">Seu perfil não permite criar {kind === "po" ? "POs" : "IPs"}.</p>}
