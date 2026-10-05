@@ -5,8 +5,8 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "../lib/api";
 import {
-  blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsEditor, purchaseOrderItemFields,
-  purchaseOrderItemFieldsPayload,
+  blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsEditor,
+  purchaseOrderCommonItemFields, purchaseOrderSpecificItemFields, purchaseOrderItemFieldsPayload,
 } from "./PurchaseOrderItemFields";
 import {
   CatalogChoice, loadCatalogChoices, loadOperationalOptions, OperationalOption,
@@ -59,6 +59,7 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
   const [products, setProducts] = useState<CatalogChoice[]>([]);
   const [options, setOptions] = useState<OperationalOption[]>([]);
   const [items, setItems] = useState<PoItemDraft[]>([blankPoItem()]);
+  const [commonItemFields, setCommonItemFields] = useState<OperationalFieldDraft>(blankPurchaseOrderItemFields);
   const [createdPoId, setCreatedPoId] = useState("");
 
   useEffect(() => {
@@ -127,7 +128,7 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
             currency: item.currency ? item.currency.toUpperCase() : null, reason }),
         }));
 
-        const fields = purchaseOrderItemFieldsPayload(item.operational);
+        const fields = purchaseOrderItemFieldsPayload({ ...item.operational, ...commonItemFields });
         if (Object.keys(fields).length > 0) {
           const operationalPo = await readResponse<{ version: string }>(
             await apiFetch(`/api/v1/purchase-orders/${header.id}/operational`));
@@ -198,6 +199,10 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
             <label>Data da PO<input type="date" value={orderDate} onChange={event => setOrderDate(event.target.value)} /></label>
           </div>
           <label>Observações do pedido<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
+          <h3>Dados compartilhados por todos os produtos</h3>
+          <p className="muted">Informe uma vez; estes valores serão gravados em cada produto desta PO.</p>
+          <OperationalFieldsEditor fields={purchaseOrderCommonItemFields} values={commonItemFields}
+            options={options} setValues={setCommonItemFields} />
         </section>
 
         <section className="card po-entry-section">
@@ -235,7 +240,7 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
                 onChange={currency => updateItem(index, { currency })} /></label>
             </div>
             <h4>Planejamento e acompanhamento deste produto</h4>
-            <OperationalFieldsEditor fields={purchaseOrderItemFields} values={item.operational} options={options}
+            <OperationalFieldsEditor fields={purchaseOrderSpecificItemFields} values={item.operational} options={options}
               setValues={operational => updateItem(index, { operational })} />
             <PurchaseOrderCalculatedFields quantity={item.orderedQuantity} unitPrice={item.unitPrice} currency={item.currency} />
           </article>)}

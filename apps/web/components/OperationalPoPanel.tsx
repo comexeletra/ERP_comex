@@ -4,7 +4,8 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsEditor,
-  purchaseOrderItemFields, purchaseOrderItemFieldsPayload } from "./PurchaseOrderItemFields";
+  purchaseOrderCommonItemFields, purchaseOrderSpecificItemFields, purchaseOrderItemFields,
+  purchaseOrderItemFieldsPayload } from "./PurchaseOrderItemFields";
 import { CatalogChoice, loadCatalogChoices, loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
 
@@ -53,6 +54,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   const [notes, setNotes] = useState("");
   const [itemDraft, setItemDraft] = useState<ItemDraft>(blankItem);
   const [itemDrafts, setItemDrafts] = useState<Record<string, ItemDraft>>({});
+  const [commonOperationalDraft, setCommonOperationalDraft] = useState<OperationalFieldDraft>(blankPurchaseOrderItemFields);
+  const [commonFieldsTouched, setCommonFieldsTouched] = useState<Set<string>>(new Set());
   const [ipQuery, setIpQuery] = useState("");
   const [ipOptions, setIpOptions] = useState<ProcessOption[]>([]);
   const [creatingIp, setCreatingIp] = useState(false);
@@ -93,11 +96,19 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       setProducts(productChoices); setSuppliers(supplierChoices);
       setNumber(po.number);
       setSupplier(po.supplierText ?? ""); setOrderDate(po.orderDate ?? ""); setNotes(po.notes);
-      setItemDrafts(Object.fromEntries(po.items.map(item => [item.id, {
+      const drafts = Object.fromEntries(po.items.map(item => [item.id, {
         externalLineReference: item.externalLineReference ?? "", productCode: item.productCode,
         description: item.description, orderedQuantity: item.orderedQuantity, unit: item.unit,
         unitPrice: item.unitPrice ?? "", currency: item.currency ?? "", operational: operationalDraft(item),
-      }])));
+      }]));
+      setItemDrafts(drafts);
+      const commonDraft = blankPurchaseOrderItemFields();
+      for (const field of purchaseOrderCommonItemFields) {
+        const values = po.items.map(item => operationalDraft(item)[field.key] ?? "");
+        commonDraft[field.key] = values.length && values.every(value => value === values[0]) ? values[0] : "";
+      }
+      setCommonOperationalDraft(commonDraft);
+      setCommonFieldsTouched(new Set());
       setItemId(current => po.items.some(item => item.id === current) ? current : po.items[0]?.id ?? "");
     }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro inesperado."); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -112,6 +123,14 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         { "Idempotency-Key": crypto.randomUUID() }) }, body: JSON.stringify(body) });
     return responseData<{ id: string }>(response);
   }
+  async function applyCommonFieldsToItems(fields: Record<string, string | number | null>) {
+    if (!data) return;
+    for (const item of data.items) {
+      const current = await responseData<{ version: string }>(await apiFetch(`/api/v1/purchase-orders/${id}/operational`));
+      await send(`/api/v1/purchase-orders/${id}/items/${item.id}/followup`, "PATCH",
+        { fields, reason }, current.version);
+    }
+  }
   async function save(action: () => Promise<unknown>, success: string) {
     setSaving(true); setError(""); setNotice("");
     try { await action(); setNotice(success); setReason(""); setReload(value => value + 1); onChanged?.(); }
@@ -120,11 +139,19 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   }
   async function saveHeader(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!data) return;
-    await save(() => send(`/api/v1/purchase-orders/${id}`, "PATCH",
-      { number, supplierText: supplier || null, orderDate: orderDate || null, notes, reason }, data.version), "PO atualizada.");
+    await save(async () => {
+      await send(`/api/v1/purchase-orders/${id}`, "PATCH",
+        { number, supplierText: supplier || null, orderDate: orderDate || null, notes, reason }, data.version);
+      if (commonFieldsTouched.size) {
+        const fieldsToSave = purchaseOrderCommonItemFields.filter(field => commonFieldsTouched.has(field.key));
+        await applyCommonFieldsToItems(purchaseOrderItemFieldsPayload(commonOperationalDraft, true, fieldsToSave));
+        setCommonFieldsTouched(new Set());
+      }
+    }, commonFieldsTouched.size ? "PO e dados compartilhados atualizados." : "PO atualizada.");
   }
   async function saveItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!data) return;
+    if (commonFieldsTouched.size) { setError("Salve primeiro os dados compartilhados para aplicá-los a todos os produtos."); return; }
     const item = data.items.find(row => row.id === event.currentTarget.dataset.itemId);
     if (!item) return;
     const draft = itemDrafts[item.id];
@@ -137,11 +164,27 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       await send(`/api/v1/purchase-orders/${id}/items/${item.id}`, "PATCH", body, data.version);
       const latest = await responseData<{ version: string }>(await apiFetch(`/api/v1/purchase-orders/${id}/operational`));
       await send(`/api/v1/purchase-orders/${id}/items/${item.id}/followup`, "PATCH",
-        { fields: purchaseOrderItemFieldsPayload(draft.operational, true), reason }, latest.version);
+        { fields: purchaseOrderItemFieldsPayload(draft.operational, true, purchaseOrderSpecificItemFields), reason }, latest.version);
     }, "Item e campos operacionais atualizados.");
+  }
+  function updateCommonField(key: string, value: string) {
+    setCommonOperationalDraft(current => ({ ...current, [key]: value }));
+    setCommonFieldsTouched(current => new Set(current).add(key));
+    setItemDrafts(current => Object.fromEntries(Object.entries(current).map(([rowId, draft]) =>
+      [rowId, { ...draft, operational: { ...draft.operational, [key]: value } }])));
+  }
+  async function saveCommonFields(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!data || !commonFieldsTouched.size) return;
+    const fieldsToSave = purchaseOrderCommonItemFields.filter(field => commonFieldsTouched.has(field.key));
+    const fields = purchaseOrderItemFieldsPayload(commonOperationalDraft, true, fieldsToSave);
+    await save(async () => {
+      await applyCommonFieldsToItems(fields);
+      setCommonFieldsTouched(new Set());
+    }, "Dados compartilhados aplicados a todos os produtos.");
   }
   async function createItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!data) return;
+    if (commonFieldsTouched.size && data.items.length) { setError("Salve primeiro os dados compartilhados para aplicá-los a todos os produtos."); return; }
     const draft = itemDraft;
     await save(async () => {
       const created = await send(`/api/v1/purchase-orders/${id}/items`, "POST", {
@@ -150,10 +193,11 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         unit: draft.unit, unitPrice: draft.unitPrice ? draft.unitPrice.replace(",", ".") : null,
         currency: draft.currency ? draft.currency.toUpperCase() : null, reason,
       });
-      if (Object.values(draft.operational).some(value => value.trim())) {
+      const operational = { ...draft.operational, ...commonOperationalDraft };
+      if (Object.values(operational).some(value => value.trim())) {
         const latest = await responseData<{ version: string }>(await apiFetch(`/api/v1/purchase-orders/${id}/operational`));
         await send(`/api/v1/purchase-orders/${id}/items/${created.id}/followup`, "PATCH",
-          { fields: purchaseOrderItemFieldsPayload(draft.operational), reason }, latest.version);
+          { fields: purchaseOrderItemFieldsPayload(operational), reason }, latest.version);
       }
       setItemDraft(blankItem());
     }, "Item cadastrado.");
@@ -187,6 +231,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   }
   async function saveAllocation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (commonFieldsTouched.size) { setError("Salve primeiro os dados compartilhados da PO."); return; }
     if (!itemId || (!processId && !editingAllocation)) return;
     await save(async () => {
       const body = { quantity: allocationQuantity, notes: allocationNotes, reason };
@@ -197,6 +242,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     }, editingAllocation ? "Distribuição atualizada." : "Quantidade distribuída para o IP.");
   }
   async function cancelAllocation() {
+    if (commonFieldsTouched.size) { setError("Salve primeiro os dados compartilhados da PO."); return; }
     if (!editingAllocation || !reason.trim()) return;
     await save(async () => {
       await send(`/api/v1/purchase-orders/${id}/allocations/${editingAllocation.id}`, "DELETE",
@@ -205,6 +251,9 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     }, "Distribuição cancelada; o saldo voltou ao item.");
   }
 
+  const commonValuesDiffer = Boolean(data && data.items.length > 1 &&
+    purchaseOrderCommonItemFields.some(field =>
+      new Set(data.items.map(item => operationalDraft(item)[field.key] ?? "")).size > 1));
   return <section className="card operational-panel" aria-label="Registro operacional da PO">
     <h2>Preenchimento operacional da PO</h2>
     <p className="muted">Os itens abaixo são transcrições informadas pelos analistas. Quantidades do histórico da planilha não são convertidas automaticamente em quantidade pedida no TOTVS. O saldo mostrado é pedido informado menos quantidades distribuídas aos IPs.</p>
@@ -234,6 +283,20 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         </form>
       </section>}
       <h3>Itens informados da PO</h3>
+      {canWritePo && <section className="po-entry-section po-common-fields">
+        <h4>Dados compartilhados pelos produtos</h4>
+        <p className="muted">Preencha uma vez para manter iguais nos produtos. A data da PO é compartilhada no cabeçalho.</p>
+        {commonValuesDiffer && <p className="notice">Há valores diferentes entre produtos. Ao aplicar um campo, ele será padronizado em todos.</p>}
+        <form className="stack-form" onSubmit={saveCommonFields}>
+          <OperationalFieldsEditor fields={purchaseOrderCommonItemFields} values={commonOperationalDraft} options={options}
+            setValues={values => purchaseOrderCommonItemFields.forEach(field => {
+              const value = values[field.key] ?? "";
+              if (value !== commonOperationalDraft[field.key]) updateCommonField(field.key, value);
+            })} />
+          <button className="button" disabled={saving || !data.items.length || !commonFieldsTouched.size || reason.trim().length < 3}>
+            Aplicar campos alterados a todos os produtos</button>
+        </form>
+      </section>}
       {data.items.length === 0 && <p>Nenhum item informado. Cadastre os itens do pedido para distribuir quantidades aos IPs.</p>}
       {data.items.map(item => {
         const draft = itemDrafts[item.id] ?? blankItem();
@@ -259,10 +322,10 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
               <label>Moeda do preço<OperationalOptionSelect entity="currency" value={draft.currency} values={options} onChange={currency => setDraft({ currency })} /></label>
             </div>
             <h5>Planejamento e acompanhamento</h5>
-            <OperationalFieldsEditor fields={purchaseOrderItemFields} values={draft.operational} options={options}
+            <OperationalFieldsEditor fields={purchaseOrderSpecificItemFields} values={draft.operational} options={options}
               setValues={operational => setDraft({ operational })} />
             <PurchaseOrderCalculatedFields quantity={draft.orderedQuantity} unitPrice={draft.unitPrice} currency={draft.currency} />
-            <button className="button" disabled={saving || reason.trim().length < 3}>Salvar todos os campos deste item</button>
+            <button className="button" disabled={saving || commonFieldsTouched.size > 0 || reason.trim().length < 3}>Salvar todos os campos deste item</button>
           </form> : <p>{item.orderedQuantity} {item.unit} · {item.description}</p>}
         </article>;
       })}
@@ -281,10 +344,10 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             <label>Preço unitário<input inputMode="decimal" value={itemDraft.unitPrice} onChange={event => setItemDraft({ ...itemDraft, unitPrice: event.target.value })} /></label>
             <label>Moeda do preço<OperationalOptionSelect entity="currency" value={itemDraft.currency} values={options} onChange={currency => setItemDraft({ ...itemDraft, currency })} /></label>
           </div>
-          <OperationalFieldsEditor fields={purchaseOrderItemFields} values={itemDraft.operational} options={options}
+          <OperationalFieldsEditor fields={purchaseOrderSpecificItemFields} values={itemDraft.operational} options={options}
             setValues={operational => setItemDraft({ ...itemDraft, operational })} />
           <PurchaseOrderCalculatedFields quantity={itemDraft.orderedQuantity} unitPrice={itemDraft.unitPrice} currency={itemDraft.currency} />
-          <button className="button" disabled={saving || reason.trim().length < 3}>Salvar item completo</button>
+          <button className="button" disabled={saving || (commonFieldsTouched.size > 0 && data.items.length > 0) || reason.trim().length < 3}>Salvar item completo</button>
         </form>
       </details>}
       <h3>Distribuição por IP</h3>
@@ -318,7 +381,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             <label>Observações<textarea maxLength={4000} value={newIpNotes}
               onChange={event => setNewIpNotes(event.target.value)} /></label>
           </div>
-          <button className="button" disabled={saving || reason.trim().length < 3}>Cadastrar IP e selecionar</button>
+          <button className="button" disabled={saving || commonFieldsTouched.size > 0 || reason.trim().length < 3}>Cadastrar IP e selecionar</button>
         </form>}
         <form className="stack-form" onSubmit={saveAllocation}>
           <label>Item<select required value={itemId} disabled={Boolean(editingAllocation)} onChange={event => setItemId(event.target.value)}>
@@ -331,13 +394,13 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             onChange={event => setAllocationQuantity(event.target.value)} placeholder="Ex.: 40" /></label>
           <label>Observações<textarea maxLength={2000} value={allocationNotes}
             onChange={event => setAllocationNotes(event.target.value)} /></label>
-          <button className="button" disabled={saving || reason.trim().length < 3 || (!editingAllocation && !processId)}>
+          <button className="button" disabled={saving || commonFieldsTouched.size > 0 || reason.trim().length < 3 || (!editingAllocation && !processId)}>
             {editingAllocation ? "Atualizar distribuição" : "Distribuir quantidade"}</button>
           {editingAllocation && <div className="operational-actions">
             <button className="button secondary" type="button" onClick={() => {
               setEditingAllocation(undefined); setAllocationQuantity(""); setAllocationNotes("");
             }}>Cancelar edição</button>
-            <button className="button secondary" type="button" disabled={saving || reason.trim().length < 3}
+            <button className="button secondary" type="button" disabled={saving || commonFieldsTouched.size > 0 || reason.trim().length < 3}
               onClick={() => void cancelAllocation()}>Cancelar distribuição</button>
           </div>}
         </form>

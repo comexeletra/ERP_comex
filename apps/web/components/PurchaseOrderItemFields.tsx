@@ -40,12 +40,20 @@ export const purchaseOrderItemFields: OperationalField[] = [
   { key: "actualPortDepartureDate", label: "Data de saída do porto de origem", type: "date" },
 ];
 
+const sharedItemFieldKeys = new Set([
+  "necessityDate", "requester", "scNumber", "scApprovalDate", "purpose",
+  "commercialPlanReceivedDate", "mrpCompletedDate", "poApprovalDate", "poSentDate",
+]);
+export const purchaseOrderCommonItemFields = purchaseOrderItemFields.filter(field => sharedItemFieldKeys.has(field.key));
+export const purchaseOrderSpecificItemFields = purchaseOrderItemFields.filter(field => !sharedItemFieldKeys.has(field.key));
+
 export function blankPurchaseOrderItemFields(): OperationalFieldDraft {
   return Object.fromEntries(purchaseOrderItemFields.map(field => [field.key, ""]));
 }
 
-export function purchaseOrderItemFieldsPayload(values: OperationalFieldDraft, includeEmpty = false) {
-  return purchaseOrderItemFields.reduce<Record<string, string | number | null>>((payload, field) => {
+export function purchaseOrderItemFieldsPayload(values: OperationalFieldDraft, includeEmpty = false,
+  fields: OperationalField[] = purchaseOrderItemFields) {
+  return fields.reduce<Record<string, string | number | null>>((payload, field) => {
     const value = values[field.key]?.trim() ?? "";
     if (!value && !includeEmpty) return payload;
     payload[field.key] = !value ? null : field.type === "number" ? Number(value) : value;
