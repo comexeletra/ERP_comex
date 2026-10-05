@@ -203,7 +203,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .operational-summary dd { margin: 5px 0 0; overflow-wrap: anywhere; }
 .operational-reason { display: grid; font-weight: 700; gap: 6px; }
 .operational-reason input { width: 100%; }
-.operational-fields { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.operational-fields { display: grid; gap: 12px; grid-template-columns: repeat(8, minmax(0, 1fr)); }
+.operational-fields > label { min-width: 0; }
 .po-entry-section { display: grid; gap: 14px; }
 .po-entry-section h2, .po-entry-section h3, .po-entry-item h4, .po-entry-item h5 { margin: 0; }
 .po-entry-item { background: #fbfdfe; border: 1px solid #dce6eb; border-radius: 10px; display: grid; gap: 14px; padding: 16px; }
@@ -220,3 +221,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .catalog-links { display: flex; flex-wrap: wrap; gap: 10px 22px; }
 .entity-value-list { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
 .entity-value-list li { background: #edf5f6; border: 1px solid #d3e4e6; border-radius: 999px; color: #264650; padding: 6px 11px; }
+@media (max-width: 1100px) { .operational-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .operational-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .operational-fields { grid-template-columns: 1fr; } }
