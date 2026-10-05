@@ -4,7 +4,9 @@ import type { Pool } from "pg";
 /** Permission keys for the business operations already described by the API plan. */
 export type Permission =
   | "purchase-orders.read"
+  | "purchase-orders.write"
   | "processes.read"
+  | "processes.write"
   | "quality.read"
   | "quality.resolve"
   | "catalog.read"
@@ -16,10 +18,10 @@ export type Permission =
 type Role = "Master" | "Administrador" | "Importação" | "Compras" | "Fiscal" | "Logística" | "Gestor" | "Consulta";
 
 const rolePermissions: Readonly<Record<Role, ReadonlySet<Permission>>> = {
-  Master: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "requests.read", "requests.write", "users.manage"]),
-  Administrador: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "requests.read", "requests.write"]),
-  Importação: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "requests.read", "requests.write"]),
-  Compras: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "requests.read"]),
+  Master: new Set(["purchase-orders.read", "purchase-orders.write", "processes.read", "processes.write", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "requests.read", "requests.write", "users.manage"]),
+  Administrador: new Set(["purchase-orders.read", "purchase-orders.write", "processes.read", "processes.write", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "requests.read", "requests.write"]),
+  Importação: new Set(["purchase-orders.read", "purchase-orders.write", "processes.read", "processes.write", "quality.read", "quality.resolve", "catalog.read", "requests.read", "requests.write"]),
+  Compras: new Set(["purchase-orders.read", "purchase-orders.write", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "requests.read"]),
   Fiscal: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "requests.read"]),
   Logística: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "requests.read"]),
   Gestor: new Set(["purchase-orders.read", "processes.read", "quality.read", "catalog.read", "requests.read"]),

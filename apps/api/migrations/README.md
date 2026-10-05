@@ -1,6 +1,13 @@
 # PostgreSQL migrations
 
 These PostgreSQL migrations are applied by the explicit Node migration runner.
+`M018_operational_po_ip.sql` adds manually transcribed PO items and quantitative
+allocations to IPs, plus editable operational header fields. It preserves the
+historical Excel observations and PO–IP links. A row-locking trigger enforces
+same-importer links and prevents allocation totals from exceeding the item's
+entered quantity. M018 is local and must pass restored-copy validation and a
+verified operational backup before application to the VPS; see
+`docs/PRIMEIRO_FLUXO_OPERACIONAL_PO_IP.md`.
 `M002` is the PostgreSQL counterpart for quality-review records. Each file is
 applied in its own transaction and recorded with a SHA-256 checksum in
 `migration.schema_migration`; an applied file whose checksum changes stops the

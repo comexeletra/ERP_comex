@@ -53,6 +53,8 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
            (SELECT count(*)::int FROM migration.source_row AS source
             WHERE source.sheet_name = 'Pré Embarque' AND btrim(source.raw_values->>'F') = process.importer
               AND upper(btrim(source.raw_values->>'AB')) = process.normalized_ip_number) AS historical_line_count,
+           (SELECT count(*)::int FROM procurement.po_item_allocation AS allocation
+            WHERE allocation.process_id = process.id AND allocation.status = 'ACTIVE') AS operational_allocation_count,
            (SELECT count(*)::int FROM costs.process_cost AS cost WHERE cost.process_id = process.id) AS historical_cost_count
          FROM imports.import_process AS process
          WHERE ${scope.sql}
@@ -69,6 +71,7 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
            'logisticsStatus', page.logistics_status, 'qualityStatus', page.quality_status,
            'purchaseOrderCount', page.purchase_order_count,
            'historicalLineCount', page.historical_line_count,
+           'operationalAllocationCount', page.operational_allocation_count,
            'historicalCostCount', page.historical_cost_count
          ) ORDER BY page.ip_number, page.id) FILTER (WHERE page.id IS NOT NULL), '[]'::jsonb) AS items
        FROM page`,
@@ -85,7 +88,8 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
       `SELECT jsonb_build_object(
          'id', process.id, 'ipNumber', process.ip_number, 'importer', process.importer,
          'logisticsStatus', process.logistics_status, 'qualityStatus', process.quality_status,
-         'sourceKind', 'HISTORICAL_EXCEL',
+         'sourceKind', process.source_kind, 'priority', process.priority,
+         'notes', process.notes, 'version', process.version::text,
          'purchaseOrders', coalesce((SELECT jsonb_agg(jsonb_build_object(
            'id', po.id, 'number', po.external_number, 'importer', po.importer,
            'linkSource', link.source_kind
@@ -93,6 +97,16 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
          FROM procurement.process_purchase_order AS link
          JOIN procurement.purchase_order AS po ON po.id = link.purchase_order_id
          WHERE link.process_id = process.id AND po.importer = ANY($2::text[])), '[]'::jsonb),
+         'operationalAllocations', coalesce((SELECT jsonb_agg(jsonb_build_object(
+           'id', allocation.id, 'poId', po.id, 'poNumber', po.external_number,
+           'productCode', item.product_code, 'quantity', allocation.quantity::text,
+           'unit', item.unit
+         ) ORDER BY po.external_number, item.line_number, allocation.id)
+         FROM procurement.po_item_allocation AS allocation
+         JOIN procurement.purchase_order_item AS item ON item.id = allocation.purchase_order_item_id
+         JOIN procurement.purchase_order AS po ON po.id = item.purchase_order_id
+         WHERE allocation.process_id = process.id AND allocation.status = 'ACTIVE'
+           AND po.importer = ANY($2::text[])), '[]'::jsonb),
          'historicalCosts', coalesce((SELECT jsonb_agg(jsonb_build_object(
            'id', cost.id, 'type', cost.cost_type, 'currency', cost.currency_code,
            'amount', cost.amount::text, 'status', cost.status,

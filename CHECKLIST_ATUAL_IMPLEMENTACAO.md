@@ -2,6 +2,14 @@
 
 Atualizado em 2026-10-04. Este é o controle vigente para concluir o plano em
 [Plano_Implementacao_ERP_PO_TOTVS.md](Plano_Implementacao_ERP_PO_TOTVS.md).
+
+**Incremento local ainda não publicado:** M018 e as novas rotas/telas de PO, item,
+IP e distribuição de quantidades estão no checkout. O fluxo está descrito em
+[docs/PRIMEIRO_FLUXO_OPERACIONAL_PO_IP.md](docs/PRIMEIRO_FLUXO_OPERACIONAL_PO_IP.md).
+Os estados e números operacionais abaixo continuam referindo-se à implantação
+M001–M017. M018 passou em PostgreSQL 17 isolado em 2026-10-04; ainda precisa
+passar por cópia restaurada, release controlado e aceite dos analistas. Uma nova planilha histórica será
+fornecida posteriormente; a carga e a reconciliação estão fora deste incremento.
 [CHECKLIST_IMPLEMENTACAO.md](CHECKLIST_IMPLEMENTACAO.md) conserva a cronologia e
 as evidências antigas, inclusive da implementação .NET/SQLite retirada do código.
 Um item daquele histórico não está concluído na stack atual sem evidência aqui.

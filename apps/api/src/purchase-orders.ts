@@ -26,6 +26,11 @@ function portfolioWhere(scopeSql: string): string {
       WHERE obs.purchase_order_id = po.id
         AND (strpos(lower(coalesce(obs.product_code_snapshot, '')), lower($4)) > 0
              OR strpos(lower(coalesce(obs.description_snapshot, '')), lower($4)) > 0)
+    ) OR EXISTS (
+      SELECT 1 FROM procurement.purchase_order_item AS item
+      WHERE item.purchase_order_id = po.id
+        AND (strpos(lower(item.product_code), lower($4)) > 0
+             OR strpos(lower(item.description), lower($4)) > 0)
     ))
     AND ($5::text IS NULL OR EXISTS (
       SELECT 1 FROM procurement.process_purchase_order AS link
@@ -76,6 +81,9 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
                  FROM procurement.po_line_observation AS obs
                  WHERE obs.purchase_order_id = po.id) AS historical_item_count,
                 (SELECT count(*)::int
+                 FROM procurement.purchase_order_item AS item
+                 WHERE item.purchase_order_id = po.id) AS operational_item_count,
+                (SELECT count(*)::int
                  FROM procurement.po_line_observation AS obs
                  WHERE obs.purchase_order_id = po.id
                    AND NULLIF(btrim(obs.source_ip_text), '') IS NOT NULL
@@ -113,6 +121,7 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
                   'identityStatus', page.identity_status,
                   'officialItemsKnown', false,
                   'historicalItemCount', page.historical_item_count,
+                  'operationalItemCount', page.operational_item_count,
                   'linkedProcessCount', page.linked_process_count,
                   'historicalItemsWithIp', page.historical_items_with_ip,
                   'historicalItemsWithoutIp', page.historical_items_without_ip,

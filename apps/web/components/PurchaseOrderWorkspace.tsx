@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Fragment, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { formatUsDate } from "../lib/date-format";
+import OperationalPoPanel from "./OperationalPoPanel";
 
 type HistoryLine = {
   id: string;
@@ -66,6 +67,12 @@ export default function PurchaseOrderWorkspace({ id, returnPath }: { id: string;
   const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
 
+  function refreshOverview() {
+    void apiFetch(`/api/v1/purchase-orders/${id}/overview`)
+      .then(async response => { if (response.ok) setData(await response.json() as Overview); })
+      .catch(() => undefined);
+  }
+
   useEffect(() => {
     const controller = new AbortController();
     setError(undefined);
@@ -116,9 +123,11 @@ export default function PurchaseOrderWorkspace({ id, returnPath }: { id: string;
         <Metric label="Pendências abertas" value={data.unresolvedIssueCount} />
       </section>
 
+      <OperationalPoPanel id={id} onChanged={refreshOverview} />
+
       <section className="card">
-        <h2>Dados ainda não disponíveis no modelo</h2>
-        <p className="muted">Itens oficiais TOTVS: {data.officialItemsKnown ? "disponíveis" : "não confirmados"}. Saldo oficial: {data.balanceAvailable ? "disponível" : "não disponível"}. O schema atual não define fornecedor, estado comercial, invoice, documentos, marcos ou campos operacionais editáveis para a PO.</p>
+        <h2>Limites dos dados da origem</h2>
+        <p className="muted">Itens oficiais integrados ao TOTVS: {data.officialItemsKnown ? "disponíveis" : "não confirmados"}. Saldo oficial integrado: {data.balanceAvailable ? "disponível" : "não disponível"}. O preenchimento operacional acima registra transcrições e distribuições feitas pelos analistas; não atualiza o TOTVS. Invoice, documentos e marcos operacionais ainda não estão disponíveis nesta PO.</p>
       </section>
 
       <section className="card"><h2>Histórico da PO</h2><p className="muted">Observações importadas, com linhagem até a aba e a linha de origem. Não representam itens oficiais nem saldo.</p>

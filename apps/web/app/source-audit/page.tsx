@@ -204,6 +204,11 @@ export default function SourceAuditPage() {
     return () => { window.clearTimeout(timeout); controller.abort(); };
   }, [activeColumn, applied, appliedColumnFilters, ready, retry, sheet, valueSearch]);
 
+  function closeColumnFilter(restoreFocus = true) {
+    setActiveColumn(undefined);
+    if (restoreFocus) filterTriggerRef.current?.focus();
+  }
+
   useEffect(() => {
     if (!activeColumn) return;
     const closeOnScroll = (event: Event) => {
@@ -266,10 +271,6 @@ export default function SourceAuditPage() {
     const top = rect.bottom + height + 10 < window.innerHeight
       ? rect.bottom + 6 : Math.max(12, rect.top - height - 6);
     setFilterPosition({ left, top }); setValueSearch(""); setActiveColumn(column);
-  }
-  function closeColumnFilter(restoreFocus = true) {
-    setActiveColumn(undefined);
-    if (restoreFocus) filterTriggerRef.current?.focus();
   }
   function updateColumnFilter(column: string, update: (current: ColumnFilter) => ColumnFilter) {
     setDraftColumnFilters(current => {

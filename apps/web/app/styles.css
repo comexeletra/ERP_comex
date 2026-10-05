@@ -192,3 +192,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
   .source-detail-panel { padding: 14px; }
   .source-field-grid { grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); }
 }
+.operational-panel { display: grid; gap: 18px; }
+.operational-panel h3 { margin: 8px 0 0; }
+.operational-panel details { border: 1px solid #dce6eb; border-radius: 10px; padding: 14px 18px; }
+.operational-panel summary { color: #165665; cursor: pointer; font-weight: 700; }
+.operational-panel details form { margin-top: 16px; }
+.operational-summary { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin: 0; }
+.operational-summary > div { background: #f3f8f9; border-radius: 8px; padding: 12px; }
+.operational-summary dt { color: #617985; font-size: .76rem; font-weight: 700; }
+.operational-summary dd { margin: 5px 0 0; overflow-wrap: anywhere; }
+.operational-reason { display: grid; font-weight: 700; gap: 6px; }
+.operational-reason input { width: 100%; }
+.operational-fields { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.operational-search, .operational-actions { align-items: end; display: flex; flex-wrap: wrap; gap: 12px; }
+.operational-search label { min-width: min(100%, 240px); }
+.operational-allocation { border-top: 1px solid #dce6eb; padding-top: 16px; }

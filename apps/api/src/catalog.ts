@@ -63,8 +63,13 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
   app.get("/api/v1/importers", { config: permissionConfig("catalog.read") }, async (request) => {
     const scopes = request.authorizationContext?.importerScopes ?? [];
     const result = await pool.query<{ importer: string; po_count: number }>(
-      `SELECT po.importer, count(*)::int AS po_count FROM procurement.purchase_order AS po
-       WHERE po.importer = ANY($1::text[]) GROUP BY po.importer ORDER BY po.importer`, [scopes]);
+      `SELECT available.importer,
+              count(po.id) FILTER (WHERE po.source_kind = 'HISTORICAL_EXCEL')::int AS po_count
+       FROM (SELECT importer FROM procurement.purchase_order
+             UNION SELECT importer FROM imports.import_process) AS available
+       LEFT JOIN procurement.purchase_order AS po ON po.importer = available.importer
+       WHERE available.importer = ANY($1::text[])
+       GROUP BY available.importer ORDER BY available.importer`, [scopes]);
     return { items: result.rows.map(row => ({ code: row.importer, historicalPoCount: row.po_count,
       status: "HISTORICAL_OBSERVED", officialTotvsMappingKnown: false })) };
   });

@@ -87,5 +87,10 @@ jobs:
         env:
           DATABASE_URL: postgresql://import_erp_ci:ci-only-password@127.0.0.1:5432/import_erp_ci
         run: corepack pnpm test:integration
+      - name: Exercise operational PO and IP flow against isolated PostgreSQL
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql://import_erp_ci:ci-only-password@127.0.0.1:5432/import_erp_ci
+        run: node test/operations.integration.mjs
       - name: Upgrade previous schema with existing data
         run: bash .github/scripts/check-migration-upgrade.sh

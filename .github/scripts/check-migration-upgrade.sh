@@ -32,6 +32,21 @@ VALUES
    '00000000-0000-4000-8000-000000000002', '{"source":"migration-upgrade-ci"}', now());
 SQL
 
+if [[ $latest_migration == migrations/M018_operational_po_ip.sql ]]; then
+psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+INSERT INTO procurement.purchase_order
+  (id, importer, external_number, normalized_number)
+VALUES
+  ('00000000-0000-4000-8000-000000000018', 'CI OLD IMPORTER', 'PO-OLD', 'PO-OLD');
+INSERT INTO imports.import_process
+  (id, importer, ip_number, normalized_ip_number)
+VALUES
+  ('00000000-0000-4000-8000-000000000019', 'CI OLD IMPORTER', 'IP-OLD', 'IP-OLD');
+INSERT INTO procurement.process_purchase_order (purchase_order_id, process_id)
+VALUES ('00000000-0000-4000-8000-000000000018', '00000000-0000-4000-8000-000000000019');
+SQL
+fi
+
 if [[ $latest_migration == migrations/M015_excel_error_columns.sql ]]; then
 psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
 INSERT INTO migration.import_batch
@@ -64,6 +79,22 @@ corepack pnpm migrate:up
 status="$(corepack pnpm migrate:status)"
 printf '%s\n' "$status"
 grep -Fq "Migrations: ${#migrations[@]} aplicadas, 0 pendentes." <<< "$status"
+
+if [[ $latest_migration == migrations/M018_operational_po_ip.sql ]]; then
+psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+DO $$
+BEGIN
+  IF (SELECT count(*) FROM procurement.process_purchase_order
+      WHERE purchase_order_id = '00000000-0000-4000-8000-000000000018'
+        AND process_id = '00000000-0000-4000-8000-000000000019') <> 1
+     OR NOT has_table_privilege('import_erp_app', 'procurement.purchase_order_item', 'INSERT')
+     OR NOT has_table_privilege('import_erp_app', 'procurement.po_item_allocation', 'UPDATE') THEN
+    RAISE EXCEPTION 'M018 lost a historical link or omitted operational grants';
+  END IF;
+END;
+$$;
+SQL
+fi
 
 if [[ $latest_migration == migrations/M016_import_batch_snapshot_read.sql \
       || $latest_migration == migrations/M017_catalog_entry_history.sql ]]; then
