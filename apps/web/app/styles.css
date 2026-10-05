@@ -207,3 +207,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .operational-search, .operational-actions { align-items: end; display: flex; flex-wrap: wrap; gap: 12px; }
 .operational-search label { min-width: min(100%, 240px); }
 .operational-allocation { border-top: 1px solid #dce6eb; padding-top: 16px; }
+.followup-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); margin: 12px 0; }
+.followup-grid > div { background: #f3f8f9; border: 1px solid #dce6eb; border-radius: 8px; padding: 10px 12px; }
+.followup-grid dt { color: #617985; font-size: .76rem; font-weight: 700; }
+.followup-grid dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.followup-document { border-bottom: 1px solid #dce6eb; padding: 10px 0; }

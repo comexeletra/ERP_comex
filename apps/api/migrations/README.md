@@ -5,9 +5,14 @@ These PostgreSQL migrations are applied by the explicit Node migration runner.
 allocations to IPs, plus editable operational header fields. It preserves the
 historical Excel observations and PO–IP links. A row-locking trigger enforces
 same-importer links and prevents allocation totals from exceeding the item's
-entered quantity. M018 is local and must pass restored-copy validation and a
-verified operational backup before application to the VPS; see
+entered quantity. M018 passed restored-copy validation and was published to
+the VPS after a verified operational backup; see
 `docs/PRIMEIRO_FLUXO_OPERACIONAL_PO_IP.md`.
+`M019_followup_operational.sql` and `M020_process_document_amount.sql` add typed
+item and IP follow-up fields, individual Invoice/BL/NF records and their input
+constraints. The API derives spreadsheet-style calculations on read rather
+than storing formula results. See `docs/ACOMPANHAMENTO_CALCULOS_PO.md` for the
+field map and rules. Run both migrations together before starting the new API.
 `M002` is the PostgreSQL counterpart for quality-review records. Each file is
 applied in its own transaction and recorded with a SHA-256 checksum in
 `migration.schema_migration`; an applied file whose checksum changes stops the

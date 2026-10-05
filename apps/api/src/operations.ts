@@ -41,21 +41,21 @@ const createAllocation = allocationFields.extend({
 const cancelAllocation = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
 const uuid = z.uuid();
 
-class BusinessError extends Error {
+export class BusinessError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) { super(message); }
 }
-function problem(reply: FastifyReply, status: number, code: string, detail: string) {
+export function problem(reply: FastifyReply, status: number, code: string, detail: string) {
   return reply.code(status).send({ type: "about:blank", title: detail, status, detail,
     instance: reply.request.url.split("?", 1)[0], traceId: reply.request.id, code });
 }
-function keyFrom(request: FastifyRequest): string {
+export function keyFrom(request: FastifyRequest): string {
   const key = request.headers["idempotency-key"];
   if (typeof key !== "string" || !/^[\x21-\x7e]{1,128}$/u.test(key)) {
     throw new BusinessError(400, "INVALID_IDEMPOTENCY_KEY", "Informe Idempotency-Key válido.");
   }
   return key;
 }
-function versionFrom(request: FastifyRequest): string {
+export function versionFrom(request: FastifyRequest): string {
   const value = request.headers["if-match"];
   if (value === undefined) throw new BusinessError(428, "PRECONDITION_REQUIRED", "Informe If-Match com a versão atual.");
   if (typeof value !== "string" || !/^"[0-9]+"$/u.test(value)) {
@@ -63,7 +63,7 @@ function versionFrom(request: FastifyRequest): string {
   }
   return value;
 }
-function actorAndScopes(request: FastifyRequest) {
+export function actorAndScopes(request: FastifyRequest) {
   const actor = request.authContext;
   const auth = request.authorizationContext;
   if (!actor || !auth) throw new BusinessError(401, "AUTHENTICATION_REQUIRED", "Sessão ausente.");
@@ -72,7 +72,7 @@ function actorAndScopes(request: FastifyRequest) {
 function inScope(importer: string, scopes: readonly string[]) {
   if (!scopes.includes(importer)) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Importadora fora do seu escopo.");
 }
-async function transaction<T>(pool: Pool, reply: FastifyReply, fn: (client: PoolClient) => Promise<T>, status = 200) {
+export async function transaction<T>(pool: Pool, reply: FastifyReply, fn: (client: PoolClient) => Promise<T>, status = 200) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -88,7 +88,7 @@ async function transaction<T>(pool: Pool, reply: FastifyReply, fn: (client: Pool
     throw error;
   } finally { client.release(); }
 }
-async function receipt(client: PoolClient, actorId: string, key: string, type: string, payload: unknown) {
+export async function receipt(client: PoolClient, actorId: string, key: string, type: string, payload: unknown) {
   const hash = createHash("sha256").update(JSON.stringify({ type, payload })).digest("hex");
   await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`operational:${actorId}:${key}`]);
   const previous = await client.query<{ payload_sha256: string; resource_type: string; resource_id: string }>(
@@ -102,13 +102,13 @@ async function receipt(client: PoolClient, actorId: string, key: string, type: s
   }
   return { hash, existingId: null };
 }
-async function saveReceipt(client: PoolClient, actorId: string, key: string, hash: string, type: string, id: string) {
+export async function saveReceipt(client: PoolClient, actorId: string, key: string, hash: string, type: string, id: string) {
   await client.query(
     `INSERT INTO procurement.operational_command_receipt
      (actor_user_id,idempotency_key,payload_sha256,resource_type,resource_id)
      VALUES ($1,$2,$3,$4,$5)`, [actorId, key, hash, type, id]);
 }
-async function record(client: PoolClient, aggregateType: string, aggregateId: string,
+export async function record(client: PoolClient, aggregateType: string, aggregateId: string,
   entityType: string, entityId: string, operation: string, before: unknown, after: unknown,
   actor: { issuer: string; subject: string }, reason: string) {
   const eventId = randomUUID();
@@ -133,14 +133,14 @@ async function knownImporter(client: PoolClient, importer: string) {
      UNION SELECT importer FROM imports.import_process WHERE importer = $1 LIMIT 1`, [importer]);
   if (!result.rowCount) throw new BusinessError(404, "UNKNOWN_IMPORTER", "Importadora ainda não cadastrada.");
 }
-async function lockedPo(client: PoolClient, id: string, scopes: string[]) {
+export async function lockedPo(client: PoolClient, id: string, scopes: string[]) {
   const result = await client.query<Record<string, unknown>>(
     `SELECT * FROM procurement.purchase_order WHERE id = $1 AND importer = ANY($2::text[]) FOR UPDATE`,
     [id, scopes]);
   if (!result.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "PO não encontrada.");
   return result.rows[0];
 }
-function checkVersion(row: Record<string, unknown>, expected: string) {
+export function checkVersion(row: Record<string, unknown>, expected: string) {
   if (`"${row.version}"` !== expected) {
     throw new BusinessError(409, "VERSION_CONFLICT", "Registro alterado. Recarregue antes de salvar.");
   }

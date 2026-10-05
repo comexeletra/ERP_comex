@@ -5,6 +5,7 @@ import { Fragment, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { formatUsDate } from "../lib/date-format";
 import OperationalPoPanel from "./OperationalPoPanel";
+import FollowupPanel from "./FollowupPanel";
 
 type HistoryLine = {
   id: string;
@@ -66,6 +67,7 @@ export default function PurchaseOrderWorkspace({ id, returnPath }: { id: string;
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
+  const [operationalRevision, setOperationalRevision] = useState(0);
 
   function refreshOverview() {
     void apiFetch(`/api/v1/purchase-orders/${id}/overview`)
@@ -123,11 +125,12 @@ export default function PurchaseOrderWorkspace({ id, returnPath }: { id: string;
         <Metric label="Pendências abertas" value={data.unresolvedIssueCount} />
       </section>
 
-      <OperationalPoPanel id={id} onChanged={refreshOverview} />
+      <OperationalPoPanel id={id} onChanged={() => { refreshOverview(); setOperationalRevision(value => value + 1); }} />
+      <FollowupPanel key={operationalRevision} id={id} />
 
       <section className="card">
         <h2>Limites dos dados da origem</h2>
-        <p className="muted">Itens oficiais integrados ao TOTVS: {data.officialItemsKnown ? "disponíveis" : "não confirmados"}. Saldo oficial integrado: {data.balanceAvailable ? "disponível" : "não disponível"}. O preenchimento operacional acima registra transcrições e distribuições feitas pelos analistas; não atualiza o TOTVS. Invoice, documentos e marcos operacionais ainda não estão disponíveis nesta PO.</p>
+        <p className="muted">Itens oficiais integrados ao TOTVS: {data.officialItemsKnown ? "disponíveis" : "não confirmados"}. Saldo oficial integrado: {data.balanceAvailable ? "disponível" : "não disponível"}. O preenchimento operacional acima registra transcrições e distribuições feitas pelos analistas; não atualiza o TOTVS. As observações históricas continuam separadas do acompanhamento atual.</p>
       </section>
 
       <section className="card"><h2>Histórico da PO</h2><p className="muted">Observações importadas, com linhagem até a aba e a linha de origem. Não representam itens oficiais nem saldo.</p>
