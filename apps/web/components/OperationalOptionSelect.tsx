@@ -56,16 +56,19 @@ export function CatalogProductSelect({ value, fallbackName, products, onChange, 
       if (!pickerRef.current?.contains(event.target as Node) && !menuRef.current?.contains(event.target as Node)) setOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
-    const closeOnLayoutChange = () => setOpen(false);
+    const closeOnResize = () => setOpen(false);
+    const closeOnPageScroll = (event: Event) => {
+      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
+    };
     document.addEventListener("pointerdown", closeOutside);
     document.addEventListener("keydown", closeOnEscape);
-    window.addEventListener("resize", closeOnLayoutChange);
-    window.addEventListener("scroll", closeOnLayoutChange, true);
+    window.addEventListener("resize", closeOnResize);
+    window.addEventListener("scroll", closeOnPageScroll, true);
     return () => {
       document.removeEventListener("pointerdown", closeOutside);
       document.removeEventListener("keydown", closeOnEscape);
-      window.removeEventListener("resize", closeOnLayoutChange);
-      window.removeEventListener("scroll", closeOnLayoutChange, true);
+      window.removeEventListener("resize", closeOnResize);
+      window.removeEventListener("scroll", closeOnPageScroll, true);
     };
   }, [open]);
 
