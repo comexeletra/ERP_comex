@@ -26,6 +26,13 @@ source observations and reviewed active entries, which remain managed in
 the immutable PO/allocation and IP/document audit events. The follow-up handler
 checks importer scope before reading them and renders the split history with
 each IP's own dates and quantities. Apply M022 before deploying the API change.
+`deploy/hostinger/validate-m022-on-copy.py` is the acceptance gate: it backs up
+the operational database, restores a disposable copy, applies M022, checks the
+history-view grants, then runs both `operations.integration.mjs` and
+`followup.integration.mjs`. The integration contract covers one PO item split
+across two IPs with independent invoice quantities, ETAs and delivery dates,
+an IP shared by multiple POs, quantity limits, concurrent allocations, edits,
+cancellation and event history. It drops only the disposable restored copy.
 `M002` is the PostgreSQL counterpart for quality-review records. Each file is
 applied in its own transaction and recorded with a SHA-256 checksum in
 `migration.schema_migration`; an applied file whose checksum changes stops the

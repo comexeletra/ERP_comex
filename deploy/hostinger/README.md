@@ -39,6 +39,25 @@ O campo a campo e as regras estão em
 [`docs/ACOMPANHAMENTO_CALCULOS_PO.md`](../../docs/ACOMPANHAMENTO_CALCULOS_PO.md).
 A migração do histórico atualizado e o aceite com analistas continuam pendentes.
 
+## Aceite funcional PO/IP e validação M022
+
+Antes de publicar a tela e a linha do tempo operacional, monte no VPS o staging
+com o código atual em `/tmp/erp-m022-validation` e execute:
+
+```bash
+ERP_STAGE_DIR=/tmp/erp-m022-validation \
+  python3 /tmp/erp-m022-validation/deploy/hostinger/validate-m022-on-copy.py
+```
+
+O validador exige M001–M021 no banco escolhido, cria e confere um backup,
+restaura uma cópia descartável, aplica M022 e executa os testes PostgreSQL de
+operações e acompanhamento. Eles cobrem PO dividida entre IPs, IP compartilhado
+por POs, quantidades e documentos conciliados por embarque, datas independentes,
+limites de alocação, concorrência, edição, cancelamento, escopo e histórico.
+Ao terminar, o validador remove somente a cópia de teste. A publicação da M022
+no banco operacional continua sendo uma etapa separada, após revisar o resultado
+desse aceite e confirmar o backup.
+
 ## Release M018: preenchimento operacional de PO/IP (2026-10-04)
 
 `release-m018.sh` validou M018 e `operations.integration.mjs` numa cópia restaurada
