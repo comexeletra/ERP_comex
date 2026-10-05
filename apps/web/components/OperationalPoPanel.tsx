@@ -6,7 +6,7 @@ import { apiFetch } from "../lib/api";
 import { blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsEditor,
   purchaseOrderCommonItemFields, purchaseOrderSpecificItemFields, purchaseOrderItemFields,
   purchaseOrderItemFieldsPayload } from "./PurchaseOrderItemFields";
-import { CatalogChoice, loadCatalogChoices, loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
+import { CatalogChoice, CatalogProductSelect, loadCatalogChoices, loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
 
 type Item = { id: string; lineNumber: number; externalLineReference: string | null;
@@ -155,6 +155,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     const item = data.items.find(row => row.id === event.currentTarget.dataset.itemId);
     if (!item) return;
     const draft = itemDrafts[item.id];
+    if (!draft?.productCode) { setError("Selecione o produto deste item."); return; }
     const body = { externalLineReference: draft.externalLineReference || null,
       productCode: draft.productCode, description: draft.description,
       orderedQuantity: draft.orderedQuantity.replace(",", "."), unit: draft.unit,
@@ -186,6 +187,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     event.preventDefault(); if (!data) return;
     if (commonFieldsTouched.size && data.items.length) { setError("Salve primeiro os dados compartilhados para aplicá-los a todos os produtos."); return; }
     const draft = itemDraft;
+    if (!draft.productCode) { setError("Selecione o produto do novo item."); return; }
     await save(async () => {
       const created = await send(`/api/v1/purchase-orders/${id}/items`, "POST", {
         externalLineReference: draft.externalLineReference || null, productCode: draft.productCode,
@@ -307,13 +309,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
           {canWritePo ? <form className="stack-form" data-item-id={item.id} onSubmit={saveItem}>
             <div className="operational-fields">
               <label>Linha no TOTVS<input maxLength={80} value={draft.externalLineReference} onChange={event => setDraft({ externalLineReference: event.target.value })} /></label>
-              <label>Produto<select required value={draft.productCode} onChange={event => {
-                const product = products.find(option => option.code === event.target.value);
-                setDraft({ productCode: product?.code ?? "", description: product?.name ?? "" });
-              }}><option value="">Selecione</option>
-                {!products.some(option => option.code === draft.productCode) && draft.productCode && <option value={draft.productCode}>{draft.description || draft.productCode} (valor atual)</option>}
-                {products.map(product => <option key={product.code} value={product.code}>{product.name}</option>)}
-              </select></label>
+              <label>Produto<CatalogProductSelect required value={draft.productCode} fallbackName={draft.description} products={products}
+                onChange={product => setDraft({ productCode: product?.code ?? "", description: product?.name ?? "" })} /></label>
               <label>Código do produto<input readOnly value={draft.productCode} /></label>
               <label>Descrição<input readOnly value={draft.description} /></label>
               <label>Quantidade pedida<input required inputMode="decimal" value={draft.orderedQuantity} onChange={event => setDraft({ orderedQuantity: event.target.value })} /></label>
@@ -333,10 +330,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         <form className="stack-form" onSubmit={createItem}>
           <div className="operational-fields">
             <label>Linha no TOTVS<input maxLength={80} value={itemDraft.externalLineReference} onChange={event => setItemDraft({ ...itemDraft, externalLineReference: event.target.value })} /></label>
-            <label>Produto<select required value={itemDraft.productCode} onChange={event => {
-              const product = products.find(option => option.code === event.target.value);
-              setItemDraft({ ...itemDraft, productCode: product?.code ?? "", description: product?.name ?? "" });
-            }}><option value="">Selecione</option>{products.map(product => <option key={product.code} value={product.code}>{product.name}</option>)}</select></label>
+            <label>Produto<CatalogProductSelect required value={itemDraft.productCode} fallbackName={itemDraft.description} products={products}
+              onChange={product => setItemDraft({ ...itemDraft, productCode: product?.code ?? "", description: product?.name ?? "" })} /></label>
             <label>Código do produto<input readOnly value={itemDraft.productCode} /></label>
             <label>Descrição<input readOnly value={itemDraft.description} /></label>
             <label>Quantidade pedida<input required inputMode="decimal" value={itemDraft.orderedQuantity} onChange={event => setItemDraft({ ...itemDraft, orderedQuantity: event.target.value })} /></label>

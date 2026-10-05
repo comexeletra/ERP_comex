@@ -207,6 +207,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .operational-fields > label { min-width: 0; max-width: 100%; }
 .operational-fields input, .operational-fields select, .operational-fields textarea { min-width: 0; max-width: 100%; width: 100%; }
 .operational-fields select { overflow: hidden; text-overflow: ellipsis; }
+.catalog-product-picker { min-width: 0; position: relative; width: 100%; }
+.catalog-product-trigger { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catalog-product-menu { background: white; border: 1px solid #b7c5cf; border-radius: 8px; box-shadow: 0 10px 24px #1732472b; max-width: calc(100vw - 16px); padding: 8px; position: fixed; z-index: 1000; }
+.catalog-product-search { box-sizing: border-box; margin-bottom: 6px; min-width: 0; width: 100%; }
+.catalog-product-options { max-height: 240px; overflow-y: auto; }
+.catalog-product-option { background: white; border: 0; border-radius: 5px; color: #172b3a; cursor: pointer; display: block; overflow: hidden; padding: 8px; text-align: left; text-overflow: ellipsis; white-space: nowrap; width: 100%; }
+.catalog-product-option:hover, .catalog-product-option[aria-selected="true"] { background: #edf5f7; }
+.catalog-product-empty { color: #617985; margin: 8px; }
 .po-entry-section { display: grid; gap: 14px; }
 .po-entry-section h2, .po-entry-section h3, .po-entry-item h4, .po-entry-item h5 { margin: 0; }
 .po-entry-item { background: #fbfdfe; border: 1px solid #dce6eb; border-radius: 10px; display: grid; gap: 14px; min-width: 0; max-width: 100%; padding: 16px; }

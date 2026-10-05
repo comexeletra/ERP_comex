@@ -9,7 +9,7 @@ import {
   purchaseOrderCommonItemFields, purchaseOrderSpecificItemFields, purchaseOrderItemFieldsPayload,
 } from "./PurchaseOrderItemFields";
 import {
-  CatalogChoice, loadCatalogChoices, loadOperationalOptions, OperationalOption,
+  CatalogChoice, CatalogProductSelect, loadCatalogChoices, loadOperationalOptions, OperationalOption,
   OperationalOptionSelect,
 } from "./OperationalOptionSelect";
 import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
@@ -103,6 +103,7 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
   async function createPurchaseOrder() {
     if (items.length === 0) throw new Error("Adicione ao menos um item à PO.");
     for (const [index, item] of items.entries()) {
+      if (!item.productCode) throw new Error(`Selecione o produto do item ${index + 1}.`);
       if (Boolean(item.unitPrice.trim()) !== Boolean(item.currency)) {
         throw new Error(`No item ${index + 1}, preencha preço e moeda juntos ou deixe os dois vazios.`);
       }
@@ -220,14 +221,8 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
             <div className="operational-fields">
               <label>Linha no TOTVS<input maxLength={80} value={item.externalLineReference}
                 onChange={event => updateItem(index, { externalLineReference: event.target.value })} /></label>
-              <label>Produto<select required value={item.productCode} onChange={event => {
-                const product = products.find(option => option.code === event.target.value);
-                updateItem(index, { productCode: product?.code ?? "", description: product?.name ?? "" });
-              }}><option value="">Selecione um produto</option>
-                {!products.some(product => product.code === item.productCode) && item.productCode &&
-                  <option value={item.productCode}>{item.description || item.productCode} (valor atual)</option>}
-                {products.map(product => <option key={product.code} value={product.code}>{product.name}</option>)}
-              </select></label>
+              <label>Produto<CatalogProductSelect required value={item.productCode} fallbackName={item.description} products={products}
+                onChange={product => updateItem(index, { productCode: product?.code ?? "", description: product?.name ?? "" })} /></label>
               <label>Código do produto<input readOnly value={item.productCode} placeholder="Preenchido pelo produto selecionado" /></label>
               <label>Descrição<input readOnly value={item.description} placeholder="Preenchida pelo produto selecionado" /></label>
               <label>Quantidade pedida<input required inputMode="decimal" value={item.orderedQuantity}
