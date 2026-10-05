@@ -121,6 +121,44 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
       const processIds = linked.rows.map(row => row.id as string);
       const docs = processIds.length ? await pool.query(`SELECT d.* FROM imports.process_document d
         WHERE d.process_id=ANY($1::uuid[]) AND d.status='ACTIVE' ORDER BY d.kind,d.number,d.id`, [processIds]) : { rows: [] };
+      const allocationProcessRows = await pool.query(`SELECT DISTINCT p.id, p.ip_number
+        FROM procurement.po_item_allocation a
+        JOIN procurement.purchase_order_item i ON i.id=a.purchase_order_item_id
+        JOIN imports.import_process p ON p.id=a.process_id
+        WHERE i.purchase_order_id=$1 AND p.importer=ANY($2::text[])`, [id.data, scopes]);
+      const eventProcessIds = [...new Set([...processIds, ...allocationProcessRows.rows.map(row => row.id as string)])];
+      const poEvents = await pool.query(`SELECT event.id, event.entity_type, event.entity_id, event.operation,
+          event.old_value, event.new_value, event.actor_id, event.occurred_at, event.reason,
+          allocation_process.ip_number AS related_ip_number,
+          coalesce(allocation_item.product_code, item.product_code) AS related_product_code
+        FROM audit.purchase_order_operational_history event
+        LEFT JOIN procurement.po_item_allocation allocation
+          ON event.entity_type='PO_ITEM_ALLOCATION' AND allocation.id=event.entity_id
+        LEFT JOIN procurement.purchase_order_item allocation_item ON allocation_item.id=allocation.purchase_order_item_id
+        LEFT JOIN imports.import_process allocation_process ON allocation_process.id=allocation.process_id
+        LEFT JOIN procurement.purchase_order_item item
+          ON event.entity_type='PURCHASE_ORDER_ITEM' AND item.id=event.entity_id
+        WHERE event.aggregate_id=$1
+        ORDER BY event.occurred_at DESC, event.id DESC`, [id.data]);
+      const processEvents = eventProcessIds.length ? await pool.query(`SELECT id, aggregate_id, entity_type, entity_id,
+          operation, old_value, new_value, actor_id, occurred_at, reason
+        FROM audit.import_process_operational_history WHERE aggregate_id=ANY($1::uuid[])
+        ORDER BY occurred_at DESC, id DESC`, [eventProcessIds]) : { rows: [] };
+      const processNames = new Map([...linked.rows, ...allocationProcessRows.rows]
+        .map(row => [row.id as string, row.ip_number as string]));
+      const events = [
+        ...poEvents.rows.map(row => ({ id: row.id, entityType: row.entity_type, entityId: row.entity_id,
+          operation: row.operation, oldValue: row.old_value, newValue: row.new_value, actorId: row.actor_id,
+          occurredAt: row.occurred_at, reason: row.reason,
+          aggregateType: "PURCHASE_ORDER", aggregateLabel: po.rows[0].number,
+          relatedLabel: row.related_ip_number && row.related_product_code
+            ? `IP ${row.related_ip_number} · ${row.related_product_code}`
+            : row.related_product_code ? `Item ${row.related_product_code}` : null })),
+        ...processEvents.rows.map(row => ({ id: row.id, entityType: row.entity_type, entityId: row.entity_id,
+          operation: row.operation, oldValue: row.old_value, newValue: row.new_value, actorId: row.actor_id,
+          occurredAt: row.occurred_at, reason: row.reason, aggregateType: "IMPORT_PROCESS",
+          aggregateLabel: processNames.get(row.aggregate_id as string) ?? "IP", relatedLabel: null })),
+      ].sort((left, right) => new Date(right.occurredAt as string | Date).getTime() - new Date(left.occurredAt as string | Date).getTime());
       const itemRows = items.rows.map(camel);
       const processes = linked.rows.map(row => {
         const process = camel(row);
@@ -136,7 +174,7 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
           calculated: calculateFollowup({ ...item, allocationQuantity: process.allocationQuantity }, process, documents) };
       });
       reply.header("ETag", `"${po.rows[0].version}"`);
-      return { ...po.rows[0], items: itemRows, processes, shipments };
+      return { ...po.rows[0], items: itemRows, processes, shipments, events };
     });
 
   app.patch<{ Params: { id: string; itemId: string } }>("/api/v1/purchase-orders/:id/items/:itemId/followup",

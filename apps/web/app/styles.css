@@ -231,6 +231,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .followup-grid > div { background: #f3f8f9; border: 1px solid #dce6eb; border-radius: 8px; padding: 10px 12px; }
 .followup-grid dt { color: #617985; font-size: .76rem; font-weight: 700; }
 .followup-grid dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.shipment-milestones { border-bottom: 1px solid #dce6eb; margin-bottom: 14px; padding-bottom: 14px; }
+.operational-event-list { border-left: 2px solid #b8d0d6; display: grid; gap: 12px; list-style: none; margin: 0; padding: 0 0 0 18px; }
+.operational-event-list > li { background: #f8fafb; border: 1px solid #dce6eb; border-radius: 8px; min-width: 0; padding: 12px; }
+.operational-event-heading { align-items: baseline; display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.operational-event-heading time { color: #526371; font-size: .84rem; }
+.operational-event-values { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-top: 10px; }
+.operational-event-values pre { background: white; border: 1px solid #dce6eb; border-radius: 6px; max-height: 220px; overflow: auto; overflow-wrap: anywhere; padding: 10px; white-space: pre-wrap; }
 .followup-document { border-bottom: 1px solid #dce6eb; padding: 10px 0; }
 .catalog-links { display: flex; flex-wrap: wrap; gap: 10px 22px; }
 .entity-value-list { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }

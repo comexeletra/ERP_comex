@@ -9,6 +9,23 @@ O preenchimento é feito na página da PO. O cadastro principal da PO, seus iten
 | Invoice, BL e NF | Documentos individuais do IP, com item opcional | Total das Invoices por moeda no IP; quantidade e preço da Invoice conferidos por item/IP; data do BL/NF e homologação |
 | Quantidade e preço unitário do item | Cadastro do item da PO | Valor total do item (quantidade pedida × preço unitário) |
 
+## PO dividida entre IPs e eventos
+
+O item da PO representa o produto e sua quantidade total. Cada distribuição é um
+vínculo próprio entre esse item e um IP, com sua quantidade; por isso a mesma
+linha pode aparecer em vários IPs, e o mesmo IP pode receber itens de várias
+POs. A aplicação rejeita a soma distribuída acima da quantidade pedida e mantém
+cancelamentos e alterações anteriores na auditoria.
+
+Datas logísticas como ETD, Arrival e entrega pertencem ao IP. Ao consultar uma
+PO dividida, cada vínculo item/IP apresenta a quantidade daquela divisão e usa
+as datas do respectivo IP nos cálculos. Assim, divisões em IPs diferentes podem
+ter chegadas e entregas diferentes sem copiar esses marcos para o cadastro-base
+da PO. Alterações de PO, distribuição, datas do IP e documentos aparecem no
+registro de eventos com data, justificativa e valores anteriores/novos. Os
+eventos do IP também são visíveis nas POs associadas, pois descrevem o mesmo
+processo logístico.
+
 ## Regras automáticas
 
 - ETA confirmada prevalece. Sem confirmação, é ETD + 55 dias para modal `SEA`/marítimo ou + 10 dias para outros modais. ETE confirmada prevalece; sem ela, é ETA + 10 dias.

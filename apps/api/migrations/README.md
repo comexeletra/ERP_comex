@@ -22,6 +22,10 @@ the PO-item product group. Apply it before deploying the UI/API changes. Values
 are administered in `/catalog/values`; product and supplier selectors include
 source observations and reviewed active entries, which remain managed in
 `/catalog`.
+`M022_purchase_order_ip_event_history.sql` exposes filtered, read-only views of
+the immutable PO/allocation and IP/document audit events. The follow-up handler
+checks importer scope before reading them and renders the split history with
+each IP's own dates and quantities. Apply M022 before deploying the API change.
 `M002` is the PostgreSQL counterpart for quality-review records. Each file is
 applied in its own transaction and recorded with a SHA-256 checksum in
 `migration.schema_migration`; an applied file whose checksum changes stops the

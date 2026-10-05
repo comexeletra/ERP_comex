@@ -43,9 +43,13 @@ type Shipment = { allocationId: string; allocationQuantity: string; itemId: stri
   calculated: Calculated };
 type ProcessDetail = { process: DataRow & { id: string; ipNumber: string; version: string };
   documents: Document[]; invoiceTotals: { amounts: { currency: string; amount: string }[]; incompleteLines: number } };
+type EventRecord = { id: string; aggregateType: "PURCHASE_ORDER" | "IMPORT_PROCESS"; aggregateLabel: string;
+  relatedLabel: string | null;
+  entityType: string; operation: string; oldValue: unknown; newValue: unknown; actorId: string;
+  occurredAt: string; reason: string | null };
 type Followup = { id: string; importer: string; number: string; version: string;
   items: (DataRow & { id: string; productCode: string; lineNumber: number; orderedQuantity: string; unitPrice: string | null; currencyCode: string | null })[];
-  processes: ProcessDetail[]; shipments: Shipment[] };
+  processes: ProcessDetail[]; shipments: Shipment[]; events: EventRecord[] };
 type Draft = Record<string, string>;
 function draft(row: DataRow, fields: Field[]): Draft {
   return Object.fromEntries(fields.map(field => [field.key, row[field.key] == null ? "" : String(row[field.key])])) as Draft;
@@ -94,6 +98,14 @@ const calcLabels: [string, string][] = [
   ["totalDelayDays", "Desvio total (dias)"], ["bottleneck", "Etapa com maior desvio"],
   ["arrivalYearMonth", "Mês da chegada"],
 ];
+const eventEntityLabels: Record<string, string> = {
+  PURCHASE_ORDER: "Dados da PO", PURCHASE_ORDER_ITEM: "Item da PO", PO_ITEM_ALLOCATION: "Distribuição PO–IP",
+  IMPORT_PROCESS: "Dados logísticos do IP", PROCESS_DOCUMENT: "Documento do IP",
+};
+const eventOperationLabels: Record<string, string> = { CREATE: "cadastrado", UPDATE: "alterado", FOLLOWUP_UPDATE: "dados atualizados", CANCEL: "cancelado" };
+function eventSnapshot(value: unknown) { return value == null ? "Sem valor anterior" : JSON.stringify(value, null, 2); }
+function eventDate(value: string) { return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short",
+  timeZone: "America/Sao_Paulo" }).format(new Date(value)); }
 type DocDraft = { kind: "INVOICE" | "BL" | "NF"; purchaseOrderItemId: string; number: string;
   issueDate: string; homologationDate: string; quantity: string; unitPrice: string; amount: string; currencyCode: string; notes: string };
 const blankDoc = (): DocDraft => ({ kind: "INVOICE", purchaseOrderItemId: "", number: "", issueDate: "",
@@ -175,6 +187,14 @@ export default function FollowupPanel({ id }: { id: string }) {
         const item = data.items.find(row => row.id === entry.itemId);
         return <details open key={entry.allocationId}><summary>{item?.productCode ?? "Item"} · IP {entry.process.ipNumber} · {entry.allocationQuantity} unidades · {value(entry.calculated.status)}</summary>
           <p><Link className="text-link" href={`/processes/${entry.process.id}`}>Abrir IP {entry.process.ipNumber}</Link></p>
+          <h4>Marcos deste vínculo PO–IP</h4>
+          <dl className="followup-grid shipment-milestones">
+            {([["ETD", entry.process.etd], ["ETA", entry.calculated.eta], ["Arrival", entry.process.arrivalDate],
+              ["DUIMP", entry.process.duimpDate], ["Desembaraço", entry.process.clearanceDate],
+              ["Entrega", entry.process.deliveryDate]] as [string, unknown][]).map(([label, date]) =>
+              <div key={String(label)}><dt>{label}</dt><dd>{value(date)}</dd></div>)}
+            <div><dt>Quantidade alocada</dt><dd>{entry.allocationQuantity} {item?.unit ?? ""}</dd></div>
+          </dl>
           <dl className="followup-grid">{calcLabels.map(([key, label]) => <div key={key}><dt>{label}</dt>
             <dd>{value(entry.calculated[key])}{key === "totalPrice" && entry.calculated[key] ? ` ${item?.currencyCode ?? ""}` : ""}</dd></div>)}</dl>
           <h4>Etapas T0 a T5</h4><dl className="followup-grid">{Object.entries(entry.calculated.stages as Record<string, { targetDays: number | null; actualDays: number | null; delayDays: number | null }>).map(([name, stage]) =>
@@ -230,6 +250,21 @@ export default function FollowupPanel({ id }: { id: string }) {
           </form>}
         </details>;
       })}
+      <h3>Registro de eventos da PO e dos IPs</h3>
+      <p className="muted">Cada alteração operacional é registrada com data, justificativa e valores anteriores/novos. Eventos do IP são compartilhados com todas as POs ligadas àquele IP; quantidades permanecem no vínculo de cada produto com cada IP.</p>
+      {data.events.length === 0 ? <p>Nenhum evento operacional registrado.</p> :
+        <ol className="operational-event-list">{data.events.map(event => <li key={event.id}>
+          <div className="operational-event-heading"><time dateTime={event.occurredAt}>{eventDate(event.occurredAt)}</time>
+            <strong>{event.aggregateType === "IMPORT_PROCESS" ? `IP ${event.aggregateLabel}` : `PO ${event.aggregateLabel}`}</strong>
+            <span>{eventEntityLabels[event.entityType] ?? event.entityType} · {eventOperationLabels[event.operation] ?? event.operation}</span>
+            {event.relatedLabel && <span>{event.relatedLabel}</span>}
+          </div>
+          {event.reason && <p>Justificativa: {event.reason}</p>}
+          <details><summary>Ver valores registrados</summary><div className="operational-event-values">
+            <div><strong>Antes</strong><pre>{eventSnapshot(event.oldValue)}</pre></div>
+            <div><strong>Depois</strong><pre>{eventSnapshot(event.newValue)}</pre></div>
+          </div></details>
+        </li>)}</ol>}
     </>}
   </section>;
 }

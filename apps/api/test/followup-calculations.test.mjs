@@ -38,6 +38,22 @@ test("derives shipment dates, customs alert and invoice comparison per allocated
   assert.equal(result.stages.order.delayDays, 1);
 });
 
+test("one PO item split across IPs keeps each allocation quantity and delivery dates independent", () => {
+  const item = { id: "split-item", orderedQuantity: "100", unitPrice: "12.50", currencyCode: "USD" };
+  const firstIp = calculateFollowup({ ...item, allocationQuantity: "40" },
+    { transportMode: "SEA", etd: "2026-09-01", arrivalDate: "2026-10-20", deliveryDate: "2026-10-27" },
+    [{ kind: "INVOICE", status: "ACTIVE", purchaseOrderItemId: "split-item", quantity: "40", unitPrice: "12.50" }], "2026-11-01");
+  const secondIp = calculateFollowup({ ...item, allocationQuantity: "60" },
+    { transportMode: "SEA", etd: "2026-09-15", arrivalDate: "2026-11-10", deliveryDate: "2026-11-18" },
+    [{ kind: "INVOICE", status: "ACTIVE", purchaseOrderItemId: "split-item", quantity: "60", unitPrice: "12.50" }], "2026-11-01");
+  assert.equal(firstIp.quantityMatchesInvoice, true);
+  assert.equal(secondIp.quantityMatchesInvoice, true);
+  assert.equal(firstIp.eta, "2026-10-26");
+  assert.equal(secondIp.eta, "2026-11-09");
+  assert.equal(firstIp.clearanceDays, 7);
+  assert.equal(secondIp.clearanceDays, 8);
+});
+
 test("confirmed dates take precedence and delivered shipment has no alert", () => {
   const result = calculateFollowup({ id: "item", necessityDate: "2026-12-31" },
     { transportMode: "AIR", etd: "2026-09-01", etaConfirmed: "2026-09-03",

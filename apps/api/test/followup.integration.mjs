@@ -98,4 +98,12 @@ test("followup persists item/IP inputs and individual documents in an isolated r
   assert.equal(final.json().shipments.length, 0);
   assert.equal(final.json().processes.length, 1);
   assert.equal(final.json().processes[0].process.ipNumber, "IP-HIST");
+  const events = final.json().events;
+  const allocationCancellation = events.find(event => event.entityType === "PO_ITEM_ALLOCATION" && event.operation === "CANCEL");
+  assert.ok(allocationCancellation);
+  assert.equal(Number(allocationCancellation.oldValue.quantity), 40);
+  assert.equal(allocationCancellation.newValue.status, "CANCELLED");
+  assert.ok(events.some(event => event.aggregateType === "IMPORT_PROCESS" && event.aggregateLabel === "IP-CI"
+    && event.operation === "FOLLOWUP_UPDATE"));
+  assert.ok(events.some(event => event.entityType === "PURCHASE_ORDER_ITEM" && event.operation === "FOLLOWUP_UPDATE"));
 });
