@@ -204,6 +204,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .operational-reason { display: grid; font-weight: 700; gap: 6px; }
 .operational-reason input { width: 100%; }
 .operational-fields { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.po-entry-section { display: grid; gap: 14px; }
+.po-entry-section h2, .po-entry-section h3, .po-entry-item h4, .po-entry-item h5 { margin: 0; }
+.po-entry-item { background: #fbfdfe; border: 1px solid #dce6eb; border-radius: 10px; display: grid; gap: 14px; padding: 16px; }
+.po-entry-heading { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
+.po-entry-heading .muted { margin: 4px 0 0; }
 .operational-search, .operational-actions { align-items: end; display: flex; flex-wrap: wrap; gap: 12px; }
 .operational-search label { min-width: min(100%, 240px); }
 .operational-allocation { border-top: 1px solid #dce6eb; padding-top: 16px; }

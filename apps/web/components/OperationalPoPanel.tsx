@@ -3,11 +3,20 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
+import { blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsEditor,
+  purchaseOrderItemFields, purchaseOrderItemFieldsPayload } from "./PurchaseOrderItemFields";
 import { CatalogChoice, loadCatalogChoices, loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 
 type Item = { id: string; lineNumber: number; externalLineReference: string | null;
   productCode: string; description: string; orderedQuantity: string; unit: string;
   unitPrice: string | null; currency: string | null; sourceKind: string;
+  necessityDate: string | null; priority: string | null; demand: string | null; requester: string | null;
+  scNumber: string | null; scApprovalDate: string | null; purpose: string | null; productGroup: string | null;
+  costCenter: string | null; draftPo: string | null; poApprovalDate: string | null; poSentDate: string | null;
+  category: string | null; ncm: string | null; remarks: string | null; commercialPlanReceivedDate: string | null;
+  mrpCompletedDate: string | null; targetMrpDays: number | null; targetOrderDays: number | null;
+  targetShipmentDays: number | null; targetPortDays: number | null; targetTransitDays: number | null;
+  targetCustomsDays: number | null; actualFactoryShipDate: string | null; actualPortDepartureDate: string | null;
   allocatedQuantity: string; remainingQuantity: string };
 type Allocation = { id: string; itemId: string; processId: string; ipNumber: string;
   quantity: string; notes: string; version: string };
@@ -16,9 +25,15 @@ type OperationalPo = { id: string; importer: string; number: string; supplierTex
   items: Item[]; allocations: Allocation[] };
 type ProcessOption = { id: string; ipNumber: string; importer: string };
 type ItemDraft = { externalLineReference: string; productCode: string; description: string;
-  orderedQuantity: string; unit: string; unitPrice: string; currency: string };
+  orderedQuantity: string; unit: string; unitPrice: string; currency: string; operational: OperationalFieldDraft };
 const blankItem = (): ItemDraft => ({ externalLineReference: "", productCode: "", description: "",
-  orderedQuantity: "", unit: "", unitPrice: "", currency: "" });
+  orderedQuantity: "", unit: "", unitPrice: "", currency: "", operational: blankPurchaseOrderItemFields() });
+function operationalDraft(item: Item): OperationalFieldDraft {
+  return Object.fromEntries(purchaseOrderItemFields.map(field => {
+    const value = item[field.key as keyof Item];
+    return [field.key, value == null ? "" : String(value)];
+  }));
+}
 const poWriters = new Set(["Master", "Administrador", "Importação", "Compras"]);
 const allocationWriters = new Set(["Master", "Administrador", "Importação"]);
 
@@ -36,7 +51,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   const [orderDate, setOrderDate] = useState("");
   const [notes, setNotes] = useState("");
   const [itemDraft, setItemDraft] = useState<ItemDraft>(blankItem);
-  const [editingItem, setEditingItem] = useState<string>();
+  const [itemDrafts, setItemDrafts] = useState<Record<string, ItemDraft>>({});
   const [ipQuery, setIpQuery] = useState("");
   const [ipOptions, setIpOptions] = useState<ProcessOption[]>([]);
   const [itemId, setItemId] = useState("");
@@ -72,6 +87,11 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       setProducts(productChoices); setSuppliers(supplierChoices);
       setNumber(po.number);
       setSupplier(po.supplierText ?? ""); setOrderDate(po.orderDate ?? ""); setNotes(po.notes);
+      setItemDrafts(Object.fromEntries(po.items.map(item => [item.id, {
+        externalLineReference: item.externalLineReference ?? "", productCode: item.productCode,
+        description: item.description, orderedQuantity: item.orderedQuantity, unit: item.unit,
+        unitPrice: item.unitPrice ?? "", currency: item.currency ?? "", operational: operationalDraft(item),
+      }])));
       setItemId(current => po.items.some(item => item.id === current) ? current : po.items[0]?.id ?? "");
     }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro inesperado."); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -99,16 +119,38 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   }
   async function saveItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!data) return;
-    const body = { externalLineReference: itemDraft.externalLineReference || null,
-      productCode: itemDraft.productCode, description: itemDraft.description,
-      orderedQuantity: itemDraft.orderedQuantity, unit: itemDraft.unit,
-      unitPrice: itemDraft.unitPrice || null, currency: itemDraft.currency || null, reason };
+    const item = data.items.find(row => row.id === event.currentTarget.dataset.itemId);
+    if (!item) return;
+    const draft = itemDrafts[item.id];
+    const body = { externalLineReference: draft.externalLineReference || null,
+      productCode: draft.productCode, description: draft.description,
+      orderedQuantity: draft.orderedQuantity.replace(",", "."), unit: draft.unit,
+      unitPrice: draft.unitPrice ? draft.unitPrice.replace(",", ".") : null,
+      currency: draft.currency ? draft.currency.toUpperCase() : null, reason };
     await save(async () => {
-      await send(editingItem ? `/api/v1/purchase-orders/${id}/items/${editingItem}` :
-        `/api/v1/purchase-orders/${id}/items`, editingItem ? "PATCH" : "POST", body,
-      editingItem ? data.version : undefined);
-      setEditingItem(undefined); setItemDraft(blankItem());
-    }, editingItem ? "Item atualizado." : "Item cadastrado.");
+      await send(`/api/v1/purchase-orders/${id}/items/${item.id}`, "PATCH", body, data.version);
+      const latest = await responseData<{ version: string }>(await apiFetch(`/api/v1/purchase-orders/${id}/operational`));
+      await send(`/api/v1/purchase-orders/${id}/items/${item.id}/followup`, "PATCH",
+        { fields: purchaseOrderItemFieldsPayload(draft.operational, true), reason }, latest.version);
+    }, "Item e campos operacionais atualizados.");
+  }
+  async function createItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!data) return;
+    const draft = itemDraft;
+    await save(async () => {
+      const created = await send(`/api/v1/purchase-orders/${id}/items`, "POST", {
+        externalLineReference: draft.externalLineReference || null, productCode: draft.productCode,
+        description: draft.description, orderedQuantity: draft.orderedQuantity.replace(",", "."),
+        unit: draft.unit, unitPrice: draft.unitPrice ? draft.unitPrice.replace(",", ".") : null,
+        currency: draft.currency ? draft.currency.toUpperCase() : null, reason,
+      });
+      if (Object.values(draft.operational).some(value => value.trim())) {
+        const latest = await responseData<{ version: string }>(await apiFetch(`/api/v1/purchase-orders/${id}/operational`));
+        await send(`/api/v1/purchase-orders/${id}/items/${created.id}/followup`, "PATCH",
+          { fields: purchaseOrderItemFieldsPayload(draft.operational), reason }, latest.version);
+      }
+      setItemDraft(blankItem());
+    }, "Item cadastrado.");
   }
   async function searchIps(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!data) return;
@@ -154,7 +196,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       {(canWritePo || canAllocate) && <label className="operational-reason">Justificativa da alteração
         <input required maxLength={1000} value={reason} onChange={event => setReason(event.target.value)}
           placeholder="Ex.: conferido no pedido do TOTVS" /></label>}
-      {canWritePo && <details><summary>Editar dados da PO</summary>
+      {canWritePo && <section className="po-entry-section">
+        <h3>Dados da PO</h3>
         <form className="stack-form" onSubmit={saveHeader}>
           <label>Número da PO no TOTVS<input required maxLength={80} disabled={data.sourceKind !== "MANUAL_TOTVS_REFERENCE"}
             value={number} onChange={event => setNumber(event.target.value)} /></label>
@@ -166,47 +209,57 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
           <label>Observações<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
           <button className="button" disabled={saving || reason.trim().length < 3}>Salvar PO</button>
         </form>
-      </details>}
+      </section>}
       <h3>Itens informados da PO</h3>
-      {data.items.length === 0 ? <p>Nenhum item informado. Cadastre os itens do pedido para distribuir quantidades aos IPs.</p> :
-        <div className="table-scroll"><table><thead><tr><th>Linha</th><th>Produto</th><th>Pedido informado</th><th>Nos IPs</th><th>A distribuir</th><th>Ação</th></tr></thead>
-          <tbody>{data.items.map(item => <tr key={item.id}><td>{item.externalLineReference ?? item.lineNumber}</td>
-            <td><strong>{item.productCode}</strong><br />{item.description}</td>
-            <td>{item.orderedQuantity} {item.unit}</td><td>{item.allocatedQuantity} {item.unit}</td>
-            <td>{item.remainingQuantity} {item.unit}</td>
-            <td>{canWritePo && <button className="button secondary" type="button" onClick={() => {
-              setEditingItem(item.id); setItemDraft({ externalLineReference: item.externalLineReference ?? "",
-                productCode: item.productCode, description: item.description, orderedQuantity: item.orderedQuantity,
-                unit: item.unit, unitPrice: item.unitPrice ?? "", currency: item.currency ?? "" });
-            }}>Editar</button>}</td></tr>)}</tbody></table></div>}
-      {canWritePo && <details open={Boolean(editingItem)} key={editingItem ?? "new"}>
-        <summary>{editingItem ? "Editar item" : "Adicionar item da PO"}</summary>
-        <form className="stack-form" onSubmit={saveItem}>
-          <label>Linha no TOTVS, se conhecida<input maxLength={80} value={itemDraft.externalLineReference}
-            onChange={event => setItemDraft({ ...itemDraft, externalLineReference: event.target.value })} /></label>
-          <label>Descrição do produto<select required value={itemDraft.productCode} onChange={event => {
-            const product = products.find(option => option.code === event.target.value);
-            setItemDraft({ ...itemDraft, productCode: product?.code ?? "", description: product?.name ?? "" });
-          }}><option value="">Selecione</option>
-            {!products.some(item => item.code === itemDraft.productCode) && itemDraft.productCode &&
-              <option value={itemDraft.productCode}>{itemDraft.description || itemDraft.productCode} (valor atual)</option>}
-            {products.map(product => <option key={product.code} value={product.code}>{product.name}</option>)}
-          </select></label>
-          <label>Código do produto<input required readOnly value={itemDraft.productCode} /></label>
-          <label>Descrição<input required readOnly maxLength={1000} value={itemDraft.description} /></label>
+      {data.items.length === 0 && <p>Nenhum item informado. Cadastre os itens do pedido para distribuir quantidades aos IPs.</p>}
+      {data.items.map(item => {
+        const draft = itemDrafts[item.id] ?? blankItem();
+        const setDraft = (change: Partial<ItemDraft>) => setItemDrafts(current => ({ ...current, [item.id]: { ...draft, ...change } }));
+        return <article className="po-entry-item" key={item.id}>
+          <div className="po-entry-heading"><div><h4>Item {item.lineNumber} · {item.productCode}</h4>
+            <p className="muted">Nos IPs: {item.allocatedQuantity} {item.unit} · A distribuir: {item.remainingQuantity} {item.unit}</p></div></div>
+          {canWritePo ? <form className="stack-form" data-item-id={item.id} onSubmit={saveItem}>
+            <div className="operational-fields">
+              <label>Linha no TOTVS<input maxLength={80} value={draft.externalLineReference} onChange={event => setDraft({ externalLineReference: event.target.value })} /></label>
+              <label>Produto<select required value={draft.productCode} onChange={event => {
+                const product = products.find(option => option.code === event.target.value);
+                setDraft({ productCode: product?.code ?? "", description: product?.name ?? "" });
+              }}><option value="">Selecione</option>
+                {!products.some(option => option.code === draft.productCode) && draft.productCode && <option value={draft.productCode}>{draft.description || draft.productCode} (valor atual)</option>}
+                {products.map(product => <option key={product.code} value={product.code}>{product.name}</option>)}
+              </select></label>
+              <label>Código do produto<input readOnly value={draft.productCode} /></label>
+              <label>Descrição<input readOnly value={draft.description} /></label>
+              <label>Quantidade pedida<input required inputMode="decimal" value={draft.orderedQuantity} onChange={event => setDraft({ orderedQuantity: event.target.value })} /></label>
+              <label>Unidade<input required maxLength={32} value={draft.unit} onChange={event => setDraft({ unit: event.target.value })} /></label>
+              <label>Preço unitário<input inputMode="decimal" value={draft.unitPrice} onChange={event => setDraft({ unitPrice: event.target.value })} /></label>
+              <label>Moeda do preço<OperationalOptionSelect entity="currency" value={draft.currency} values={options} onChange={currency => setDraft({ currency })} /></label>
+            </div>
+            <h5>Planejamento e acompanhamento</h5>
+            <OperationalFieldsEditor fields={purchaseOrderItemFields} values={draft.operational} options={options}
+              setValues={operational => setDraft({ operational })} />
+            <button className="button" disabled={saving || reason.trim().length < 3}>Salvar todos os campos deste item</button>
+          </form> : <p>{item.orderedQuantity} {item.unit} · {item.description}</p>}
+        </article>;
+      })}
+      {canWritePo && <details><summary>Adicionar item à PO</summary>
+        <form className="stack-form" onSubmit={createItem}>
           <div className="operational-fields">
-            <label>Quantidade pedida<input required inputMode="decimal" value={itemDraft.orderedQuantity}
-              onChange={event => setItemDraft({ ...itemDraft, orderedQuantity: event.target.value })} placeholder="100 ou 100,5" /></label>
-            <label>Unidade<input required maxLength={32} value={itemDraft.unit}
-              onChange={event => setItemDraft({ ...itemDraft, unit: event.target.value })} placeholder="PC" /></label>
-            <label>Preço unitário, se conhecido<input inputMode="decimal" value={itemDraft.unitPrice}
-              onChange={event => setItemDraft({ ...itemDraft, unitPrice: event.target.value })} /></label>
-            <label>Moeda do preço<OperationalOptionSelect entity="currency" value={itemDraft.currency} values={options}
-              onChange={currency => setItemDraft({ ...itemDraft, currency })} /></label>
+            <label>Linha no TOTVS<input maxLength={80} value={itemDraft.externalLineReference} onChange={event => setItemDraft({ ...itemDraft, externalLineReference: event.target.value })} /></label>
+            <label>Produto<select required value={itemDraft.productCode} onChange={event => {
+              const product = products.find(option => option.code === event.target.value);
+              setItemDraft({ ...itemDraft, productCode: product?.code ?? "", description: product?.name ?? "" });
+            }}><option value="">Selecione</option>{products.map(product => <option key={product.code} value={product.code}>{product.name}</option>)}</select></label>
+            <label>Código do produto<input readOnly value={itemDraft.productCode} /></label>
+            <label>Descrição<input readOnly value={itemDraft.description} /></label>
+            <label>Quantidade pedida<input required inputMode="decimal" value={itemDraft.orderedQuantity} onChange={event => setItemDraft({ ...itemDraft, orderedQuantity: event.target.value })} /></label>
+            <label>Unidade<input required maxLength={32} value={itemDraft.unit} onChange={event => setItemDraft({ ...itemDraft, unit: event.target.value })} /></label>
+            <label>Preço unitário<input inputMode="decimal" value={itemDraft.unitPrice} onChange={event => setItemDraft({ ...itemDraft, unitPrice: event.target.value })} /></label>
+            <label>Moeda do preço<OperationalOptionSelect entity="currency" value={itemDraft.currency} values={options} onChange={currency => setItemDraft({ ...itemDraft, currency })} /></label>
           </div>
-          <button className="button" disabled={saving || reason.trim().length < 3}>Salvar item</button>
-          {editingItem && <button className="button secondary" type="button" onClick={() => {
-            setEditingItem(undefined); setItemDraft(blankItem()); }}>Cancelar edição</button>}
+          <OperationalFieldsEditor fields={purchaseOrderItemFields} values={itemDraft.operational} options={options}
+            setValues={operational => setItemDraft({ ...itemDraft, operational })} />
+          <button className="button" disabled={saving || reason.trim().length < 3}>Salvar item completo</button>
         </form>
       </details>}
       <h3>Distribuição por IP</h3>

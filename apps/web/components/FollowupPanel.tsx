@@ -6,27 +6,6 @@ import { apiFetch } from "../lib/api";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 
 type Field = { key: string; label: string; type?: "date" | "number" | "money" | "boolean" | "select"; max?: number; entity?: string };
-const itemFields: Field[] = [
-  { key: "necessityDate", label: "Data de necessidade", type: "date" },
-  { key: "priority", label: "Prioridade", max: 20 }, { key: "demand", label: "Demanda", type: "select", entity: "demand" },
-  { key: "requester", label: "Solicitante", max: 160 }, { key: "scNumber", label: "SC TOTVS", max: 80 },
-  { key: "scApprovalDate", label: "Aprovação da SC", type: "date" },
-  { key: "purpose", label: "Finalidade", type: "select", entity: "purpose" }, { key: "costCenter", label: "Centro de custo", max: 80 },
-  { key: "draftPo", label: "Draft PO", max: 80 }, { key: "poApprovalDate", label: "Aprovação da PO", type: "date" },
-  { key: "poSentDate", label: "Envio da PO", type: "date" }, { key: "category", label: "Categoria", type: "select", entity: "category" },
-  { key: "productGroup", label: "Grupo", type: "select", entity: "product_group" },
-  { key: "ncm", label: "NCM", max: 16 }, { key: "remarks", label: "Observações do item", max: 4000 },
-  { key: "commercialPlanReceivedDate", label: "Plano comercial recebido", type: "date" },
-  { key: "mrpCompletedDate", label: "MRP concluído", type: "date" },
-  { key: "targetMrpDays", label: "Meta T0 MRP (dias)", type: "number" },
-  { key: "targetOrderDays", label: "Meta T1 pedido (dias)", type: "number" },
-  { key: "targetShipmentDays", label: "Meta T2 embarque (dias)", type: "number" },
-  { key: "targetPortDays", label: "Meta T3 porto (dias)", type: "number" },
-  { key: "targetTransitDays", label: "Meta T4 trânsito (dias)", type: "number" },
-  { key: "targetCustomsDays", label: "Meta T5 desembaraço (dias)", type: "number" },
-  { key: "actualFactoryShipDate", label: "Saída da fábrica", type: "date" },
-  { key: "actualPortDepartureDate", label: "Saída do porto de origem", type: "date" },
-];
 const processFields: Field[] = [
   { key: "logisticsStatus", label: "Status", type: "select", entity: "logistics_status" },
   { key: "priority", label: "Prioridade do IP", max: 20 },
@@ -124,7 +103,6 @@ export default function FollowupPanel({ id }: { id: string }) {
   const [data, setData] = useState<Followup>(); const [roles, setRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [notice, setNotice] = useState("");
   const [reason, setReason] = useState(""); const [busy, setBusy] = useState(false); const [reload, setReload] = useState(0);
-  const [itemDrafts, setItemDrafts] = useState<Record<string, Draft>>({});
   const [processDrafts, setProcessDrafts] = useState<Record<string, Draft>>({});
   const [docDrafts, setDocDrafts] = useState<Record<string, DocDraft>>({});
   const [editingDoc, setEditingDoc] = useState<Record<string, string>>({});
@@ -136,13 +114,11 @@ export default function FollowupPanel({ id }: { id: string }) {
       const result = await read<Followup>(followup); const identity = await read<{ roles: string[] }>(me);
       if (controller.signal.aborted) return;
       setData(result); setRoles(identity.roles); setOptions(optionValues);
-      setItemDrafts(Object.fromEntries(result.items.map(item => [item.id, draft(item, itemFields)])));
       setProcessDrafts(Object.fromEntries(result.processes.map(entry => [entry.process.id, draft(entry.process, processFields)])));
     }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro inesperado."); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [id, reload]);
-  const canWriteItem = roles.some(role => ["Master", "Administrador", "Importação", "Compras"].includes(role));
   const canWriteProcess = roles.some(role => ["Master", "Administrador", "Importação"].includes(role));
   async function send(path: string, method: string, body: unknown, version?: string) {
     return read(await apiFetch(path, { method, headers: { "content-type": "application/json",
@@ -153,11 +129,6 @@ export default function FollowupPanel({ id }: { id: string }) {
     try { await action(); setNotice(success); setReason(""); setReload(value => value + 1); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setBusy(false); }
-  }
-  function saveItem(event: FormEvent<HTMLFormElement>, itemId: string) {
-    event.preventDefault(); if (!data) return;
-    void save(() => send(`/api/v1/purchase-orders/${id}/items/${itemId}/followup`, "PATCH",
-      { fields: payload(itemFields, itemDrafts[itemId]), reason }, data.version), "Prazos e dados do item atualizados.");
   }
   function saveProcess(event: FormEvent<HTMLFormElement>, processId: string, version: string) {
     event.preventDefault();
@@ -193,17 +164,11 @@ export default function FollowupPanel({ id }: { id: string }) {
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
     {!loading && data && <>
-      {(canWriteItem || canWriteProcess) && <label className="operational-reason">Justificativa das alterações
+      {canWriteProcess && <label className="operational-reason">Justificativa das alterações
         <input value={reason} onChange={event => setReason(event.target.value)} minLength={3} maxLength={1000} required
           placeholder="Ex.: dados conferidos no TOTVS e nos documentos" /></label>}
-      <h3>Dados e metas por item</h3>
-      {data.items.length === 0 && <p>Cadastre o primeiro item da PO no painel acima.</p>}
-      {data.items.map(item => <details key={item.id}><summary>Linha {item.lineNumber} · {item.productCode} · {item.orderedQuantity} {item.currencyCode ?? ""}</summary>
-        {canWriteItem ? <form className="stack-form" onSubmit={event => saveItem(event, item.id)}>
-          <FieldEditor fields={itemFields} values={itemDrafts[item.id] ?? {}} options={options} setValues={values => setItemDrafts(previous => ({ ...previous, [item.id]: values }))} />
-          <button className="button" disabled={busy || reason.trim().length < 3}>Salvar dados do item</button></form> :
-          <dl className="followup-grid">{itemFields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{value(item[field.key])}</dd></div>)}</dl>}
-      </details>)}
+      <h3>Dados dos itens</h3>
+      <p className="muted">Os campos de todos os itens são preenchidos e editados juntos no painel “Preenchimento operacional da PO” acima.</p>
       <h3>Embarques e cálculos por item/IP</h3>
       {data.shipments.length === 0 && <p>Distribua uma quantidade do item a um IP no painel acima para calcular o acompanhamento por item/embarque. IPs vinculados historicamente aparecem abaixo para preenchimento de seus dados gerais.</p>}
       {data.shipments.map(entry => {
