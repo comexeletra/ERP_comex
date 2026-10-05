@@ -15,10 +15,10 @@ table { width: max-content; min-width: 100%; border-collapse: collapse; table-la
 .auth-card { padding: 28px; }
 .stack-form { display: grid; gap: 16px; }
 .stack-form label { display: grid; gap: 6px; font-weight: 700; }
-.stack-form input:not([type="checkbox"]), .stack-form select { border: 1px solid #b7c5cf; border-radius: 7px; font: inherit; padding: 10px; width: 100%; }
+.stack-form input:not([type="checkbox"]), .stack-form select { border: 1px solid #b7c5cf; border-radius: 7px; font: inherit; min-width: 0; max-width: 100%; padding: 10px; width: 100%; }
 .scope-list { border: 1px solid #dce4eb; border-radius: 8px; display: grid; gap: 10px; padding: 16px; }
 .stack-form textarea, .catalog-controls input, .catalog-controls select { border: 1px solid #b7c5cf; border-radius: 7px; font: inherit; padding: 10px; width: 100%; }
-.stack-form textarea { min-height: 88px; resize: vertical; }
+.stack-form textarea { max-width: 100%; min-height: 88px; min-width: 0; resize: vertical; }
 .catalog-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 18px; }
 .catalog-controls label { display: grid; gap: 6px; min-width: 210px; font-weight: 700; }
 .catalog-controls .secondary { margin-left: 4px; }
@@ -203,11 +203,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .operational-summary dd { margin: 5px 0 0; overflow-wrap: anywhere; }
 .operational-reason { display: grid; font-weight: 700; gap: 6px; }
 .operational-reason input { width: 100%; }
-.operational-fields { display: grid; gap: 12px; grid-template-columns: repeat(8, minmax(0, 1fr)); }
-.operational-fields > label { min-width: 0; }
+.operational-fields { display: grid; gap: 12px; grid-template-columns: repeat(8, minmax(0, 1fr)); min-width: 0; max-width: 100%; }
+.operational-fields > label { min-width: 0; max-width: 100%; }
+.operational-fields input, .operational-fields select, .operational-fields textarea { min-width: 0; max-width: 100%; width: 100%; }
+.operational-fields select { overflow: hidden; text-overflow: ellipsis; }
 .po-entry-section { display: grid; gap: 14px; }
 .po-entry-section h2, .po-entry-section h3, .po-entry-item h4, .po-entry-item h5 { margin: 0; }
-.po-entry-item { background: #fbfdfe; border: 1px solid #dce6eb; border-radius: 10px; display: grid; gap: 14px; padding: 16px; }
+.po-entry-item { background: #fbfdfe; border: 1px solid #dce6eb; border-radius: 10px; display: grid; gap: 14px; min-width: 0; max-width: 100%; padding: 16px; }
 .po-entry-heading { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
 .po-entry-heading .muted { margin: 4px 0 0; }
 .operational-search, .operational-actions { align-items: end; display: flex; flex-wrap: wrap; gap: 12px; }
