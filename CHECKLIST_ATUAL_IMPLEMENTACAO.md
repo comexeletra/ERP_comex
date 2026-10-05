@@ -3,18 +3,18 @@
 Atualizado em 2026-10-04. Este é o controle vigente para concluir o plano em
 [Plano_Implementacao_ERP_PO_TOTVS.md](Plano_Implementacao_ERP_PO_TOTVS.md).
 
-**Incremento local ainda não publicado:** M018 e as novas rotas/telas de PO, item,
-IP e distribuição de quantidades estão no checkout. O fluxo está descrito em
+**Incremento M018 publicado em 2026-10-04:** novas rotas e telas de PO, item,
+IP e distribuição de quantidades estão na VPS e na Vercel. O fluxo está descrito em
 [docs/PRIMEIRO_FLUXO_OPERACIONAL_PO_IP.md](docs/PRIMEIRO_FLUXO_OPERACIONAL_PO_IP.md).
 Os estados e números operacionais abaixo continuam referindo-se à implantação
-M001–M017. M018 passou em PostgreSQL 17 isolado em 2026-10-04; ainda precisa
-passar por cópia restaurada, release controlado e aceite dos analistas. Uma nova planilha histórica será
+M001–M017. M018 passou em PostgreSQL 17 isolado, cópia restaurada e release
+controlado; ainda precisa de aceite dos analistas. Uma nova planilha histórica será
 fornecida posteriormente; a carga e a reconciliação estão fora deste incremento.
 [CHECKLIST_IMPLEMENTACAO.md](CHECKLIST_IMPLEMENTACAO.md) conserva a cronologia e
 as evidências antigas, inclusive da implementação .NET/SQLite retirada do código.
 Um item daquele histórico não está concluído na stack atual sem evidência aqui.
-As evidências operacionais da VPS e o aceite autenticado mais recentes neste
-retrato são de 2026-10-03; a VPS não foi revalidada em 2026-10-04.
+As evidências antigas de aceite autenticado são de 2026-10-03; em 2026-10-04,
+M018 e a API foram verificadas na VPS sem novo aceite autenticado da interface.
 
 ## Como ler o estado
 
@@ -54,7 +54,7 @@ recebeu `[x]` integral apenas por existir na fase .NET/SQLite ou no plano.
 |---|---|---|
 | Frontend | Next.js 16.3.6, React 19.3.0, TypeScript 5.9.3, CSS próprio; `fetch` em componentes e `proxy.ts` same-origin; Vercel `apps/web` | Manter esta base. Tailwind, shadcn/ui, TanStack Query, React Hook Form, Vitest e Playwright são propostas do plano e **não estão instalados**. Adotá-los só quando uma entrega exigir. |
 | API | Node 24, Fastify 5, TypeScript, Zod, `pg`; serviço `systemd` na VPS, HTTPS via Traefik, token de gateway | Completar contratos e workflows no serviço persistente. Não há backend .NET ativo. |
-| Banco | PostgreSQL da VPS; `erp_po_totvs_test` é operacional apesar do nome; M001–M017 estão aplicadas. M016/M017 foram validadas em cópia restaurada, com backup e grants operacionais conferidos. | Separar banco de CI/homologação do operacional e manter backup antes de novos releases. Não usar SQLite como evidência atual. |
+| Banco | PostgreSQL da VPS; `erp_po_totvs_test` é operacional apesar do nome; M001–M018 estão aplicadas. M018 passou em cópia restaurada, com backup e grants operacionais conferidos. | Separar banco de CI/homologação do operacional e manter backup antes de novos releases. Não usar SQLite como evidência atual. |
 | Autenticação | Login local e sessões PostgreSQL em uso; OIDC/PKCE existe no código; leitura de solicitações conferida com perfil Consulta real e três escopos atribuídos. | Homologar provedor corporativo e ampliar a validação real para logout/CSRF e outros recursos e casos de isolamento. |
 | Importação | `deploy/hostinger/import-historical-workbook.py` usa Python/openpyxl e hash do arquivo aprovado; a origem bruta é preservada | Criar prévia, reconciliação e promoção versionada da próxima planilha; não pressupor importador Node já existente. |
 | Jobs e arquivos | Outbox no PostgreSQL; sem consumidor operacional ou object storage escolhido | Definir executor persistente/agenda na VPS ou serviço gerenciado, storage privado e políticas de retry/retensão antes de documentos e integrações. |
@@ -179,7 +179,7 @@ reaproveitado.
 | DEV02 Ambiente | `[-]` | Node 24 e PostgreSQL/VPS operacionais; CI web ativa e verde. Preview exige origem estável, variáveis de API separadas e falha fechado sem elas; ainda falta provisionar a API e o banco isolados de Preview. |
 | DEV03 OIDC/sessão | `[-]` | Login local e sessões ativos; OIDC/PKCE no código. Homologar issuer corporativo, callback, expiração, CSRF e logout. |
 | DEV04 Permissões | `[-]` | Papéis/grants e filtros SQL existem. Em 2026-10-03, perfil Consulta acessou a lista de solicitações no escopo de três importadores e não recebeu controles de criação. | Validar escrita negada diretamente na API e respostas 404 para recursos fora do escopo; cobrir as demais rotas com usuário restrito real. |
-| DEV05 Migrations | `[-]` | Runner Node; M001–M017 versionadas. M013–M017 foram validadas em cópia restaurada, backup e grants operacionais conferidos; o release M016/M017 verificou a view de histórico e negou SELECT na tabela de auditoria. |
+| DEV05 Migrations | `[-]` | Runner Node; M001–M018 versionadas. M013–M018 foram validadas em cópia restaurada, backup e grants operacionais conferidos; o release M016/M017 verificou a view de histórico e negou SELECT na tabela de auditoria. |
 | DEV06 Cadastros/aliases | `[-]` | M010 e fluxo manual revisado; faltam identidades oficiais, aliases conflitantes e homologação de dados reais. |
 | DEV07 Lote de origem | `[-]` | Snapshot, hash e linhas brutas persistidos; CLI local de inventário/comparação por coordenada versionada. Faltam recebimento, armazenamento e prévia reconciliada por entidade. |
 | DEV08 Leitura Excel | `[-]` | Python/openpyxl lê valores salvos do arquivo aprovado; avaliar os 11 cabeçalhos Pré além de `AZ` já presentes e generalizar leitura de versões novas. |

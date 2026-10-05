@@ -1,6 +1,19 @@
 # API ERP na VPS Hostinger
 
-> O [checklist vigente](../../CHECKLIST_ATUAL_IMPLEMENTACAO.md) registra M001–M017 aplicadas no banco operacional. As instruções de release M013/M014 abaixo são históricas. Confira o ledger real antes de qualquer release futuro.
+> O [checklist vigente](../../CHECKLIST_ATUAL_IMPLEMENTACAO.md) registra M001–M018 aplicadas no banco operacional. As instruções de release M013/M014 abaixo são históricas. Confira o ledger real antes de qualquer release futuro.
+
+## Release M018: preenchimento operacional de PO/IP (2026-10-04)
+
+`release-m018.sh` validou M018 e `operations.integration.mjs` numa cópia restaurada
+do banco operacional, preservou um backup verificável, aplicou a migration e
+instalou a API. Backup:
+`/var/backups/import-erp/erp_po_totvs_test_20261005T003022Z.dump`, SHA-256
+`0d4ffe5038b3b1c72f35184630aaf9e3fb07d9859260e3bab9455fa201762bff`.
+API anterior: `/var/backups/import-erp/m018-api-20261005T003032Z`. O ledger ficou
+em 18/18 e o HTTPS público da API respondeu 200. A Vercel marcou o commit
+`3fc1ee8` como `READY` no alias `https://fup-comex-eletra.vercel.app`.
+Ainda falta o aceite com analistas. A carga da planilha atualizada não faz parte
+deste release.
 
 ## Estado após o release M016/M017 (2026-10-03)
 

@@ -1,9 +1,9 @@
 # Primeiro fluxo operacional de PO e IP
 
-Implementado no checkout em 2026-10-04. **Ainda não aplicado à VPS nem homologado
-com analistas.** A migration M018 foi aplicada com sucesso a um PostgreSQL 17
-isolado e o contrato de integração passou. Antes de aplicar no banco operacional,
-validar também em cópia restaurada e manter backup restaurável.
+Publicado em 2026-10-04 na VPS e na Vercel. **Ainda falta o aceite funcional com
+analistas antes de substituir a ferramenta de preenchimento.** A migration M018
+passou em PostgreSQL isolado, em cópia restaurada do banco operacional e no banco
+operacional. A API e a interface do commit `3fc1ee8` estão publicadas.
 
 ## Fluxo entregue no código
 
@@ -27,6 +27,12 @@ com o TOTVS. Observações históricas da planilha permanecem separadas.
 - M018 e `operations.integration.mjs` passaram num PostgreSQL 17 isolado em
   2026-10-04. O teste cobre PO em dois IPs, IP com duas POs, excesso de
   quantidade, correção, cancelamento, versão, escopo e concorrência.
+- Na VPS, o mesmo teste passou em cópia restaurada antes da migration operacional.
+  O backup verificado é
+  `/var/backups/import-erp/erp_po_totvs_test_20261005T003022Z.dump`, SHA-256
+  `0d4ffe5038b3b1c72f35184630aaf9e3fb07d9859260e3bab9455fa201762bff`.
+  O ledger operacional está em 18/18, a API está ativa e o HTTPS público da API
+  respondeu 200 no health check autenticado.
 - Confirmar com analistas os campos mínimos e a identidade da linha do TOTVS.
 - Executar uma PO dividida entre dois IPs e um IP com duas POs em paralelo com
   o trabalho atual, sem alterar a carga histórica.
@@ -34,8 +40,12 @@ com o TOTVS. Observações históricas da planilha permanecem separadas.
   desembaraço, NF, custos novos e documentos ainda não têm preenchimento
   operacional equivalente ao Excel.
 
-Ordem de release: validar migration em cópia restaurada, fazer backup restaurável
-do banco operacional, aplicar M018, instalar API compatível e publicar o frontend.
-O frontend novo consulta tabelas de M018; não publicá-lo antes da migration e da API.
+O código anterior da API foi preservado em
+`/var/backups/import-erp/m018-api-20261005T003032Z`. A Vercel marcou o deployment
+`dpl_A8eyBHpHvvVJmZ2tKtJ3sDuoAFiJ` como `READY` para `3fc1ee8`, com alias
+`https://fup-comex-eletra.vercel.app`. O push ao GitHub acionou esse deployment
+automaticamente; a compatibilidade completa foi restabelecida após a migration e
+a publicação da API. Em futuros releases dependentes de migration, controlar a
+sequência do deploy da interface.
 Uma planilha mais atual será enviada posteriormente; sua importação histórica e
 reconciliação são uma etapa separada deste fluxo operacional.
