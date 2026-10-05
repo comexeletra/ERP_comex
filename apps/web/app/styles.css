@@ -212,6 +212,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .po-entry-item { background: #fbfdfe; border: 1px solid #dce6eb; border-radius: 10px; display: grid; gap: 14px; min-width: 0; max-width: 100%; padding: 16px; }
 .po-entry-heading { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
 .po-entry-heading .muted { margin: 4px 0 0; }
+.po-calculated-fields { border-top: 1px solid #dce6eb; min-width: 0; padding-top: 14px; }
+.po-calculated-fields h5 { margin: 0; }
 .operational-search, .operational-actions { align-items: end; display: flex; flex-wrap: wrap; gap: 12px; }
 .operational-search label { min-width: min(100%, 240px); }
 .operational-allocation { border-top: 1px solid #dce6eb; padding-top: 16px; }

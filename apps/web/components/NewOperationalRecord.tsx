@@ -12,6 +12,7 @@ import {
   CatalogChoice, loadCatalogChoices, loadOperationalOptions, OperationalOption,
   OperationalOptionSelect,
 } from "./OperationalOptionSelect";
+import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
 
 const poRoles = new Set(["Master", "Administrador", "Importação", "Compras"]);
 const ipRoles = new Set(["Master", "Administrador", "Importação"]);
@@ -236,6 +237,7 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
             <h4>Planejamento e acompanhamento deste produto</h4>
             <OperationalFieldsEditor fields={purchaseOrderItemFields} values={item.operational} options={options}
               setValues={operational => updateItem(index, { operational })} />
+            <PurchaseOrderCalculatedFields quantity={item.orderedQuantity} unitPrice={item.unitPrice} currency={item.currency} />
           </article>)}
         </section>
 

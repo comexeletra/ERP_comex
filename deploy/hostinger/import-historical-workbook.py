@@ -24,7 +24,7 @@ from openpyxl.utils import get_column_letter
 
 
 APPROVED_SHA256 = "d2f025ce6dc53a15574126217cf2148fb875fbb41408f266d6a486aa5f0d7f44"
-MAPPING_VERSION = "historical-2026-v1"
+MAPPING_VERSION = "historical-2026-v2"
 NAMESPACE = UUID("d708bc42-34ca-4d2a-b247-641201b6b2dc")
 PRE_SHEET = "Pr\u00e9 Embarque"
 POST_SHEET = "P\u00f3s Embarque"
@@ -168,7 +168,7 @@ def read_workbook(path: Path) -> dict[str, object]:
             return process_by_key[key][0]
 
         for number, row in enumerate(workbook[PRE_SHEET].iter_rows(min_row=5, max_row=6944, values_only=True), 5):
-            source_id, raw = add_source(PRE_SHEET, number, row, 52)
+            source_id, raw = add_source(PRE_SHEET, number, row, 54)
             counts["pre_rows"] += 1
             importer = text(raw["F"])
             po = text(raw["N"])

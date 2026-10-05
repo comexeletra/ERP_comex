@@ -173,7 +173,7 @@ export default function FollowupPanel({ id }: { id: string }) {
       {data.shipments.length === 0 && <p>Distribua uma quantidade do item a um IP no painel acima para calcular o acompanhamento por item/embarque. IPs vinculados historicamente aparecem abaixo para preenchimento de seus dados gerais.</p>}
       {data.shipments.map(entry => {
         const item = data.items.find(row => row.id === entry.itemId);
-        return <details key={entry.allocationId}><summary>{item?.productCode ?? "Item"} · IP {entry.process.ipNumber} · {entry.allocationQuantity} unidades · {value(entry.calculated.status)}</summary>
+        return <details open key={entry.allocationId}><summary>{item?.productCode ?? "Item"} · IP {entry.process.ipNumber} · {entry.allocationQuantity} unidades · {value(entry.calculated.status)}</summary>
           <p><Link className="text-link" href={`/processes/${entry.process.id}`}>Abrir IP {entry.process.ipNumber}</Link></p>
           <dl className="followup-grid">{calcLabels.map(([key, label]) => <div key={key}><dt>{label}</dt>
             <dd>{value(entry.calculated[key])}{key === "totalPrice" && entry.calculated[key] ? ` ${item?.currencyCode ?? ""}` : ""}</dd></div>)}</dl>

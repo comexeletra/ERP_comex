@@ -6,6 +6,7 @@ import { apiFetch } from "../lib/api";
 import { blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsEditor,
   purchaseOrderItemFields, purchaseOrderItemFieldsPayload } from "./PurchaseOrderItemFields";
 import { CatalogChoice, loadCatalogChoices, loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
+import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
 
 type Item = { id: string; lineNumber: number; externalLineReference: string | null;
   productCode: string; description: string; orderedQuantity: string; unit: string;
@@ -260,6 +261,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             <h5>Planejamento e acompanhamento</h5>
             <OperationalFieldsEditor fields={purchaseOrderItemFields} values={draft.operational} options={options}
               setValues={operational => setDraft({ operational })} />
+            <PurchaseOrderCalculatedFields quantity={draft.orderedQuantity} unitPrice={draft.unitPrice} currency={draft.currency} />
             <button className="button" disabled={saving || reason.trim().length < 3}>Salvar todos os campos deste item</button>
           </form> : <p>{item.orderedQuantity} {item.unit} · {item.description}</p>}
         </article>;
@@ -281,6 +283,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
           </div>
           <OperationalFieldsEditor fields={purchaseOrderItemFields} values={itemDraft.operational} options={options}
             setValues={operational => setItemDraft({ ...itemDraft, operational })} />
+          <PurchaseOrderCalculatedFields quantity={itemDraft.orderedQuantity} unitPrice={itemDraft.unitPrice} currency={itemDraft.currency} />
           <button className="button" disabled={saving || reason.trim().length < 3}>Salvar item completo</button>
         </form>
       </details>}
