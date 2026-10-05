@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
-import { apiFetch } from "../lib/api";
+import { apiFetch, readApiJson } from "../lib/api";
 import { blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsEditor,
   purchaseOrderCommonItemFields, purchaseOrderSpecificItemFields, purchaseOrderItemFields,
   purchaseOrderItemFieldsPayload } from "./PurchaseOrderItemFields";
@@ -40,9 +40,7 @@ const poWriters = new Set(["Master", "Administrador", "Importação", "Compras"]
 const allocationWriters = new Set(["Master", "Administrador", "Importação"]);
 
 async function responseData<T>(response: Response): Promise<T> {
-  const data = await response.json() as T & { detail?: string };
-  if (!response.ok) throw new Error(data.detail || "Não foi possível concluir a operação.");
-  return data;
+  return readApiJson<T>(response);
 }
 
 export default function OperationalPoPanel({ id, onChanged }: { id: string; onChanged?: () => void }) {

@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
-import { apiFetch } from "../lib/api";
+import { apiFetch, readApiJson } from "../lib/api";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 
 type Value = string | number | boolean | null;
@@ -68,17 +68,28 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
   const [docDraft, setDocDraft] = useState<DocDraft>(blankDoc()); const [editingDoc, setEditingDoc] = useState<string>();
   const [options, setOptions] = useState<OperationalOption[]>([]); const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [notice, setNotice] = useState("");
+  const [compatibilityWarning, setCompatibilityWarning] = useState("");
   const [reload, setReload] = useState(0);
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError("");
     Promise.all([apiFetch(`/api/v1/processes/${id}/followup`, { signal: controller.signal }),
       apiFetch("/auth/me", { signal: controller.signal }), loadOperationalOptions()]).then(async ([response, identity, optionValues]) => {
-      const body = await response.json() as Data & { detail?: string };
-      if (!response.ok) throw new Error(body.detail ?? "Não foi possível carregar o Pós Embarque do IP.");
-      const user = await identity.json() as { roles: string[] };
-      if (!identity.ok) throw new Error("Não foi possível verificar as permissões da sessão.");
+      const raw = await readApiJson<Partial<Data>>(response);
+      const user = await readApiJson<{ roles: string[] }>(identity);
+      if (!raw.process) throw new Error("A API retornou um formato antigo para o Pós Embarque. Atualize a API antes de continuar.");
+      const missingCollections = ["purchaseOrders", "allocations", "documents", "events"]
+        .filter(key => !Array.isArray(raw[key as keyof Data]));
+      const body: Data = { ...raw, process: raw.process,
+        purchaseOrders: Array.isArray(raw.purchaseOrders) ? raw.purchaseOrders : [],
+        allocations: Array.isArray(raw.allocations) ? raw.allocations : [],
+        documents: Array.isArray(raw.documents) ? raw.documents : [],
+        events: Array.isArray(raw.events) ? raw.events : [],
+        invoiceTotals: raw.invoiceTotals ?? { amounts: [], incompleteLines: 0 } } as Data;
       if (!controller.signal.aborted) {
         setData(body); setRoles(user.roles); setOptions(optionValues); setDraft(toDraft(body.process));
+        setCompatibilityWarning(missingCollections.length
+          ? `A API está desatualizada e não retornou: ${missingCollections.join(", ")}. Os dados principais foram carregados; solicite a atualização da API.`
+          : "");
       }
     }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro inesperado."); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -88,8 +99,7 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
   async function send(path: string, method: string, body: unknown, version?: string) {
     const response = await apiFetch(path, { method, headers: { "content-type": "application/json",
       ...(version ? { "If-Match": `"${version}"` } : { "Idempotency-Key": crypto.randomUUID() }) }, body: JSON.stringify(body) });
-    const result = await response.json() as { detail?: string };
-    if (!response.ok) throw new Error(result.detail ?? "Não foi possível salvar.");
+    await readApiJson<unknown>(response);
   }
   async function save(event: FormEvent<HTMLFormElement>, action: () => Promise<void>, success: string) {
     event.preventDefault(); setBusy(true); setError(""); setNotice("");
@@ -113,6 +123,7 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
     {loading && <p role="status">Carregando Pós Embarque…</p>}
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
+    {compatibilityWarning && <p className="notice" role="status">{compatibilityWarning}</p>}
     {!loading && data && <>
       <h3>POs nesta operação</h3>
       {data.purchaseOrders.length === 0 ? <p>Nenhuma PO vinculada ao IP.</p> :

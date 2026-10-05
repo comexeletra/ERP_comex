@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
-import { apiFetch } from "../lib/api";
+import { apiFetch, readApiJson } from "../lib/api";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 
 type Field = { key: string; label: string; type?: "date" | "number" | "money" | "boolean" | "select"; max?: number; entity?: string };
@@ -75,9 +75,7 @@ function FieldEditor({ fields, values, setValues, options }: { fields: Field[]; 
         value={values[field.key] ?? ""} onChange={event => setValues({ ...values, [field.key]: event.target.value })} />}</label>)}</div>;
 }
 async function read<T>(response: Response): Promise<T> {
-  const body = await response.json() as T & { detail?: string };
-  if (!response.ok) throw new Error(body.detail ?? "Não foi possível salvar.");
-  return body;
+  return readApiJson<T>(response);
 }
 function value(value: unknown): string { return value == null || value === "" ? "—" : typeof value === "boolean" ? value ? "Sim" : "Não" : String(value); }
 const calcLabels: [string, string][] = [
@@ -115,6 +113,7 @@ const blankDoc = (): DocDraft => ({ kind: "INVOICE", purchaseOrderItemId: "", nu
 export default function FollowupPanel({ id }: { id: string }) {
   const [data, setData] = useState<Followup>(); const [roles, setRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [notice, setNotice] = useState("");
+  const [compatibilityWarning, setCompatibilityWarning] = useState("");
   const [reason, setReason] = useState(""); const [busy, setBusy] = useState(false); const [reload, setReload] = useState(0);
   const [processDrafts, setProcessDrafts] = useState<Record<string, Draft>>({});
   const [docDrafts, setDocDrafts] = useState<Record<string, DocDraft>>({});
@@ -124,9 +123,22 @@ export default function FollowupPanel({ id }: { id: string }) {
     const controller = new AbortController();
     Promise.all([apiFetch(`/api/v1/purchase-orders/${id}/followup`, { signal: controller.signal }),
       apiFetch("/auth/me", { signal: controller.signal }), loadOperationalOptions()]).then(async ([followup, me, optionValues]) => {
-      const result = await read<Followup>(followup); const identity = await read<{ roles: string[] }>(me);
+      const raw = await read<Partial<Followup>>(followup); const identity = await read<{ roles: string[] }>(me);
+      if (!Array.isArray(raw.items) || !Array.isArray(raw.processes)) {
+        throw new Error("A API retornou um formato antigo para o acompanhamento da PO. Atualize a API antes de continuar.");
+      }
+      const missingCollections = ["shipments", "events"].filter(key => !Array.isArray(raw[key as keyof Followup]));
+      const processes = raw.processes.map(entry => ({ ...entry,
+        documents: Array.isArray(entry.documents) ? entry.documents : [],
+        invoiceTotals: entry.invoiceTotals ?? { amounts: [], incompleteLines: 0 } }));
+      const result: Followup = { ...raw, items: raw.items, processes,
+        shipments: Array.isArray(raw.shipments) ? raw.shipments : [],
+        events: Array.isArray(raw.events) ? raw.events : [] } as Followup;
       if (controller.signal.aborted) return;
       setData(result); setRoles(identity.roles); setOptions(optionValues);
+      setCompatibilityWarning(missingCollections.length
+        ? `A API está desatualizada e não retornou: ${missingCollections.join(", ")}. Os dados principais foram carregados; solicite a atualização da API.`
+        : "");
       setProcessDrafts(Object.fromEntries(result.processes.map(entry => [entry.process.id, draft(entry.process, processFields)])));
     }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro inesperado."); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -176,6 +188,7 @@ export default function FollowupPanel({ id }: { id: string }) {
     {loading && <p role="status">Carregando acompanhamento…</p>}
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
+    {compatibilityWarning && <p className="notice" role="status">{compatibilityWarning}</p>}
     {!loading && data && <>
       {canWriteProcess && <label className="operational-reason">Justificativa das alterações
         <input value={reason} onChange={event => setReason(event.target.value)} minLength={3} maxLength={1000} required

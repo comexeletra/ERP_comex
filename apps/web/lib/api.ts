@@ -22,3 +22,17 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
     credentials: "same-origin"
   });
 }
+
+export async function readApiJson<T>(response: Response): Promise<T> {
+  const raw = await response.text();
+  let body: (T & { detail?: string }) | undefined;
+  try {
+    body = raw ? JSON.parse(raw) as T & { detail?: string } : undefined;
+  } catch {
+    const excerpt = raw.trim().slice(0, 240);
+    throw new Error(`A API respondeu HTTP ${response.status} sem JSON${excerpt ? `: ${excerpt}` : "."}`);
+  }
+  if (!response.ok) throw new Error(body?.detail ?? `Falha na API (HTTP ${response.status}).`);
+  if (body === undefined) throw new Error(`A API respondeu HTTP ${response.status} sem conteúdo.`);
+  return body as T;
+}

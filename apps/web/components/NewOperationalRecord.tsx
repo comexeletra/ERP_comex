@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch } from "../lib/api";
+import { apiFetch, readApiJson } from "../lib/api";
 import {
   blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsEditor,
   purchaseOrderCommonItemFields, purchaseOrderSpecificItemFields, purchaseOrderItemFieldsPayload,
@@ -34,9 +34,7 @@ function blankPoItem(): PoItemDraft {
 }
 
 async function readResponse<T>(response: Response): Promise<T> {
-  const body = await response.json() as T & { detail?: string };
-  if (!response.ok) throw new Error(body.detail || "Não foi possível salvar os dados.");
-  return body;
+  return readApiJson<T>(response);
 }
 
 export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
