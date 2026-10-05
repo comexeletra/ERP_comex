@@ -13,6 +13,9 @@ item and IP follow-up fields, individual Invoice/BL/NF records and their input
 constraints. The API derives spreadsheet-style calculations on read rather
 than storing formula results. See `docs/ACOMPANHAMENTO_CALCULOS_PO.md` for the
 field map and rules. Run both migrations together before starting the new API.
+M019–M020 passed a restored-copy test and were applied to the operational VPS
+database on 2026-10-04, after a verified backup. The ledger is 20/20; release
+evidence and rollback paths are in `deploy/hostinger/README.md`.
 `M002` is the PostgreSQL counterpart for quality-review records. Each file is
 applied in its own transaction and recorded with a SHA-256 checksum in
 `migration.schema_migration`; an applied file whose checksum changes stops the

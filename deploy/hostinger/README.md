@@ -1,6 +1,23 @@
 # API ERP na VPS Hostinger
 
-> O [checklist vigente](../../CHECKLIST_ATUAL_IMPLEMENTACAO.md) registra M001–M018 aplicadas no banco operacional. As instruções de release M013/M014 abaixo são históricas. Confira o ledger real antes de qualquer release futuro.
+> O [checklist vigente](../../CHECKLIST_ATUAL_IMPLEMENTACAO.md) registra M001–M020 aplicadas no banco operacional. As instruções de release M013/M014 abaixo são históricas. Confira o ledger real antes de qualquer release futuro.
+
+## Release M019–M020: campos e cálculos da PO (2026-10-04)
+
+`release-m020.sh` criou backup verificável, restaurou uma cópia, aplicou M019–M020
+nela e executou `followup.integration.mjs` com rollback. Após o teste, aplicou as
+duas migrations no banco operacional e instalou a API. O backup é
+`/var/backups/import-erp/erp_po_totvs_test_20261005T011817Z.dump`, SHA-256
+`924524d95b96aa29b7d13dffc58d34cc649193b9e93dd5575ba59c70a64c0aad`.
+A API anterior foi preservada em
+`/var/backups/import-erp/m020-api-20261005T011823Z`. O ledger ficou 20/20.
+O health público da API respondeu 200 e a rota nova, sem sessão, respondeu 401.
+O commit `46aab37` foi enviado ao GitHub; a Vercel marcou
+`dpl_7gxj7t5MwutEM2CD9apbFkbksquL` como `READY` no alias
+`https://fup-comex-eletra.vercel.app`, cuja página de login respondeu 200.
+O campo a campo e as regras estão em
+[`docs/ACOMPANHAMENTO_CALCULOS_PO.md`](../../docs/ACOMPANHAMENTO_CALCULOS_PO.md).
+A migração do histórico atualizado e o aceite com analistas continuam pendentes.
 
 ## Release M018: preenchimento operacional de PO/IP (2026-10-04)
 

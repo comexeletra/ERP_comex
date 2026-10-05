@@ -36,9 +36,9 @@ com o TOTVS. Observações históricas da planilha permanecem separadas.
 - Confirmar com analistas os campos mínimos e a identidade da linha do TOTVS.
 - Executar uma PO dividida entre dois IPs e um IP com duas POs em paralelo com
   o trabalho atual, sem alterar a carga histórica.
-- Mapear os demais campos necessários do Pré e do Pós Embarque. Invoice, marcos,
-  desembaraço, NF, custos novos e documentos ainda não têm preenchimento
-  operacional equivalente ao Excel.
+- Validar com os analistas o preenchimento e os cálculos de Invoice, BL, NF,
+  marcos, desembaraço e custos publicados em M019–M020. As regras e seus limites
+  estão em [ACOMPANHAMENTO_CALCULOS_PO.md](ACOMPANHAMENTO_CALCULOS_PO.md).
 
 O código anterior da API foi preservado em
 `/var/backups/import-erp/m018-api-20261005T003032Z`. A Vercel marcou o deployment
