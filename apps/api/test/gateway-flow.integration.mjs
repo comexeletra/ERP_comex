@@ -90,6 +90,11 @@ try {
   expectStatus(await call("PATCH", `/api/v1/purchase-orders/${po.id}/items/${first.id}/followup`,
     { fields: { scNumber: sc.requestNumber, scApprovalDate: "2026-08-01",
       actualFactoryShipDate: "2026-08-20" }, reason }, operational.version), 200);
+  operational = expectStatus(await call("GET", `/api/v1/purchase-orders/${po.id}/operational`), 200);
+  const shared = expectStatus(await call("PATCH", `/api/v1/purchase-orders/${po.id}/items/followup`, {
+    itemIds: [first.id, second.id], fields: { requester: "Analista do teste" }, reason,
+  }, operational.version), 200);
+  assert.equal(shared.updatedCount, 2);
   const ip = async number => expectStatus(await call("POST", "/api/v1/processes", {
     importer, ipNumber: `CI-GW-${number}-${suffix}`, logisticsStatus: null,
     priority: null, notes: "", reason,
@@ -109,6 +114,7 @@ try {
   const poFollowup = expectStatus(await call("GET", `/api/v1/purchase-orders/${po.id}/followup`), 200);
   assert.equal(poFollowup.items.find(item => item.id === first.id).scNumber, sc.requestNumber);
   assert.equal(poFollowup.items.find(item => item.id === first.id).scApprovalDate, "2026-08-01");
+  assert.ok(poFollowup.items.every(item => item.requester === "Analista do teste"));
 
   expectStatus(await call("PATCH", `/api/v1/processes/${ip1.id}/followup`, {
     fields: { etd: "2026-09-01", actualPortDepartureDate: "2026-09-03", arrivalDate: "2026-10-01" }, reason,
@@ -143,7 +149,7 @@ try {
   assert.equal(stored.rows[0].second_departure, null);
   assert.equal(stored.rows[0].second_delivery.toISOString().slice(0, 10), "2026-11-18");
   assert.equal(stored.rows[0].allocation_count, 3);
-  console.log("Next.js → gateway → API → PostgreSQL flow passed (SC, PO split across IPs, dates, closure).");
+  console.log("Next.js → gateway → API → PostgreSQL flow passed (SC, shared fields, split PO, IP dates, closure).");
 } finally {
   await pool.end();
 }

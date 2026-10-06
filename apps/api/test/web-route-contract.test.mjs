@@ -28,6 +28,7 @@ const webRoutes = [
   ["POST", "/api/v1/purchase-orders"], ["PATCH", "/api/v1/purchase-orders/:id"],
   ["POST", "/api/v1/purchase-orders/:id/items"],
   ["PATCH", "/api/v1/purchase-orders/:id/items/:itemId"],
+  ["PATCH", "/api/v1/purchase-orders/:id/items/followup"],
   ["PATCH", "/api/v1/purchase-orders/:id/items/:itemId/followup"],
   ["POST", "/api/v1/purchase-orders/:id/allocations"],
   ["PATCH", "/api/v1/purchase-orders/:id/allocations/:allocationId"],

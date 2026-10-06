@@ -8,7 +8,7 @@ Verificação em 2026-10-05. O contrato de métodos/caminhos usados pelo Next.js
 | --- | --- | --- | --- |
 | Identidade | `/login` e `/auth/*` pelo proxy | `POST /auth/local/login`, `GET /auth/me`, `GET /auth/csrf` | Sessão PostgreSQL; todas as escritas exigem token CSRF da mesma origem. |
 | SC | `/requests`, `/requests/[id]` | `POST/GET /api/v1/requests`, `GET/PATCH /api/v1/requests/:id` | Solicitação e seus itens em uma transação; número de SC retorna da API. |
-| PO | `/purchase-orders/new`, `/purchase-orders/[id]` | `POST /api/v1/purchase-orders`, `POST /:id/items`, `PATCH /:id/items/:itemId/followup`, `GET /:id/operational` e `GET /:id/followup` | Cabeçalho, itens e campos operacionais. A interface compara os campos enviados com `/followup` após salvar. |
+| PO | `/purchase-orders/new`, `/purchase-orders/[id]` | `POST /api/v1/purchase-orders`, `POST /:id/items`, `PATCH /:id/items/:itemId/followup`, `PATCH /:id/items/followup`, `GET /:id/operational` e `GET /:id/followup` | Cabeçalho, itens e campos operacionais. A nova rota de campos compartilhados altera todos os itens em uma transação. A interface compara os campos enviados com `/followup` após salvar. |
 | PO → IP | Formulário da PO | `POST/PATCH/DELETE /api/v1/purchase-orders/:id/allocations` | A distribuição liga **ID do item da PO**, **ID do IP** e quantidade; saldo não pode ficar negativo. Cada IP pode receber itens de várias POs. |
 | Pós embarque | `/processes`, `/processes/[id]` | `GET/PATCH /api/v1/processes/:id/followup`, rotas de documentos | Uma operação por IP; ETD, partida efetiva, ETA, chegada e entrega ficam no IP. Invoice/BL/NF pertencem ao IP. |
 | Ciclo do IP | `/processes/[id]` | `POST /api/v1/processes/:id/close` e `/reopen` | Decisão do analista. IP encerrado bloqueia edição e novas distribuições; reabertura exige motivo. |
@@ -26,7 +26,7 @@ Verificação em 2026-10-05. O contrato de métodos/caminhos usados pelo Next.js
 
 1. Build da API e do Next.js; testes unitários de ambos.
 2. Registro de todos os métodos/caminhos usados pelo Next.js no Fastify (contrato automatizado).
-3. Banco PostgreSQL 17 descartável na porta 55432: M001–M024 aplicadas em branco, `operations.integration.mjs` e `followup.integration.mjs` aprovados. O teste de acompanhamento lê **diretamente** do banco aprovação da SC, partidas distintas dos IPs e encerramento/reabertura.
+3. Bancos PostgreSQL 17 descartáveis: M001–M024 aplicadas em branco, `operations.integration.mjs` e `followup.integration.mjs` aprovados. O teste de acompanhamento lê **diretamente** do banco aprovação da SC, partidas distintas dos IPs e encerramento/reabertura. A atualização compartilhada foi testada em dois itens; uma falha forçada no segundo item desfez as alterações dos dois e preservou a versão da PO.
 4. Outra base descartável com M001–M021 e PO/IP/datas/quantidade existentes: M022–M024 aplicadas e dados preservados (`PO.version=7`, `IP.version=4`, `SC=2026-08-01`, `ETD=2026-09-01`, `quantidade=40`).
 5. Teste HTTP integrado: login local, CSRF, criação da SC, criação de PO e dois produtos, referência da SC, distribuição `40+60` entre dois IPs e `25` de outro produto no mesmo IP, datas independentes, encerramento, bloqueio de edição, reabertura e leitura direta das linhas gravadas no PostgreSQL. Passou usando somente o banco descartável.
 
@@ -52,4 +52,4 @@ O validador preparado para a VPS é `deploy/hostinger/validate-m024-on-copy.py`.
 
 O release coordenado está em `deploy/hostinger/release-m024.sh`. Ele repete o validador, aplica as migrations aditivas, troca o código da API e restaura a versão anterior do código se a nova API não passar na verificação de saúde. A publicação não foi executada neste levantamento.
 
-O cadastro inicial da PO e a aplicação de campos a vários itens ainda fazem **mais de uma transação**. Cada escrita individual foi testada e a interface verifica a releitura, mas falha no meio pode deixar os itens anteriores gravados. A tela conserva o rascunho ou informa quantos itens podem ter sido salvos; não repetir cegamente a ação. Uma API de lote transacional será necessária para garantir tudo ou nada nesse caso.
+O cadastro inicial da PO ainda faz **mais de uma transação**. A tela conserva o rascunho se uma etapa falhar; a PO e os itens anteriores podem já existir. A aplicação de campos compartilhados usa a nova rota transacional após o release da API. Enquanto a VPS estiver na API M021, a interface usa a rota antiga por item para manter o formulário utilizável e informa quantos itens anteriores podem ter sido gravados se houver falha. Não repetir cegamente a ação. Um cadastro inicial transacional será necessário para garantir tudo ou nada também na criação da PO.

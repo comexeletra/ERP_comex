@@ -23,6 +23,10 @@ const itemFields: Record<string, [string, FieldType, number?]> = {
   targetTransitDays: ["target_transit_days", "integer"], targetCustomsDays: ["target_customs_days", "integer"],
   actualFactoryShipDate: ["actual_factory_ship_date", "date"],
 };
+const commonItemFields = new Set([
+  "necessityDate", "requester", "scNumber", "scApprovalDate", "purpose",
+  "commercialPlanReceivedDate", "mrpCompletedDate", "poApprovalDate", "poSentDate",
+]);
 const processFields: Record<string, [string, FieldType, number?]> = {
   logisticsStatus: ["logistics_status", "text", 40],
   priority: ["priority", "text", 20], ipTotvsDate: ["ip_totvs_date", "date"],
@@ -246,6 +250,44 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
       });
       reply.header("ETag", `"${po.rows[0].version}"`);
       return { ...po.rows[0], items: itemRows, processes, shipments, events };
+    });
+
+  app.patch<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/items/followup",
+    { config: permissionConfig("purchase-orders.write") }, async (request, reply) => {
+      const poId = z.uuid().safeParse(request.params.id);
+      const body = request.body as { itemIds?: unknown; fields?: unknown; reason?: unknown } | null;
+      const itemIds = z.array(z.uuid()).min(1).max(1000).safeParse(body?.itemIds);
+      const fields = validateFields(body?.fields, itemFields); const why = reason.safeParse(body?.reason);
+      if (!poId.success || !itemIds.success || new Set(itemIds.data).size !== itemIds.data.length
+        || !fields || !why.success
+        || Object.keys(fields).some(key => !commonItemFields.has(key))) {
+        return problem(reply, 400, "INVALID_FOLLOWUP", "Revise os campos compartilhados da PO.");
+      }
+      let auth: ReturnType<typeof context>;
+      try { auth = context(request, true); }
+      catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
+      return transaction(pool, reply, async client => {
+        const po = await lockedPo(client, poId.data, auth.scopes); checkVersion(po, auth.version!);
+        const found = await client.query(`SELECT * FROM procurement.purchase_order_item
+          WHERE purchase_order_id=$1 ORDER BY line_number,id FOR UPDATE`, [poId.data]);
+        if (!found.rows.length) throw new BusinessError(409, "EMPTY_PURCHASE_ORDER", "Cadastre um produto antes de aplicar campos compartilhados.");
+        const requested = new Set(itemIds.data);
+        if (found.rows.length !== requested.size || found.rows.some(item => !requested.has(item.id))) {
+          throw new BusinessError(409, "ITEM_SET_CHANGED", "Os produtos da PO mudaram. Recarregue antes de aplicar campos compartilhados.");
+        }
+        const keys = Object.keys(fields);
+        const sql = keys.map((key, index) => `${itemFields[key][0]}=$${index + 2}`).join(",");
+        await client.query(`UPDATE procurement.purchase_order_item SET ${sql},updated_at=now()
+          WHERE purchase_order_id=$1`, [poId.data, ...keys.map(key => fields[key])]);
+        const changed = await client.query(`UPDATE procurement.purchase_order
+          SET version=version+1,updated_at=now() WHERE id=$1 RETURNING version::text`, [poId.data]);
+        for (const item of found.rows) {
+          await record(client, "PURCHASE_ORDER", poId.data, "PURCHASE_ORDER_ITEM", item.id, "FOLLOWUP_UPDATE",
+            item, fields, auth.actor, why.data);
+        }
+        return { id: poId.data, updatedCount: found.rows.length,
+          purchaseOrderVersion: changed.rows[0].version };
+      });
     });
 
   app.patch<{ Params: { id: string; itemId: string } }>("/api/v1/purchase-orders/:id/items/:itemId/followup",

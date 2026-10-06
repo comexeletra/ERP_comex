@@ -15,7 +15,7 @@ test("followup persists item/IP inputs and individual documents in an isolated r
   const actor = await client.query("SELECT id FROM identity.erp_user LIMIT 1");
   assert.ok(actor.rows[0], "isolated copy needs an audit actor");
   const importer = "FOLLOWUP CI";
-  const poId = randomUUID(); const itemId = randomUUID(); const processId = randomUUID();
+  const poId = randomUUID(); const itemId = randomUUID(); const secondItemId = randomUUID(); const processId = randomUUID();
   const secondProcessId = randomUUID(); const historicalIpId = randomUUID();
   const allocationId = randomUUID(); const secondAllocationId = randomUUID();
   await client.query(`INSERT INTO procurement.purchase_order
@@ -29,6 +29,9 @@ test("followup persists item/IP inputs and individual documents in an isolated r
   await client.query(`INSERT INTO procurement.purchase_order_item
     (id,purchase_order_id,line_number,product_code,description,ordered_quantity,unit,unit_price,currency_code)
     VALUES ($1,$2,1,'PROD-CI','Produto',100,'PC',12.5,'USD')`, [itemId, poId]);
+  await client.query(`INSERT INTO procurement.purchase_order_item
+    (id,purchase_order_id,line_number,product_code,description,ordered_quantity,unit)
+    VALUES ($1,$2,2,'PROD-CI-2','Segundo produto',25,'PC')`, [secondItemId, poId]);
   await client.query(`INSERT INTO procurement.po_item_allocation
     (id,purchase_order_item_id,process_id,quantity) VALUES ($1,$2,$3,40)`, [allocationId, itemId, processId]);
   await client.query(`INSERT INTO procurement.po_item_allocation
@@ -72,6 +75,19 @@ test("followup persists item/IP inputs and individual documents in an isolated r
     { fields: { necessityDate: "2026-11-01", scApprovalDate: "2026-08-01", targetOrderDays: 3 }, reason: "Conferido no TOTVS" },
     { "if-match": '"1"' });
   assert.equal(editedItem.statusCode, 200, editedItem.body);
+  const shared = await call("PATCH", `/api/v1/purchase-orders/${poId}/items/followup`,
+    { itemIds: [itemId, secondItemId], fields: { scApprovalDate: "2026-08-02", requester: "Analista CI" },
+      reason: "Campos conferidos na SC" }, { "if-match": '"2"' });
+  assert.equal(shared.statusCode, 200, shared.body);
+  assert.equal(shared.json().updatedCount, 2);
+  const sharedRows = await client.query(`SELECT sc_approval_date,requester FROM procurement.purchase_order_item
+    WHERE purchase_order_id=$1 ORDER BY line_number`, [poId]);
+  assert.ok(sharedRows.rows.every(row => row.sc_approval_date.toISOString().slice(0, 10) === "2026-08-02"
+    && row.requester === "Analista CI"));
+  const changedSet = await call("PATCH", `/api/v1/purchase-orders/${poId}/items/followup`,
+    { itemIds: [itemId], fields: { requester: "Outro analista" }, reason: "Lista incompleta" },
+    { "if-match": '"3"' });
+  assert.equal(changedSet.statusCode, 409, changedSet.body);
   const editedIp = await call("PATCH", `/api/v1/processes/${processId}/followup`,
     { fields: { transportMode: "SEA", etd: "2026-09-01", actualPortDepartureDate: "2026-09-03",
       arrivalDate: "2026-10-01" }, reason: "Conferido no embarque" },
@@ -82,7 +98,7 @@ test("followup persists item/IP inputs and individual documents in an isolated r
     { "if-match": '"1"' });
   assert.equal(editedSecondIp.statusCode, 200, editedSecondIp.body);
   const storedItem = await client.query("SELECT sc_approval_date FROM procurement.purchase_order_item WHERE id=$1", [itemId]);
-  assert.equal(storedItem.rows[0].sc_approval_date.toISOString().slice(0, 10), "2026-08-01");
+  assert.equal(storedItem.rows[0].sc_approval_date.toISOString().slice(0, 10), "2026-08-02");
   const storedIps = await client.query(`SELECT id, etd, actual_port_departure_date, arrival_date, delivery_date
     FROM imports.import_process WHERE id=ANY($1::uuid[])`, [[processId, secondProcessId]]);
   const ipsById = new Map(storedIps.rows.map(row => [row.id, row]));
@@ -151,4 +167,20 @@ test("followup persists item/IP inputs and individual documents in an isolated r
   assert.ok(events.some(event => event.aggregateType === "IMPORT_PROCESS" && event.aggregateLabel === "IP-CI"
     && event.operation === "FOLLOWUP_UPDATE"));
   assert.ok(events.some(event => event.entityType === "PURCHASE_ORDER_ITEM" && event.operation === "FOLLOWUP_UPDATE"));
+
+  await client.query(`CREATE FUNCTION pg_temp.reject_second_item_update() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN IF NEW.id='${secondItemId}' THEN RAISE EXCEPTION 'CI forced item failure'; END IF;
+    RETURN NEW; END $$`);
+  await client.query(`CREATE TRIGGER ci_reject_shared_update BEFORE UPDATE ON procurement.purchase_order_item
+    FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_second_item_update()`);
+  const versionBeforeFailure = (await client.query("SELECT version::text FROM procurement.purchase_order WHERE id=$1", [poId])).rows[0].version;
+  const failedBatch = await call("PATCH", `/api/v1/purchase-orders/${poId}/items/followup`,
+    { itemIds: [itemId, secondItemId], fields: { requester: "Não pode persistir" }, reason: "Falha simulada" },
+    { "if-match": `"${versionBeforeFailure}"` });
+  assert.equal(failedBatch.statusCode, 500, failedBatch.body);
+  const rolledBack = await client.query(`SELECT requester FROM procurement.purchase_order_item
+    WHERE purchase_order_id=$1 ORDER BY line_number`, [poId]);
+  assert.deepEqual(rolledBack.rows.map(row => row.requester), ["Analista CI", "Analista CI"]);
+  assert.equal((await client.query("SELECT version::text FROM procurement.purchase_order WHERE id=$1", [poId])).rows[0].version,
+    versionBeforeFailure);
 });
