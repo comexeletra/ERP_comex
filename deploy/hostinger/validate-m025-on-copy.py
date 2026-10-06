@@ -89,7 +89,7 @@ try:
                         "DATABASE_URL": copy_url})
     status = subprocess.check_output([node, "dist/migrate.js", "status"],
                                      cwd=api, env=environment, text=True)
-    if ("Migrations: 24 aplicadas, 1 pendente." not in status
+    if ("Migrations: 24 aplicadas, 1 pendentes." not in status
             or "pendente  M025_allocation_factory_ship_date.sql" not in status):
         raise RuntimeError("Unexpected staged migration status")
     run(node, "dist/migrate.js", "up", cwd=api, env=environment)

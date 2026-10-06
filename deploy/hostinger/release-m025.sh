@@ -27,7 +27,7 @@ migrate() {
     "$api_dir/dist/migrate.js" "$1"
 }
 status=$(migrate status)
-if [[ $status != *'Migrations: 24 aplicadas, 1 pendente.'* \
+if [[ $status != *'Migrations: 24 aplicadas, 1 pendentes.'* \
       || $status != *'pendente  M025_allocation_factory_ship_date.sql'* ]]; then
   echo 'Expected M001-M024 applied and only M025 pending.' >&2
   exit 1
