@@ -1,9 +1,15 @@
 # Auditoria de compatibilidade da API
 
-Verificada em 2026-10-06 comparando as chamadas do Next.js atual com o código
-M021, último release documentado na VPS (`ed1fc25`), e com o roteador local
-atual. A VPS não foi consultada nesta auditoria; M021 é a versão registrada nos
-checklists, não uma confirmação do estado remoto ao vivo.
+Verificada em 2026-10-06 comparando as chamadas do Next.js com o código M021,
+último release registrado antes desta auditoria (`ed1fc25`), e com o roteador
+local. A comparação encontrou incompatibilidades entre frontend e API.
+
+**Resolução:** M022–M024 foram validadas em cópia restaurada e publicadas na
+VPS. O ledger terminou em 24/24, health autenticado respondeu 200, e
+`GET /api/v1/processes/:id/followup` respondeu 401 sem sessão (rota existente).
+O commit `49fd6fc85390` está `READY` na Vercel Production e atende o alias
+`fup-comex-eletra.vercel.app`. Evidências, backup e rollback estão em
+[`deploy/hostinger/README.md`](../deploy/hostinger/README.md).
 
 ## Incompatibilidades encontradas
 
@@ -13,8 +19,8 @@ checklists, não uma confirmação do estado remoto ao vivo.
 | `PATCH /api/v1/purchase-orders/:id/items/followup` | Não existe | A interface salva item a item em M021. Uma falha parcial é informada. |
 | `GET /api/v1/processes/:id/followup` | Não existe | Causava o HTTP 404 do painel Pós Embarque. A tela agora verifica o suporte ao ciclo do IP em `GET /processes/:id` antes de chamar esta rota; na M021, não faz a chamada incompatível e exibe POs/distribuições disponíveis. |
 | `POST /api/v1/processes/:id/close` e `/reopen` | Não existem | A interface oculta essas ações se a resposta do IP não tiver `lifecycleStatus`. |
-| `events`, histórico de alterações do IP/PO | Estrutura M022 | Não disponível na API M021. O histórico local requer a publicação coordenada de M022–M024. |
-| `actualPortDepartureDate` | Campo M024 | Não disponível até a migration e o código M024 serem publicados juntos. |
+| `events`, histórico de alterações do IP/PO | Estrutura M022 | Não existia na API M021; migrations e API foram publicadas coordenadamente em 2026-10-06. |
+| `actualPortDepartureDate` | Campo M024 | Não existia na M021; migration e API M024 foram publicadas juntas em 2026-10-06. |
 
 As rotas de gravação do Pós Embarque e dos documentos já existiam em M021; a
 lacuna que produziu o erro apresentado é especificamente a rota **GET** usada
@@ -34,11 +40,10 @@ Se ainda não houver distribuição, o IP corretamente mostrará zero POs
 operacionais. POs ligadas por importação histórica aparecem separadamente dos
 vínculos feitos por distribuição.
 
-## Limite e publicação necessária
+## Compatibilidade e fluxo PO–IP
 
-O fallback evita que o 404 esconda associações já gravadas, mas não cria
-associação automaticamente nem substitui a leitura de documentos, eventos e
-campos novos. Para habilitar o fluxo completo, validar M022–M024 em cópia
-restaurada e publicar migrations e API coordenadamente, conforme
-`deploy/hostinger/README.md`. Essa auditoria e a alteração de interface não
-executam mudanças na VPS ou no banco operacional.
+O fallback continua evitando que uma API antiga esconda associações já gravadas;
+ele não cria associação automaticamente. Cadastrar um IP pela PO o seleciona,
+mas o vínculo só é gravado depois de informar quantidade e acionar “Distribuir
+quantidade”. O fluxo completo está publicado com M022–M024; evidências e
+rollback constam em `deploy/hostinger/README.md`.

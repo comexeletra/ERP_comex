@@ -1,6 +1,29 @@
 # API ERP na VPS Hostinger
 
-> O [checklist vigente](../../CHECKLIST_ATUAL_IMPLEMENTACAO.md) registra M001–M021 aplicadas no banco operacional. As instruções de release M013/M014 abaixo são históricas. Confira o ledger real antes de qualquer release futuro.
+> O [checklist vigente](../../CHECKLIST_ATUAL_IMPLEMENTACAO.md) registra M001–M024 aplicadas no banco operacional. As instruções de release M013/M014 abaixo são históricas. Confira o ledger real antes de qualquer release futuro.
+
+## Release M022–M024: histórico PO/IP e pós embarque (2026-10-06)
+
+M022–M024 passaram em cópia restaurada do banco operacional. A cópia reteve os
+grants de runtime, preservou a contagem das linhas históricas e passou
+`operations.integration.mjs` e `followup.integration.mjs`, incluindo divisão de
+PO entre IPs, IP compartilhado por POs, documentos, datas independentes, limites
+de quantidade, concorrência, edição, cancelamento e histórico.
+
+Backup anterior ao release: `/var/backups/import-erp/erp_po_totvs_test_20261006T134207Z.dump`, SHA-256
+`34b3254c0ff3f1e8da1bddc3b3c409755a364086b20962f95b4056fbd0fe3eaf`.
+O ledger ficou em 24/24. O serviço `import-erp-api` está enabled/active; health
+local: `/health/live` 200, `/health/ready` 401 sem token e 200 autenticado. A rota
+`GET /api/v1/processes/:id/followup` foi verificada sem sessão e respondeu 401,
+confirmando que não retorna mais 404. O arquivo M021 também foi instalado junto
+às definições M022–M024 para manter o status do ledger auditável na VPS.
+
+O código anterior da API foi preservado em
+`/var/backups/import-erp/m024-api-20261006T134214Z`. A Vercel marcou o commit
+`49fd6fc85390` como `READY` (`dpl_9Z35Ht6jqM5p2QRtanWMQRdQ67i5`) e moveu o alias
+`https://fup-comex-eletra.vercel.app` para esse deployment. O backup validado
+antes da publicação está listado acima; não houve alteração na carga de dados
+históricos.
 
 ## Release M021: valores selecionáveis e campos operacionais (2026-10-05)
 
@@ -39,10 +62,11 @@ O campo a campo e as regras estão em
 [`docs/ACOMPANHAMENTO_CALCULOS_PO.md`](../../docs/ACOMPANHAMENTO_CALCULOS_PO.md).
 A migração do histórico atualizado e o aceite com analistas continuam pendentes.
 
-## Aceite funcional PO/IP e validação M022–M024
+## Validação e release M022–M024
 
-Antes de publicar o ciclo do IP e o Pós Embarque atual, monte na VPS o staging
-com o código atual em `/tmp/erp-m024-validation` e execute:
+O release M022–M024 foi concluído em 2026-10-06 (evidências no início deste
+arquivo). Para repetir apenas a validação em cópia restaurada, monte na VPS um
+staging com o código da revisão e execute:
 
 ```bash
 ERP_STAGE_DIR=/tmp/erp-m024-validation \
@@ -54,22 +78,22 @@ restaura uma cópia descartável, aplica M022–M024 e executa os testes Postgre
 operações e acompanhamento. Eles cobrem PO dividida entre IPs, IP compartilhado
 por POs, quantidades e documentos conciliados por embarque, datas independentes,
 limites de alocação, concorrência, edição, cancelamento, escopo e histórico.
-Ao terminar, o validador remove somente a cópia de teste. A publicação de M022–M024
-no banco operacional continua sendo uma etapa separada, após revisar o resultado
-desse aceite e confirmar o backup.
+Ao terminar, o validador remove somente a cópia de teste. Ele não altera o banco
+operacional.
 
-Com o staging da **mesma revisão** montado e após conferir o resultado do validador,
-o release coordenado está preparado em `release-m024.sh`:
+O release coordenado em `release-m024.sh` repete o validador, confere o ledger
+M021 e as três migrations pendentes, cria novo backup, aplica M022–M024 e troca
+o código da API. Se a nova API falhar no health check, restaura o código anterior;
+as migrations aditivas ficam aplicadas para que o release possa ser retomado.
+O release já foi executado e verificado em produção em 2026-10-06.
+
+Para uma futura repetição autorizada, monte o staging da **mesma revisão** e rode:
 
 ```bash
 ERP_STAGE_DIR=/tmp/erp-m024-validation \
   bash /tmp/erp-m024-validation/deploy/hostinger/release-m024.sh
 ```
 
-O script confirma o ledger M021, repete backup e teste em cópia restaurada,
-aplica M022–M024, troca a API e verifica a saúde. Se a nova API falhar, restaura
-o código anterior; as migrations aditivas permanecem aplicadas. A execução na VPS
-ainda depende de acesso SSH e conferência do estado real antes do release.
 
 ## Release M018: preenchimento operacional de PO/IP (2026-10-04)
 

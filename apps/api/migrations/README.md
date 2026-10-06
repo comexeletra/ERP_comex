@@ -25,7 +25,8 @@ source observations and reviewed active entries, which remain managed in
 `M022_purchase_order_ip_event_history.sql` exposes filtered, read-only views of
 the immutable PO/allocation and IP/document audit events. The follow-up handler
 checks importer scope before reading them and renders the split history with
-each IP's own dates and quantities. Apply M022 before deploying the API change.
+each IP's own dates and quantities. M022 was released on 2026-10-06 with M023
+and M024; see `deploy/hostinger/README.md` for validation and release evidence.
 `deploy/hostinger/validate-m022-on-copy.py` is the acceptance gate: it backs up
 the operational database, restores a disposable copy, applies M022, checks the
 history-view grants, then runs both `operations.integration.mjs` and
@@ -36,9 +37,9 @@ cancellation and event history. It drops only the disposable restored copy.
 `M023_process_closure.sql` adds an explicit open/closed lifecycle to each IP,
 separate from its logistics status. The analyst can close or reopen an IP with
 a reason regardless of its logistics stage. Closed IPs remain visible, and
-their operational data and allocations are read-only until reopened. M023 is
-implemented locally and has not been validated on a restored copy or applied to
-the operational database.
+their operational data and allocations are read-only until reopened. M023 was
+validated on a restored copy and applied to the operational database on
+2026-10-06 as part of the M022–M024 release; see `deploy/hostinger/README.md`.
 
 `M002` is the PostgreSQL counterpart for quality-review records. Each file is
 applied in its own transaction and recorded with a SHA-256 checksum in
@@ -188,3 +189,6 @@ so a PO item split over different IPs can carry independent actual departure,
 ETD, ETA, BL, arrival, and delivery dates. Existing PO-item departure values
 are retained and are not copied to IPs automatically because one source date
 cannot safely identify multiple shipment dates.
+M024 passed restored-copy validation and was applied with M022 and M023 to the
+operational database on 2026-10-06. The ledger is 24/24; backup, API health and
+rollback details are recorded in `deploy/hostinger/README.md`.

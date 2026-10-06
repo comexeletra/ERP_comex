@@ -1,7 +1,15 @@
 # Checklist atual de implementação — stack Node/Vercel/VPS
 
-Atualizado em 2026-10-05. Este é o controle vigente para concluir o plano em
+Atualizado em 2026-10-06. Este é o controle vigente para concluir o plano em
 [Plano_Implementacao_ERP_PO_TOTVS.md](Plano_Implementacao_ERP_PO_TOTVS.md).
+
+**Incremento M022–M024 publicado em 2026-10-06:** histórico operacional de PO/IP,
+ciclo aberto/encerrado do IP e partida efetiva por IP. As migrations passaram
+em cópia restaurada, preservando dados, grants e testes de integração. O banco
+operacional está em 24/24; a API ficou `active` com health autenticado 200 e a
+rota de acompanhamento responde 401 sem sessão (rota existente). Backup,
+rollback e publicação Vercel estão registrados em
+[deploy/hostinger/README.md](deploy/hostinger/README.md).
 
 **Incremento M021 publicado em 2026-10-05:** opções operacionais selecionáveis,
 cadastro de novos valores de entidades e grupo de produto foram adicionados à
@@ -11,13 +19,11 @@ Detalhes e rollback em [deploy/hostinger/README.md](deploy/hostinger/README.md).
 O aceite do perfil real que deve cadastrar POs continua dependendo do papel e
 escopo atribuídos por um Master.
 
-**M023 em desenvolvimento local:** cada IP passa a ter ciclo explícito Aberto /
+**M023 publicado:** cada IP tem ciclo explícito Aberto /
 Encerrado, separado do status logístico. O analista pode encerrar ou reabrir com
 justificativa, sem depender da etapa logística; IP encerrado fica bloqueado para
 edição e novas alterações nas distribuições. Pré Embarque é acompanhado por PO;
-Pós Embarque tem uma linha por IP e agrega as POs/itens da operação. A migration
-M023 e a interface/API ainda não foram validadas em cópia restaurada nem
-publicadas.
+Pós Embarque tem uma linha por IP e agrega as POs/itens da operação.
 
 **Incremento M019–M020 publicado em 2026-10-04:** os campos complementares de
 item/IP, documentos individuais de Invoice/BL/NF e os cálculos automáticos estão
@@ -78,7 +84,7 @@ recebeu `[x]` integral apenas por existir na fase .NET/SQLite ou no plano.
 |---|---|---|
 | Frontend | Next.js 16.3.6, React 19.3.0, TypeScript 5.9.3, CSS próprio; `fetch` em componentes e `proxy.ts` same-origin; Vercel `apps/web` | Manter esta base. Tailwind, shadcn/ui, TanStack Query, React Hook Form, Vitest e Playwright são propostas do plano e **não estão instalados**. Adotá-los só quando uma entrega exigir. |
 | API | Node 24, Fastify 5, TypeScript, Zod, `pg`; serviço `systemd` na VPS, HTTPS via Traefik, token de gateway | Completar contratos e workflows no serviço persistente. Não há backend .NET ativo. |
-| Banco | PostgreSQL da VPS; `erp_po_totvs_test` é operacional apesar do nome; M001–M021 estão aplicadas. M019–M021 passaram em cópia restaurada, com backup e grants operacionais conferidos. | Separar banco de CI/homologação do operacional e manter backup antes de novos releases. Não usar SQLite como evidência atual. |
+| Banco | PostgreSQL da VPS; `erp_po_totvs_test` é operacional apesar do nome; M001–M024 estão aplicadas. M022–M024 passaram em cópia restaurada, com backup, grants e contratos PO/IP conferidos. | Separar banco de CI/homologação do operacional e manter backup antes de novos releases. Não usar SQLite como evidência atual. |
 | Autenticação | Login local e sessões PostgreSQL em uso; OIDC/PKCE existe no código; leitura de solicitações conferida com perfil Consulta real e três escopos atribuídos. | Homologar provedor corporativo e ampliar a validação real para logout/CSRF e outros recursos e casos de isolamento. |
 | Importação | `deploy/hostinger/import-historical-workbook.py` usa Python/openpyxl e hash do arquivo aprovado; a origem bruta é preservada | Criar prévia, reconciliação e promoção versionada da próxima planilha; não pressupor importador Node já existente. |
 | Jobs e arquivos | Outbox no PostgreSQL; sem consumidor operacional ou object storage escolhido | Definir executor persistente/agenda na VPS ou serviço gerenciado, storage privado e políticas de retry/retensão antes de documentos e integrações. |
