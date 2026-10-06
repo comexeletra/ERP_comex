@@ -44,6 +44,17 @@ async function responseData<T>(response: Response): Promise<T> {
   return readApiJson<T>(response);
 }
 
+async function isLegacySharedFieldsEndpoint(response: Response): Promise<boolean> {
+  if (response.status === 404) return true;
+  if (response.status !== 400) return false;
+  try {
+    const problem = await response.clone().json() as { code?: unknown };
+    return problem.code === "INVALID_ITEM";
+  } catch {
+    return false;
+  }
+}
+
 async function loadFollowupItems(poId: string, signal?: AbortSignal): Promise<FollowupItem[]> {
   const followup = await responseData<{ items: FollowupItem[] }>(await apiFetch(
     `/api/v1/purchase-orders/${poId}/followup`, { signal, cache: "no-store" }));
@@ -162,8 +173,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       method: "PATCH", headers: { "content-type": "application/json", "X-Record-Version": current.version },
       body: JSON.stringify({ itemIds: data.items.map(item => item.id), fields, reason }),
     });
-    if (batch.status === 404) {
-      // Keep M021 compatible until the API release introduces the atomic route.
+    if (await isLegacySharedFieldsEndpoint(batch)) {
+      // Older APIs route this URL as an item ID and return INVALID_ITEM instead of 404.
       let completed = 0;
       for (const item of data.items) {
         try {
