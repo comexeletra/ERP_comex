@@ -128,25 +128,20 @@ export default function PurchaseOrderWorkspace({ id, returnPath }: { id: string;
       <OperationalPoPanel id={id} onChanged={() => { refreshOverview(); setOperationalRevision(value => value + 1); }} />
       <FollowupPanel key={operationalRevision} id={id} />
 
-      <section className="card">
-        <h2>Limites dos dados da origem</h2>
+      <details className="card historical-disclosure"><summary>Contexto dos dados</summary>
         <p className="muted">Itens oficiais integrados ao TOTVS: {data.officialItemsKnown ? "disponíveis" : "não confirmados"}. Saldo oficial integrado: {data.balanceAvailable ? "disponível" : "não disponível"}. O preenchimento operacional acima registra transcrições e distribuições feitas pelos analistas; não atualiza o TOTVS. As observações históricas continuam separadas do acompanhamento atual.</p>
-      </section>
-
-      <section className="card"><h2>Histórico da PO</h2><p className="muted">Observações importadas, com linhagem até a aba e a linha de origem. Não representam itens oficiais nem saldo.</p>
+      </details><details className="card historical-disclosure"><summary>Histórico da PO</summary><p className="muted">Observações importadas, com linhagem até a aba e a linha de origem. Não representam itens oficiais nem saldo.</p>
         {history.items.length === 0 ? <p>Nenhuma observação nesta página.</p> : <div className="table-scroll"><table><thead><tr><th>Linha</th><th>Produto</th><th>Qtd.</th><th>Valor histórico</th><th>Necessidade</th><th>Status de origem</th><th>IP de origem</th><th>Campos da origem</th></tr></thead>
           <tbody>{history.items.map(line => <Fragment key={line.id}><tr><td>{line.sourceRowNumber} · {line.sourceSheetName}</td><td><strong>{line.productCode ?? "—"}</strong><br />{line.productDescription}</td><td>{formatDecimal(line.quantity)}</td><td>{line.historicalAmount == null ? "—" : `${formatDecimal(line.historicalAmount)} ${line.currency ?? ""}`}</td><td>{formatDate(line.necessityDate)}</td><td>{line.legacyStatus ?? "—"}</td><td>{line.ipNumber ?? "Sem IP"}</td><td><button type="button" className="source-expand-button" aria-label={`${expandedHistoryId === line.id ? "Ocultar" : "Ver"} campos da linha ${line.sourceRowNumber} da aba ${line.sourceSheetName}`} aria-expanded={expandedHistoryId === line.id} onClick={() => setExpandedHistoryId(current => current === line.id ? undefined : line.id)}>{expandedHistoryId === line.id ? "Ocultar campos" : "Ver campos"}</button></td></tr>
             {expandedHistoryId === line.id && <tr className="source-detail-row"><td colSpan={8}><section className="source-detail-panel"><div className="source-detail-heading"><strong>Campos preservados da origem</strong><span>Aba {line.sourceSheetName} · linha {line.sourceRowNumber}</span></div><dl className="source-field-grid">{Object.entries(line.sourceValues ?? {}).map(([column, value]) => <SourceCell key={column} column={column} row={line.sourceRowNumber} label={line.sourceColumnHeaders?.[column]} value={value} />)}</dl></section></td></tr>}</Fragment>)}</tbody>
         </table></div>}
         {history.totalCount > history.pageSize && <p className="pagination"><button className="button secondary" disabled={page === 1} onClick={() => setPage(value => value - 1)}>Anterior</button><span>Página {page} de {Math.ceil(history.totalCount / history.pageSize)}</span><button className="button" disabled={page * history.pageSize >= history.totalCount} onClick={() => setPage(value => value + 1)}>Próxima</button></p>}
-      </section>
-
-      <section className="card"><h2>IPs vinculados e custos no grão do IP</h2><p className="muted">Custos históricos continuam atribuídos ao IP. Eles não são rateados nem totalizados como custo da PO.</p>
+      </details><section className="card"><h2>IPs vinculados</h2>
         {data.processes.length === 0 && <p>Nenhum IP vinculado disponível no escopo desta PO.</p>}
         {data.processes.map(process => <article className="process" key={process.id}><h3>{process.ipNumber} <span>{process.logisticsStatus ?? "Status logístico não informado"}</span></h3>
           <p className="muted">Qualidade do IP: {process.qualityStatus}. Vínculo: {process.linkSource}. POs visíveis vinculadas a este IP: {process.linkedPurchaseOrderCount}.</p>
           <Link className="text-link" href={`/processes/${process.id}`}>Abrir detalhe do IP →</Link>
-          {process.costs.length > 0 ? <ul>{process.costs.map((cost, index) => <li key={`${cost.type}-${cost.currency}-${index}`}>{cost.type}: {formatDecimal(cost.amount)} {cost.currency} · {cost.status}</li>)}</ul> : <p>Nenhum custo histórico registrado.</p>}
+          {process.costs.length > 0 && <details className="historical-costs"><summary>Custos históricos ({process.costs.length})</summary><ul>{process.costs.map((cost, index) => <li key={`${cost.type}-${cost.currency}-${index}`}>{cost.type}: {formatDecimal(cost.amount)} {cost.currency} · {cost.status}</li>)}</ul></details>}
         </article>)}
       </section>
     </main>

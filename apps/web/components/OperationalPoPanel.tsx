@@ -329,13 +329,12 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       new Set(data.items.map(item => operationalDraft(item)[field.key] ?? "")).size > 1));
   return <section className="card operational-panel" aria-label="Registro operacional da PO">
     <h2>Preenchimento operacional da PO</h2>
-    <p className="muted">Os itens abaixo são transcrições informadas pelos analistas. Quantidades do histórico da planilha não são convertidas automaticamente em quantidade pedida no TOTVS. O saldo mostrado é pedido informado menos quantidades distribuídas aos IPs.</p>
+    <p className="muted">Saldo por item: quantidade pedida menos quantidade distribuída.</p>
     {loading && <p role="status">Carregando preenchimento…</p>}
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
     {!loading && data && <>
-      <p className="muted">Origem: {data.sourceKind} · versão {data.version}</p>
-      <p className="muted">Cadastre fornecedores e produtos em <Link className="text-link" href="/catalog">Cadastros</Link> e os demais valores em <Link className="text-link" href="/catalog/values">Valores das entidades</Link>.</p>
+      <details className="operational-help"><summary>Adicionar opções aos campos</summary><p>Fornecedores e produtos ficam em <Link className="text-link" href="/catalog">Cadastros</Link>; as demais opções ficam em <Link className="text-link" href="/catalog/values">Valores das entidades</Link>.</p></details>
       <dl className="operational-summary"><div><dt>Fornecedor informado</dt><dd>{data.supplierText ?? "—"}</dd></div>
         <div><dt>Data da PO</dt><dd>{data.orderDate ?? "—"}</dd></div><div><dt>Observações</dt><dd>{data.notes || "—"}</dd></div></dl>
       {canWritePo && <section className="po-entry-section">
@@ -371,9 +370,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       {data.items.map(item => {
         const draft = itemDrafts[item.id] ?? blankItem();
         const setDraft = (change: Partial<ItemDraft>) => setItemDrafts(current => ({ ...current, [item.id]: { ...draft, ...change } }));
-        return <article className="po-entry-item" key={item.id}>
-          <div className="po-entry-heading"><div><h4>Item {item.lineNumber} · {item.productCode}</h4>
-            <p className="muted">Nos IPs: {item.allocatedQuantity} {item.unit} · A distribuir: {item.remainingQuantity} {item.unit}</p></div></div>
+        return <details className="po-entry-item" key={item.id}>
+          <summary className="po-entry-summary"><strong>Item {item.lineNumber} - {item.productCode}</strong><span>{item.orderedQuantity} {item.unit} - {item.remainingQuantity} {item.unit} a distribuir</span></summary>
           {canWritePo ? <form className="stack-form" data-item-id={item.id} onSubmit={saveItem}>
             <div className="operational-fields">
               <label>Linha no TOTVS<input maxLength={80} value={draft.externalLineReference} onChange={event => setDraft({ externalLineReference: event.target.value })} /></label>
@@ -392,7 +390,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             <PurchaseOrderCalculatedFields quantity={draft.orderedQuantity} unitPrice={draft.unitPrice} currency={draft.currency} />
             <button className="button" disabled={saving || commonFieldsTouched.size > 0}>Salvar todos os campos deste item</button>
           </form> : <p>{item.orderedQuantity} {item.unit} · {item.description}</p>}
-        </article>;
+        </details>;
       })}
       {canWritePo && <details><summary>Adicionar item à PO</summary>
         <form className="stack-form" onSubmit={createItem}>

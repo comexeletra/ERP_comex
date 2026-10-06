@@ -161,18 +161,17 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
           </tbody></table></div>}
       </section>
       <ProcessPostShipmentPanel id={id} />
-      <section className="card"><h2>Observações da origem</h2><p className="muted">Células do Excel; produto, quantidade e status abaixo não são dados oficiais de item ou saldo.</p>
+      <details className="card historical-disclosure"><summary>Dados de origem e linhas históricas ({lines.totalCount})</summary>
         {lines.items.length === 0 && <p>Nenhuma linha nesta página.</p>}
         {lines.items.length > 0 && <div className="table-scroll"><table><thead><tr><th>Origem</th><th>PO</th><th>Produto de origem</th><th>Quantidade de origem</th><th>Status de origem</th><th>Células</th></tr></thead><tbody>
           {lines.items.map(line => <Fragment key={line.id}><tr><td>{line.sourceSheetName} · {line.sourceRowNumber}</td><td>{line.purchaseOrderId ? <Link className="text-link" href={`/purchase-orders/${line.purchaseOrderId}`}>{line.poNumber}</Link> : "Sem PO"}</td><td>{line.productCode ?? "—"}<br />{line.productDescription}</td><td>{line.quantityFromSource ?? "—"}</td><td>{line.legacyStatus ?? "—"}</td><td><button type="button" className="source-expand-button" aria-label={`${expandedLineId === line.id ? "Ocultar" : "Ver"} campos da linha ${line.sourceRowNumber} da aba ${line.sourceSheetName}`} aria-expanded={expandedLineId === line.id} onClick={() => setExpandedLineId(current => current === line.id ? undefined : line.id)}>{expandedLineId === line.id ? "Ocultar campos" : "Ver campos"}</button></td></tr>
             {expandedLineId === line.id && <tr className="source-detail-row"><td colSpan={6}><section className="source-detail-panel"><div className="source-detail-heading"><strong>Campos preservados da origem</strong><span>Aba {line.sourceSheetName} · linha {line.sourceRowNumber}</span></div><dl className="source-field-grid">{Object.entries(line.sourceValues ?? {}).map(([column, value]) => <div className="source-field" key={column}><dt>{line.sourceColumnHeaders?.[column] || "Campo sem cabeçalho"}<small>{column}{line.sourceRowNumber}</small></dt><dd>{value == null ? "—" : String(value)}</dd></div>)}</dl></section></td></tr>}</Fragment>)}
         </tbody></table></div>}
         {lines.totalCount > lines.pageSize && <nav className="pagination"><button className="button secondary" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Anterior</button><span>Página {page} de {Math.ceil(lines.totalCount / lines.pageSize)}</span><button className="button" disabled={page * lines.pageSize >= lines.totalCount} onClick={() => setPage(value => value + 1)}>Próxima</button></nav>}
-      </section>
-      <section className="card"><h2>Custos históricos do IP</h2><p className="muted">Valores permanecem no IP. Nenhum custo é atribuído integralmente a cada PO sem regra de rateio aprovada.</p>
+      </details><details className="card historical-disclosure"><summary>Custos históricos ({process.historicalCosts.length})</summary>
         {process.historicalCosts.length === 0 && <p>Nenhum custo histórico registrado.</p>}
         {process.historicalCosts.length > 0 && <div className="table-scroll"><table><thead><tr><th>Tipo</th><th>Valor</th><th>Status</th><th>Origem</th></tr></thead><tbody>{process.historicalCosts.map(cost => <tr key={cost.id}><td>{cost.type}</td><td>{cost.amount} {cost.currency}</td><td>{cost.status}</td><td>{cost.sourceSheetName} · {cost.sourceColumn}{cost.sourceRowNumber}</td></tr>)}</tbody></table></div>}
-      </section>
+      </details>
     </>}
   </main>;
 }

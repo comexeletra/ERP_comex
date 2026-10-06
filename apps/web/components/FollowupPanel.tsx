@@ -184,20 +184,18 @@ export default function FollowupPanel({ id }: { id: string }) {
   const processes = data?.processes ?? [];
   return <section className="card operational-panel" aria-label="Acompanhamento da PO">
     <h2>Acompanhamento da PO</h2>
-    <p className="muted">Preencha os dados de cada item e dos IPs vinculados. Prazos, valores, status e alertas são calculados automaticamente. Campos sem dados suficientes aparecem como —. Os valores históricos continuam separados.</p>
-    <p className="muted">Para adicionar opções aos seletores, acesse <Link className="text-link" href="/catalog/values">Valores das entidades</Link>; fornecedores e produtos ficam em <Link className="text-link" href="/catalog">Cadastros</Link>.</p>
+    <p className="muted">Prazos e alertas são calculados automaticamente após distribuir quantidades.</p>
+    <details className="operational-help"><summary>Adicionar opções aos campos</summary><p>Fornecedores e produtos ficam em <Link className="text-link" href="/catalog">Cadastros</Link>; as demais opções ficam em <Link className="text-link" href="/catalog/values">Valores das entidades</Link>.</p></details>
     {loading && <p role="status">Carregando acompanhamento…</p>}
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
     {compatibilityWarning && <p className="notice" role="status">{compatibilityWarning}</p>}
     {!loading && data && <>
-      <h3>Dados dos itens</h3>
-      <p className="muted">Os campos de todos os itens são preenchidos e editados juntos no painel “Preenchimento operacional da PO” acima.</p>
-      <h3>Embarques e cálculos por item/IP</h3>
-      {data.shipments.length === 0 && <p>Distribua uma quantidade do item a um IP no painel acima para calcular o acompanhamento por item/embarque. IPs vinculados historicamente aparecem abaixo para preenchimento de seus dados gerais.</p>}
+      <h3>Etapas por item e IP</h3>
+      {data.shipments.length === 0 && <p>Distribua uma quantidade a um IP para acompanhar o embarque.</p>}
       {data.shipments.map(entry => {
         const item = data.items.find(row => row.id === entry.itemId);
-        return <details open key={entry.allocationId}><summary>{item?.productCode ?? "Item"} · IP {entry.process.ipNumber} · {entry.allocationQuantity} unidades · {value(entry.calculated.status)}</summary>
+        return <details key={entry.allocationId}><summary>{item?.productCode ?? "Item"} · IP {entry.process.ipNumber} · {entry.allocationQuantity} unidades · {value(entry.calculated.status)}</summary>
           <p><Link className="text-link" href={`/processes/${entry.process.id}`}>Abrir IP {entry.process.ipNumber}</Link></p>
           <h4>Marcos deste vínculo PO–IP</h4>
           <dl className="followup-grid shipment-milestones">
@@ -214,7 +212,7 @@ export default function FollowupPanel({ id }: { id: string }) {
         </details>;
       })}
       <h3>Operações de Pós Embarque por IP</h3>
-      <p className="muted">Os campos e documentos do Pós Embarque são mantidos uma única vez no IP. Acesse o IP para editar a operação compartilhada por todas as POs vinculadas.</p>
+      <p className="muted">Documentos de pós-embarque são mantidos uma vez por IP.</p>
       {processes.map(entry => {
         const p = entry.process;
         const totals = entry.invoiceTotals.amounts.map(total => `${total.amount} ${total.currency}`).join(" · ") || "—";
@@ -224,10 +222,8 @@ export default function FollowupPanel({ id }: { id: string }) {
           <Link className="button" href={`/processes/${p.id}`}>Abrir Pós Embarque do IP {p.ipNumber}</Link>
         </article>;
       })}
-      <h3>Registro de eventos da PO e dos IPs</h3>
-      <p className="muted">Cada alteração operacional fica no histórico com data e valores anteriores/novos. Eventos do IP são compartilhados com todas as POs ligadas àquele IP; quantidades permanecem no vínculo de cada produto com cada IP.</p>
-      {data.events.length === 0 ? <p>Nenhum evento operacional registrado.</p> :
-        <ol className="operational-event-list">{data.events.map(event => <li key={event.id}>
+      <details className="operational-event-history"><summary>Histórico de alterações ({data.events.length})</summary>
+        {data.events.length === 0 ? <p>Nenhum evento registrado.</p> : <ol className="operational-event-list">{data.events.map(event => <li key={event.id}>
           <div className="operational-event-heading"><time dateTime={event.occurredAt}>{eventDate(event.occurredAt)}</time>
             <strong>{event.aggregateType === "IMPORT_PROCESS" ? `IP ${event.aggregateLabel}` : `PO ${event.aggregateLabel}`}</strong>
             <span>{eventEntityLabels[event.entityType] ?? event.entityType} · {eventOperationLabels[event.operation] ?? event.operation}</span>
@@ -239,6 +235,7 @@ export default function FollowupPanel({ id }: { id: string }) {
             <div><strong>Depois</strong><pre>{eventSnapshot(event.newValue)}</pre></div>
           </div></details>
         </li>)}</ol>}
+      </details>
     </>}
   </section>;
 }

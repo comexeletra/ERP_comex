@@ -29,6 +29,7 @@ export default function RequestsPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [reload, setReload] = useState(0);
+  const [view, setView] = useState<"new" | "list">("new");
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -68,7 +69,7 @@ export default function RequestsPage() {
       if (!response.ok) throw new Error(data.detail || "Não foi possível registrar a solicitação.");
       setNotice(`Solicitação ${data.requestNumber} registrada.`);
       setRequesterReference(""); setReason(""); setNotes(""); setLines([blankLine()]);
-      setPage(1); setReload(value => value + 1);
+      setPage(1); setReload(value => value + 1); setView("list");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setSaving(false); }
   }
@@ -76,16 +77,18 @@ export default function RequestsPage() {
   return <main className="shell">
     <header className="page-header">
       <p className="eyebrow">ERP Comex</p><h1>Solicitações de importação</h1>
-      <p>{canWriteRequests(roles)
-        ? "Registre uma solicitação nova e seus itens descritos pelo solicitante. Solicitações não são criadas a partir das linhas históricas da planilha."
-        : "Consulte as solicitações disponíveis no seu escopo. Solicitações não são criadas a partir das linhas históricas da planilha."}</p>
+      <p>Registre novas solicitações e acompanhe as já enviadas.</p>
       <Link className="text-link" href="/">← Carteira de POs</Link>
     </header>
+    {canWriteRequests(roles) && <nav className="request-tabs" aria-label="Solicitações">
+      <button type="button" className={view === "new" ? "active" : ""} aria-pressed={view === "new"} onClick={() => setView("new")}>Nova solicitação</button>
+      <button type="button" className={view === "list" ? "active" : ""} aria-pressed={view === "list"} onClick={() => setView("list")}>Acompanhar solicitações</button>
+    </nav>}
     {error && <div className="notice error" role="alert">{error} <button className="button secondary" type="button" onClick={() => setReload(value => value + 1)}>Tentar novamente</button></div>}
-    {canWriteRequests(roles) ? <section className="card">
+    {notice && <p className="notice success" role="status">{notice}</p>}
+    {canWriteRequests(roles) && view === "new" ? <section className="card">
       <h2>Nova solicitação</h2>
-      <p className="muted">O número é gerado pelo servidor. Produto, quantidade/unidade, finalidade e centro de custo oficiais ainda dependem de confirmação. Finalidade e centro de custo abaixo são referências livres informadas pelo solicitante.</p>
-      {notice && <p className="notice success" role="status">{notice}</p>}
+      <details className="request-guidance"><summary>Como preencher</summary><p>O número da solicitação é gerado pelo sistema. Os itens e referências informados são registrados como foram enviados e podem precisar de confirmação operacional.</p></details>
       <form className="stack-form request-form" onSubmit={submit}>
         <label>Importador<select required value={importer} onChange={event => setImporter(event.target.value)}>
           <option value="">Selecione</option>{importers.map(value => <option key={value.code} value={value.code}>{value.code}</option>)}
@@ -109,8 +112,8 @@ export default function RequestsPage() {
         {lines.length < 100 && <button className="button secondary" type="button" onClick={() => setLines(current => [...current, blankLine()])}>Adicionar item</button>}
         <button className="button" disabled={saving || !importer}>{saving ? "Registrando…" : "Registrar solicitação"}</button>
       </form>
-    </section> : <p className="notice">Seu perfil permite apenas consultar solicitações. Para solicitar permissão para criar solicitações, entre em contato com o administrador do sistema.</p>}
-    <section className="card" aria-live="polite">
+    </section> : !canWriteRequests(roles) ? <p className="notice">Seu perfil permite apenas consultar solicitações. Para solicitar permissão para criar solicitações, entre em contato com o administrador do sistema.</p> : null}
+    {(view === "list" || !canWriteRequests(roles)) && <section className="card" aria-live="polite">
       <h2>Solicitações recentes</h2>
       {loading && <p role="status">Carregando…</p>}
       {!loading && !error && requests.length === 0 && <p>Nenhuma solicitação nativa registrada.</p>}
@@ -127,6 +130,6 @@ export default function RequestsPage() {
           <td>{item.requesterReference}</td><td>{item.itemCount}</td><td>{item.status}</td>
           <td>{formatUsDateTime(item.createdAt)}</td><td><Link className="button" aria-label={`Abrir solicitação ${item.requestNumber}`} href={`/requests/${item.id}`}>Abrir</Link></td></tr>)}</tbody>
       </table></div>}
-    </section>
+    </section>}
   </main>;
 }

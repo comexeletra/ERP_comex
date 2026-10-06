@@ -251,6 +251,46 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .portfolio-shortcut-group a:focus-visible { outline: 3px solid #e88415; outline-offset: 2px; }
 @media (max-width: 900px) { .portfolio-shortcuts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) { .portfolio-shortcuts { grid-template-columns: 1fr; margin-top: 14px; }.portfolio-shortcut-group { padding: 12px; } }
+.historical-disclosure { padding: 0; }
+.historical-disclosure > summary { align-items: center; color: #284957; cursor: pointer; display: flex; font-weight: 700; gap: 10px; list-style: none; min-height: 54px; padding: 15px 20px; }
+.historical-disclosure > summary::-webkit-details-marker { display: none; }
+.historical-disclosure > summary::before { color: #087889; content: "+"; font-size: 1.15rem; width: 14px; }
+.historical-disclosure[open] > summary::before { content: "−"; }
+.historical-disclosure[open] > summary { border-bottom: 1px solid #e5ecef; }
+.historical-disclosure > :not(summary) { margin-left: 20px; margin-right: 20px; }
+.historical-disclosure > .muted { margin-bottom: 14px; margin-top: 14px; }
+.historical-disclosure > .table-scroll { margin-bottom: 18px; }
+.historical-costs { border-top: 1px solid #e6ecef; margin-top: 12px; padding-top: 10px; }
+.historical-costs > summary { color: #617985; cursor: pointer; font-size: .82rem; font-weight: 700; }
+.historical-costs ul { color: #526b78; font-size: .84rem; margin: 8px 0 0; padding-left: 18px; }
+.operational-help { color: #627987; font-size: .82rem; }
+.operational-help summary, .operational-event-history > summary { color: #176576; cursor: pointer; font-weight: 700; }
+.operational-help p { line-height: 1.5; }
+.operational-event-history { margin-top: 20px; }
+.operational-event-history > summary { border-bottom: 1px solid #e5ecef; padding: 12px 0; }
+.po-entry-summary { align-items: center; display: flex; flex-wrap: wrap; gap: 6px 14px; justify-content: space-between; list-style: none; }
+.po-entry-summary::-webkit-details-marker { display: none; }
+.po-entry-summary strong { color: #264957; }
+.po-entry-summary span { color: #617985; font-size: .83rem; font-weight: 400; }
+.po-entry-item:not([open]) { gap: 0; }
+.po-entry-item[open] > .po-entry-summary { border-bottom: 1px solid #e2e9ed; margin-bottom: 4px; padding-bottom: 12px; }
+.request-tabs { border-bottom: 1px solid #dce6eb; display: flex; gap: 6px; margin: -6px 0 18px; }
+.request-tabs button { background: transparent; border: 0; border-bottom: 2px solid transparent; color: #5c707b; cursor: pointer; font: inherit; font-weight: 700; padding: 11px 14px; }
+.request-tabs button:hover { background: #edf5f6; color: #175a68; }
+.request-tabs button.active { border-bottom-color: #087889; color: #087889; }
+.quality-summary { align-items: center; color: #203744; cursor: pointer; display: flex; justify-content: space-between; gap: 16px; list-style: none; }
+.quality-item > summary.quality-summary { border-radius: 8px; padding: 4px; width: 100%; }
+.quality-summary::-webkit-details-marker { display: none; }
+.quality-summary > span:first-child { display: grid; gap: 4px; min-width: 0; }
+.quality-summary small { color: #72838c; font-size: .75rem; }
+.quality-summary strong { font-size: 1.05rem; }
+.quality-item-content { border-top: 1px solid #e5ecef; margin-top: 14px; padding-top: 14px; }
+.quality-item:not([open]) { padding-bottom: 16px; }
+.quality-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.request-guidance { color: #526b78; font-size: .86rem; }
+.request-guidance summary { color: #176576; cursor: pointer; font-weight: 700; }
+.request-guidance p { line-height: 1.5; max-width: 720px; }
+@media (max-width: 620px) { .request-tabs button { flex: 1; padding-left: 8px; padding-right: 8px; }.historical-disclosure > summary { padding-left: 15px; padding-right: 15px; }.historical-disclosure > :not(summary) { margin-left: 15px; margin-right: 15px; } }
 
 /* Cadastro: controles e formulÃ¡rios */
 :root { --field-border: #c8d5dd; --field-ring: #0e7482; --ink-strong: #173847; --surface-soft: #f5f8fa; }

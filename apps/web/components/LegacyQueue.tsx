@@ -53,7 +53,7 @@ export default function LegacyQueue({ kind }: { kind: "pending-import-items" | "
   const pages = data ? Math.ceil(data.totalCount / 50) : 0;
   return <main className="shell"><Link className="back" href="/">← Carteira de POs</Link>
     <header className="page-header"><p className="eyebrow">Histórico Excel · escopo por importador</p><h1>{withoutIp ? "Linhas sem IP" : "Linhas sem PO"}</h1>
-      <p>Uma mesma linha de origem pode estar nas duas filas. O status histórico não define uma solicitação nova. A associação operacional aguarda regra aprovada.</p>
+      <p>Uma linha pode aparecer nas duas listas. Os vínculos operacionais são revistos no fluxo próprio.</p>
       <Link className="text-link" href={withoutIp ? "/unassigned-po-items" : "/pending-import-items"}>Ver também linhas {withoutIp ? "sem PO" : "sem IP"} →</Link>
     </header>
     <section className="card"><form className="quality-filter" onSubmit={apply}>
