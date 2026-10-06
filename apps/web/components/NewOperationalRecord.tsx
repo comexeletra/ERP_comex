@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch, readApiJson } from "../lib/api";
+import { apiFetch, isMissingApiRoute, readApiJson } from "../lib/api";
 import {
   blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsEditor,
   purchaseOrderCommonItemFields, purchaseOrderSpecificItemFields, purchaseOrderItemFieldsPayload,
@@ -178,9 +178,8 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
       body: completePayload,
     });
     const completeError = complete.status === 404
-      ? await complete.clone().json().catch(() => null) as { message?: string } | null : null;
-    const routeMissing = complete.status === 404 &&
-      /^Route POST:\/api\/v1\/purchase-orders\/complete not found$/i.test(completeError?.message ?? "");
+      ? await complete.clone().json().catch(() => null) as unknown : null;
+    const routeMissing = isMissingApiRoute(complete.status, completeError);
     if (!routeMissing) {
       const created = await readResponse<{ id: string; itemIds: string[] }>(complete);
       setCreatedPoId(created.id);
