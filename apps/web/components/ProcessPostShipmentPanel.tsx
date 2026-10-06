@@ -98,7 +98,7 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
   const canWrite = Boolean(data && data.process.lifecycleStatus === "OPEN" && roles.some(role => ["Master", "Administrador", "Importação"].includes(role)));
   async function send(path: string, method: string, body: unknown, version?: string) {
     const response = await apiFetch(path, { method, headers: { "content-type": "application/json",
-      ...(version ? { "If-Match": `"${version}"` } : { "Idempotency-Key": crypto.randomUUID() }) }, body: JSON.stringify(body) });
+      ...(version ? { "X-Record-Version": version } : { "Idempotency-Key": crypto.randomUUID() }) }, body: JSON.stringify(body) });
     await readApiJson<unknown>(response);
   }
   async function save(event: FormEvent<HTMLFormElement>, action: () => Promise<void>, success: string) {

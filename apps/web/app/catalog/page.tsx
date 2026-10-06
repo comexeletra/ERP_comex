@@ -105,7 +105,7 @@ export default function CatalogPage() {
     setSaving(true); setError(undefined); setMessage(undefined);
     try {
       const response = await apiFetch(`/api/v1/${resource}/${editing.id}`, { method: "PATCH",
-        headers: { "Content-Type": "application/json", "If-Match": `"${editing.version}"` },
+        headers: { "Content-Type": "application/json", "X-Record-Version": editing.version },
         body: JSON.stringify(editDraft) });
       await responseJson<Entry>(response);
       setEditing(undefined); setMessage("Cadastro atualizado com auditoria."); setRefresh(value => value + 1);

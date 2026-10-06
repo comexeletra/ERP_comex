@@ -177,14 +177,17 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
             currency: item.currency ? item.currency.toUpperCase() : null, reason }),
         }));
 
-        const fields = purchaseOrderItemFieldsPayload({ ...item.operational, ...commonItemFields });
+        const fields = {
+          ...purchaseOrderItemFieldsPayload(item.operational, false, purchaseOrderSpecificItemFields),
+          ...purchaseOrderItemFieldsPayload(commonItemFields, false, purchaseOrderCommonItemFields),
+        };
         if (Object.keys(fields).length > 0) {
           saveStep = `dados operacionais do item ${itemNumber}`;
           const operationalPo = await readResponse<{ version: string }>(
             await apiFetch(`/api/v1/purchase-orders/${header.id}/operational`));
           await readResponse(await apiFetch(`/api/v1/purchase-orders/${header.id}/items/${createdItem.id}/followup`, {
             method: "PATCH",
-            headers: { "content-type": "application/json", "If-Match": `"${operationalPo.version}"` },
+            headers: { "content-type": "application/json", "X-Record-Version": operationalPo.version },
             body: JSON.stringify({ fields, reason }),
           }));
         }

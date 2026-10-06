@@ -91,7 +91,7 @@ export default function RequestDetailPage() {
     setSaving(true); setError(""); setNotice("");
     try {
       const response = await apiFetch(`/api/v1/requests/${encodeURIComponent(request.id)}`, {
-        method: "PATCH", headers: { "content-type": "application/json", "If-Match": `"${request.version}"` },
+        method: "PATCH", headers: { "content-type": "application/json", "X-Record-Version": request.version },
         body: JSON.stringify({ ...draft, items: draft.items.map(item => ({ ...item,
           purposeText: item.purposeText || null, costCenterText: item.costCenterText || null })) }),
       });

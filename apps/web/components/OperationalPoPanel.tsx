@@ -117,7 +117,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   const canAllocate = roles.some(role => allocationWriters.has(role));
   async function send(path: string, method: string, body: unknown, version?: string) {
     const response = await apiFetch(path, { method,
-      headers: { "content-type": "application/json", ...(version ? { "If-Match": `"${version}"` } :
+      headers: { "content-type": "application/json", ...(version ? { "X-Record-Version": version } :
         { "Idempotency-Key": crypto.randomUUID() }) }, body: JSON.stringify(body) });
     return responseData<{ id: string }>(response);
   }
@@ -193,11 +193,14 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         unit: draft.unit, unitPrice: draft.unitPrice ? draft.unitPrice.replace(",", ".") : null,
         currency: draft.currency ? draft.currency.toUpperCase() : null, reason,
       });
-      const operational = { ...draft.operational, ...commonOperationalDraft };
-      if (Object.values(operational).some(value => value.trim())) {
+      const operational = {
+        ...purchaseOrderItemFieldsPayload(draft.operational, false, purchaseOrderSpecificItemFields),
+        ...purchaseOrderItemFieldsPayload(commonOperationalDraft, false, purchaseOrderCommonItemFields),
+      };
+      if (Object.keys(operational).length > 0) {
         const latest = await responseData<{ version: string }>(await apiFetch(`/api/v1/purchase-orders/${id}/operational`));
         await send(`/api/v1/purchase-orders/${id}/items/${created.id}/followup`, "PATCH",
-          { fields: purchaseOrderItemFieldsPayload(operational), reason }, latest.version);
+          { fields: operational, reason }, latest.version);
       }
       setItemDraft(blankItem());
     }, "Item cadastrado.");

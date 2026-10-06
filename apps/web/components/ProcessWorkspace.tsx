@@ -63,7 +63,7 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
     setSaving(true); setSaveError(undefined); setNotice("");
     try {
       const response = await apiFetch(`/api/v1/processes/${id}`, { method: "PATCH",
-        headers: { "content-type": "application/json", "If-Match": `"${process.version}"` },
+        headers: { "content-type": "application/json", "X-Record-Version": process.version },
         body: JSON.stringify({ ipNumber: ipNumberDraft, logisticsStatus: process.logisticsStatus, priority: process.priority,
           notes: notesDraft, reason }) });
       const body = await response.json() as { detail?: string };
@@ -77,7 +77,7 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
     setClosing(true); setSaveError(undefined); setNotice("");
     try {
       const response = await apiFetch(`/api/v1/processes/${id}/close`, { method: "POST",
-        headers: { "content-type": "application/json", "If-Match": `"${process.version}"` },
+        headers: { "content-type": "application/json", "X-Record-Version": process.version },
         body: JSON.stringify({ reason: closeReason }) });
       const body = await response.json() as { detail?: string };
       if (!response.ok) throw new Error(body.detail || "Não foi possível encerrar o IP.");
@@ -90,7 +90,7 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
     setReopening(true); setSaveError(undefined); setNotice("");
     try {
       const response = await apiFetch(`/api/v1/processes/${id}/reopen`, { method: "POST",
-        headers: { "content-type": "application/json", "If-Match": `"${process.version}"` },
+        headers: { "content-type": "application/json", "X-Record-Version": process.version },
         body: JSON.stringify({ reason: reopenReason }) });
       const body = await response.json() as { detail?: string };
       if (!response.ok) throw new Error(body.detail || "Não foi possível reabrir o IP.");

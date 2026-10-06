@@ -365,7 +365,9 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
     app.patch<{ Params: { id: string } }>(`${base}/:id`, { config: permissionConfig("catalog.write") }, async (request, reply) => {
       const id = z.uuid().safeParse(request.params.id);
       const parsed = patchBody.safeParse(request.body);
-      const expected = request.headers["if-match"];
+      const rawExpected = request.headers["x-record-version"] ?? request.headers["if-match"];
+      const expected = typeof rawExpected === "string" && /^[1-9][0-9]*$/u.test(rawExpected)
+        ? `"${rawExpected}"` : rawExpected;
       if (!id.success || !parsed.success || typeof expected !== "string" || !/^"[1-9][0-9]*"$/u.test(expected)) {
         return problem(reply, 400, "INVALID_CATALOG_UPDATE", "Informe ID, alterações, motivo e If-Match válido.");
       }

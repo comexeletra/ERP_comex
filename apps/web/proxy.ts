@@ -76,6 +76,13 @@ export function proxy(request: NextRequest) {
 
   const headers = new Headers(request.headers);
   headers.set(gatewayHeader, gatewayToken);
+  // Keep version checks in an application header from the browser to avoid
+  // Vercel treating If-Match as an edge precondition. Translate it only on
+  // the forwarded request so currently deployed APIs remain compatible.
+  const recordVersion = headers.get("x-record-version");
+  if (recordVersion && /^[1-9][0-9]*$/.test(recordVersion)) {
+    headers.set("if-match", `"${recordVersion}"`);
+  }
   headers.delete("host");
   // A same-origin browser request can lose Origin at an intermediary. Restore
   // it only when Fetch Metadata confirms that it came from this hostname.

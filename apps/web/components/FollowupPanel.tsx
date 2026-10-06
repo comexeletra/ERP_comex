@@ -147,7 +147,7 @@ export default function FollowupPanel({ id }: { id: string }) {
   const canWriteProcess = roles.some(role => ["Master", "Administrador", "Importação"].includes(role));
   async function send(path: string, method: string, body: unknown, version?: string) {
     return read(await apiFetch(path, { method, headers: { "content-type": "application/json",
-      ...(version ? { "If-Match": `"${version}"` } : { "Idempotency-Key": crypto.randomUUID() }) }, body: JSON.stringify(body) }));
+      ...(version ? { "X-Record-Version": version } : { "Idempotency-Key": crypto.randomUUID() }) }, body: JSON.stringify(body) }));
   }
   async function save(action: () => Promise<unknown>, success: string) {
     setBusy(true); setError(""); setNotice("");

@@ -227,7 +227,9 @@ export async function registerRequestRoutes(app: FastifyInstance, pool: Pool): P
   app.patch<{ Params: { id: string } }>("/api/v1/requests/:id", { config: permissionConfig("requests.write") }, async (request, reply) => {
     const id = z.uuid().safeParse(request.params.id);
     const parsed = updateRequestBody.safeParse(request.body);
-    const expected = request.headers["if-match"];
+    const rawExpected = request.headers["x-record-version"] ?? request.headers["if-match"];
+    const expected = typeof rawExpected === "string" && /^[1-9][0-9]*$/u.test(rawExpected)
+      ? `"${rawExpected}"` : rawExpected;
     if (!id.success || !parsed.success) {
       return problem(reply, 400, "INVALID_REQUEST_UPDATE", "Informe solicitação, campos completos, ao menos um item e If-Match válido.");
     }

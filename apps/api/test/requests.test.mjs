@@ -213,7 +213,7 @@ test("request edit enforces importer scope, submitted state and If-Match", async
       { description: "Novo item" },
     ] };
   const response = await app.inject({ method: "PATCH", url: `/api/v1/requests/${requestId}`,
-    headers: { ...headers("requester", "unused"), "if-match": '"1"' }, payload });
+    headers: { ...headers("requester", "unused"), "x-record-version": "1" }, payload });
   assert.equal(response.statusCode, 200);
   assert.equal(response.headers.etag, '"2"');
   assert.deepEqual(response.json().items.map(item => item.description), ["Segundo item revisado", "Primeiro item revisado", "Novo item"]);

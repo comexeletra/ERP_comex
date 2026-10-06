@@ -57,10 +57,11 @@ export function keyFrom(request: FastifyRequest): string {
   return key;
 }
 export function versionFrom(request: FastifyRequest): string {
-  const value = request.headers["if-match"];
-  if (value === undefined) throw new BusinessError(428, "PRECONDITION_REQUIRED", "Informe If-Match com a versão atual.");
+  const value = request.headers["x-record-version"] ?? request.headers["if-match"];
+  if (value === undefined) throw new BusinessError(428, "PRECONDITION_REQUIRED", "Informe X-Record-Version com a versão atual.");
   if (typeof value !== "string" || !/^"[0-9]+"$/u.test(value)) {
-    throw new BusinessError(400, "INVALID_VERSION", "If-Match inválido.");
+    if (typeof value === "string" && /^[0-9]+$/u.test(value)) return `"${value}"`;
+    throw new BusinessError(400, "INVALID_VERSION", "X-Record-Version inválido.");
   }
   return value;
 }
