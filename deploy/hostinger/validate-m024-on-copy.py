@@ -53,7 +53,7 @@ backup = backup_dir / f"erp_po_totvs_test_{stamp}.dump"
 with backup.open("xb") as output:
     os.chmod(backup, 0o600)
     run("/usr/bin/docker", "exec", container, "sh", "-lc",
-        'exec pg_dump -U "${POSTGRES_USER:-postgres}" -d erp_po_totvs_test -Fc --no-owner --no-acl',
+        'exec pg_dump -U "${POSTGRES_USER:-postgres}" -d erp_po_totvs_test -Fc --no-owner',
         stdout=output)
 if backup.stat().st_size == 0:
     raise SystemExit("Empty backup")
@@ -77,7 +77,7 @@ try:
     with backup.open("rb") as source:
         run("/usr/bin/docker", "exec", "-i", container, "sh", "-lc",
             'exec pg_restore -U "${POSTGRES_USER:-postgres}" --role=erp_po_totvs_migrator '
-            '--no-owner --no-acl -d "$1"', "sh", copy_name, stdin=source)
+            '--no-owner -d "$1"', "sh", copy_name, stdin=source)
     if psql(container, copy_name,
             "SELECT count(*) FROM migration.schema_migration") != "21":
         raise RuntimeError("Restored ledger is not at M021")
