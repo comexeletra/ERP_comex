@@ -130,12 +130,24 @@ export default function CatalogPage() {
 
   const canWrite = roles.includes("Master") || roles.includes("Administrador")
     || roles.includes(resource === "ncms" ? "Fiscal" : "Compras");
+  const canRegisterPo = roles.some(role => ["Master", "Administrador", "Importação", "Compras"].includes(role));
+  const canRegisterIp = roles.some(role => ["Master", "Administrador", "Importação"].includes(role));
   return <main className="shell">
     <header className="page-header"><p className="eyebrow">ERP Comex</p><h1>Cadastros e candidatos da origem</h1>
-      <p>Confirme cadastros operacionais com evidência. Códigos observados na planilha são apenas candidatos; nenhum vínculo oficial de PO ou item é criado aqui.</p>
+      <p>Gerencie fornecedores, produtos e NCM, valores das entidades, POs e IPs. Códigos observados na planilha são candidatos e precisam de revisão antes de uso operacional.</p>
       <div className="catalog-links"><Link className="text-link" href="/">← Carteira de POs</Link>
-        <Link className="text-link" href="/catalog/values">Adicionar valores às entidades</Link></div></header>
-    <section className="card catalog-controls">
+        <Link className="text-link" href="/catalog/values">Valores das entidades</Link></div></header>
+    <section className="card" aria-labelledby="registration-options-title">
+      <h2 id="registration-options-title">Cadastros</h2>
+      <p className="muted">Acesse os formulários de cadastro do ERP Comex.</p>
+      <nav className="catalog-links" aria-label="Tipos de cadastro">
+        <Link className="button secondary" href={canWrite ? "#catalog-create" : "#catalog-controls"}>Fornecedores, produtos e NCM</Link>
+        <Link className="button secondary" href="/catalog/values">Valores das entidades</Link>
+        {canRegisterPo && <Link className="button secondary" href="/purchase-orders/new">Cadastrar PO do TOTVS</Link>}
+        {canRegisterIp && <Link className="button secondary" href="/processes/new">Cadastrar IP</Link>}
+      </nav>
+    </section>
+    <section className="card catalog-controls" id="catalog-controls">
       <div role="group" aria-label="Tipo de cadastro">{(Object.keys(labels) as Resource[]).map(key =>
         <button type="button" key={key} className={`button ${resource === key ? "" : "secondary"}`} onClick={() => chooseResource(key)}>{labels[key]}</button>)}</div>
       <label>Importador<select value={importer} onChange={event => { historyRequest.current += 1; setHistoryLoading(false); setImporter(event.target.value); setPage(1); setHistoryEntry(undefined); setHistory(undefined); }}>

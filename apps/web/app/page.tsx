@@ -37,7 +37,6 @@ export default function PortfolioPage() {
   const [retry, setRetry] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
-  const [roles, setRoles] = useState<string[]>([]);
   const [summaryState, setSummaryState] = useState<PortfolioSummaryState>();
   const [summaryFailure, setSummaryFailure] = useState<PortfolioSummaryFailure>();
   const summaryQuery = portfolioFilterQuery(applied).toString();
@@ -56,12 +55,6 @@ export default function PortfolioPage() {
     setApplied(filters);
     setPage(Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1);
     setReady(true);
-  }, []);
-
-  useEffect(() => {
-    apiFetch("/auth/me").then(async response => {
-      if (response.ok) setRoles((await response.json() as { roles: string[] }).roles);
-    }).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -160,8 +153,6 @@ export default function PortfolioPage() {
     <header className="page-header">
       <p className="eyebrow">ERP Comex</p><h1>Carteira de POs TOTVS</h1>
       <p>Uma linha por pedido. Abra a PO para consultar suas linhas, IPs vinculados e pendências.</p>
-      {roles.some(role => ["Master", "Administrador", "Importação", "Compras"].includes(role)) &&
-        <p><Link className="button" href="/purchase-orders/new">Cadastrar PO do TOTVS</Link></p>}
       <Link className="text-link" href="/source-audit">Planilha de origem →</Link> · <Link className="text-link" href="/requests">Solicitações →</Link> · <Link className="text-link" href="/processes">Consultar IPs →</Link> · <Link className="text-link" href="/pending-import-items">Linhas sem IP →</Link> · <Link className="text-link" href="/unassigned-po-items">Linhas sem PO →</Link> · <Link className="text-link" href="/quality">Revisar qualidade →</Link> · <Link className="text-link" href="/catalog">Cadastros →</Link>
     </header>
     <section className="card">
