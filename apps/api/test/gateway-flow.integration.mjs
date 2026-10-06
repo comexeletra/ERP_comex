@@ -75,6 +75,25 @@ try {
   }), 201);
   assert.equal(expectStatus(await call("GET", `/api/v1/requests/${sc.id}`), 200).requestNumber, sc.requestNumber);
 
+  const completePo = expectStatus(await call("POST", "/api/v1/purchase-orders/complete", {
+    header: { importer, number: `CI-GW-COMPLETE-${suffix}`, supplierText: "Fornecedor CI",
+      orderDate: "2026-10-05", notes: "Cadastro completo", reason },
+    items: ["C", "D"].map((letter, index) => ({
+      base: { externalLineReference: letter, productCode: `CI-${letter}-${suffix}`,
+        description: `Produto ${letter}`, orderedQuantity: index ? "25" : "100", unit: "PC",
+        unitPrice: null, currency: null, reason },
+      fields: { scNumber: sc.requestNumber, scApprovalDate: "2026-08-01", requester: "Analista CI" },
+    })),
+  }), 201);
+  assert.equal(completePo.itemIds.length, 2);
+  const completeReadback = expectStatus(await call("GET", `/api/v1/purchase-orders/${completePo.id}/followup`), 200);
+  assert.equal(completeReadback.items.length, 2);
+  assert.ok(completeReadback.items.every(item => item.scApprovalDate === "2026-08-01"
+    && item.scNumber === sc.requestNumber && item.requester === "Analista CI"));
+  const completePersisted = await pool.query(`SELECT count(*)::int AS count FROM procurement.purchase_order_item
+    WHERE purchase_order_id=$1 AND sc_approval_date=$2`, [completePo.id, "2026-08-01"]);
+  assert.equal(completePersisted.rows[0].count, 2);
+
   const po = expectStatus(await call("POST", "/api/v1/purchase-orders", {
     importer, number: `CI-GW-PO-${suffix}`, supplierText: "Fornecedor CI",
     orderDate: "2026-10-05", notes: "Teste de ponta a ponta", reason,
@@ -149,7 +168,7 @@ try {
   assert.equal(stored.rows[0].second_departure, null);
   assert.equal(stored.rows[0].second_delivery.toISOString().slice(0, 10), "2026-11-18");
   assert.equal(stored.rows[0].allocation_count, 3);
-  console.log("Next.js → gateway → API → PostgreSQL flow passed (SC, shared fields, split PO, IP dates, closure).");
+  console.log("Next.js → gateway → API → PostgreSQL flow passed (SC, complete PO, shared fields, split PO, IP dates, closure).");
 } finally {
   await pool.end();
 }

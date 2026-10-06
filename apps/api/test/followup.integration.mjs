@@ -183,4 +183,54 @@ test("followup persists item/IP inputs and individual documents in an isolated r
   assert.deepEqual(rolledBack.rows.map(row => row.requester), ["Analista CI", "Analista CI"]);
   assert.equal((await client.query("SELECT version::text FROM procurement.purchase_order WHERE id=$1", [poId])).rows[0].version,
     versionBeforeFailure);
+
+  const completeNumber = `PO-COMPLETE-${randomUUID().slice(0, 8)}`;
+  const completeBody = {
+    header: { importer, number: completeNumber, supplierText: "Fornecedor CI",
+      orderDate: "2026-10-05", notes: "PO completa", reason: "Cadastro integrado" },
+    items: ["A", "B"].map((suffix, index) => ({
+      base: { externalLineReference: suffix, productCode: `PRODUCT-${suffix}`,
+        description: `Produto ${suffix}`, orderedQuantity: index ? "25" : "100",
+        unit: "PC", unitPrice: null, currency: null, reason: "Cadastro integrado" },
+      fields: { scNumber: `SC-${suffix}`, scApprovalDate: "2026-09-10", requester: "Analista CI" },
+    })),
+  };
+  const completeKey = randomUUID();
+  const complete = await call("POST", "/api/v1/purchase-orders/complete", completeBody,
+    { "idempotency-key": completeKey });
+  assert.equal(complete.statusCode, 201, complete.body);
+  assert.equal(complete.json().itemIds.length, 2);
+  const completePoId = complete.json().id;
+  const persisted = await client.query(`SELECT po.external_number,item.line_number,item.product_code,
+    item.ordered_quantity::text,item.sc_number,item.sc_approval_date::text,item.requester
+    FROM procurement.purchase_order po JOIN procurement.purchase_order_item item ON item.purchase_order_id=po.id
+    WHERE po.id=$1 ORDER BY item.line_number`, [completePoId]);
+  assert.deepEqual(persisted.rows.map(row => row.sc_number), ["SC-A", "SC-B"]);
+  assert.deepEqual(persisted.rows.map(row => row.sc_approval_date), ["2026-09-10", "2026-09-10"]);
+  assert.deepEqual(persisted.rows.map(row => row.requester), ["Analista CI", "Analista CI"]);
+  assert.deepEqual(persisted.rows.map(row => row.product_code), ["PRODUCT-A", "PRODUCT-B"]);
+  assert.equal((await call("GET", `/api/v1/purchase-orders/${completePoId}/followup`)).json().items.length, 2);
+  const replayComplete = await call("POST", "/api/v1/purchase-orders/complete", completeBody,
+    { "idempotency-key": completeKey });
+  assert.equal(replayComplete.statusCode, 201, replayComplete.body);
+  assert.equal(replayComplete.json().id, completePoId);
+  assert.deepEqual(replayComplete.json().itemIds, complete.json().itemIds);
+  assert.equal((await client.query("SELECT count(*)::int AS count FROM procurement.purchase_order WHERE id=$1",
+    [completePoId])).rows[0].count, 1);
+
+  await client.query(`CREATE FUNCTION pg_temp.reject_second_item_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN IF NEW.line_number=2 THEN RAISE EXCEPTION 'CI forced item insert failure'; END IF;
+    RETURN NEW; END $$`);
+  await client.query(`CREATE TRIGGER ci_reject_second_item_insert BEFORE INSERT ON procurement.purchase_order_item
+    FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_second_item_insert()`);
+  const failedNumber = `PO-FAILED-${randomUUID().slice(0, 8)}`;
+  const failedKey = randomUUID();
+  const failedComplete = await call("POST", "/api/v1/purchase-orders/complete",
+    { ...completeBody, header: { ...completeBody.header, number: failedNumber } },
+    { "idempotency-key": failedKey });
+  assert.equal(failedComplete.statusCode, 500, failedComplete.body);
+  assert.equal((await client.query("SELECT count(*)::int AS count FROM procurement.purchase_order WHERE external_number=$1",
+    [failedNumber])).rows[0].count, 0);
+  assert.equal((await client.query(`SELECT count(*)::int AS count FROM procurement.operational_command_receipt
+    WHERE actor_user_id=$1 AND idempotency_key=$2`, [actor.rows[0].id, failedKey])).rows[0].count, 0);
 });

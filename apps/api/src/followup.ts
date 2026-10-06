@@ -4,7 +4,8 @@ import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
 import { calculateFollowup, invoiceTotals } from "./followup-calculations.js";
-import { actorAndScopes, BusinessError, checkVersion, keyFrom, lockedPo, problem,
+import { actorAndScopes, BusinessError, checkVersion, createPo as createPoSchema,
+  itemFields as basicItemSchema, keyFrom, lockedPo, problem,
   receipt, record, saveReceipt, transaction, versionFrom } from "./operations.js";
 
 type FieldType = "text" | "date" | "integer" | "money" | "boolean";
@@ -100,6 +101,73 @@ const docPatch = documentBase.omit({ kind: true, purchaseOrderItemId: true })
   .refine(data => data.quantity === null || !/^0(?:\.0+)?$/.test(data.quantity));
 
 export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
+  app.post("/api/v1/purchase-orders/complete",
+    { config: permissionConfig("purchase-orders.write") }, async (request, reply) => {
+      const parsed = z.object({ header: createPoSchema,
+        items: z.array(z.object({ base: basicItemSchema,
+          fields: z.record(z.string(), z.unknown()) }).strict()).min(1).max(500),
+      }).strict().safeParse(request.body);
+      if (!parsed.success) return problem(reply, 400, "INVALID_PO", "Revise a PO e os produtos.");
+      const operational = parsed.data.items.map(item => Object.keys(item.fields).length
+        ? validateFields(item.fields, itemFields) : {});
+      if (operational.some(fields => fields === null)) {
+        return problem(reply, 400, "INVALID_FOLLOWUP", "Revise os campos operacionais dos produtos.");
+      }
+      let auth: ReturnType<typeof actorAndScopes>; let key: string;
+      try { auth = actorAndScopes(request); key = keyFrom(request); }
+      catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
+      if (!auth.scopes.includes(parsed.data.header.importer)) {
+        return problem(reply, 404, "RESOURCE_NOT_FOUND", "Importadora fora do seu escopo.");
+      }
+      return transaction(pool, reply, async client => {
+        const body = parsed.data;
+        const claim = await receipt(client, auth.actor.userId, key, "PO_COMPLETE", body);
+        if (claim.existingId) {
+          const priorItems = await client.query<{ id: string }>(`SELECT id FROM procurement.purchase_order_item
+            WHERE purchase_order_id=$1 ORDER BY line_number`, [claim.existingId]);
+          return { id: claim.existingId, itemIds: priorItems.rows.map(item => item.id),
+            version: "1", replayed: true };
+        }
+        const known = await client.query(`SELECT importer FROM procurement.purchase_order WHERE importer=$1
+          UNION SELECT importer FROM imports.import_process WHERE importer=$1
+          UNION SELECT value AS importer FROM catalog.operational_value
+            WHERE entity_key='IMPORTER' AND value=$1 LIMIT 1`, [body.header.importer]);
+        if (!known.rowCount) throw new BusinessError(404, "UNKNOWN_IMPORTER", "Importadora ainda não cadastrada.");
+        const poId = randomUUID(); const header = body.header;
+        await client.query(`INSERT INTO procurement.purchase_order
+          (id,importer,external_number,normalized_number,identity_status,source_kind,version,
+           supplier_text,order_date,notes)
+          VALUES ($1,$2,$3::text,upper($3::text),'MANUAL_UNVERIFIED','MANUAL_TOTVS_REFERENCE',1,$4,$5,$6)`,
+          [poId, header.importer, header.number, header.supplierText, header.orderDate, header.notes]);
+        await record(client, "PURCHASE_ORDER", poId, "PURCHASE_ORDER", poId, "CREATE",
+          null, header, auth.actor, header.reason);
+        const itemIds: string[] = [];
+        for (const [index, item] of body.items.entries()) {
+          const itemId = randomUUID(); itemIds.push(itemId);
+          const base = item.base;
+          await client.query(`INSERT INTO procurement.purchase_order_item
+            (id,purchase_order_id,line_number,external_line_reference,product_code,description,
+             ordered_quantity,unit,unit_price,currency_code)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+            [itemId, poId, index + 1, base.externalLineReference, base.productCode,
+              base.description, base.orderedQuantity, base.unit, base.unitPrice, base.currency]);
+          await record(client, "PURCHASE_ORDER", poId, "PURCHASE_ORDER_ITEM", itemId, "CREATE",
+            null, base, auth.actor, header.reason);
+          const fields = operational[index]!;
+          const keys = Object.keys(fields);
+          if (keys.length) {
+            const sql = keys.map((field, fieldIndex) => `${itemFields[field][0]}=$${fieldIndex + 2}`).join(",");
+            await client.query(`UPDATE procurement.purchase_order_item SET ${sql},updated_at=now() WHERE id=$1`,
+              [itemId, ...keys.map(field => fields[field])]);
+            await record(client, "PURCHASE_ORDER", poId, "PURCHASE_ORDER_ITEM", itemId, "FOLLOWUP_UPDATE",
+              null, fields, auth.actor, header.reason);
+          }
+        }
+        await saveReceipt(client, auth.actor.userId, key, claim.hash, "PO_COMPLETE", poId);
+        return { id: poId, itemIds, version: "1" };
+      }, 201);
+    });
+
   app.get<{ Params: { id: string } }>("/api/v1/processes/:id/followup",
     { config: permissionConfig("processes.read") }, async (request, reply) => {
       const id = z.uuid().safeParse(request.params.id);

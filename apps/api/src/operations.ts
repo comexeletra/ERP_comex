@@ -14,7 +14,7 @@ const poFields = z.object({
   supplierText: nullableText(240), orderDate: z.iso.date().nullable(), notes: z.string().trim().max(4000),
   reason: z.string().trim().min(3).max(1000),
 }).strict();
-const createPo = poFields.extend({
+export const createPo = poFields.extend({
   importer: z.string().trim().min(1).max(120),
 });
 const processFields = z.object({
@@ -25,7 +25,7 @@ const processFields = z.object({
 const createProcess = processFields.extend({
   importer: z.string().trim().min(1).max(120),
 });
-const itemFields = z.object({
+export const itemFields = z.object({
   externalLineReference: nullableText(80), productCode: z.string().trim().min(1).max(120),
   description: z.string().trim().min(1).max(1000), orderedQuantity: quantity,
   unit: z.string().trim().min(1).max(32), unitPrice: nonnegative.nullable(),

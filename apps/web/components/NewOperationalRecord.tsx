@@ -41,6 +41,7 @@ type PoDraft = {
 };
 
 const poDraftKey = "new-operational-record:po:v1";
+const poCommandKey = "new-operational-record:po-command:v1";
 
 function blankPoItem(): PoItemDraft {
   return { externalLineReference: "", productCode: "", description: "", orderedQuantity: "",
@@ -115,7 +116,7 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
         setRoles(user.roles);
         setOptions(optionValues);
         setImporters(data.items.map(item => item.code));
-        if (data.items[0]) setImporter(data.items[0].code);
+        if (data.items[0]) setImporter(current => current || data.items[0].code);
       })
       .catch(cause => setError(cause instanceof Error ? cause.message : "Erro inesperado."))
       .finally(() => setLoading(false));
@@ -151,6 +152,66 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
       if (Boolean(item.unitPrice.trim()) !== Boolean(item.currency)) {
         throw new Error(`No item ${index + 1}, preencha preço e moeda juntos ou deixe os dois vazios.`);
       }
+    }
+
+    const completeItems = items.map(item => ({
+      base: { externalLineReference: item.externalLineReference || null,
+        productCode: item.productCode, description: item.description,
+        orderedQuantity: item.orderedQuantity.replace(",", "."), unit: item.unit,
+        unitPrice: item.unitPrice ? item.unitPrice.replace(",", ".") : null,
+        currency: item.currency ? item.currency.toUpperCase() : null, reason },
+      fields: {
+        ...purchaseOrderItemFieldsPayload(item.operational, false, purchaseOrderSpecificItemFields),
+        ...purchaseOrderItemFieldsPayload(commonItemFields, false, purchaseOrderCommonItemFields),
+      },
+    }));
+    const completePayload = JSON.stringify({ header: { importer, number, supplierText: supplier || null,
+      orderDate: orderDate || null, notes, reason }, items: completeItems });
+    let previousCommand: { payload: string; key: string } | null = null;
+    try { previousCommand = JSON.parse(sessionStorage.getItem(poCommandKey) ?? "null"); } catch { /* Recria a chave. */ }
+    const commandKey = previousCommand?.payload === completePayload && previousCommand.key
+      ? previousCommand.key : crypto.randomUUID();
+    sessionStorage.setItem(poCommandKey, JSON.stringify({ payload: completePayload, key: commandKey }));
+    const complete = await apiFetch("/api/v1/purchase-orders/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json", "Idempotency-Key": commandKey },
+      body: completePayload,
+    });
+    const completeError = complete.status === 404
+      ? await complete.clone().json().catch(() => null) as { message?: string } | null : null;
+    const routeMissing = complete.status === 404 &&
+      /^Route POST:\/api\/v1\/purchase-orders\/complete not found$/i.test(completeError?.message ?? "");
+    if (!routeMissing) {
+      const created = await readResponse<{ id: string; itemIds: string[] }>(complete);
+      setCreatedPoId(created.id);
+      const followup = await readResponse<{ number: string; importer: string;
+        items: ({ id: string } & Record<string, unknown>)[] }>(
+        await apiFetch(`/api/v1/purchase-orders/${created.id}/followup`, { cache: "no-store" }));
+      const savedHeader = await readResponse<{ supplierText: string | null; orderDate: string | null; notes: string }>(
+        await apiFetch(`/api/v1/purchase-orders/${created.id}/operational`, { cache: "no-store" }));
+      if (!Array.isArray(created.itemIds) || created.itemIds.length !== completeItems.length ||
+          !Array.isArray(followup.items) || followup.number !== number.trim() ||
+          followup.importer !== importer.trim() || savedHeader.supplierText !== (supplier.trim() || null) ||
+          savedHeader.orderDate !== (orderDate || null) || savedHeader.notes !== notes.trim() ||
+          completeItems.some((item, index) => {
+            const saved = followup.items.find(row => row.id === created.itemIds[index]);
+            return !saved || saved.lineNumber !== index + 1 ||
+              saved.productCode !== item.base.productCode.trim() ||
+              saved.description !== item.base.description.trim() || saved.unit !== item.base.unit.trim() ||
+              (saved.externalLineReference ?? null) !== (item.base.externalLineReference?.trim() || null) ||
+              Number(saved.orderedQuantity) !== Number(item.base.orderedQuantity) ||
+              (saved.unitPrice === null ? null : Number(saved.unitPrice)) !==
+                (item.base.unitPrice === null ? null : Number(item.base.unitPrice)) ||
+              (saved.currencyCode ?? null) !== item.base.currency ||
+              Object.entries(item.fields).some(([key, value]) => String(saved[key] ?? "") !== String(value ?? ""));
+          })) {
+        throw new Error("A PO foi criada, mas a releitura não confirmou todos os produtos e campos. Abra a PO para conferir.");
+      }
+      setDraftReady(false);
+      sessionStorage.removeItem(poDraftKey);
+      sessionStorage.removeItem(poCommandKey);
+      router.push(`/purchase-orders/${created.id}`);
+      return;
     }
 
     const header = await readResponse<{ id: string }>(await apiFetch("/api/v1/purchase-orders", {
@@ -211,6 +272,7 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
     }
     setDraftReady(false);
     sessionStorage.removeItem(poDraftKey);
+    sessionStorage.removeItem(poCommandKey);
     router.push(`/purchase-orders/${header.id}`);
   }
 
