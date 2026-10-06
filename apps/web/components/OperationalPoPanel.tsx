@@ -156,11 +156,18 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   }
   async function applyCommonFieldsToItems(fields: Record<string, string | number | null>) {
     if (!data) return;
+    let completed = 0;
     for (const item of data.items) {
-      const current = await responseData<{ version: string }>(await apiFetch(
-        `/api/v1/purchase-orders/${id}/operational`, { cache: "no-store" }));
-      await send(`/api/v1/purchase-orders/${id}/items/${item.id}/followup`, "PATCH",
-        { fields, reason }, current.version);
+      try {
+        const current = await responseData<{ version: string }>(await apiFetch(
+          `/api/v1/purchase-orders/${id}/operational`, { cache: "no-store" }));
+        await send(`/api/v1/purchase-orders/${id}/items/${item.id}/followup`, "PATCH",
+          { fields, reason }, current.version);
+        completed += 1;
+      } catch (cause) {
+        const detail = cause instanceof Error ? cause.message : "Erro inesperado.";
+        throw new Error(`Falha no produto ${item.productCode}. ${completed} produto(s) anterior(es) podem ter sido salvos. Atualize a página e confira os itens antes de repetir. ${detail}`);
+      }
     }
     await verifySavedItemFields(id, new Map(data.items.map(item => [item.id, fields])));
   }

@@ -92,5 +92,12 @@ jobs:
         env:
           DATABASE_URL: postgresql://import_erp_ci:ci-only-password@127.0.0.1:5432/import_erp_ci
         run: node test/operations.integration.mjs
+      - name: Verify follow-up persistence, IP dates and closure in PostgreSQL
+        working-directory: apps/api
+        env:
+          FOLLOWUP_TEST_DATABASE_URL: postgresql://import_erp_ci:ci-only-password@127.0.0.1:5432/import_erp_ci
+        run: node --test test/followup.integration.mjs
       - name: Upgrade previous schema with existing data
         run: bash .github/scripts/check-migration-upgrade.sh
+      - name: Upgrade the documented M021 production schema with existing PO/IP data
+        run: bash .github/scripts/check-operational-m021-upgrade.sh

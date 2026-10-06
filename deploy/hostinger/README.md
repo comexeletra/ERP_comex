@@ -39,24 +39,37 @@ O campo a campo e as regras estão em
 [`docs/ACOMPANHAMENTO_CALCULOS_PO.md`](../../docs/ACOMPANHAMENTO_CALCULOS_PO.md).
 A migração do histórico atualizado e o aceite com analistas continuam pendentes.
 
-## Aceite funcional PO/IP e validação M022
+## Aceite funcional PO/IP e validação M022–M024
 
-Antes de publicar a tela e a linha do tempo operacional, monte no VPS o staging
-com o código atual em `/tmp/erp-m022-validation` e execute:
+Antes de publicar o ciclo do IP e o Pós Embarque atual, monte na VPS o staging
+com o código atual em `/tmp/erp-m024-validation` e execute:
 
 ```bash
-ERP_STAGE_DIR=/tmp/erp-m022-validation \
-  python3 /tmp/erp-m022-validation/deploy/hostinger/validate-m022-on-copy.py
+ERP_STAGE_DIR=/tmp/erp-m024-validation \
+  python3 /tmp/erp-m024-validation/deploy/hostinger/validate-m024-on-copy.py
 ```
 
 O validador exige M001–M021 no banco escolhido, cria e confere um backup,
-restaura uma cópia descartável, aplica M022 e executa os testes PostgreSQL de
+restaura uma cópia descartável, aplica M022–M024 e executa os testes PostgreSQL de
 operações e acompanhamento. Eles cobrem PO dividida entre IPs, IP compartilhado
 por POs, quantidades e documentos conciliados por embarque, datas independentes,
 limites de alocação, concorrência, edição, cancelamento, escopo e histórico.
-Ao terminar, o validador remove somente a cópia de teste. A publicação da M022
+Ao terminar, o validador remove somente a cópia de teste. A publicação de M022–M024
 no banco operacional continua sendo uma etapa separada, após revisar o resultado
 desse aceite e confirmar o backup.
+
+Com o staging da **mesma revisão** montado e após conferir o resultado do validador,
+o release coordenado está preparado em `release-m024.sh`:
+
+```bash
+ERP_STAGE_DIR=/tmp/erp-m024-validation \
+  bash /tmp/erp-m024-validation/deploy/hostinger/release-m024.sh
+```
+
+O script confirma o ledger M021, repete backup e teste em cópia restaurada,
+aplica M022–M024, troca a API e verifica a saúde. Se a nova API falhar, restaura
+o código anterior; as migrations aditivas permanecem aplicadas. A execução na VPS
+ainda depende de acesso SSH e conferência do estado real antes do release.
 
 ## Release M018: preenchimento operacional de PO/IP (2026-10-04)
 

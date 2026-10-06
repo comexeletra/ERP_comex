@@ -73,13 +73,37 @@ test("followup persists item/IP inputs and individual documents in an isolated r
     { "if-match": '"1"' });
   assert.equal(editedItem.statusCode, 200, editedItem.body);
   const editedIp = await call("PATCH", `/api/v1/processes/${processId}/followup`,
-    { fields: { transportMode: "SEA", etd: "2026-09-01", arrivalDate: "2026-10-01" }, reason: "Conferido no embarque" },
+    { fields: { transportMode: "SEA", etd: "2026-09-01", actualPortDepartureDate: "2026-09-03",
+      arrivalDate: "2026-10-01" }, reason: "Conferido no embarque" },
     { "if-match": '"1"' });
   assert.equal(editedIp.statusCode, 200, editedIp.body);
   const editedSecondIp = await call("PATCH", `/api/v1/processes/${secondProcessId}/followup`,
     { fields: { transportMode: "SEA", etd: "2026-09-15", arrivalDate: "2026-11-10", deliveryDate: "2026-11-18" }, reason: "Conferido no segundo embarque" },
     { "if-match": '"1"' });
   assert.equal(editedSecondIp.statusCode, 200, editedSecondIp.body);
+  const storedItem = await client.query("SELECT sc_approval_date FROM procurement.purchase_order_item WHERE id=$1", [itemId]);
+  assert.equal(storedItem.rows[0].sc_approval_date.toISOString().slice(0, 10), "2026-08-01");
+  const storedIps = await client.query(`SELECT id, etd, actual_port_departure_date, arrival_date, delivery_date
+    FROM imports.import_process WHERE id=ANY($1::uuid[])`, [[processId, secondProcessId]]);
+  const ipsById = new Map(storedIps.rows.map(row => [row.id, row]));
+  assert.equal(ipsById.get(processId).actual_port_departure_date.toISOString().slice(0, 10), "2026-09-03");
+  assert.equal(ipsById.get(secondProcessId).actual_port_departure_date, null);
+  assert.equal(ipsById.get(secondProcessId).delivery_date.toISOString().slice(0, 10), "2026-11-18");
+
+  const closed = await call("POST", `/api/v1/processes/${processId}/close`,
+    { reason: "Embarque conferido e concluído" }, { "if-match": '"2"' });
+  assert.equal(closed.statusCode, 200, closed.body);
+  assert.equal(closed.json().lifecycleStatus, "CLOSED");
+  const storedClosed = await client.query("SELECT lifecycle_status,closed_at FROM imports.import_process WHERE id=$1", [processId]);
+  assert.equal(storedClosed.rows[0].lifecycle_status, "CLOSED");
+  assert.ok(storedClosed.rows[0].closed_at);
+  const editClosed = await call("PATCH", `/api/v1/processes/${processId}/followup`,
+    { fields: { etd: "2026-09-02" }, reason: "Alteração após encerramento" }, { "if-match": '"3"' });
+  assert.equal(editClosed.statusCode, 409, editClosed.body);
+  const reopened = await call("POST", `/api/v1/processes/${processId}/reopen`,
+    { reason: "Reaberto para completar documentos" }, { "if-match": '"3"' });
+  assert.equal(reopened.statusCode, 200, reopened.body);
+  assert.equal(reopened.json().lifecycleStatus, "OPEN");
   const invoiceBody = { kind: "INVOICE", number: "INV-CI", purchaseOrderItemId: itemId, issueDate: "2026-09-01",
       homologationDate: null, quantity: "40", unitPrice: "12.50", amount: "500", currencyCode: "USD",
       notes: "", reason: "Conferido na invoice" };

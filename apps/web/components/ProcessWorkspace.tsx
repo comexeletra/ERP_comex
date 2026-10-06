@@ -10,7 +10,7 @@ type Order = { id: string; number: string; importer: string; linkSource: string 
 type OperationalAllocation = { id: string; poId: string; poNumber: string; productCode: string; quantity: string; unit: string };
 type Process = { id: string; ipNumber: string; importer: string; logisticsStatus: string | null;
   qualityStatus: string; sourceKind: string; priority: string | null; notes: string;
-  version: string; lifecycleStatus: "OPEN" | "CLOSED"; closedAt: string | null;
+  version: string; lifecycleStatus?: "OPEN" | "CLOSED"; closedAt: string | null;
   closedBy: string | null; closeReason: string | null;
   purchaseOrders: Order[]; historicalCosts: Cost[];
   operationalAllocations: OperationalAllocation[] };
@@ -24,6 +24,7 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
+  const [compatibilityWarning, setCompatibilityWarning] = useState("");
   const [saveError, setSaveError] = useState<string>();
   const [retry, setRetry] = useState(0);
   const [roles, setRoles] = useState<string[]>([]);
@@ -36,6 +37,11 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
   const [reopenReason, setReopenReason] = useState("");
   const [reopening, setReopening] = useState(false);
   const [notice, setNotice] = useState("");
+  async function readSavedProcess(): Promise<Process> {
+    const response = await apiFetch(`/api/v1/processes/${id}`, { cache: "no-store" });
+    if (!response.ok) throw new Error("O IP foi alterado, mas não foi possível conferir os dados salvos.");
+    return response.json() as Promise<Process>;
+  }
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError(undefined);
     Promise.all([
@@ -49,6 +55,8 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
       if (!detail.ok || !items.ok || !identity.ok) throw new Error("Não foi possível carregar o IP.");
       const [processValue, lineValue, user] = await Promise.all([detail.json() as Promise<Process>, items.json() as Promise<LinePage>, identity.json() as Promise<{ roles: string[] }>]);
       if (!controller.signal.aborted) {
+        setCompatibilityWarning(processValue.lifecycleStatus === "OPEN" || processValue.lifecycleStatus === "CLOSED"
+          ? "" : "A API do IP está desatualizada. O ciclo e as ações de edição ficarão indisponíveis até sua atualização.");
         setProcess(processValue); setLines(lineValue); setRoles(user.roles);
         setIpNumberDraft(processValue.ipNumber);
         setNotesDraft(processValue.notes);
@@ -68,6 +76,10 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
           notes: notesDraft, reason }) });
       const body = await response.json() as { detail?: string };
       if (!response.ok) throw new Error(body.detail || "Não foi possível atualizar o IP.");
+      const saved = await readSavedProcess();
+      if (saved.ipNumber !== ipNumberDraft || saved.notes !== notesDraft) {
+        throw new Error("A API confirmou a alteração, mas os dados do IP não apareceram na releitura.");
+      }
       setNotice("IP atualizado."); setReason(""); setRetry(value => value + 1);
     } catch (cause) { setSaveError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setSaving(false); }
@@ -81,6 +93,9 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
         body: JSON.stringify({ reason: closeReason }) });
       const body = await response.json() as { detail?: string };
       if (!response.ok) throw new Error(body.detail || "Não foi possível encerrar o IP.");
+      if ((await readSavedProcess()).lifecycleStatus !== "CLOSED") {
+        throw new Error("A API confirmou o encerramento, mas o IP não aparece como encerrado.");
+      }
       setNotice("IP encerrado."); setCloseReason(""); setRetry(value => value + 1);
     } catch (cause) { setSaveError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setClosing(false); }
@@ -94,6 +109,9 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
         body: JSON.stringify({ reason: reopenReason }) });
       const body = await response.json() as { detail?: string };
       if (!response.ok) throw new Error(body.detail || "Não foi possível reabrir o IP.");
+      if ((await readSavedProcess()).lifecycleStatus !== "OPEN") {
+        throw new Error("A API confirmou a reabertura, mas o IP não aparece como aberto.");
+      }
       setNotice("IP reaberto."); setReopenReason(""); setRetry(value => value + 1);
     } catch (cause) { setSaveError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setReopening(false); }
@@ -104,7 +122,8 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
     {loading && <p role="status">Carregando IP…</p>}
     {error && <div className="notice error" role="alert"><p>{error}</p><button className="button" onClick={() => setRetry(value => value + 1)}>Tentar novamente</button></div>}
     {!loading && !error && process && lines && <>
-      <header className="page-header"><p className="eyebrow">IP · {process.importer}</p><h1>{process.ipNumber}</h1><p>Status logístico: {process.logisticsStatus ?? "não informado"}. Ciclo do IP: {process.lifecycleStatus === "CLOSED" ? "encerrado" : "aberto"}. Qualidade: {process.qualityStatus}. Origem: {process.sourceKind}.</p></header>
+      <header className="page-header"><p className="eyebrow">IP · {process.importer}</p><h1>{process.ipNumber}</h1><p>Status logístico: {process.logisticsStatus ?? "não informado"}. Ciclo do IP: {process.lifecycleStatus === "CLOSED" ? "encerrado" : process.lifecycleStatus === "OPEN" ? "aberto" : "indisponível"}. Qualidade: {process.qualityStatus}. Origem: {process.sourceKind}.</p></header>
+      {compatibilityWarning && <p className="notice" role="status">{compatibilityWarning}</p>}
       <section className="metric-grid"><Metric label="POs vinculadas" value={process.purchaseOrders.length} /><Metric label="Linhas históricas" value={lines.totalCount} /><Metric label="Custos históricos" value={process.historicalCosts.length} /></section>
       <section className="card"><h2>Dados operacionais do IP</h2>
         <p>Prioridade: {process.priority ?? "não informada"}. Observações: {process.notes || "—"}.</p>

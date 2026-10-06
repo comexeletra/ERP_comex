@@ -9,9 +9,6 @@ function isGatewayPath(pathname: string): boolean {
 }
 
 export function proxy(request: NextRequest) {
-  // During local transition, next.config.ts proxies these paths to the legacy API.
-  if (process.env.NODE_ENV === "development") return NextResponse.next();
-
   const requestHost = request.headers.get("host")?.split(":", 1)[0]?.toLowerCase();
   const isVercelPreview = process.env.VERCEL_ENV === "preview";
   if (isVercelPreview && !isGatewayPath(request.nextUrl.pathname)) {
@@ -51,14 +48,13 @@ export function proxy(request: NextRequest) {
 
   // Preview must have its own API endpoint and gateway token. If staging is
   // not configured, fail closed instead of forwarding Preview to production.
-  const previewEnvironment = process.env.VERCEL_ENV !== undefined
+  const localDevelopment = process.env.NODE_ENV === "development";
+  const previewEnvironment = !localDevelopment && process.env.VERCEL_ENV !== undefined
     && process.env.VERCEL_ENV !== "production";
-  const destination = previewEnvironment
-    ? process.env.PREVIEW_API_URL
-    : process.env.VPS_API_URL;
-  const gatewayToken = previewEnvironment
-    ? process.env.PREVIEW_API_TOKEN
-    : process.env.VPS_API_TOKEN;
+  const destination = localDevelopment ? process.env.API_DEV_ORIGIN ?? "http://127.0.0.1:4000"
+    : previewEnvironment ? process.env.PREVIEW_API_URL : process.env.VPS_API_URL;
+  const gatewayToken = localDevelopment ? process.env.API_DEV_TOKEN
+    : previewEnvironment ? process.env.PREVIEW_API_TOKEN : process.env.VPS_API_TOKEN;
   if (!destination || !gatewayToken) {
     return Response.json({ error: "API indisponível." }, { status: 503, headers: { "cache-control": "no-store" } });
   }
@@ -66,8 +62,11 @@ export function proxy(request: NextRequest) {
   let upstream: URL;
   try {
     const base = new URL(destination);
-    if (base.protocol !== "https:" || base.username || base.password || base.search || base.hash || base.pathname !== "/") {
-      throw new Error("VPS_API_URL deve ser uma origem HTTPS sem caminho ou credenciais.");
+    const localAddress = localDevelopment && base.protocol === "http:"
+      && ["localhost", "127.0.0.1", "[::1]"].includes(base.hostname);
+    if ((!localAddress && base.protocol !== "https:") || base.username || base.password
+      || base.search || base.hash || base.pathname !== "/") {
+      throw new Error("A URL da API deve ser uma origem válida sem caminho ou credenciais.");
     }
     upstream = new URL(`${request.nextUrl.pathname}${request.nextUrl.search}`, base);
   } catch {
