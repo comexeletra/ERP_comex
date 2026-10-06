@@ -71,6 +71,10 @@ try {
   });
   await registerPurchaseOrderReadRoutes(app, scopedPool);
 
+  const expectedPoCount = Number((await client.query(
+    "SELECT count(*)::int AS total FROM procurement.purchase_order",
+  )).rows[0].total);
+
   const get = (url, identity = "master") => app.inject({ method: "GET", url, headers: identity ? { "x-test-identity": identity } : {} });
   assert.equal((await get("/api/v1/purchase-orders", "")).statusCode, 401);
   assert.equal((await get("/api/v1/purchase-orders", "no-grant")).statusCode, 403);
@@ -80,22 +84,23 @@ try {
   const summaryResponse = await get("/api/v1/purchase-orders/summary");
   assert.equal(summaryResponse.statusCode, 200);
   const summary = summaryResponse.json();
-  assert.equal(summary.purchaseOrders, 336);
+  assert.equal(summary.purchaseOrders, expectedPoCount);
   assert.equal(summary.lines, 6796);
   assert.ok(typeof summary.sourceSnapshotAt === "string" && !Number.isNaN(Date.parse(summary.sourceSnapshotAt)));
   assert.ok(summary.linkedProcesses > 0 && summary.linkedProcesses <= 200);
   assert.ok(summary.linesWithoutIp >= 0 && summary.linesWithoutIp <= summary.lines);
-  assert.equal(summary.byImporter.reduce((total, row) => total + row.purchaseOrders, 0), 336);
+  assert.equal(summary.byImporter.reduce((total, row) => total + row.purchaseOrders, 0), expectedPoCount);
 
   const first = await get("/api/v1/purchase-orders?page=1&pageSize=50");
   assert.equal(first.statusCode, 200);
-  assert.equal(first.json().totalCount, 336);
+  assert.equal(first.json().totalCount, expectedPoCount);
   assert.equal(first.json().items.length, 50);
-  const seventh = await get("/api/v1/purchase-orders?page=7&pageSize=50");
-  assert.equal(seventh.statusCode, 200);
-  assert.equal(seventh.json().totalCount, 336);
-  assert.equal(seventh.json().items.length, 36);
-  assert.equal((await get("/api/v1/purchase-orders?page=8&pageSize=50")).json().items.length, 0);
+  const totalPages = Math.ceil(expectedPoCount / 50);
+  const lastPage = await get(`/api/v1/purchase-orders?page=${totalPages}&pageSize=50`);
+  assert.equal(lastPage.statusCode, 200);
+  assert.equal(lastPage.json().totalCount, expectedPoCount);
+  assert.equal(lastPage.json().items.length, expectedPoCount - (totalPages - 1) * 50);
+  assert.equal((await get(`/api/v1/purchase-orders?page=${totalPages + 1}&pageSize=50`)).json().items.length, 0);
 
   for (const [number, historicalCount, linkedIps, suppliers] of [["18751", 8, 3, 2], ["18223", 2, 0, 2], ["6817", 2, 2, 1]]) {
     const list = await get(`/api/v1/purchase-orders?number=${number}`);
@@ -174,7 +179,7 @@ try {
   assert.equal(outsideSyntheticScope.rowCount, 1);
   const scopedList = await get("/api/v1/purchase-orders", "scoped");
   assert.equal(scopedList.statusCode, 200);
-  assert.ok(scopedList.json().totalCount > 0 && scopedList.json().totalCount < 336);
+  assert.ok(scopedList.json().totalCount > 0 && scopedList.json().totalCount < expectedPoCount);
   assert.ok(scopedList.json().items.every(item => item.importer === syntheticImporter));
   const scopedSummary = await get("/api/v1/purchase-orders/summary", "scoped");
   assert.equal(scopedSummary.statusCode, 200);
@@ -192,7 +197,7 @@ try {
     if (hidden.rowCount) {
       const restrictedList = await get("/api/v1/purchase-orders", "restricted");
       assert.equal(restrictedList.statusCode, 200);
-      assert.ok(restrictedList.json().totalCount < 336);
+      assert.ok(restrictedList.json().totalCount < expectedPoCount);
       assert.ok(restrictedList.json().items.every(item => restricted.scopes.includes(item.importer)));
       assert.equal((await get(`/api/v1/purchase-orders/${hidden.rows[0].id}/overview`, "restricted")).statusCode, 404);
       assert.equal((await get(`/api/v1/purchase-orders/${hidden.rows[0].id}/history-items`, "restricted")).statusCode, 404);
@@ -203,7 +208,7 @@ try {
   } else {
     console.log("No active restricted importer grant; hidden PO check skipped.");
   }
-  console.log(`RF06 read validation passed: 336 POs, 7 pages, ${total} historical lines on the largest PO, shared IP costs at IP grain, 401/403/404.`);
+  console.log(`RF06 read validation passed: ${expectedPoCount} POs across ${totalPages} pages, ${total} historical lines on the largest PO, shared IP costs at IP grain, 401/403/404.`);
 } finally {
   if (app) await app.close();
   await client.query("ROLLBACK");
