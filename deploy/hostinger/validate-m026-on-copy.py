@@ -84,10 +84,17 @@ try:
     source_rows = psql(container, copy_name,
         "SELECT count(*)::text || ':' || coalesce(sum(quantity),0)::text "
         "FROM procurement.po_line_observation")
-    source_ip_totals = psql(container, copy_name,
+    matched_source_ip_totals = psql(container, copy_name,
         "SELECT count(*)::text || ':' || coalesce(sum(observation.quantity),0)::text "
         "FROM procurement.po_line_observation observation "
-        "WHERE nullif(btrim(observation.source_ip_text),'') IS NOT NULL")
+        "JOIN procurement.purchase_order po ON po.id=observation.purchase_order_id "
+        "WHERE nullif(btrim(observation.source_ip_text),'') IS NOT NULL "
+        "AND EXISTS (SELECT 1 FROM procurement.process_purchase_order link "
+        "JOIN imports.import_process process ON process.id=link.process_id "
+        "WHERE link.purchase_order_id=observation.purchase_order_id "
+        "AND process.importer=po.importer "
+        "AND upper(btrim(process.ip_number))=upper(btrim(observation.source_ip_text)) "
+        "AND upper(coalesce(observation.historical_status,'')) NOT IN ('CANCELLED','CANCELED'))")
     manual_items = psql(container, copy_name,
         "SELECT count(*)::text || ':' || coalesce(sum(ordered_quantity),0)::text "
         "FROM procurement.purchase_order_item WHERE source_kind='MANUAL_TOTVS_TRANSCRIPTION'")
@@ -139,8 +146,8 @@ try:
         "FROM procurement.po_item_allocation allocation "
         "JOIN procurement.purchase_order_item item ON item.id=allocation.purchase_order_item_id "
         "WHERE item.source_kind='IMPORTED_SOURCE_ITEM' AND allocation.status='ACTIVE'")
-    if seeded_allocations != source_ip_totals:
-        raise RuntimeError("Imported PO/IP allocations do not match source IP quantities")
+    if seeded_allocations != matched_source_ip_totals:
+        raise RuntimeError("Imported PO/IP allocations do not match linked IP quantities")
     unchanged_allocations = psql(container, copy_name,
         "SELECT count(*)::text || ':' || coalesce(sum(quantity),0)::text "
         "FROM procurement.po_item_allocation WHERE status='ACTIVE' "
@@ -154,19 +161,41 @@ try:
         "ON observation.source_row_id=item.source_observation_id "
         "LEFT JOIN procurement.po_item_allocation allocation "
         "ON allocation.purchase_order_item_id=item.id AND allocation.status='ACTIVE' "
-        "WHERE (nullif(btrim(observation.source_ip_text),'') IS NOT NULL "
+        "JOIN procurement.purchase_order po ON po.id=observation.purchase_order_id "
+        "WHERE (EXISTS (SELECT 1 FROM procurement.process_purchase_order link "
+        "JOIN imports.import_process process ON process.id=link.process_id "
+        "WHERE link.purchase_order_id=observation.purchase_order_id "
+        "AND process.importer=po.importer "
+        "AND upper(btrim(process.ip_number))=upper(btrim(observation.source_ip_text)) "
+        "AND upper(coalesce(observation.historical_status,'')) NOT IN ('CANCELLED','CANCELED')) "
         "AND (allocation.id IS NULL OR allocation.quantity<>observation.quantity)) "
-        "OR (nullif(btrim(observation.source_ip_text),'') IS NULL "
+        "OR (NOT EXISTS (SELECT 1 FROM procurement.process_purchase_order link "
+        "JOIN imports.import_process process ON process.id=link.process_id "
+        "WHERE link.purchase_order_id=observation.purchase_order_id "
+        "AND process.importer=po.importer "
+        "AND upper(btrim(process.ip_number))=upper(btrim(observation.source_ip_text)) "
+        "AND upper(coalesce(observation.historical_status,'')) NOT IN ('CANCELLED','CANCELED')) "
         "AND coalesce(allocation.quantity,0)<>0)")
     if quantity_errors != "0":
         raise RuntimeError("A PO item balance does not match its IP split")
+
+    canceled_item_errors = psql(container, copy_name,
+        "SELECT count(*) FROM procurement.purchase_order_item item "
+        "JOIN procurement.po_line_observation observation "
+        "ON observation.source_row_id=item.source_observation_id "
+        "WHERE upper(coalesce(observation.historical_status,'')) IN ('CANCELLED','CANCELED') "
+        "AND (item.source_status IS DISTINCT FROM observation.historical_status "
+        "OR EXISTS (SELECT 1 FROM procurement.po_item_allocation allocation "
+        "WHERE allocation.purchase_order_item_id=item.id AND allocation.status='ACTIVE'))")
+    if canceled_item_errors != "0":
+        raise RuntimeError("Canceled PO items lost their status or received an IP allocation")
 
     run(node, "test/operations.integration.mjs", cwd=api, env=environment)
     environment["FOLLOWUP_TEST_DATABASE_URL"] = copy_url
     run(node, "test/followup.integration.mjs", cwd=api, env=environment)
     environment["RF06_READ_DB"] = copy_name
     run(node, "test/purchase-orders.real-read.mjs", cwd=api, env=environment)
-    print("M026 preserved source lines and manual balances; PO reads, PO/IP quantities, residuals and follow-up passed on the restored copy.")
+    print("M026 preserved source lines and manual balances; linked IP splits, canceled and unlinked balances, PO reads, residuals and follow-up passed on the restored copy.")
 finally:
     if created:
         run("/usr/bin/docker", "exec", container, "sh", "-lc",

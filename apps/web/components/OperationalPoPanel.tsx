@@ -12,7 +12,7 @@ import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
 
 type Item = { id: string; lineNumber: number; externalLineReference: string | null;
   productCode: string; description: string; orderedQuantity: string; unit: string | null;
-  unitPrice: string | null; currency: string | null; sourceKind: string;
+  unitPrice: string | null; currency: string | null; sourceKind: string; sourceStatus: string | null;
   necessityDate: string | null; priority: string | null; demand: string | null; requester: string | null;
   scNumber: string | null; scApprovalDate: string | null; purpose: string | null; productGroup: string | null;
   costCenter: string | null; draftPo: string | null; poApprovalDate: string | null; poSentDate: string | null;
@@ -371,7 +371,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         const draft = itemDrafts[item.id] ?? blankItem();
         const setDraft = (change: Partial<ItemDraft>) => setItemDrafts(current => ({ ...current, [item.id]: { ...draft, ...change } }));
         return <details className="po-entry-item" key={item.id}>
-          <summary className="po-entry-summary"><strong>Item {item.lineNumber} - {item.productCode}</strong><span>{item.orderedQuantity}{item.unit ? ` ${item.unit}` : ""} · saldo {item.remainingQuantity}{item.unit ? ` ${item.unit}` : ""}</span></summary>
+          <summary className="po-entry-summary"><strong>Item {item.lineNumber} - {item.productCode}</strong><span>{item.sourceStatus?.toUpperCase() === "CANCELLED" || item.sourceStatus?.toUpperCase() === "CANCELED" ? "Cancelado" : `${item.orderedQuantity}${item.unit ? ` ${item.unit}` : ""} · saldo ${item.remainingQuantity}${item.unit ? ` ${item.unit}` : ""}`}</span></summary>
           {canWritePo ? <form className="stack-form" data-item-id={item.id} onSubmit={saveItem}>
             <div className="operational-fields">
               <label>Linha no TOTVS<input maxLength={80} value={draft.externalLineReference} onChange={event => setDraft({ externalLineReference: event.target.value })} /></label>
@@ -447,7 +447,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         </form>}
         <form className="stack-form" onSubmit={saveAllocation}>
           <label>Item<select required value={itemId} disabled={Boolean(editingAllocation)} onChange={event => setItemId(event.target.value)}>
-            {data.items.map(item => <option key={item.id} value={item.id}>{item.productCode} · item {item.lineNumber} · saldo {item.remainingQuantity}{item.unit ? ` ${item.unit}` : ""}</option>)}
+            {data.items.map(item => <option key={item.id} value={item.id} disabled={item.sourceStatus?.toUpperCase() === "CANCELLED" || item.sourceStatus?.toUpperCase() === "CANCELED"}>{item.productCode} · item {item.lineNumber} · {item.sourceStatus?.toUpperCase() === "CANCELLED" || item.sourceStatus?.toUpperCase() === "CANCELED" ? "cancelado" : `saldo ${item.remainingQuantity}${item.unit ? ` ${item.unit}` : ""}`}</option>)}
           </select></label>
           {!editingAllocation && <label>IP<select required value={processId} onChange={event => setProcessId(event.target.value)}>
             <option value="">Busque e selecione um IP</option>{ipOptions.map(item => <option key={item.id} value={item.id}>{item.ipNumber}</option>)}

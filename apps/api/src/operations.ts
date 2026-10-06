@@ -184,9 +184,11 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
                 item.target_customs_days AS "targetCustomsDays",
                 item.actual_factory_ship_date::text AS "actualFactoryShipDate",
                 item.actual_port_departure_date::text AS "actualPortDepartureDate",
-                item.source_kind AS "sourceKind",
+                item.source_kind AS "sourceKind", item.source_status AS "sourceStatus",
                 coalesce(sum(a.quantity) FILTER (WHERE a.status = 'ACTIVE'), 0)::text AS "allocatedQuantity",
-                (item.ordered_quantity - coalesce(sum(a.quantity) FILTER (WHERE a.status = 'ACTIVE'), 0))::text AS "remainingQuantity"
+                CASE WHEN upper(coalesce(item.source_status, '')) IN ('CANCELLED', 'CANCELED') THEN '0'
+                     ELSE (item.ordered_quantity - coalesce(sum(a.quantity) FILTER (WHERE a.status = 'ACTIVE'), 0))::text
+                END AS "remainingQuantity"
          FROM procurement.purchase_order_item item
          LEFT JOIN procurement.po_item_allocation a ON a.purchase_order_item_id = item.id
          WHERE item.purchase_order_id = $1 GROUP BY item.id ORDER BY item.line_number`, [id.data]);
@@ -456,7 +458,9 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const claim = await receipt(client, auth.actor.userId, key, "ALLOCATION", { poId: id.data, ...body });
         if (claim.existingId) return { id: claim.existingId, replayed: true };
         const item = await client.query(
-          `SELECT id FROM procurement.purchase_order_item WHERE id = $1 AND purchase_order_id = $2`,
+          `SELECT id FROM procurement.purchase_order_item
+           WHERE id = $1 AND purchase_order_id = $2
+             AND upper(coalesce(source_status, '')) NOT IN ('CANCELLED', 'CANCELED')`,
           [body.itemId, id.data]);
         const process = await client.query(
           `SELECT id FROM imports.import_process WHERE id = $1 AND importer = $2

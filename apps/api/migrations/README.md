@@ -175,7 +175,7 @@ persistent API service environment.
 `M025_allocation_factory_ship_date.sql` stores factory departure per PO-item allocation. A PO item split across IPs can have different factory departure dates; existing item-level dates stay unchanged and are never copied automatically to each IP. The migration must precede any API/UI version that reads and edits this allocation date.
 M025 passed restored-copy validation and was applied to the operational VPS database on 2026-10-06. Source-row counts and active allocation count/quantity were unchanged; operations and follow-up PostgreSQL integration tests passed. The ledger is 25/25. Release validation and API health evidence are recorded in `deploy/hostinger/README.md`.
 
-`M026_source_observations_as_po_items.sql` promotes every valid PO line to a balance-bearing item, retaining its quantity and assigning that quantity to its linked IP when present. Lines without an IP remain available to distribute. Imported items keep a link to their original immutable record. Validate M026 on a restored copy before deploying the matching API/UI.
+`M026_source_observations_as_po_items.sql` promotes each PO line to an item, retaining its quantity and source status. It assigns quantity only to a matching linked IP; canceled lines and lines without a linked IP remain unallocated, and canceled items cannot be distributed. Imported items keep a link to their original immutable record. Validate M026 on a restored copy before deploying the matching API/UI.
 
 The old SQLite migrations and .NET runner were removed with the retired local
 architecture. Historical validation results remain in
