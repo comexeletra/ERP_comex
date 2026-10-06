@@ -306,7 +306,6 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
         ? "Preencha os dados do pedido e de cada produto nesta tela. Datas, prazos e indicadores são calculados automaticamente quando houver informações suficientes."
         : "Cadastre o processo de importação. Ele poderá receber itens de várias POs da mesma importadora."}</p>
     </header>
-    {kind === "po" && <p className="muted">Rascunho guardado automaticamente nesta aba. Se o salvamento falhar, os dados preenchidos serão restaurados ao reabrir esta tela no mesmo navegador.</p>}
     {loading && <p role="status">Carregando seus dados…</p>}
     {error && <p className="notice error" role="alert">{error}</p>}
     {!loading && !allowed && <p className="notice">Seu perfil não permite criar {kind === "po" ? "POs" : "IPs"}.</p>}
@@ -327,7 +326,6 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
           </div>
           <label>Observações do pedido<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
           <h3>Dados compartilhados por todos os produtos</h3>
-          <p className="muted">Informe uma vez; estes valores serão gravados em cada produto desta PO.</p>
           <OperationalFieldsEditor fields={purchaseOrderCommonItemFields} values={commonItemFields}
             options={options} setValues={setCommonItemFields} />
         </section>
@@ -369,13 +367,13 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
 
         <section className="card po-entry-section">
           <h2>Confirmação</h2>
-          <p className="muted">Total do produto, prazos, diferenças e alertas serão calculados a partir dos dados preenchidos.</p>
           {createdPoId && <p className="notice error">A PO já foi criada. <Link className="text-link" href={`/purchase-orders/${createdPoId}`}>Abrir a PO e continuar o preenchimento</Link>.</p>}
           <button className="button" disabled={saving || !importer || Boolean(createdPoId)}>
             {saving ? "Salvando pedido e produtos…" : "Salvar PO e produtos"}
           </button>
         </section>
-      </> : <section className="card">
+      </> : <section className="card ip-entry-section">
+        <div className="ip-entry-grid">
         <label>Importadora<select required value={importer} onChange={event => setImporter(event.target.value)}>
           <option value="">Selecione</option>{importers.map(value => <option key={value} value={value}>{value}</option>)}
         </select></label>
@@ -383,6 +381,7 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
         <label>Status logístico<OperationalOptionSelect entity="logistics_status" value={status} values={options} onChange={setStatus} /></label>
         <label>Prioridade<input maxLength={20} value={priority} onChange={event => setPriority(event.target.value)} /></label>
         <label>Observações<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
+        </div>
         <button className="button" disabled={saving || !importer}>{saving ? "Salvando…" : "Salvar IP"}</button>
       </section>}
     </form>}

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../../lib/api";
+import { automaticAuditReason } from "../../../lib/audit";
 
 const entities = [
   ["importer", "Importadora"], ["incoterm", "Incoterm"], ["transport_mode", "Modal"], ["port_loading", "POL / porto de origem"],
@@ -17,7 +18,6 @@ export default function OperationalValuesPage() {
   const [options, setOptions] = useState<Option[]>([]);
   const [entity, setEntity] = useState<string>(entities[0][0]);
   const [value, setValue] = useState("");
-  const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [canWrite, setCanWrite] = useState(false);
   const [error, setError] = useState("");
@@ -38,10 +38,10 @@ export default function OperationalValuesPage() {
     event.preventDefault(); setBusy(true); setError(""); setNotice("");
     try {
       const response = await apiFetch("/api/v1/operational-values", { method: "POST",
-        headers: { "content-type": "application/json" }, body: JSON.stringify({ entity, value, reason }) });
+        headers: { "content-type": "application/json" }, body: JSON.stringify({ entity, value, reason: automaticAuditReason }) });
       const result = await response.json() as { detail?: string };
       if (!response.ok) throw new Error(result.detail || "Não foi possível adicionar o valor.");
-      setValue(""); setReason(""); await load(); setNotice("Valor adicionado ao cadastro e disponível nos seletores.");
+      setValue(""); await load(); setNotice("Valor adicionado ao cadastro e disponível nos seletores.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao adicionar valor."); }
     finally { setBusy(false); }
   }
@@ -49,26 +49,24 @@ export default function OperationalValuesPage() {
   const visible = options.filter(option => option.entity === entity).sort((a, b) => a.value.localeCompare(b.value));
   return <main className="shell">
     <header className="page-header"><p className="eyebrow">ERP Comex</p><h1>Valores das entidades</h1>
-      <p>Cadastre aqui opções de Incoterm, portos, moedas, categorias e demais entidades. Os formulários usam estes valores em seletores, sem permitir texto livre.</p>
-      <Link className="text-link" href="/catalog">← Cadastros de fornecedores e produtos</Link></header>
+      <p>Gerencie as opções usadas nos campos do sistema.</p>
+      <Link className="text-link" href="/catalog">Todos os cadastros</Link></header>
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
-    <section className="card">
-      <h2>Entidade</h2>
+    <section className="card entity-values-card">
+      <h2>Campo e opções</h2>
       <label>Campo<select value={entity} onChange={event => setEntity(event.target.value)}>
         {entities.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select></label>
-      {entity === "importer" && <p className="muted">Após cadastrar uma nova importadora, atribua o escopo aos usuários em Administração antes de liberar o cadastro de POs e IPs.</p>}
-      <h3>Valores cadastrados ({visible.length})</h3>
+      <h3>Valores cadastrados · {visible.length}</h3>
       {visible.length ? <ul className="entity-value-list">{visible.map(option => <li key={`${option.entity}:${option.value}`}>{option.value}</li>)}</ul> :
         <p className="muted">Ainda não há valores cadastrados para este campo.</p>}
     </section>
-    {canWrite && <section className="card">
+    {canWrite && <section className="card entity-value-form">
       <h2>Adicionar valor à entidade</h2>
       <form className="stack-form" onSubmit={add}>
         <label>Novo valor<input required maxLength={240} value={value} onChange={event => setValue(event.target.value)} /></label>
-        <label>Justificativa<input required minLength={8} maxLength={500} value={reason} onChange={event => setReason(event.target.value)} /></label>
-        <button className="button" disabled={busy || !value.trim() || reason.trim().length < 8}>{busy ? "Salvando…" : "Adicionar valor"}</button>
+        <button className="button" disabled={busy || !value.trim()}>{busy ? "Salvando…" : "Adicionar valor"}</button>
       </form>
     </section>}
   </main>;

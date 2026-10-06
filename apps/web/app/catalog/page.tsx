@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../lib/api";
+import { automaticAuditReason } from "../../lib/audit";
 import { formatUsDate, formatUsDateTime, parseUsDate } from "../../lib/date-format";
 
 type Resource = "suppliers" | "products" | "ncms";
@@ -40,14 +41,14 @@ export default function CatalogPage() {
   const [refresh, setRefresh] = useState(0);
   const [saving, setSaving] = useState(false);
   const [roles, setRoles] = useState<string[]>([]);
-  const [draft, setDraft] = useState({ code: "", name: "", evidence: "", reason: "", validFrom: "" });
+  const [draft, setDraft] = useState({ code: "", name: "", evidence: "", validFrom: "" });
   const [editing, setEditing] = useState<Entry>();
   const [historyEntry, setHistoryEntry] = useState<Entry>();
   const [history, setHistory] = useState<AuditPage>();
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const historyRequest = useRef(0);
-  const [editDraft, setEditDraft] = useState({ name: "", status: "ACTIVE", evidence: "", reason: "" });
+  const [editDraft, setEditDraft] = useState({ name: "", status: "ACTIVE", evidence: "" });
 
   useEffect(() => {
     apiFetch("/auth/me").then(responseJson<{ roles: string[] }>)
@@ -72,11 +73,11 @@ export default function CatalogPage() {
     return () => controller.abort();
   }, [resource, importer, search, page, refresh]);
 
-  function chooseResource(next: Resource) { historyRequest.current += 1; setHistoryLoading(false); setResource(next); setPage(1); setDraft({ code: "", name: "", evidence: "", reason: "", validFrom: "" }); setEditing(undefined); setHistoryEntry(undefined); setHistory(undefined); }
+  function chooseResource(next: Resource) { historyRequest.current += 1; setHistoryLoading(false); setResource(next); setPage(1); setDraft({ code: "", name: "", evidence: "", validFrom: "" }); setEditing(undefined); setHistoryEntry(undefined); setHistory(undefined); }
   function chooseCandidate(candidate: Candidate) {
     setDraft({ code: candidate.rawCode, name: resource === "ncms" ? candidate.rawCode : "",
       evidence: `Origem ${candidate.sampleSheetName}, linha ${candidate.sampleRowNumber}; documento de confirmação: `,
-      reason: "", validFrom: "" });
+      validFrom: "" });
     document.getElementById("catalog-create")?.scrollIntoView({ behavior: "smooth" });
   }
   async function create(event: FormEvent<HTMLFormElement>) {
@@ -89,16 +90,16 @@ export default function CatalogPage() {
       const response = await apiFetch(`/api/v1/${resource}`, { method: "POST",
         headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify({ importer, code: draft.code, name: draft.name, evidence: draft.evidence,
-          reason: draft.reason, validFrom }) });
+          reason: automaticAuditReason, validFrom }) });
       await responseJson<Entry>(response);
-      setDraft({ code: "", name: "", evidence: "", reason: "", validFrom: "" });
+      setDraft({ code: "", name: "", evidence: "", validFrom: "" });
       setMessage("Cadastro operacional registrado. As linhas históricas não foram alteradas.");
       setPage(1); setRefresh(value => value + 1);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Erro ao salvar."); }
     finally { setSaving(false); }
   }
   function startEdit(entry: Entry) {
-    setEditing(entry); setEditDraft({ name: entry.name, status: entry.status, evidence: entry.evidence, reason: "" });
+    setEditing(entry); setEditDraft({ name: entry.name, status: entry.status, evidence: entry.evidence });
   }
   async function saveEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!editing) return;
@@ -106,7 +107,7 @@ export default function CatalogPage() {
     try {
       const response = await apiFetch(`/api/v1/${resource}/${editing.id}`, { method: "PATCH",
         headers: { "Content-Type": "application/json", "X-Record-Version": editing.version },
-        body: JSON.stringify(editDraft) });
+        body: JSON.stringify({ ...editDraft, reason: automaticAuditReason }) });
       await responseJson<Entry>(response);
       setEditing(undefined); setMessage("Cadastro atualizado com auditoria."); setRefresh(value => value + 1);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Erro ao atualizar."); }
@@ -133,13 +134,10 @@ export default function CatalogPage() {
   const canRegisterPo = roles.some(role => ["Master", "Administrador", "Importação", "Compras"].includes(role));
   const canRegisterIp = roles.some(role => ["Master", "Administrador", "Importação"].includes(role));
   return <main className="shell">
-    <header className="page-header"><p className="eyebrow">ERP Comex</p><h1>Cadastros e candidatos da origem</h1>
-      <p>Gerencie fornecedores, produtos e NCM, valores das entidades, POs e IPs. Códigos observados na planilha são candidatos e precisam de revisão antes de uso operacional.</p>
-      <div className="catalog-links"><Link className="text-link" href="/">← Carteira de POs</Link>
-        <Link className="text-link" href="/catalog/values">Valores das entidades</Link></div></header>
+    <header className="page-header"><p className="eyebrow">ERP Comex</p><h1>Cadastros</h1>
+      <div className="catalog-links"><Link className="text-link" href="/">← Carteira de POs</Link></div></header>
     <section className="card" aria-labelledby="registration-options-title">
-      <h2 id="registration-options-title">Cadastros</h2>
-      <p className="muted">Acesse os formulários de cadastro do ERP Comex.</p>
+      <h2 id="registration-options-title">Novo cadastro</h2>
       <nav className="catalog-links" aria-label="Tipos de cadastro">
         <Link className="button secondary" href={canWrite ? "#catalog-create" : "#catalog-controls"}>Fornecedores, produtos e NCM</Link>
         <Link className="button secondary" href="/catalog/values">Valores das entidades</Link>
@@ -160,7 +158,7 @@ export default function CatalogPage() {
     {loading && <p role="status">Carregando cadastros…</p>}
     {!loading && !error && <>
       <section className="card"><h2>{labels[resource]} cadastrados</h2>
-        <p className="muted">{registered?.totalCount ?? 0} registros operacionais com revisão manual. Estes registros não alteram a fonte nem as POs.</p>
+        <p className="muted">{registered?.totalCount ?? 0} registros</p>
         {registered?.items.length === 0 && <p>Nenhum cadastro encontrado.</p>}
         {!!registered?.items.length && <div className="table-scroll"><table><thead><tr><th>Código</th><th>Nome</th><th>Situação</th><th>Vigência</th><th>Versão</th><th>Ação</th></tr></thead><tbody>
           {registered.items.map(entry => <tr key={entry.id}><td>{entry.code}</td><td>{entry.name}</td><td>{entry.status === "ACTIVE" ? "Ativo" : "Inativo"}</td>
@@ -180,7 +178,6 @@ export default function CatalogPage() {
             <strong>{event.fieldName ?? event.operation}</strong>
             <span className="muted">{event.actor} · {formatUsDateTime(event.occurredAt)}</span>
             <p>Antes: {formatAuditValue(event.oldValue)} · Depois: {formatAuditValue(event.newValue)}</p>
-            {event.reason && <p className="muted">Motivo: {event.reason}</p>}
           </li>)}</ol>
           {history.totalCount > history.pageSize && <nav className="pagination" aria-label="Páginas do histórico">
             <button className="button secondary" disabled={history.page <= 1} onClick={() => void loadHistory(historyEntry, history.page - 1)}>Anterior</button>
@@ -189,23 +186,22 @@ export default function CatalogPage() {
           </nav>}
         </>}
       </section>}
-      <section className="card"><h2>Candidatos históricos</h2><p className="muted">{candidates?.totalCount ?? 0} valores distintos nesta busca. A contagem é de observações vinculadas a PO; pode haver nomes ou classificações conflitantes.</p>
+      <details className="card catalog-candidates"><summary>Candidatos de origem <span>{candidates?.totalCount ?? 0}</span></summary><p className="muted">{candidates?.totalCount ?? 0} valores encontrados</p>
         {candidates?.items.length === 0 && <p>Nenhum candidato encontrado.</p>}
         {!!candidates?.items.length && <div className="table-scroll"><table><thead><tr><th>Valor literal</th><th>Observações</th><th>Origem</th><th>Ação</th></tr></thead><tbody>
           {candidates.items.map((value, index) => <tr key={`${value.rawCode}-${index}`}><td>{value.rawCode}</td><td>{value.observationCount}</td><td>{value.sampleSheetName}, linha {value.sampleRowNumber}</td>
             <td>{value.eligibleFormat ? canWrite && <button className="button secondary" type="button" onClick={() => chooseCandidate(value)}>Preparar revisão</button> : "Formato inválido; revisar origem"}</td></tr>)}
         </tbody></table></div>}
-      </section>
+      </details>
       <nav className="pagination" aria-label="Páginas dos cadastros"><button className="button secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>Anterior</button><span>Página {page}</span><button className="button" disabled={Math.max(registered?.totalCount ?? 0, candidates?.totalCount ?? 0) <= page * 25} onClick={() => setPage(page + 1)}>Próxima</button></nav>
     </>}
     {canWrite && <section className="card" id="catalog-create"><h2>Registrar {labels[resource].toLowerCase()}</h2>
-      <p className="muted">Exige confirmação humana e referência verificável. O código literal é preservado como alias inicial; espaços nas pontas são removidos apenas do código canônico. O cadastro não confirma fornecedor, produto ou NCM de uma PO.</p>
+      <p className="muted">Informe os dados do novo cadastro.</p>
       <form className="stack-form" onSubmit={event => void create(event)}>
         <label>Código ou nome da origem<input required maxLength={120} value={draft.code} onChange={event => setDraft(value => ({ ...value, code: event.target.value }))} /></label>
         <label>Nome operacional<input required maxLength={240} value={draft.name} onChange={event => setDraft(value => ({ ...value, name: event.target.value }))} /></label>
         {resource === "ncms" && <label>Início da vigência (MM/DD/YYYY)<input required type="text" inputMode="numeric" maxLength={10} pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}" placeholder="MM/DD/YYYY" value={draft.validFrom} onChange={event => setDraft(value => ({ ...value, validFrom: event.target.value }))} /></label>}
         <label>Evidência da revisão<textarea required minLength={8} maxLength={2000} value={draft.evidence} onChange={event => setDraft(value => ({ ...value, evidence: event.target.value }))} placeholder="Documento, número, data e onde conferir" /></label>
-        <label>Motivo do cadastro<textarea required minLength={8} maxLength={500} value={draft.reason} onChange={event => setDraft(value => ({ ...value, reason: event.target.value }))} /></label>
         <button className="button" disabled={saving || !importer} type="submit">{saving ? "Salvando…" : "Registrar cadastro"}</button>
       </form>
     </section>}
@@ -214,7 +210,6 @@ export default function CatalogPage() {
         <label>Nome<input required value={editDraft.name} onChange={event => setEditDraft(value => ({ ...value, name: event.target.value }))} /></label>
         <label>Situação<select value={editDraft.status} onChange={event => setEditDraft(value => ({ ...value, status: event.target.value }))}><option value="ACTIVE">Ativo</option><option value="INACTIVE">Inativo</option></select></label>
         <label>Evidência<textarea required minLength={8} value={editDraft.evidence} onChange={event => setEditDraft(value => ({ ...value, evidence: event.target.value }))} /></label>
-        <label>Motivo da alteração<textarea required minLength={8} value={editDraft.reason} onChange={event => setEditDraft(value => ({ ...value, reason: event.target.value }))} /></label>
         <div><button className="button" disabled={saving} type="submit">Salvar alteração</button><button className="button secondary" type="button" onClick={() => setEditing(undefined)}>Cancelar</button></div>
       </form></section>}
   </main>;
