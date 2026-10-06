@@ -192,6 +192,7 @@ try:
 
     environment["RF06_READ_DB"] = copy_name
     run(node, "test/purchase-orders.real-read.mjs", cwd=api, env=environment)
+    run(node, "test/purchase-orders.summary.integration.mjs", cwd=api, env=environment)
     run(node, "test/operations.integration.mjs", cwd=api, env=environment)
     environment["FOLLOWUP_TEST_DATABASE_URL"] = copy_url
     run(node, "test/followup.integration.mjs", cwd=api, env=environment)

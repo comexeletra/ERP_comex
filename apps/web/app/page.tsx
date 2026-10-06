@@ -8,14 +8,13 @@ import { portfolioFilterQuery, purchaseOrderListQuery, type PortfolioFilters } f
 
 type Filters = PortfolioFilters;
 type PurchaseOrder = {
-  id: string; number: string; importer: string; identityStatus: string;
-  officialItemsKnown: boolean; historicalItemCount: number; operationalItemCount: number; linkedProcessCount: number;
-  historicalItemsWithIp: number; historicalItemsWithoutIp: number;
-  unresolvedIssueCount: number; balanceAvailable: boolean;
+  id: string; number: string; importer: string; operationalItemCount: number;
+  itemsWithIp: number; itemsWithoutIp: number; linkedProcessCount: number;
+  unresolvedIssueCount: number;
 };
 type PurchaseOrderPage = { page: number; pageSize: number; totalCount: number; items: PurchaseOrder[] };
-type PortfolioSummary = { purchaseOrders: number; linkedProcesses: number; lines: number;
-  linesWithoutIp: number; sourceSnapshotAt: string | null;
+type PortfolioSummary = { purchaseOrders: number; linkedProcesses: number; items: number;
+  itemsWithIp: number; itemsWithoutIp: number;
   byImporter: Array<{ importer: string; purchaseOrders: number }> };
 type PortfolioSummaryState = { query: string; value: PortfolioSummary };
 type PortfolioSummaryFailure = { query: string; message: string };
@@ -134,9 +133,9 @@ export default function PortfolioPage() {
       }
       if (rows.length !== expectedCount) throw new Error("A carteira mudou durante a exportação. Tente novamente.");
       const blob = new Blob(["\uFEFF", purchaseOrdersCsv(rows.map(order => ({
-        id: order.id, number: order.number, importer: order.importer, identityStatus: order.identityStatus,
+        id: order.id, number: order.number, importer: order.importer,
         itemCount: order.operationalItemCount, linkedProcessCount: order.linkedProcessCount,
-        itemsWithIp: order.historicalItemsWithIp, itemsWithoutIp: order.historicalItemsWithoutIp,
+        itemsWithIp: order.itemsWithIp, itemsWithoutIp: order.itemsWithoutIp,
         unresolvedIssueCount: order.unresolvedIssueCount,
       })))], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
@@ -185,8 +184,8 @@ export default function PortfolioPage() {
       <div className="metric-grid">
         <div className="metric"><span>POs no recorte</span><strong>{summaryLoading ? "…" : summary?.purchaseOrders.toLocaleString("pt-BR") ?? "—"}</strong></div>
         <div className="metric"><span>IPs das POs encontradas</span><strong>{summaryLoading ? "…" : summary?.linkedProcesses.toLocaleString("pt-BR") ?? "—"}</strong></div>
-        <div className="metric"><span>Itens vinculados a POs</span><strong>{summaryLoading ? "…" : summary?.lines.toLocaleString("pt-BR") ?? "—"}</strong></div>
-        <div className="metric"><span>Itens sem IP</span><strong>{summaryLoading ? "…" : summary?.linesWithoutIp.toLocaleString("pt-BR") ?? "—"}</strong></div>
+        <div className="metric"><span>Itens nas POs</span><strong>{summaryLoading ? "…" : summary?.items.toLocaleString("pt-BR") ?? "—"}</strong></div>
+        <div className="metric"><span>Itens sem IP</span><strong>{summaryLoading ? "…" : summary?.itemsWithoutIp.toLocaleString("pt-BR") ?? "—"}</strong></div>
       </div>
       {summary && <p className="muted">Itens e quantidades registrados para as POs deste recorte.</p>}
       {summaryError && <p className="notice error" role="alert">{summaryError}</p>}
@@ -213,7 +212,7 @@ export default function PortfolioPage() {
           <tbody>{result.items.map(order => <tr key={order.id}>
             <td><strong>{order.number}</strong></td><td>{order.importer}</td>
             <td>{order.operationalItemCount}</td><td>{order.linkedProcessCount}</td>
-            <td>{order.historicalItemsWithoutIp}</td><td>{order.unresolvedIssueCount}</td>
+            <td>{order.itemsWithoutIp}</td><td>{order.unresolvedIssueCount}</td>
             <td><Link className="button" href={`/purchase-orders/${order.id}?return=${encodeURIComponent(returnPath)}`}>Abrir PO {order.number}</Link></td>
           </tr>)}</tbody>
         </table></div>}

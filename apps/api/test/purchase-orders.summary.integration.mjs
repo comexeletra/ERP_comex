@@ -24,6 +24,7 @@ const purchaseOrders = [randomUUID(), randomUUID(), randomUUID()];
 const processes = [randomUUID(), randomUUID(), randomUUID()];
 const sourceRows = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
 const observations = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+const itemIds = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
 const pool = new pg.Pool({ connectionString: databaseUrl, max: 3 });
 const client = await pool.connect();
 const app = Fastify();
@@ -98,6 +99,20 @@ try {
     [observations[0], purchaseOrders[0], sourceRows[0], observations[1], sourceRows[1],
       observations[2], purchaseOrders[1], sourceRows[2], observations[3], purchaseOrders[2], sourceRows[3]],
   );
+  await client.query(
+    `INSERT INTO procurement.purchase_order_item
+       (id, purchase_order_id, line_number, product_code, description, ordered_quantity, unit, source_status)
+     VALUES ($1,$2,1,'MOTOR-01','Motor industrial',10,'PC',NULL),
+            ($3,$2,2,'MOTOR-02','Motor especial',5,'PC',NULL),
+            ($4,$5,1,'GEAR-01','Engrenagem',8,'PC','CANCELLED'),
+            ($6,$7,1,'OTHER-01','Item fora do escopo',3,'PC',NULL)`,
+    [itemIds[0], purchaseOrders[0], itemIds[1], itemIds[2], purchaseOrders[1], itemIds[3], purchaseOrders[2]],
+  );
+  await client.query(
+    `INSERT INTO procurement.po_item_allocation (id,purchase_order_item_id,process_id,quantity)
+     VALUES ($1,$2,$3,6)`,
+    [randomUUID(), itemIds[0], processes[0]],
+  );
   await client.query("COMMIT");
   fixturesCommitted = true;
 
@@ -113,9 +128,9 @@ try {
   assert.deepEqual(summaryResponse.json(), {
     purchaseOrders: 2,
     linkedProcesses: 2,
-    lines: 3,
-    linesWithoutIp: 2,
-    sourceSnapshotAt: "2026-01-15T12:00:00.000Z",
+    items: 3,
+    itemsWithIp: 1,
+    itemsWithoutIp: 1,
     byImporter: [{ importer, purchaseOrders: 2 }],
   });
 
@@ -124,17 +139,17 @@ try {
   assert.deepEqual(filtered.json(), {
     purchaseOrders: 1,
     linkedProcesses: 1,
-    lines: 2,
-    linesWithoutIp: 1,
-    sourceSnapshotAt: "2026-01-15T12:00:00.000Z",
+    items: 2,
+    itemsWithIp: 1,
+    itemsWithoutIp: 1,
     byImporter: [{ importer, purchaseOrders: 1 }],
   });
 
   const outsideScope = await get("/api/v1/purchase-orders/summary?importer=other");
   assert.equal(outsideScope.statusCode, 200);
   assert.deepEqual(outsideScope.json(), {
-    purchaseOrders: 0, linkedProcesses: 0, lines: 0, linesWithoutIp: 0,
-    sourceSnapshotAt: null, byImporter: [],
+    purchaseOrders: 0, linkedProcesses: 0, items: 0, itemsWithIp: 0,
+    itemsWithoutIp: 0, byImporter: [],
   });
   assert.equal((await get("/api/v1/purchase-orders/summary?page=1")).statusCode, 400);
   console.log("PO portfolio summary PostgreSQL integration contract passed.");
@@ -148,6 +163,8 @@ try {
       [purchaseOrders, processes],
     );
     await client.query("DELETE FROM procurement.po_line_observation WHERE purchase_order_id = ANY($1::uuid[])", [purchaseOrders]);
+    await client.query("DELETE FROM procurement.po_item_allocation WHERE purchase_order_item_id = ANY($1::uuid[])", [itemIds]);
+    await client.query("DELETE FROM procurement.purchase_order_item WHERE id = ANY($1::uuid[])", [itemIds]);
     await client.query("DELETE FROM migration.source_row WHERE batch_id = $1", [batchId]);
     await client.query("DELETE FROM procurement.purchase_order WHERE id = ANY($1::uuid[])", [purchaseOrders]);
     await client.query("DELETE FROM imports.import_process WHERE id = ANY($1::uuid[])", [processes]);

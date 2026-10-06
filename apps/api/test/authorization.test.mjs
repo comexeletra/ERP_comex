@@ -281,8 +281,8 @@ test("portfolio summary uses the same filters and importer scope before aggregat
       assert.match(sql, /WHERE po\.importer = ANY\(\$1::text\[\]\)/u);
       assert.match(sql, /process\.importer = ANY\(\$1::text\[\]\)/u);
       assert.deepEqual(values, [["ELETRA MATRIZ"], "18751", "eletra", "motor", "IP-20"]);
-      return { rows: [{ purchase_orders: 1, linked_processes: 2, lines: 8,
-        lines_without_ip: 1, source_snapshot_at: new Date("2026-01-15T12:00:00Z"),
+      return { rows: [{ purchase_orders: 1, linked_processes: 2, items: 8,
+        items_with_ip: 7, items_without_ip: 1,
         by_importer: [{ importer: "ELETRA MATRIZ", purchaseOrders: 1 }] }] };
     },
   };
@@ -305,8 +305,8 @@ test("portfolio summary uses the same filters and importer scope before aggregat
     headers: { "x-test-subject": "reader" } });
   assert.equal(response.statusCode, 200);
   assert.equal(response.headers["cache-control"], "no-store");
-  assert.deepEqual(response.json(), { purchaseOrders: 1, linkedProcesses: 2, lines: 8,
-    linesWithoutIp: 1, sourceSnapshotAt: "2026-01-15T12:00:00.000Z",
+  assert.deepEqual(response.json(), { purchaseOrders: 1, linkedProcesses: 2, items: 8,
+    itemsWithIp: 7, itemsWithoutIp: 1,
     byImporter: [{ importer: "ELETRA MATRIZ", purchaseOrders: 1 }] });
   assert.equal(queries.length, 2);
 });

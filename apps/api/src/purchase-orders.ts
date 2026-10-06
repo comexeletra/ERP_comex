@@ -84,6 +84,20 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
                  FROM procurement.purchase_order_item AS item
                  WHERE item.purchase_order_id = po.id) AS operational_item_count,
                 (SELECT count(*)::int
+                 FROM procurement.purchase_order_item AS item
+                 WHERE item.purchase_order_id = po.id
+                   AND upper(coalesce(item.source_status, '')) NOT IN ('CANCELLED', 'CANCELED')
+                   AND EXISTS (SELECT 1 FROM procurement.po_item_allocation AS allocation
+                               WHERE allocation.purchase_order_item_id = item.id
+                                 AND allocation.status = 'ACTIVE')) AS items_with_ip,
+                (SELECT count(*)::int
+                 FROM procurement.purchase_order_item AS item
+                 WHERE item.purchase_order_id = po.id
+                   AND upper(coalesce(item.source_status, '')) NOT IN ('CANCELLED', 'CANCELED')
+                   AND NOT EXISTS (SELECT 1 FROM procurement.po_item_allocation AS allocation
+                                   WHERE allocation.purchase_order_item_id = item.id
+                                     AND allocation.status = 'ACTIVE')) AS items_without_ip,
+                (SELECT count(*)::int
                  FROM procurement.po_line_observation AS obs
                  WHERE obs.purchase_order_id = po.id
                    AND NULLIF(btrim(obs.source_ip_text), '') IS NOT NULL
@@ -122,6 +136,8 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
                   'officialItemsKnown', false,
                   'historicalItemCount', page.historical_item_count,
                   'operationalItemCount', page.operational_item_count,
+                  'itemsWithIp', page.items_with_ip,
+                  'itemsWithoutIp', page.items_without_ip,
                   'linkedProcessCount', page.linked_process_count,
                   'historicalItemsWithIp', page.historical_items_with_ip,
                   'historicalItemsWithoutIp', page.historical_items_without_ip,
@@ -153,21 +169,26 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
       "po.importer", 1, request.authorizationContext?.importerScopes ?? [],
     );
     const result = await pool.query<{
-      purchase_orders: number; linked_processes: number; lines: number;
-      lines_without_ip: number; by_importer: Array<{ importer: string; purchaseOrders: number }>;
-      source_snapshot_at: Date | null;
+      purchase_orders: number; linked_processes: number; items: number;
+      items_with_ip: number; items_without_ip: number;
+      by_importer: Array<{ importer: string; purchaseOrders: number }>;
     }>(
       `WITH filtered_po AS MATERIALIZED (
          SELECT po.id, po.importer FROM procurement.purchase_order AS po
          ${portfolioWhere(scoped.sql)}
-       ), lines AS (
-         SELECT count(*)::int AS total,
-                count(*) FILTER (WHERE
-                  NULLIF(btrim(obs.source_ip_text), '') IS NULL
-                  OR upper(btrim(obs.source_ip_text)) IN ('CANCELLED', 'CANCELED')
-                  OR left(btrim(obs.source_ip_text), 1) = '#')::int AS without_ip
+       ), items AS (
+         SELECT count(item.id)::int AS total,
+                count(item.id) FILTER (WHERE EXISTS (
+                  SELECT 1 FROM procurement.po_item_allocation AS allocation
+                  WHERE allocation.purchase_order_item_id = item.id AND allocation.status = 'ACTIVE'
+                ) AND upper(coalesce(item.source_status, '')) NOT IN ('CANCELLED', 'CANCELED'))::int AS with_ip,
+                count(item.id) FILTER (WHERE upper(coalesce(item.source_status, '')) NOT IN ('CANCELLED', 'CANCELED')
+                  AND NOT EXISTS (
+                    SELECT 1 FROM procurement.po_item_allocation AS allocation
+                    WHERE allocation.purchase_order_item_id = item.id AND allocation.status = 'ACTIVE'
+                  ))::int AS without_ip
          FROM filtered_po AS po
-         JOIN procurement.po_line_observation AS obs ON obs.purchase_order_id = po.id
+         LEFT JOIN procurement.purchase_order_item AS item ON item.purchase_order_id = po.id
        ), linked AS (
          SELECT count(DISTINCT process.id)::int AS total
          FROM filtered_po AS po
@@ -177,17 +198,12 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
        ), importer_counts AS (
          SELECT importer, count(*)::int AS purchase_orders
          FROM filtered_po GROUP BY importer
-       ), source_version AS (
-         SELECT max(source.created_at) AS source_snapshot_at
-         FROM filtered_po AS po
-         JOIN procurement.po_line_observation AS obs ON obs.purchase_order_id = po.id
-         JOIN migration.source_row AS source ON source.id = obs.source_row_id
        )
        SELECT (SELECT count(*)::int FROM filtered_po) AS purchase_orders,
               (SELECT total FROM linked) AS linked_processes,
-              (SELECT total FROM lines) AS lines,
-              (SELECT without_ip FROM lines) AS lines_without_ip,
-              (SELECT source_snapshot_at FROM source_version) AS source_snapshot_at,
+              (SELECT total FROM items) AS items,
+              (SELECT with_ip FROM items) AS items_with_ip,
+              (SELECT without_ip FROM items) AS items_without_ip,
               coalesce((SELECT jsonb_agg(jsonb_build_object(
                 'importer', importer, 'purchaseOrders', purchase_orders)
                 ORDER BY importer) FROM importer_counts), '[]'::jsonb) AS by_importer`,
@@ -198,9 +214,9 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
     return {
       purchaseOrders: Number(row?.purchase_orders ?? 0),
       linkedProcesses: Number(row?.linked_processes ?? 0),
-      lines: Number(row?.lines ?? 0),
-      linesWithoutIp: Number(row?.lines_without_ip ?? 0),
-      sourceSnapshotAt: row?.source_snapshot_at ?? null,
+      items: Number(row?.items ?? 0),
+      itemsWithIp: Number(row?.items_with_ip ?? 0),
+      itemsWithoutIp: Number(row?.items_without_ip ?? 0),
       byImporter: row?.by_importer ?? [],
     };
   });

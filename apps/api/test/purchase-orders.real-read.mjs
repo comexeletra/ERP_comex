@@ -74,6 +74,17 @@ try {
   const expectedPoCount = Number((await client.query(
     "SELECT count(*)::int AS total FROM procurement.purchase_order",
   )).rows[0].total);
+  const expectedItemCounts = (await client.query(
+    `SELECT count(item.id)::int AS total,
+       count(item.id) FILTER (WHERE EXISTS (
+         SELECT 1 FROM procurement.po_item_allocation allocation
+         WHERE allocation.purchase_order_item_id=item.id AND allocation.status='ACTIVE'
+       ) AND upper(coalesce(item.source_status,'')) NOT IN ('CANCELLED','CANCELED'))::int AS with_ip,
+       count(item.id) FILTER (WHERE upper(coalesce(item.source_status,'')) NOT IN ('CANCELLED','CANCELED')
+         AND NOT EXISTS (SELECT 1 FROM procurement.po_item_allocation allocation
+                         WHERE allocation.purchase_order_item_id=item.id AND allocation.status='ACTIVE'))::int AS without_ip
+     FROM procurement.purchase_order_item item`,
+  )).rows[0];
 
   const get = (url, identity = "master") => app.inject({ method: "GET", url, headers: identity ? { "x-test-identity": identity } : {} });
   assert.equal((await get("/api/v1/purchase-orders", "")).statusCode, 401);
@@ -85,10 +96,11 @@ try {
   assert.equal(summaryResponse.statusCode, 200);
   const summary = summaryResponse.json();
   assert.equal(summary.purchaseOrders, expectedPoCount);
-  assert.equal(summary.lines, 6796);
-  assert.ok(typeof summary.sourceSnapshotAt === "string" && !Number.isNaN(Date.parse(summary.sourceSnapshotAt)));
+  assert.equal(summary.items, expectedItemCounts.total);
+  assert.equal(summary.itemsWithIp, expectedItemCounts.with_ip);
+  assert.equal(summary.itemsWithoutIp, expectedItemCounts.without_ip);
   assert.ok(summary.linkedProcesses > 0 && summary.linkedProcesses <= 200);
-  assert.ok(summary.linesWithoutIp >= 0 && summary.linesWithoutIp <= summary.lines);
+  assert.ok(summary.itemsWithoutIp >= 0 && summary.itemsWithoutIp <= summary.items);
   assert.equal(summary.byImporter.reduce((total, row) => total + row.purchaseOrders, 0), expectedPoCount);
 
   const first = await get("/api/v1/purchase-orders?page=1&pageSize=50");
@@ -107,6 +119,20 @@ try {
     assert.equal(list.statusCode, 200);
     const row = list.json().items.find(item => item.number === number && item.importer === "ELETRA MATRIZ");
     assert.ok(row, `Missing PO ${number}`);
+    const itemCounts = (await client.query(
+      `SELECT count(item.id)::int AS total,
+         count(item.id) FILTER (WHERE EXISTS (SELECT 1 FROM procurement.po_item_allocation allocation
+           WHERE allocation.purchase_order_item_id=item.id AND allocation.status='ACTIVE')
+           AND upper(coalesce(item.source_status,'')) NOT IN ('CANCELLED','CANCELED'))::int AS with_ip,
+         count(item.id) FILTER (WHERE upper(coalesce(item.source_status,'')) NOT IN ('CANCELLED','CANCELED')
+           AND NOT EXISTS (SELECT 1 FROM procurement.po_item_allocation allocation
+             WHERE allocation.purchase_order_item_id=item.id AND allocation.status='ACTIVE'))::int AS without_ip
+       FROM procurement.purchase_order_item item WHERE item.purchase_order_id=$1`,
+      [row.id],
+    )).rows[0];
+    assert.equal(row.operationalItemCount, itemCounts.total);
+    assert.equal(row.itemsWithIp, itemCounts.with_ip);
+    assert.equal(row.itemsWithoutIp, itemCounts.without_ip);
     const overviewResponse = await get(`/api/v1/purchase-orders/${row.id}/overview`);
     assert.equal(overviewResponse.statusCode, 200);
     const overview = overviewResponse.json();

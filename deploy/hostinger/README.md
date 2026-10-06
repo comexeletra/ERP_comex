@@ -39,6 +39,8 @@ Vercel marked the release `READY` and assigned the production alias.
 
 M026 promotes each existing PO line to an item in the PO workspace. It retains the line quantity and status, and records an allocation only when a matching linked IP exists. Lines without a linked IP retain their balance; canceled items keep a zero distributable balance. The original immutable records and existing manually entered items remain intact. The restored-copy validator checks item/source identity, per-IP quantities, canceled and unallocated balances, existing allocations and the PO/IP integration contracts before the production release.
 
+The PO portfolio summary reads item and active-allocation counts from the operational item tables. `release-api-m026-followup.sh` validates a restored database copy and updates only the API code when this summary changes; it requires M026 in the ledger and keeps the previous API available for rollback.
+
 ## Release M021: valores selecionáveis e campos operacionais (2026-10-05)
 
 M021 passou na validação em cópia restaurada, preservou as linhas históricas e

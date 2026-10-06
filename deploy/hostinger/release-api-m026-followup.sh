@@ -1,20 +1,14 @@
 #!/usr/bin/env bash
-# Promote existing PO lines and deploy their matching API after restored-copy tests.
 set -euo pipefail
 
 stage_dir=${ERP_STAGE_DIR:?Set ERP_STAGE_DIR to the staged release under /tmp}
-[[ $stage_dir == /tmp/erp-m026-* ]]
+[[ $stage_dir == /tmp/erp-m026-api-* ]]
 api_dir=$stage_dir/apps/api
 target_dir=/opt/import-erp/apps/api
 node=/opt/node-v24/bin/node
 test -f "$api_dir/dist/server.js"
 test -f "$api_dir/dist/migrate.js"
-test -f "$api_dir/dist/followup.js"
-test -f "$api_dir/migrations/M026_source_observations_as_po_items.sql"
-test -f "$api_dir/test/operations.integration.mjs"
-test -f "$api_dir/test/followup.integration.mjs"
-test -f "$api_dir/test/purchase-orders.summary.integration.mjs"
-test -f "$stage_dir/deploy/hostinger/validate-m026-on-copy.py"
+test -f "$stage_dir/deploy/hostinger/validate-m026-api-on-copy.py"
 test -d "$target_dir/node_modules"
 systemctl is-active --quiet import-erp-api
 
@@ -22,22 +16,16 @@ if [[ ! -e $api_dir/node_modules ]]; then
   ln -s "$target_dir/node_modules" "$api_dir/node_modules"
 fi
 
-migrate() {
-  MIGRATION_ENV=production ALLOW_PRODUCTION_MIGRATIONS=true \
-    "$node" --env-file=/etc/import-erp/migration-release.env \
-    "$api_dir/dist/migrate.js" "$1"
-}
-status=$(migrate status)
-if [[ $status != *'Migrations: 25 aplicadas, 1 pendentes.'* \
-      || $status != *'pendente  M026_source_observations_as_po_items.sql'* ]]; then
-  echo 'Expected M001-M025 applied and only M026 pending.' >&2
-  exit 1
-fi
+status=$(ALLOW_PRODUCTION_MIGRATIONS=true MIGRATION_ENV=production \
+  "$node" --env-file=/etc/import-erp/migration-release.env \
+  "$api_dir/dist/migrate.js" status)
+[[ $status == *'Migrations: 26 aplicadas, 0 pendentes.'* ]]
+ERP_STAGE_DIR=$stage_dir python3 "$stage_dir/deploy/hostinger/validate-m026-api-on-copy.py"
 
-new_dist=$target_dir/.dist-m026-release
-new_src=$target_dir/.src-m026-release
-old_dist=$target_dir/.dist-m026-previous
-old_src=$target_dir/.src-m026-previous
+new_dist=$target_dir/.dist-m026-api-release
+new_src=$target_dir/.src-m026-api-release
+old_dist=$target_dir/.dist-m026-api-previous
+old_src=$target_dir/.src-m026-api-previous
 for path in "$new_dist" "$new_src" "$old_dist" "$old_src"; do
   if [[ -e $path ]]; then
     echo "Temporary API release path already exists: $path" >&2
@@ -45,19 +33,13 @@ for path in "$new_dist" "$new_src" "$old_dist" "$old_src"; do
   fi
 done
 
-python3 "$stage_dir/deploy/hostinger/validate-m026-on-copy.py"
-
-rollback_dir=/var/backups/import-erp/m026-api-$(date -u +%Y%m%dT%H%M%SZ)
+rollback_dir=/var/backups/import-erp/m026-api-followup-$(date -u +%Y%m%dT%H%M%SZ)
 install -d -m 0700 "$rollback_dir"
 cp -a "$target_dir/dist" "$rollback_dir/dist"
 cp -a "$target_dir/src" "$rollback_dir/src"
 cp -a "$api_dir/dist" "$new_dist"
 cp -a "$api_dir/src" "$new_src"
 chmod -R a+rX "$new_dist" "$new_src"
-
-migrate up
-status=$(migrate status)
-[[ $status == *'Migrations: 26 aplicadas, 0 pendentes.'* ]]
 
 restore_api() {
   trap - ERR
@@ -66,7 +48,7 @@ restore_api() {
   if [[ -e $old_dist ]]; then mv "$old_dist" "$target_dir/dist"; else cp -a "$rollback_dir/dist" "$target_dir/dist"; fi
   if [[ -e $old_src ]]; then mv "$old_src" "$target_dir/src"; else cp -a "$rollback_dir/src" "$target_dir/src"; fi
   systemctl restart import-erp-api
-  echo "Previous API restored from $rollback_dir; M026 remains applied." >&2
+  echo "Previous API restored from $rollback_dir." >&2
 }
 trap restore_api ERR
 
@@ -86,9 +68,7 @@ for attempt in {1..15}; do
 done
 test "$ready" = true
 
-install -d "$target_dir/migrations"
-install -m 0644 "$api_dir/migrations/M026_source_observations_as_po_items.sql" "$target_dir/migrations/"
 mv "$old_dist" "$rollback_dir/previous-dist"
 mv "$old_src" "$rollback_dir/previous-src"
 trap - ERR
-echo "M026 and API published; previous API in $rollback_dir"
+echo "Follow-up API released; previous code is in $rollback_dir"
