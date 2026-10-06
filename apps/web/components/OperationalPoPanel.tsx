@@ -351,7 +351,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
           <button className="button" disabled={saving}>Salvar PO</button>
         </form>
       </section>}
-      <h3>Itens informados da PO</h3>
+      <h3>Complementos operacionais da PO</h3>
       {canWritePo && <section className="po-entry-section po-common-fields">
         <h4>Dados compartilhados pelos produtos</h4>
         <p className="muted">Preencha uma vez para manter iguais nos produtos. A data da PO é compartilhada no cabeçalho.</p>
@@ -366,7 +366,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             Aplicar campos alterados a todos os produtos</button>
         </form>
       </section>}
-      {data.items.length === 0 && <p>Nenhum item informado. Cadastre os itens do pedido para distribuir quantidades aos IPs.</p>}
+      {data.items.length === 0 && <p>Nenhum complemento operacional cadastrado. Os itens de origem estão em <Link className="text-link" href="#source-po-items">Itens da planilha</Link>.</p>}
       {data.items.map(item => {
         const draft = itemDrafts[item.id] ?? blankItem();
         const setDraft = (change: Partial<ItemDraft>) => setItemDrafts(current => ({ ...current, [item.id]: { ...draft, ...change } }));

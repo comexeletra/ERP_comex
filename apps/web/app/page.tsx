@@ -205,10 +205,10 @@ export default function PortfolioPage() {
         {result.items.length === 0 && result.totalCount > 0 ? <p>Esta página está fora do intervalo. <button className="button" onClick={() => navigate(applied, 1)}>Ir para a primeira página</button></p> : null}
         {result.totalCount === 0 ? <p>Nenhuma PO encontrada. Revise os filtros ou limpe a busca.</p> : null}
         {result.items.length > 0 && <div className="table-scroll"><table>
-          <thead><tr><th>PO TOTVS</th><th>Importador</th><th>Itens informados</th><th>Linhas da planilha</th><th>IPs</th><th>Linhas sem IP</th><th>Pendências</th><th>Ação</th></tr></thead>
+          <thead><tr><th>PO TOTVS</th><th>Importador</th><th>Itens da planilha</th><th>Itens operacionais</th><th>IPs</th><th>Linhas sem IP</th><th>Pendências</th><th>Ação</th></tr></thead>
           <tbody>{result.items.map(order => <tr key={order.id}>
             <td><strong>{order.number}</strong></td><td>{order.importer}</td>
-            <td>{order.operationalItemCount}</td><td>{order.historicalItemCount}</td><td>{order.linkedProcessCount}</td>
+            <td>{order.historicalItemCount}</td><td>{order.operationalItemCount}</td><td>{order.linkedProcessCount}</td>
             <td>{order.historicalItemsWithoutIp}</td><td>{order.unresolvedIssueCount}</td>
             <td><Link className="button" href={`/purchase-orders/${order.id}?return=${encodeURIComponent(returnPath)}`}>Abrir PO {order.number}</Link></td>
           </tr>)}</tbody>

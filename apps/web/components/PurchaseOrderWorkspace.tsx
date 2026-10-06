@@ -109,13 +109,16 @@ export default function PurchaseOrderWorkspace({ id, returnPath }: { id: string;
     {error && <div className="notice error" role="alert"><p>{error}</p><button className="button" onClick={() => setRetry(value => value + 1)}>Tentar novamente</button></div>}
   </main>;
 
+  const processByIp = new Map(data.processes.map(process => [process.ipNumber.trim().toLocaleUpperCase(), process]));
+  const poReturnPath = `/purchase-orders/${id}?return=${encodeURIComponent(returnPath)}`;
+
   return (
     <main className="shell">
       <Link href={returnPath} className="back">← Carteira de POs</Link>
       <header className="page-header">
         <p className="eyebrow">PO TOTVS · {data.importer}</p>
         <h1>{data.number}</h1>
-        <p>{data.historicalItemCount} observações históricas; {data.processes.length} IPs vinculados. Identidade: {data.identityStatus}.</p>
+        <p>{data.historicalItemCount} itens preservados da planilha; {data.processes.length} IPs vinculados. Identidade: {data.identityStatus}.</p>
       </header>
 
       <section className="metric-grid" aria-label="Cobertura histórica da PO">
@@ -130,10 +133,10 @@ export default function PurchaseOrderWorkspace({ id, returnPath }: { id: string;
 
       <details className="card historical-disclosure"><summary>Contexto dos dados</summary>
         <p className="muted">Itens oficiais integrados ao TOTVS: {data.officialItemsKnown ? "disponíveis" : "não confirmados"}. Saldo oficial integrado: {data.balanceAvailable ? "disponível" : "não disponível"}. O preenchimento operacional acima registra transcrições e distribuições feitas pelos analistas; não atualiza o TOTVS. As observações históricas continuam separadas do acompanhamento atual.</p>
-      </details><details className="card historical-disclosure"><summary>Histórico da PO</summary><p className="muted">Observações importadas, com linhagem até a aba e a linha de origem. Não representam itens oficiais nem saldo.</p>
+      </details><details className="card historical-disclosure"><summary id="source-po-items">Itens da planilha ({history.totalCount})</summary><p className="muted">Linhas originais da PO, preservadas com referência à aba e ao número da linha.</p>
         {history.items.length === 0 ? <p>Nenhuma observação nesta página.</p> : <div className="table-scroll"><table><thead><tr><th>Linha</th><th>Produto</th><th>Qtd.</th><th>Valor histórico</th><th>Necessidade</th><th>Status de origem</th><th>IP de origem</th><th>Campos da origem</th></tr></thead>
-          <tbody>{history.items.map(line => <Fragment key={line.id}><tr><td>{line.sourceRowNumber} · {line.sourceSheetName}</td><td><strong>{line.productCode ?? "—"}</strong><br />{line.productDescription}</td><td>{formatDecimal(line.quantity)}</td><td>{line.historicalAmount == null ? "—" : `${formatDecimal(line.historicalAmount)} ${line.currency ?? ""}`}</td><td>{formatDate(line.necessityDate)}</td><td>{line.legacyStatus ?? "—"}</td><td>{line.ipNumber ?? "Sem IP"}</td><td><button type="button" className="source-expand-button" aria-label={`${expandedHistoryId === line.id ? "Ocultar" : "Ver"} campos da linha ${line.sourceRowNumber} da aba ${line.sourceSheetName}`} aria-expanded={expandedHistoryId === line.id} onClick={() => setExpandedHistoryId(current => current === line.id ? undefined : line.id)}>{expandedHistoryId === line.id ? "Ocultar campos" : "Ver campos"}</button></td></tr>
-            {expandedHistoryId === line.id && <tr className="source-detail-row"><td colSpan={8}><section className="source-detail-panel"><div className="source-detail-heading"><strong>Campos preservados da origem</strong><span>Aba {line.sourceSheetName} · linha {line.sourceRowNumber}</span></div><dl className="source-field-grid">{Object.entries(line.sourceValues ?? {}).map(([column, value]) => <SourceCell key={column} column={column} row={line.sourceRowNumber} label={line.sourceColumnHeaders?.[column]} value={value} />)}</dl></section></td></tr>}</Fragment>)}</tbody>
+          <tbody>{history.items.map(line => { const sourceIp = line.ipNumber?.trim(); const linkedProcess = sourceIp ? processByIp.get(sourceIp.toLocaleUpperCase()) : undefined; return <Fragment key={line.id}><tr><td>{line.sourceRowNumber} · {line.sourceSheetName}</td><td><strong>{line.productCode ?? "—"}</strong><br />{line.productDescription}</td><td>{formatDecimal(line.quantity)}</td><td>{line.historicalAmount == null ? "—" : `${formatDecimal(line.historicalAmount)} ${line.currency ?? ""}`}</td><td>{formatDate(line.necessityDate)}</td><td>{line.legacyStatus ?? "—"}</td><td>{linkedProcess ? <Link className="text-link" href={`/processes/${linkedProcess.id}?return=${encodeURIComponent(poReturnPath)}`}>{line.ipNumber}</Link> : line.ipNumber ?? "Sem IP"}</td><td><button type="button" className="source-expand-button" aria-label={`${expandedHistoryId === line.id ? "Ocultar" : "Ver"} campos da linha ${line.sourceRowNumber} da aba ${line.sourceSheetName}`} aria-expanded={expandedHistoryId === line.id} onClick={() => setExpandedHistoryId(current => current === line.id ? undefined : line.id)}>{expandedHistoryId === line.id ? "Ocultar campos" : "Ver campos"}</button></td></tr>
+            {expandedHistoryId === line.id && <tr className="source-detail-row"><td colSpan={8}><section className="source-detail-panel"><div className="source-detail-heading"><strong>Campos preservados da origem</strong><span>Aba {line.sourceSheetName} · linha {line.sourceRowNumber}</span></div><dl className="source-field-grid">{Object.entries(line.sourceValues ?? {}).map(([column, value]) => <SourceCell key={column} column={column} row={line.sourceRowNumber} label={line.sourceColumnHeaders?.[column]} value={value} />)}</dl></section></td></tr>}</Fragment>})}</tbody>
         </table></div>}
         {history.totalCount > history.pageSize && <p className="pagination"><button className="button secondary" disabled={page === 1} onClick={() => setPage(value => value - 1)}>Anterior</button><span>Página {page} de {Math.ceil(history.totalCount / history.pageSize)}</span><button className="button" disabled={page * history.pageSize >= history.totalCount} onClick={() => setPage(value => value + 1)}>Próxima</button></p>}
       </details><section className="card"><h2>IPs vinculados</h2>
