@@ -240,6 +240,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .catalog-links { display: flex; flex-wrap: wrap; gap: 10px 22px; }
 .entity-value-list { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
 .entity-value-list li { background: #edf5f6; border: 1px solid #d3e4e6; border-radius: 999px; color: #264650; padding: 6px 11px; }
+.portfolio-header { margin-bottom: 24px; max-width: 1160px; }
+.portfolio-header > p:not(.eyebrow) { max-width: 760px; }
+.portfolio-shortcuts { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 18px; }
+.portfolio-shortcut-group { background: #fff; border: 1px solid #e0e8ed; border-radius: 12px; min-width: 0; padding: 13px 15px; }
+.portfolio-shortcut-group h2 { color: #71828c; font-size: .7rem; font-weight: 700; letter-spacing: .07em; margin: 0 0 9px; text-transform: uppercase; }
+.portfolio-shortcut-group > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.portfolio-shortcut-group a { background: #f4f8f9; border: 1px solid #e4ecef; border-radius: 7px; color: #176576; font-size: .8rem; font-weight: 700; line-height: 1.35; padding: 7px 9px; text-decoration: none; transition: background-color .15s ease, border-color .15s ease; }
+.portfolio-shortcut-group a:hover { background: #eaf4f5; border-color: #c6dfe2; }
+.portfolio-shortcut-group a:focus-visible { outline: 3px solid #e88415; outline-offset: 2px; }
+@media (max-width: 900px) { .portfolio-shortcuts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .portfolio-shortcuts { grid-template-columns: 1fr; margin-top: 14px; }.portfolio-shortcut-group { padding: 12px; } }
 
 /* Cadastro: controles e formulÃ¡rios */
 :root { --field-border: #c8d5dd; --field-ring: #0e7482; --ink-strong: #173847; --surface-soft: #f5f8fa; }

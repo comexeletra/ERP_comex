@@ -150,10 +150,20 @@ export default function PortfolioPage() {
   const totalPages = result ? Math.ceil(result.totalCount / pageSize) : 0;
   const returnPath = `/?${queryFor(applied, page)}`;
   return <main className="shell">
-    <header className="page-header">
+    <header className="page-header portfolio-header">
       <p className="eyebrow">ERP Comex</p><h1>Carteira de POs TOTVS</h1>
-      <p>Uma linha por pedido. Abra a PO para consultar suas linhas, IPs vinculados e pendências.</p>
-      <Link className="text-link" href="/source-audit">Planilha de origem →</Link> · <Link className="text-link" href="/requests">Solicitações →</Link> · <Link className="text-link" href="/processes">Consultar IPs →</Link> · <Link className="text-link" href="/pending-import-items">Linhas sem IP →</Link> · <Link className="text-link" href="/unassigned-po-items">Linhas sem PO →</Link> · <Link className="text-link" href="/quality">Revisar qualidade →</Link> · <Link className="text-link" href="/catalog">Cadastros →</Link>
+      <p>Consulte cada PO, seus produtos, os IPs associados e as pendências em um só lugar.</p>
+      <nav className="portfolio-shortcuts" aria-label="Atalhos da carteira">
+        <section className="portfolio-shortcut-group"><h2>Dados</h2><div>
+          <Link href="/source-audit">Planilha de origem</Link><Link href="/requests">Solicitações</Link><Link href="/catalog">Cadastros</Link>
+        </div></section>
+        <section className="portfolio-shortcut-group"><h2>Operação</h2><div>
+          <Link href="/processes">Consultar IPs</Link>
+        </div></section>
+        <section className="portfolio-shortcut-group"><h2>Pendências</h2><div>
+          <Link href="/pending-import-items">Linhas sem IP</Link><Link href="/unassigned-po-items">Linhas sem PO</Link><Link href="/quality">Revisar qualidade</Link>
+        </div></section>
+      </nav>
     </header>
     <section className="card">
       <form className="portfolio-filter" onSubmit={filter}>
