@@ -52,7 +52,7 @@ async function readResponse<T>(response: Response): Promise<T> {
   return readApiJson<T>(response);
 }
 
-export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
+export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" | "ip"; returnHref?: string }) {
   const router = useRouter();
   const [roles, setRoles] = useState<string[]>([]);
   const [importers, setImporters] = useState<string[]>([]);
@@ -298,7 +298,7 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
   }
 
   return <main className="shell">
-    <Link className="back" href={kind === "po" ? "/" : "/processes"}>← Voltar</Link>
+    <Link className="back" href={returnHref ?? (kind === "po" ? "/" : "/processes")}>← Voltar</Link>
     <header className="page-header">
       <p className="eyebrow">Registro operacional</p>
       <h1>{kind === "po" ? "Cadastrar PO do TOTVS" : "Criar IP"}</h1>

@@ -142,7 +142,7 @@ export default function CatalogPage() {
         <Link className="button secondary" href={canWrite ? "#catalog-create" : "#catalog-controls"}>Fornecedores, produtos e NCM</Link>
         <Link className="button secondary" href="/catalog/values">Valores das entidades</Link>
         {canRegisterPo && <Link className="button secondary" href="/purchase-orders/new">Cadastrar PO do TOTVS</Link>}
-        {canRegisterIp && <Link className="button secondary" href="/processes/new">Cadastrar IP</Link>}
+        {canRegisterIp && <Link className="button secondary" href="/processes/new?from=catalog">Cadastrar IP</Link>}
       </nav>
     </section>
     <section className="card catalog-controls" id="catalog-controls">
