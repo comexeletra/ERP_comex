@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch, readApiJson } from "../lib/api";
+import { automaticAuditReason } from "../lib/audit";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 
 type Field = { key: string; label: string; type?: "date" | "number" | "money" | "boolean" | "select"; max?: number; entity?: string };
@@ -114,7 +115,7 @@ export default function FollowupPanel({ id }: { id: string }) {
   const [data, setData] = useState<Followup>(); const [roles, setRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [notice, setNotice] = useState("");
   const [compatibilityWarning, setCompatibilityWarning] = useState("");
-  const [reason, setReason] = useState(""); const [busy, setBusy] = useState(false); const [reload, setReload] = useState(0);
+  const [busy, setBusy] = useState(false); const [reload, setReload] = useState(0);
   const [processDrafts, setProcessDrafts] = useState<Record<string, Draft>>({});
   const [docDrafts, setDocDrafts] = useState<Record<string, DocDraft>>({});
   const [editingDoc, setEditingDoc] = useState<Record<string, string>>({});
@@ -151,14 +152,14 @@ export default function FollowupPanel({ id }: { id: string }) {
   }
   async function save(action: () => Promise<unknown>, success: string) {
     setBusy(true); setError(""); setNotice("");
-    try { await action(); setNotice(success); setReason(""); setReload(value => value + 1); }
+    try { await action(); setNotice(success); setReload(value => value + 1); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setBusy(false); }
   }
   function saveProcess(event: FormEvent<HTMLFormElement>, processId: string, version: string) {
     event.preventDefault();
     void save(() => send(`/api/v1/processes/${processId}/followup`, "PATCH",
-      { fields: payload(processFields, processDrafts[processId]), reason }, version), "Dados do IP atualizados.");
+      { fields: payload(processFields, processDrafts[processId]), reason: automaticAuditReason }, version), "Dados do IP atualizados.");
   }
   function documentBody(d: DocDraft, editing: boolean) {
     const body = { number: d.number, issueDate: d.issueDate || null,
@@ -167,7 +168,7 @@ export default function FollowupPanel({ id }: { id: string }) {
       unitPrice: d.kind === "INVOICE" ? d.unitPrice.replace(",", ".") || null : null,
       amount: d.kind === "INVOICE" ? d.amount.replace(",", ".") || null : null,
       currencyCode: d.kind === "INVOICE" ? d.currencyCode.toUpperCase() || null : null,
-      notes: d.notes, reason };
+      notes: d.notes, reason: automaticAuditReason };
     return editing ? body : { ...body, kind: d.kind, purchaseOrderItemId: d.purchaseOrderItemId || null };
   }
   function saveDoc(event: FormEvent<HTMLFormElement>, processId: string, documents: Document[]) {
@@ -190,9 +191,6 @@ export default function FollowupPanel({ id }: { id: string }) {
     {notice && <p className="notice success" role="status">{notice}</p>}
     {compatibilityWarning && <p className="notice" role="status">{compatibilityWarning}</p>}
     {!loading && data && <>
-      {canWriteProcess && <label className="operational-reason">Justificativa das alterações
-        <input value={reason} onChange={event => setReason(event.target.value)} minLength={3} maxLength={1000} required
-          placeholder="Ex.: dados conferidos no TOTVS e nos documentos" /></label>}
       <h3>Dados dos itens</h3>
       <p className="muted">Os campos de todos os itens são preenchidos e editados juntos no painel “Preenchimento operacional da PO” acima.</p>
       <h3>Embarques e cálculos por item/IP</h3>
@@ -227,7 +225,7 @@ export default function FollowupPanel({ id }: { id: string }) {
         </article>;
       })}
       <h3>Registro de eventos da PO e dos IPs</h3>
-      <p className="muted">Cada alteração operacional é registrada com data, justificativa e valores anteriores/novos. Eventos do IP são compartilhados com todas as POs ligadas àquele IP; quantidades permanecem no vínculo de cada produto com cada IP.</p>
+      <p className="muted">Cada alteração operacional fica no histórico com data e valores anteriores/novos. Eventos do IP são compartilhados com todas as POs ligadas àquele IP; quantidades permanecem no vínculo de cada produto com cada IP.</p>
       {data.events.length === 0 ? <p>Nenhum evento operacional registrado.</p> :
         <ol className="operational-event-list">{data.events.map(event => <li key={event.id}>
           <div className="operational-event-heading"><time dateTime={event.occurredAt}>{eventDate(event.occurredAt)}</time>
@@ -235,7 +233,7 @@ export default function FollowupPanel({ id }: { id: string }) {
             <span>{eventEntityLabels[event.entityType] ?? event.entityType} · {eventOperationLabels[event.operation] ?? event.operation}</span>
             {event.relatedLabel && <span>{event.relatedLabel}</span>}
           </div>
-          {event.reason && <p>Justificativa: {event.reason}</p>}
+          {event.reason && event.reason !== automaticAuditReason && <p>Justificativa: {event.reason}</p>}
           <details><summary>Ver valores registrados</summary><div className="operational-event-values">
             <div><strong>Antes</strong><pre>{eventSnapshot(event.oldValue)}</pre></div>
             <div><strong>Depois</strong><pre>{eventSnapshot(event.newValue)}</pre></div>

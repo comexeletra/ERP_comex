@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, Fragment, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
+import { automaticAuditReason } from "../lib/audit";
 import ProcessPostShipmentPanel from "./ProcessPostShipmentPanel";
 
 type Cost = { id: string; type: string; currency: string; amount: string; status: string; sourceSheetName: string; sourceRowNumber: number; sourceColumn: string };
@@ -30,11 +31,8 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
   const [roles, setRoles] = useState<string[]>([]);
   const [ipNumberDraft, setIpNumberDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
-  const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
-  const [closeReason, setCloseReason] = useState("");
   const [closing, setClosing] = useState(false);
-  const [reopenReason, setReopenReason] = useState("");
   const [reopening, setReopening] = useState(false);
   const [notice, setNotice] = useState("");
   async function readSavedProcess(): Promise<Process> {
@@ -73,14 +71,14 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
       const response = await apiFetch(`/api/v1/processes/${id}`, { method: "PATCH",
         headers: { "content-type": "application/json", "X-Record-Version": process.version },
         body: JSON.stringify({ ipNumber: ipNumberDraft, logisticsStatus: process.logisticsStatus, priority: process.priority,
-          notes: notesDraft, reason }) });
+          notes: notesDraft, reason: automaticAuditReason }) });
       const body = await response.json() as { detail?: string };
       if (!response.ok) throw new Error(body.detail || "Não foi possível atualizar o IP.");
       const saved = await readSavedProcess();
       if (saved.ipNumber !== ipNumberDraft || saved.notes !== notesDraft) {
         throw new Error("A API confirmou a alteração, mas os dados do IP não apareceram na releitura.");
       }
-      setNotice("IP atualizado."); setReason(""); setRetry(value => value + 1);
+      setNotice("IP atualizado."); setRetry(value => value + 1);
     } catch (cause) { setSaveError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setSaving(false); }
   }
@@ -90,13 +88,13 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
     try {
       const response = await apiFetch(`/api/v1/processes/${id}/close`, { method: "POST",
         headers: { "content-type": "application/json", "X-Record-Version": process.version },
-        body: JSON.stringify({ reason: closeReason }) });
+        body: JSON.stringify({ reason: automaticAuditReason }) });
       const body = await response.json() as { detail?: string };
       if (!response.ok) throw new Error(body.detail || "Não foi possível encerrar o IP.");
       if ((await readSavedProcess()).lifecycleStatus !== "CLOSED") {
         throw new Error("A API confirmou o encerramento, mas o IP não aparece como encerrado.");
       }
-      setNotice("IP encerrado."); setCloseReason(""); setRetry(value => value + 1);
+      setNotice("IP encerrado."); setRetry(value => value + 1);
     } catch (cause) { setSaveError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setClosing(false); }
   }
@@ -106,13 +104,13 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
     try {
       const response = await apiFetch(`/api/v1/processes/${id}/reopen`, { method: "POST",
         headers: { "content-type": "application/json", "X-Record-Version": process.version },
-        body: JSON.stringify({ reason: reopenReason }) });
+        body: JSON.stringify({ reason: automaticAuditReason }) });
       const body = await response.json() as { detail?: string };
       if (!response.ok) throw new Error(body.detail || "Não foi possível reabrir o IP.");
       if ((await readSavedProcess()).lifecycleStatus !== "OPEN") {
         throw new Error("A API confirmou a reabertura, mas o IP não aparece como aberto.");
       }
-      setNotice("IP reaberto."); setReopenReason(""); setRetry(value => value + 1);
+      setNotice("IP reaberto."); setRetry(value => value + 1);
     } catch (cause) { setSaveError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setReopening(false); }
   }
@@ -130,10 +128,8 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
         {notice && <p className="notice success" role="status">{notice}</p>}
         {saveError && <p className="notice error" role="alert">{saveError}</p>}
         {process.lifecycleStatus === "CLOSED" && <>
-          <p className="notice">IP encerrado em {process.closedAt ? new Date(process.closedAt).toLocaleString("pt-BR") : "data indisponível"}. Justificativa: {process.closeReason || "—"}</p>
+          <p className="notice">IP encerrado em {process.closedAt ? new Date(process.closedAt).toLocaleString("pt-BR") : "data indisponível"}.</p>
           {canWrite && <details><summary>Reabrir IP</summary><form className="stack-form" onSubmit={reopenProcess}>
-            <label>Justificativa<input required minLength={3} maxLength={1000} value={reopenReason}
-              onChange={event => setReopenReason(event.target.value)} /></label>
             <button className="button" disabled={reopening}>{reopening ? "Reabrindo…" : "Reabrir IP"}</button>
           </form></details>}
         </>}
@@ -142,13 +138,10 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
           <label>Número do IP<input required maxLength={80} disabled={process.sourceKind !== "MANUAL"}
             value={ipNumberDraft} onChange={event => setIpNumberDraft(event.target.value)} /></label>
           <label>Observações<textarea maxLength={4000} value={notesDraft} onChange={event => setNotesDraft(event.target.value)} /></label>
-          <label>Justificativa<input required minLength={3} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} /></label>
           <button className="button" disabled={saving}>{saving ? "Salvando…" : "Salvar IP"}</button>
           </form></details>
           <details><summary>Encerrar IP</summary><form className="stack-form" onSubmit={closeProcess}>
             <p>O encerramento fica a critério do analista e não depende do status logístico. Depois de encerrado, os dados e as distribuições ficam bloqueados para edição.</p>
-            <label>Justificativa<input required minLength={3} maxLength={1000} value={closeReason}
-              onChange={event => setCloseReason(event.target.value)} /></label>
             <button className="button" disabled={closing}>{closing ? "Encerrando…" : "Encerrar IP"}</button>
           </form></details>
         </>}

@@ -201,8 +201,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .operational-summary > div { background: #f3f8f9; border-radius: 8px; padding: 12px; }
 .operational-summary dt { color: #617985; font-size: .76rem; font-weight: 700; }
 .operational-summary dd { margin: 5px 0 0; overflow-wrap: anywhere; }
-.operational-reason { display: grid; font-weight: 700; gap: 6px; }
-.operational-reason input { width: 100%; }
 .operational-fields { display: grid; gap: 12px; grid-template-columns: repeat(8, minmax(0, 1fr)); min-width: 0; max-width: 100%; }
 .operational-fields > label { min-width: 0; max-width: 100%; }
 .operational-fields input, .operational-fields select, .operational-fields textarea { min-width: 0; max-width: 100%; width: 100%; }

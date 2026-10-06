@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, readApiJson } from "../lib/api";
+import { automaticAuditReason } from "../lib/audit";
 import { blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsEditor,
   purchaseOrderCommonItemFields, purchaseOrderSpecificItemFields, purchaseOrderItemFields,
   purchaseOrderItemFieldsPayload } from "./PurchaseOrderItemFields";
@@ -108,7 +109,6 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   const [allocationQuantity, setAllocationQuantity] = useState("");
   const [allocationNotes, setAllocationNotes] = useState("");
   const [editingAllocation, setEditingAllocation] = useState<Allocation>();
-  const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -171,7 +171,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       `/api/v1/purchase-orders/${id}/operational`, { cache: "no-store" }));
     const batch = await apiFetch(`/api/v1/purchase-orders/${id}/items/followup`, {
       method: "PATCH", headers: { "content-type": "application/json", "X-Record-Version": current.version },
-      body: JSON.stringify({ itemIds: data.items.map(item => item.id), fields, reason }),
+      body: JSON.stringify({ itemIds: data.items.map(item => item.id), fields, reason: automaticAuditReason }),
     });
     if (await isLegacySharedFieldsEndpoint(batch)) {
       // Older APIs route this URL as an item ID and return INVALID_ITEM instead of 404.
@@ -181,7 +181,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
           const latest = await responseData<{ version: string }>(await apiFetch(
             `/api/v1/purchase-orders/${id}/operational`, { cache: "no-store" }));
           await send(`/api/v1/purchase-orders/${id}/items/${item.id}/followup`, "PATCH",
-            { fields, reason }, latest.version);
+            { fields, reason: automaticAuditReason }, latest.version);
           completed += 1;
         } catch (cause) {
           const detail = cause instanceof Error ? cause.message : "Erro inesperado.";
@@ -198,7 +198,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   }
   async function save(action: () => Promise<unknown>, success: string) {
     setSaving(true); setError(""); setNotice("");
-    try { await action(); setNotice(success); setReason(""); setReload(value => value + 1); onChanged?.(); }
+    try { await action(); setNotice(success); setReload(value => value + 1); onChanged?.(); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setSaving(false); }
   }
@@ -206,7 +206,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     event.preventDefault(); if (!data) return;
     await save(async () => {
       await send(`/api/v1/purchase-orders/${id}`, "PATCH",
-        { number, supplierText: supplier || null, orderDate: orderDate || null, notes, reason }, data.version);
+        { number, supplierText: supplier || null, orderDate: orderDate || null, notes, reason: automaticAuditReason }, data.version);
       if (commonFieldsTouched.size) {
         const fieldsToSave = purchaseOrderCommonItemFields.filter(field => commonFieldsTouched.has(field.key));
         await applyCommonFieldsToItems(purchaseOrderItemFieldsPayload(commonOperationalDraft, true, fieldsToSave));
@@ -225,13 +225,13 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       productCode: draft.productCode, description: draft.description,
       orderedQuantity: draft.orderedQuantity.replace(",", "."), unit: draft.unit,
       unitPrice: draft.unitPrice ? draft.unitPrice.replace(",", ".") : null,
-      currency: draft.currency ? draft.currency.toUpperCase() : null, reason };
+      currency: draft.currency ? draft.currency.toUpperCase() : null, reason: automaticAuditReason };
     await save(async () => {
       await send(`/api/v1/purchase-orders/${id}/items/${item.id}`, "PATCH", body, data.version);
       const latest = await responseData<{ version: string }>(await apiFetch(`/api/v1/purchase-orders/${id}/operational`, { cache: "no-store" }));
       const fields = purchaseOrderItemFieldsPayload(draft.operational, true, purchaseOrderSpecificItemFields);
       await send(`/api/v1/purchase-orders/${id}/items/${item.id}/followup`, "PATCH",
-        { fields, reason }, latest.version);
+        { fields, reason: automaticAuditReason }, latest.version);
       await verifySavedItemFields(id, new Map([[item.id, fields]]));
     }, "Item e campos operacionais atualizados.");
   }
@@ -260,7 +260,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         externalLineReference: draft.externalLineReference || null, productCode: draft.productCode,
         description: draft.description, orderedQuantity: draft.orderedQuantity.replace(",", "."),
         unit: draft.unit, unitPrice: draft.unitPrice ? draft.unitPrice.replace(",", ".") : null,
-        currency: draft.currency ? draft.currency.toUpperCase() : null, reason,
+        currency: draft.currency ? draft.currency.toUpperCase() : null, reason: automaticAuditReason,
       });
       const operational = {
         ...purchaseOrderItemFieldsPayload(draft.operational, false, purchaseOrderSpecificItemFields),
@@ -269,7 +269,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       if (Object.keys(operational).length > 0) {
         const latest = await responseData<{ version: string }>(await apiFetch(`/api/v1/purchase-orders/${id}/operational`, { cache: "no-store" }));
         await send(`/api/v1/purchase-orders/${id}/items/${created.id}/followup`, "PATCH",
-          { fields: operational, reason }, latest.version);
+          { fields: operational, reason: automaticAuditReason }, latest.version);
       }
       await verifySavedItemFields(id, new Map([[created.id, operational]]));
       setItemDraft(blankItem());
@@ -292,7 +292,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         method: "POST",
         headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify({ importer: data.importer, ipNumber: newIpNumber,
-          logisticsStatus: newIpStatus || null, priority: newIpPriority || null, notes: newIpNotes, reason }),
+          logisticsStatus: newIpStatus || null, priority: newIpPriority || null, notes: newIpNotes, reason: automaticAuditReason }),
       }));
       setIpOptions(current => [...current.filter(option => option.id !== created.id),
         { id: created.id, ipNumber: created.ipNumber, importer: data.importer }]);
@@ -307,7 +307,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     if (commonFieldsTouched.size) { setError("Salve primeiro os dados compartilhados da PO."); return; }
     if (!itemId || (!processId && !editingAllocation)) return;
     await save(async () => {
-      const body = { quantity: allocationQuantity, notes: allocationNotes, reason };
+      const body = { quantity: allocationQuantity, notes: allocationNotes, reason: automaticAuditReason };
       await send(editingAllocation ? `/api/v1/purchase-orders/${id}/allocations/${editingAllocation.id}` :
         `/api/v1/purchase-orders/${id}/allocations`, editingAllocation ? "PATCH" : "POST",
       editingAllocation ? body : { ...body, itemId, processId }, editingAllocation?.version);
@@ -316,10 +316,10 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   }
   async function cancelAllocation() {
     if (commonFieldsTouched.size) { setError("Salve primeiro os dados compartilhados da PO."); return; }
-    if (!editingAllocation || !reason.trim()) return;
+    if (!editingAllocation) return;
     await save(async () => {
       await send(`/api/v1/purchase-orders/${id}/allocations/${editingAllocation.id}`, "DELETE",
-        { reason }, editingAllocation.version);
+        { reason: automaticAuditReason }, editingAllocation.version);
       setEditingAllocation(undefined); setAllocationQuantity(""); setAllocationNotes("");
     }, "Distribuição cancelada; o saldo voltou ao item.");
   }
@@ -338,9 +338,6 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       <p className="muted">Cadastre fornecedores e produtos em <Link className="text-link" href="/catalog">Cadastros</Link> e os demais valores em <Link className="text-link" href="/catalog/values">Valores das entidades</Link>.</p>
       <dl className="operational-summary"><div><dt>Fornecedor informado</dt><dd>{data.supplierText ?? "—"}</dd></div>
         <div><dt>Data da PO</dt><dd>{data.orderDate ?? "—"}</dd></div><div><dt>Observações</dt><dd>{data.notes || "—"}</dd></div></dl>
-      {(canWritePo || canAllocate) && <label className="operational-reason">Justificativa da alteração
-        <input required maxLength={1000} value={reason} onChange={event => setReason(event.target.value)}
-          placeholder="Ex.: conferido no pedido do TOTVS" /></label>}
       {canWritePo && <section className="po-entry-section">
         <h3>Dados da PO</h3>
         <form className="stack-form" onSubmit={saveHeader}>
@@ -352,7 +349,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
           </select></label>
           <label>Data da PO<input type="date" value={orderDate} onChange={event => setOrderDate(event.target.value)} /></label>
           <label>Observações<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
-          <button className="button" disabled={saving || reason.trim().length < 3}>Salvar PO</button>
+          <button className="button" disabled={saving}>Salvar PO</button>
         </form>
       </section>}
       <h3>Itens informados da PO</h3>
@@ -366,7 +363,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
               const value = values[field.key] ?? "";
               if (value !== commonOperationalDraft[field.key]) updateCommonField(field.key, value);
             })} />
-          <button className="button" disabled={saving || !data.items.length || !commonFieldsTouched.size || reason.trim().length < 3}>
+          <button className="button" disabled={saving || !data.items.length || !commonFieldsTouched.size}>
             Aplicar campos alterados a todos os produtos</button>
         </form>
       </section>}
@@ -393,7 +390,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             <OperationalFieldsEditor fields={purchaseOrderSpecificItemFields} values={draft.operational} options={options}
               setValues={operational => setDraft({ operational })} />
             <PurchaseOrderCalculatedFields quantity={draft.orderedQuantity} unitPrice={draft.unitPrice} currency={draft.currency} />
-            <button className="button" disabled={saving || commonFieldsTouched.size > 0 || reason.trim().length < 3}>Salvar todos os campos deste item</button>
+            <button className="button" disabled={saving || commonFieldsTouched.size > 0}>Salvar todos os campos deste item</button>
           </form> : <p>{item.orderedQuantity} {item.unit} · {item.description}</p>}
         </article>;
       })}
@@ -413,7 +410,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
           <OperationalFieldsEditor fields={purchaseOrderSpecificItemFields} values={itemDraft.operational} options={options}
             setValues={operational => setItemDraft({ ...itemDraft, operational })} />
           <PurchaseOrderCalculatedFields quantity={itemDraft.orderedQuantity} unitPrice={itemDraft.unitPrice} currency={itemDraft.currency} />
-          <button className="button" disabled={saving || (commonFieldsTouched.size > 0 && data.items.length > 0) || reason.trim().length < 3}>Salvar item completo</button>
+          <button className="button" disabled={saving || (commonFieldsTouched.size > 0 && data.items.length > 0)}>Salvar item completo</button>
         </form>
       </details>}
       <h3>Distribuição por IP</h3>
@@ -447,7 +444,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             <label>Observações<textarea maxLength={4000} value={newIpNotes}
               onChange={event => setNewIpNotes(event.target.value)} /></label>
           </div>
-          <button className="button" disabled={saving || commonFieldsTouched.size > 0 || reason.trim().length < 3}>Cadastrar IP e selecionar</button>
+          <button className="button" disabled={saving || commonFieldsTouched.size > 0}>Cadastrar IP e selecionar</button>
         </form>}
         <form className="stack-form" onSubmit={saveAllocation}>
           <label>Item<select required value={itemId} disabled={Boolean(editingAllocation)} onChange={event => setItemId(event.target.value)}>
@@ -460,13 +457,13 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             onChange={event => setAllocationQuantity(event.target.value)} placeholder="Ex.: 40" /></label>
           <label>Observações<textarea maxLength={2000} value={allocationNotes}
             onChange={event => setAllocationNotes(event.target.value)} /></label>
-          <button className="button" disabled={saving || commonFieldsTouched.size > 0 || reason.trim().length < 3 || (!editingAllocation && !processId)}>
+          <button className="button" disabled={saving || commonFieldsTouched.size > 0 || (!editingAllocation && !processId)}>
             {editingAllocation ? "Atualizar distribuição" : "Distribuir quantidade"}</button>
           {editingAllocation && <div className="operational-actions">
             <button className="button secondary" type="button" onClick={() => {
               setEditingAllocation(undefined); setAllocationQuantity(""); setAllocationNotes("");
             }}>Cancelar edição</button>
-            <button className="button secondary" type="button" disabled={saving || commonFieldsTouched.size > 0 || reason.trim().length < 3}
+            <button className="button secondary" type="button" disabled={saving || commonFieldsTouched.size > 0}
               onClick={() => void cancelAllocation()}>Cancelar distribuição</button>
           </div>}
         </form>

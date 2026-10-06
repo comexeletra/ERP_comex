@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch, readApiJson } from "../lib/api";
+import { automaticAuditReason } from "../lib/audit";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 
 type Value = string | number | boolean | null;
@@ -64,7 +65,7 @@ function makePayload(values: Record<string, string>) {
 
 export default function ProcessPostShipmentPanel({ id }: { id: string }) {
   const [data, setData] = useState<Data>(); const [roles, setRoles] = useState<string[]>([]);
-  const [draft, setDraft] = useState<Record<string, string>>({}); const [reason, setReason] = useState("");
+  const [draft, setDraft] = useState<Record<string, string>>({});
   const [docDraft, setDocDraft] = useState<DocDraft>(blankDoc()); const [editingDoc, setEditingDoc] = useState<string>();
   const [options, setOptions] = useState<OperationalOption[]>([]); const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [notice, setNotice] = useState("");
@@ -103,7 +104,7 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
   }
   async function save(event: FormEvent<HTMLFormElement>, action: () => Promise<void>, success: string) {
     event.preventDefault(); setBusy(true); setError(""); setNotice("");
-    try { await action(); setNotice(success); setReason(""); setEditingDoc(undefined); setDocDraft(blankDoc()); setReload(value => value + 1); }
+    try { await action(); setNotice(success); setEditingDoc(undefined); setDocDraft(blankDoc()); setReload(value => value + 1); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setBusy(false); }
   }
@@ -114,7 +115,7 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
       unitPrice: value.kind === "INVOICE" ? value.unitPrice.replace(",", ".") || null : null,
       amount: value.kind === "INVOICE" ? value.amount.replace(",", ".") || null : null,
       currencyCode: value.kind === "INVOICE" ? value.currencyCode.toUpperCase() || null : null,
-      notes: value.notes, reason };
+      notes: value.notes, reason: automaticAuditReason };
   }
   const currencyTotals = data?.invoiceTotals.amounts.map(item => `${item.amount} ${item.currency}`).join(" · ") || "—";
   return <section className="card operational-panel" aria-label="Pós Embarque do IP">
@@ -130,10 +131,8 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
         <ul>{data.purchaseOrders.map(po => <li key={po.id}><Link className="text-link" href={`/purchase-orders/${po.id}`}>PO {po.number}</Link> · {po.importer}</li>)}</ul>}
       <h3>Dados operacionais</h3>
       {canWrite ? <>
-        <label className="operational-reason">Justificativa das alterações<input required minLength={3} maxLength={1000}
-          value={reason} onChange={event => setReason(event.target.value)} /></label>
         <form className="stack-form" onSubmit={event => void save(event, async () => {
-          await send(`/api/v1/processes/${id}/followup`, "PATCH", { fields: makePayload(draft), reason }, data.process.version);
+          await send(`/api/v1/processes/${id}/followup`, "PATCH", { fields: makePayload(draft), reason: automaticAuditReason }, data.process.version);
         }, "Dados do Pós Embarque atualizados.")}>
           <div className="operational-fields">{fields.map(field => <label key={field.key}>{field.label}
             {field.type === "boolean" ? <select value={draft[field.key] ?? ""} onChange={event => setDraft({ ...draft, [field.key]: event.target.value })}>
@@ -145,7 +144,7 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
                   inputMode={field.type === "money" ? "decimal" : undefined} value={draft[field.key] ?? ""}
                   onChange={event => setDraft({ ...draft, [field.key]: event.target.value })} />}
           </label>)}</div>
-          <button className="button" disabled={busy || reason.trim().length < 3}>{busy ? "Salvando…" : "Salvar dados do IP"}</button>
+          <button className="button" disabled={busy}>{busy ? "Salvando…" : "Salvar dados do IP"}</button>
         </form>
       </> : <dl className="followup-grid">{fields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{format(data.process[field.key])}</dd></div>)}</dl>}
       <h3>POs, itens e quantidades nesta operação</h3>
@@ -168,9 +167,9 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
             number: document.number, issueDate: document.issueDate ?? "", homologationDate: document.homologationDate ?? "",
             quantity: document.quantity ?? "", unitPrice: document.unitPrice ?? "", amount: document.amount ?? "",
             currencyCode: document.currencyCode ?? "", notes: document.notes });
-        }}>Editar</button><button type="button" className="button secondary" disabled={busy || reason.trim().length < 3}
+        }}>Editar</button><button type="button" className="button secondary" disabled={busy}
           onClick={() => void (async () => { setBusy(true); setError(""); try {
-            await send(`/api/v1/processes/${id}/documents/${document.id}`, "DELETE", { reason }, document.version);
+            await send(`/api/v1/processes/${id}/documents/${document.id}`, "DELETE", { reason: automaticAuditReason }, document.version);
             setNotice("Documento cancelado."); setReload(value => value + 1);
           } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); } finally { setBusy(false); } })()}>Cancelar</button></div>}
         {editingDoc === document.id && <form className="stack-form" onSubmit={event => void save(event, async () => {
@@ -184,7 +183,7 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
             <label>Valor informado<input inputMode="decimal" value={docDraft.amount} onChange={event => setDocDraft({ ...docDraft, amount: event.target.value })} /></label>
             <label>Moeda<OperationalOptionSelect entity="currency" value={docDraft.currencyCode} values={options} onChange={value => setDocDraft({ ...docDraft, currencyCode: value })} /></label></>}
           <label>Observações<textarea maxLength={4000} value={docDraft.notes} onChange={event => setDocDraft({ ...docDraft, notes: event.target.value })} /></label>
-          <button className="button" disabled={busy || reason.trim().length < 3}>Salvar documento</button>
+          <button className="button" disabled={busy}>Salvar documento</button>
         </form>}
       </div>)}
       {canWrite && <form className="stack-form" onSubmit={event => void save(event, async () => {
@@ -205,11 +204,11 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
             <label>Valor informado<input inputMode="decimal" value={docDraft.amount} onChange={event => setDocDraft({ ...docDraft, amount: event.target.value })} /></label>
             <label>Moeda<OperationalOptionSelect entity="currency" value={docDraft.currencyCode} values={options} onChange={value => setDocDraft({ ...docDraft, currencyCode: value })} /></label></>}
         </div><label>Observações<textarea maxLength={4000} value={docDraft.notes} onChange={event => setDocDraft({ ...docDraft, notes: event.target.value })} /></label></>}
-        <button className="button" disabled={busy || reason.trim().length < 3 || Boolean(editingDoc)}>{busy ? "Salvando…" : "Adicionar documento"}</button>
+        <button className="button" disabled={busy || Boolean(editingDoc)}>{busy ? "Salvando…" : "Adicionar documento"}</button>
       </form>}
       <h3>Histórico do IP</h3>
       {data.events.length === 0 ? <p>Nenhum evento operacional registrado.</p> : <ol>{data.events.map(event =>
-        <li key={event.id}>{new Date(event.occurredAt).toLocaleString("pt-BR")} · {event.operation} · {event.reason ?? "Sem justificativa"}</li>)}</ol>}
+        <li key={event.id}>{new Date(event.occurredAt).toLocaleString("pt-BR")} · {event.operation}{event.reason && event.reason !== automaticAuditReason ? ` · ${event.reason}` : ""}</li>)}</ol>}
     </>}
   </section>;
 }

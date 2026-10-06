@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, isMissingApiRoute, readApiJson } from "../lib/api";
+import { automaticAuditReason } from "../lib/audit";
 import {
   blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsEditor,
   purchaseOrderCommonItemFields, purchaseOrderSpecificItemFields, purchaseOrderItemFieldsPayload,
@@ -34,7 +35,6 @@ type PoDraft = {
   supplier: string;
   orderDate: string;
   notes: string;
-  reason: string;
   items: PoItemDraft[];
   commonItemFields: OperationalFieldDraft;
   createdPoId: string;
@@ -63,7 +63,6 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
   const [notes, setNotes] = useState("");
-  const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -88,7 +87,6 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
           setSupplier(typeof draft.supplier === "string" ? draft.supplier : "");
           setOrderDate(typeof draft.orderDate === "string" ? draft.orderDate : "");
           setNotes(typeof draft.notes === "string" ? draft.notes : "");
-          setReason(typeof draft.reason === "string" ? draft.reason : "");
           setItems(draft.items);
           setCommonItemFields(draft.commonItemFields ?? blankPurchaseOrderItemFields);
           setCreatedPoId(typeof draft.createdPoId === "string" ? draft.createdPoId : "");
@@ -103,9 +101,9 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
 
   useEffect(() => {
     if (kind !== "po" || !draftReady) return;
-    const draft: PoDraft = { importer, number, supplier, orderDate, notes, reason, items, commonItemFields, createdPoId };
+    const draft: PoDraft = { importer, number, supplier, orderDate, notes, items, commonItemFields, createdPoId };
     sessionStorage.setItem(poDraftKey, JSON.stringify(draft));
-  }, [kind, draftReady, importer, number, supplier, orderDate, notes, reason, items, commonItemFields, createdPoId]);
+  }, [kind, draftReady, importer, number, supplier, orderDate, notes, items, commonItemFields, createdPoId]);
 
   useEffect(() => {
     Promise.all([apiFetch("/auth/me"), apiFetch("/api/v1/importers"), loadOperationalOptions()])
@@ -159,14 +157,14 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
         productCode: item.productCode, description: item.description,
         orderedQuantity: item.orderedQuantity.replace(",", "."), unit: item.unit,
         unitPrice: item.unitPrice ? item.unitPrice.replace(",", ".") : null,
-        currency: item.currency ? item.currency.toUpperCase() : null, reason },
+        currency: item.currency ? item.currency.toUpperCase() : null, reason: automaticAuditReason },
       fields: {
         ...purchaseOrderItemFieldsPayload(item.operational, false, purchaseOrderSpecificItemFields),
         ...purchaseOrderItemFieldsPayload(commonItemFields, false, purchaseOrderCommonItemFields),
       },
     }));
     const completePayload = JSON.stringify({ header: { importer, number, supplierText: supplier || null,
-      orderDate: orderDate || null, notes, reason }, items: completeItems });
+      orderDate: orderDate || null, notes, reason: automaticAuditReason }, items: completeItems });
     let previousCommand: { payload: string; key: string } | null = null;
     try { previousCommand = JSON.parse(sessionStorage.getItem(poCommandKey) ?? "null"); } catch { /* Recria a chave. */ }
     const commandKey = previousCommand?.payload === completePayload && previousCommand.key
@@ -217,7 +215,7 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
       method: "POST",
       headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
       body: JSON.stringify({ importer, number, supplierText: supplier || null,
-        orderDate: orderDate || null, notes, reason }),
+        orderDate: orderDate || null, notes, reason: automaticAuditReason }),
     }));
     setCreatedPoId(header.id);
 
@@ -235,7 +233,7 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
             productCode: item.productCode, description: item.description,
             orderedQuantity: item.orderedQuantity.replace(",", "."), unit: item.unit,
             unitPrice: item.unitPrice ? item.unitPrice.replace(",", ".") : null,
-            currency: item.currency ? item.currency.toUpperCase() : null, reason }),
+            currency: item.currency ? item.currency.toUpperCase() : null, reason: automaticAuditReason }),
         }));
 
         const fields = {
@@ -250,7 +248,7 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
           await readResponse(await apiFetch(`/api/v1/purchase-orders/${header.id}/items/${createdItem.id}/followup`, {
             method: "PATCH",
             headers: { "content-type": "application/json", "X-Record-Version": operationalPo.version },
-            body: JSON.stringify({ fields, reason }),
+            body: JSON.stringify({ fields, reason: automaticAuditReason }),
           }));
         }
       }
@@ -288,7 +286,7 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
         method: "POST",
         headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify({ importer, ipNumber: number, logisticsStatus: status || null,
-          priority: priority || null, notes, reason }),
+          priority: priority || null, notes, reason: automaticAuditReason }),
       });
       const result = await readResponse<{ id: string }>(response);
       router.push(`/processes/${result.id}`);
@@ -372,8 +370,6 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
         <section className="card po-entry-section">
           <h2>Confirmação</h2>
           <p className="muted">Total do produto, prazos, diferenças e alertas serão calculados a partir dos dados preenchidos.</p>
-          <label>Motivo do cadastro<textarea required minLength={3} maxLength={1000} value={reason}
-            onChange={event => setReason(event.target.value)} placeholder="Ex.: transcrito do pedido aprovado no TOTVS" /></label>
           {createdPoId && <p className="notice error">A PO já foi criada. <Link className="text-link" href={`/purchase-orders/${createdPoId}`}>Abrir a PO e continuar o preenchimento</Link>.</p>}
           <button className="button" disabled={saving || !importer || Boolean(createdPoId)}>
             {saving ? "Salvando pedido e produtos…" : "Salvar PO e produtos"}
@@ -387,7 +383,6 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
         <label>Status logístico<OperationalOptionSelect entity="logistics_status" value={status} values={options} onChange={setStatus} /></label>
         <label>Prioridade<input maxLength={20} value={priority} onChange={event => setPriority(event.target.value)} /></label>
         <label>Observações<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
-        <label>Motivo do cadastro<textarea required minLength={3} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} /></label>
         <button className="button" disabled={saving || !importer}>{saving ? "Salvando…" : "Salvar IP"}</button>
       </section>}
     </form>}
