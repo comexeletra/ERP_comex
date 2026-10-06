@@ -25,11 +25,15 @@ O código anterior da API foi preservado em
 antes da publicação está listado acima; não houve alteração na carga de dados
 históricos.
 
-## Preparação de release M025 (pendente)
+## Release M025: datas de saída da fábrica por alocação PO–IP (2026-10-06)
 
 M025 moves factory departure from a shared PO-item input to the individual PO-item/IP allocation. It does not update allocation quantities, active balances, or historical source rows. Existing item-level factory dates remain stored and appear as unassigned legacy references; the API does not copy them to multiple IPs.
 
-`validate-m025-on-copy.py` verifies a restorable backup, applies M025 only to a disposable restore, checks that source-row counts and active allocation totals are unchanged, then runs the operational PO/IP and follow-up integration contracts. After review, `release-m025.sh` applies the same migration to production and swaps in the matching API with health-check rollback. The operational migration and API release have not been run from this checkout.
+`validate-m025-on-copy.py` verified a restorable backup, applied M025 only to a disposable restore, confirmed source-row counts and active allocation totals were unchanged, and passed both PostgreSQL integration contracts. The operational ledger is 25/25.
+
+`release-m025.sh` applied the additive migration and installed the matching API. `import-erp-api` is enabled/active; local health is live 200, unauthenticated ready 401, authenticated ready 200. Public `/health/live` returned 200 and `/health/ready` returned 401 without a token. The prior API version is preserved for code rollback; M025 remains applied if rollback is needed.
+
+Vercel marked the release `READY` and assigned the production alias.
 
 ## Release M021: valores selecionáveis e campos operacionais (2026-10-05)
 

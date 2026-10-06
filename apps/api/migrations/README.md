@@ -172,7 +172,8 @@ an administrator or that identity already exists. Remove the temporary opt-in
 and bootstrap credential after use. Never put bootstrap settings in the
 persistent API service environment.
 
-`M025_allocation_factory_ship_date.sql` stores factory departure per PO-item allocation. A PO item split across IPs can have different factory departure dates; existing item-level dates stay unchanged and are never copied automatically to each IP. Apply M025 before deploying the API/UI changes that read and edit this allocation date.
+`M025_allocation_factory_ship_date.sql` stores factory departure per PO-item allocation. A PO item split across IPs can have different factory departure dates; existing item-level dates stay unchanged and are never copied automatically to each IP. The migration must precede any API/UI version that reads and edits this allocation date.
+M025 passed restored-copy validation and was applied to the operational VPS database on 2026-10-06. Source-row counts and active allocation count/quantity were unchanged; operations and follow-up PostgreSQL integration tests passed. The ledger is 25/25. Release validation and API health evidence are recorded in `deploy/hostinger/README.md`.
 
 The old SQLite migrations and .NET runner were removed with the retired local
 architecture. Historical validation results remain in
