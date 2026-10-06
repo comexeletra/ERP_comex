@@ -25,6 +25,7 @@ type Allocation = { id: string; itemId: string; processId: string; ipNumber: str
 type OperationalPo = { id: string; importer: string; number: string; supplierText: string | null;
   orderDate: string | null; notes: string; sourceKind: string; version: string;
   items: Item[]; allocations: Allocation[] };
+type FollowupItem = { id: string } & Record<string, unknown>;
 type ProcessOption = { id: string; ipNumber: string; importer: string };
 type ItemDraft = { externalLineReference: string; productCode: string; description: string;
   orderedQuantity: string; unit: string; unitPrice: string; currency: string; operational: OperationalFieldDraft };
@@ -41,6 +42,36 @@ const allocationWriters = new Set(["Master", "Administrador", "Importação"]);
 
 async function responseData<T>(response: Response): Promise<T> {
   return readApiJson<T>(response);
+}
+
+async function loadFollowupItems(poId: string, signal?: AbortSignal): Promise<FollowupItem[]> {
+  const followup = await responseData<{ items: FollowupItem[] }>(await apiFetch(
+    `/api/v1/purchase-orders/${poId}/followup`, { signal, cache: "no-store" }));
+  if (!Array.isArray(followup.items)) throw new Error("A API não retornou os campos operacionais dos produtos.");
+  return followup.items;
+}
+
+function combineOperationalItems(items: Item[], followupItems: FollowupItem[]): Item[] {
+  const byId = new Map(followupItems.map(item => [item.id, item]));
+  return items.map(item => {
+    const followup = byId.get(item.id);
+    if (!followup || purchaseOrderItemFields.some(field =>
+      !Object.prototype.hasOwnProperty.call(followup, field.key))) {
+      throw new Error("A API não retornou todos os campos operacionais dos produtos.");
+    }
+    const fields = Object.fromEntries(purchaseOrderItemFields.map(field => [field.key, followup[field.key]]));
+    return { ...item, ...fields };
+  });
+}
+
+async function verifySavedItemFields(poId: string, expectedByItem: Map<string, Record<string, string | number | null>>) {
+  const savedItems = new Map((await loadFollowupItems(poId)).map(item => [item.id, item]));
+  const notSaved = [...expectedByItem].some(([itemId, fields]) => {
+    const saved = savedItems.get(itemId);
+    return !saved || Object.entries(fields).some(([key, expected]) =>
+      String(saved[key] ?? "") !== String(expected ?? ""));
+  });
+  if (notSaved) throw new Error("A API confirmou a alteração, mas os campos não foram encontrados na releitura dos produtos.");
 }
 
 export default function OperationalPoPanel({ id, onChanged }: { id: string; onChanged?: () => void }) {
@@ -80,11 +111,13 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     const controller = new AbortController();
     setLoading(true); setError("");
     Promise.all([
-      apiFetch(`/api/v1/purchase-orders/${id}/operational`, { signal: controller.signal }),
+      apiFetch(`/api/v1/purchase-orders/${id}/operational`, { signal: controller.signal, cache: "no-store" }),
+      loadFollowupItems(id, controller.signal),
       apiFetch("/auth/me", { signal: controller.signal }),
       loadOperationalOptions(),
-    ]).then(async ([poResponse, identityResponse, optionValues]) => {
-      const po = await responseData<OperationalPo>(poResponse);
+    ]).then(async ([poResponse, followupItems, identityResponse, optionValues]) => {
+      const operationalPo = await responseData<OperationalPo>(poResponse);
+      const po = { ...operationalPo, items: combineOperationalItems(operationalPo.items, followupItems) };
       const identity = await responseData<{ roles: string[] }>(identityResponse);
       const [productChoices, supplierChoices] = await Promise.all([
         loadCatalogChoices("products", po.importer), loadCatalogChoices("suppliers", po.importer),
@@ -124,10 +157,12 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   async function applyCommonFieldsToItems(fields: Record<string, string | number | null>) {
     if (!data) return;
     for (const item of data.items) {
-      const current = await responseData<{ version: string }>(await apiFetch(`/api/v1/purchase-orders/${id}/operational`));
+      const current = await responseData<{ version: string }>(await apiFetch(
+        `/api/v1/purchase-orders/${id}/operational`, { cache: "no-store" }));
       await send(`/api/v1/purchase-orders/${id}/items/${item.id}/followup`, "PATCH",
         { fields, reason }, current.version);
     }
+    await verifySavedItemFields(id, new Map(data.items.map(item => [item.id, fields])));
   }
   async function save(action: () => Promise<unknown>, success: string) {
     setSaving(true); setError(""); setNotice("");
@@ -161,9 +196,11 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       currency: draft.currency ? draft.currency.toUpperCase() : null, reason };
     await save(async () => {
       await send(`/api/v1/purchase-orders/${id}/items/${item.id}`, "PATCH", body, data.version);
-      const latest = await responseData<{ version: string }>(await apiFetch(`/api/v1/purchase-orders/${id}/operational`));
+      const latest = await responseData<{ version: string }>(await apiFetch(`/api/v1/purchase-orders/${id}/operational`, { cache: "no-store" }));
+      const fields = purchaseOrderItemFieldsPayload(draft.operational, true, purchaseOrderSpecificItemFields);
       await send(`/api/v1/purchase-orders/${id}/items/${item.id}/followup`, "PATCH",
-        { fields: purchaseOrderItemFieldsPayload(draft.operational, true, purchaseOrderSpecificItemFields), reason }, latest.version);
+        { fields, reason }, latest.version);
+      await verifySavedItemFields(id, new Map([[item.id, fields]]));
     }, "Item e campos operacionais atualizados.");
   }
   function updateCommonField(key: string, value: string) {
@@ -198,10 +235,11 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         ...purchaseOrderItemFieldsPayload(commonOperationalDraft, false, purchaseOrderCommonItemFields),
       };
       if (Object.keys(operational).length > 0) {
-        const latest = await responseData<{ version: string }>(await apiFetch(`/api/v1/purchase-orders/${id}/operational`));
+        const latest = await responseData<{ version: string }>(await apiFetch(`/api/v1/purchase-orders/${id}/operational`, { cache: "no-store" }));
         await send(`/api/v1/purchase-orders/${id}/items/${created.id}/followup`, "PATCH",
           { fields: operational, reason }, latest.version);
       }
+      await verifySavedItemFields(id, new Map([[created.id, operational]]));
       setItemDraft(blankItem());
     }, "Item cadastrado.");
   }

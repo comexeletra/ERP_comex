@@ -163,6 +163,7 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
 
     let saveStep = "itens da PO";
     let itemNumber = 0;
+    const expectedItems = new Map<string, Record<string, string | number | null>>();
     try {
       for (const [index, item] of items.entries()) {
         itemNumber = index + 1;
@@ -181,10 +182,11 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
           ...purchaseOrderItemFieldsPayload(item.operational, false, purchaseOrderSpecificItemFields),
           ...purchaseOrderItemFieldsPayload(commonItemFields, false, purchaseOrderCommonItemFields),
         };
+        expectedItems.set(createdItem.id, fields);
         if (Object.keys(fields).length > 0) {
           saveStep = `dados operacionais do item ${itemNumber}`;
           const operationalPo = await readResponse<{ version: string }>(
-            await apiFetch(`/api/v1/purchase-orders/${header.id}/operational`));
+            await apiFetch(`/api/v1/purchase-orders/${header.id}/operational`, { cache: "no-store" }));
           await readResponse(await apiFetch(`/api/v1/purchase-orders/${header.id}/items/${createdItem.id}/followup`, {
             method: "PATCH",
             headers: { "content-type": "application/json", "X-Record-Version": operationalPo.version },
@@ -192,6 +194,16 @@ export default function NewOperationalRecord({ kind }: { kind: "po" | "ip" }) {
           }));
         }
       }
+      saveStep = "conferência dos itens da PO";
+      const followup = await readResponse<{ items: ({ id: string } & Record<string, unknown>)[] }>(
+        await apiFetch(`/api/v1/purchase-orders/${header.id}/followup`, { cache: "no-store" }));
+      if (!Array.isArray(followup.items)) throw new Error("A API não retornou os itens da PO para conferência.");
+      const savedItems = new Map(followup.items.map(item => [item.id, item]));
+      if ([...expectedItems].some(([id, fields]) => {
+        const saved = savedItems.get(id);
+        return !saved || Object.entries(fields).some(([key, value]) =>
+          String(saved[key] ?? "") !== String(value ?? ""));
+      })) throw new Error("Os itens ou campos operacionais não apareceram na releitura da PO.");
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : "Erro inesperado.";
       setError(`A PO foi criada, mas houve falha ao salvar ${saveStep}. Os dados preenchidos ficaram guardados nesta aba. ${detail}`);
