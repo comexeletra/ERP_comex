@@ -190,11 +190,11 @@ try:
     if canceled_item_errors != "0":
         raise RuntimeError("Canceled PO items lost their status or received an IP allocation")
 
+    environment["RF06_READ_DB"] = copy_name
+    run(node, "test/purchase-orders.real-read.mjs", cwd=api, env=environment)
     run(node, "test/operations.integration.mjs", cwd=api, env=environment)
     environment["FOLLOWUP_TEST_DATABASE_URL"] = copy_url
     run(node, "test/followup.integration.mjs", cwd=api, env=environment)
-    environment["RF06_READ_DB"] = copy_name
-    run(node, "test/purchase-orders.real-read.mjs", cwd=api, env=environment)
     print("M026 preserved source lines and manual balances; linked IP splits, canceled and unlinked balances, PO reads, residuals and follow-up passed on the restored copy.")
 finally:
     if created:
