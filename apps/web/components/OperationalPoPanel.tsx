@@ -300,7 +300,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       setIpQuery(created.ipNumber);
       setNewIpNumber(""); setNewIpStatus(""); setNewIpPriority(""); setNewIpNotes("");
       setCreatingIp(false);
-    }, "IP cadastrado e selecionado para distribuição.");
+    }, "IP cadastrado e selecionado. Para criar o vínculo com a PO, informe a quantidade e clique em Distribuir quantidade.");
   }
   async function saveAllocation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
-import { apiFetch, readApiJson } from "../lib/api";
+import { apiFetch, isMissingApiRoute, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 
@@ -20,6 +20,8 @@ type Data = { process: Row & { id: string; ipNumber: string; version: string; li
   purchaseOrders: { id: string; number: string; importer: string; linkSource: string }[];
   allocations: Allocation[]; documents: Document[];
   invoiceTotals: { amounts: { currency: string; amount: string }[]; incompleteLines: number }; events: Event[] };
+type LegacyProcess = Row & { id: string; ipNumber: string; purchaseOrders: Data["purchaseOrders"];
+  operationalAllocations: { id: string; poId: string; poNumber: string; productCode: string; quantity: string; unit: string }[] };
 type DocDraft = { kind: Document["kind"]; purchaseOrderItemId: string; number: string; issueDate: string;
   homologationDate: string; quantity: string; unitPrice: string; amount: string; currencyCode: string; notes: string };
 
@@ -65,6 +67,7 @@ function makePayload(values: Record<string, string>) {
 
 export default function ProcessPostShipmentPanel({ id }: { id: string }) {
   const [data, setData] = useState<Data>(); const [roles, setRoles] = useState<string[]>([]);
+  const [legacyProcess, setLegacyProcess] = useState<LegacyProcess>();
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [docDraft, setDocDraft] = useState<DocDraft>(blankDoc()); const [editingDoc, setEditingDoc] = useState<string>();
   const [options, setOptions] = useState<OperationalOption[]>([]); const [loading, setLoading] = useState(true);
@@ -72,11 +75,24 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
   const [compatibilityWarning, setCompatibilityWarning] = useState("");
   const [reload, setReload] = useState(0);
   useEffect(() => {
-    const controller = new AbortController(); setLoading(true); setError("");
+    const controller = new AbortController(); setLoading(true); setError(""); setData(undefined); setLegacyProcess(undefined);
+    setCompatibilityWarning("");
     Promise.all([apiFetch(`/api/v1/processes/${id}/followup`, { signal: controller.signal }),
       apiFetch("/auth/me", { signal: controller.signal }), loadOperationalOptions()]).then(async ([response, identity, optionValues]) => {
-      const raw = await readApiJson<Partial<Data>>(response);
       const user = await readApiJson<{ roles: string[] }>(identity);
+      if (response.status === 404) {
+        const body = await response.clone().json().catch(() => undefined);
+        if (isMissingApiRoute(response.status, body)) {
+          const legacyResponse = await apiFetch(`/api/v1/processes/${id}`, { signal: controller.signal });
+          const summary = await readApiJson<LegacyProcess>(legacyResponse);
+          if (!controller.signal.aborted) {
+            setLegacyProcess(summary); setData(undefined); setRoles(user.roles); setOptions(optionValues);
+            setCompatibilityWarning("A API publicada ainda não tem a rota de acompanhamento do IP. Os vínculos e as quantidades já cadastrados são exibidos abaixo; documentos e demais dados do pós embarque dependem da atualização da API.");
+          }
+          return;
+        }
+      }
+      const raw = await readApiJson<Partial<Data>>(response);
       if (!raw.process) throw new Error("A API retornou um formato antigo para o Pós Embarque. Atualize a API antes de continuar.");
       const missingCollections = ["purchaseOrders", "allocations", "documents", "events"]
         .filter(key => !Array.isArray(raw[key as keyof Data]));
@@ -87,7 +103,7 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
         events: Array.isArray(raw.events) ? raw.events : [],
         invoiceTotals: raw.invoiceTotals ?? { amounts: [], incompleteLines: 0 } } as Data;
       if (!controller.signal.aborted) {
-        setData(body); setRoles(user.roles); setOptions(optionValues); setDraft(toDraft(body.process));
+        setData(body); setLegacyProcess(undefined); setRoles(user.roles); setOptions(optionValues); setDraft(toDraft(body.process));
         setCompatibilityWarning(missingCollections.length
           ? `A API está desatualizada e não retornou: ${missingCollections.join(", ")}. Os dados principais foram carregados; solicite a atualização da API.`
           : "");
@@ -125,6 +141,17 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
     {compatibilityWarning && <p className="notice" role="status">{compatibilityWarning}</p>}
+    {!loading && legacyProcess && <>
+      <h3>POs nesta operação</h3>
+      {legacyProcess.purchaseOrders.length === 0 ? <p>Nenhuma PO vinculada ao IP.</p> :
+        <ul>{legacyProcess.purchaseOrders.map(po => <li key={po.id}><Link className="text-link" href={`/purchase-orders/${po.id}`}>PO {po.number}</Link> · {po.importer}</li>)}</ul>}
+      <h3>POs, itens e quantidades nesta operação</h3>
+      {legacyProcess.operationalAllocations.length === 0 ? <p>Nenhuma quantidade distribuída operacionalmente. Para vincular uma PO, abra a PO e distribua a quantidade do item para este IP.</p> :
+        <div className="table-scroll"><table><thead><tr><th>PO</th><th>Produto</th><th>Quantidade</th></tr></thead><tbody>
+          {legacyProcess.operationalAllocations.map(item => <tr key={item.id}><td><Link className="text-link" href={`/purchase-orders/${item.poId}`}>{item.poNumber}</Link></td>
+            <td>{item.productCode}</td><td>{item.quantity} {item.unit}</td></tr>)}
+        </tbody></table></div>}
+    </>}
     {!loading && data && <>
       <h3>POs nesta operação</h3>
       {data.purchaseOrders.length === 0 ? <p>Nenhuma PO vinculada ao IP.</p> :
