@@ -39,7 +39,8 @@ type Document = { id: string; kind: "INVOICE" | "BL" | "NF"; number: string;
   quantity: string | null; unitPrice: string | null; amount: string | null; currencyCode: string | null;
   notes: string; status: string; version: string };
 type Calculated = Record<string, string | number | boolean | null | Record<string, { targetDays: number | null; actualDays: number | null; delayDays: number | null }>>;
-type Shipment = { allocationId: string; allocationQuantity: string; itemId: string;
+type Shipment = { allocationId: string; allocationVersion?: string; allocationNotes?: string;
+  allocationQuantity: string; factoryShipDate?: string | null; legacyFactoryShipDate?: string | null; itemId: string;
   process: DataRow & { id: string; ipNumber: string; version: string };
   calculated: Calculated };
 type ProcessDetail = { process: DataRow & { id: string; ipNumber: string; version: string;
@@ -117,6 +118,7 @@ export default function FollowupPanel({ id }: { id: string }) {
   const [compatibilityWarning, setCompatibilityWarning] = useState("");
   const [busy, setBusy] = useState(false); const [reload, setReload] = useState(0);
   const [processDrafts, setProcessDrafts] = useState<Record<string, Draft>>({});
+  const [factoryShipDrafts, setFactoryShipDrafts] = useState<Record<string, string>>({});
   const [docDrafts, setDocDrafts] = useState<Record<string, DocDraft>>({});
   const [editingDoc, setEditingDoc] = useState<Record<string, string>>({});
   const [options, setOptions] = useState<OperationalOption[]>([]);
@@ -135,12 +137,17 @@ export default function FollowupPanel({ id }: { id: string }) {
       const result: Followup = { ...raw, items: raw.items, processes,
         shipments: Array.isArray(raw.shipments) ? raw.shipments : [],
         events: Array.isArray(raw.events) ? raw.events : [] } as Followup;
+      const missingAllocationDates = result.shipments.length > 0 && result.shipments.some(entry =>
+        typeof entry.allocationVersion !== "string" || !("factoryShipDate" in entry));
       if (controller.signal.aborted) return;
       setData(result); setRoles(identity.roles); setOptions(optionValues);
-      setCompatibilityWarning(missingCollections.length
-        ? `A API está desatualizada e não retornou: ${missingCollections.join(", ")}. Os dados principais foram carregados; solicite a atualização da API.`
-        : "");
+      setCompatibilityWarning([
+        missingCollections.length
+          ? `A API não retornou: ${missingCollections.join(", ")}.` : "",
+        missingAllocationDates ? "A API ainda não suporta datas por divisão PO–IP; o campo ficará disponível após a atualização do serviço." : "",
+      ].filter(Boolean).join(" "));
       setProcessDrafts(Object.fromEntries(result.processes.map(entry => [entry.process.id, draft(entry.process, processFields)])));
+      setFactoryShipDrafts(Object.fromEntries(result.shipments.map(entry => [entry.allocationId, entry.factoryShipDate ?? ""])));
     }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro inesperado."); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
@@ -160,6 +167,13 @@ export default function FollowupPanel({ id }: { id: string }) {
     event.preventDefault();
     void save(() => send(`/api/v1/processes/${processId}/followup`, "PATCH",
       { fields: payload(processFields, processDrafts[processId]), reason: automaticAuditReason }, version), "Dados do IP atualizados.");
+  }
+  function saveFactoryShipDate(event: FormEvent<HTMLFormElement>, shipment: Shipment) {
+    event.preventDefault();
+    const factoryShipDate = factoryShipDrafts[shipment.allocationId] ?? "";
+    void save(() => send(`/api/v1/purchase-orders/${id}/allocations/${shipment.allocationId}`, "PATCH",
+      { factoryShipDate: factoryShipDate || null, reason: automaticAuditReason }, shipment.allocationVersion),
+    "Data de saída da fábrica atualizada para este IP.");
   }
   function documentBody(d: DocDraft, editing: boolean) {
     const body = { number: d.number, issueDate: d.issueDate || null,
@@ -199,12 +213,18 @@ export default function FollowupPanel({ id }: { id: string }) {
           <p><Link className="text-link" href={`/processes/${entry.process.id}`}>Abrir IP {entry.process.ipNumber}</Link></p>
           <h4>Marcos deste vínculo PO–IP</h4>
           <dl className="followup-grid shipment-milestones">
-            {([["ETD", entry.process.etd], ["Saída efetiva", entry.process.actualPortDepartureDate], ["ETA", entry.calculated.eta], ["Arrival", entry.process.arrivalDate],
+            {([["Saída da fábrica", entry.factoryShipDate], ["ETD", entry.process.etd], ["Saída efetiva", entry.process.actualPortDepartureDate], ["ETA", entry.calculated.eta], ["Arrival", entry.process.arrivalDate],
               ["DUIMP", entry.process.duimpDate], ["Desembaraço", entry.process.clearanceDate],
               ["Entrega", entry.process.deliveryDate]] as [string, unknown][]).map(([label, date]) =>
               <div key={String(label)}><dt>{label}</dt><dd>{value(date)}</dd></div>)}
             <div><dt>Quantidade alocada</dt><dd>{entry.allocationQuantity} {item?.unit ?? ""}</dd></div>
           </dl>
+          {entry.legacyFactoryShipDate && <p className="notice">A linha da PO tem uma data antiga de saída da fábrica ({value(entry.legacyFactoryShipDate)}) sem IP associado. Ela foi preservada e não foi aplicada automaticamente a este embarque.</p>}
+          {canWriteProcess && typeof entry.allocationVersion === "string" && <form className="shipment-date-form" onSubmit={event => saveFactoryShipDate(event, entry)}>
+            <label>Saída da fábrica deste IP<input type="date" value={factoryShipDrafts[entry.allocationId] ?? ""}
+              onChange={event => setFactoryShipDrafts(current => ({ ...current, [entry.allocationId]: event.target.value }))} /></label>
+            <button className="button secondary" disabled={busy || (factoryShipDrafts[entry.allocationId] ?? "") === (entry.factoryShipDate ?? "")}>Salvar data deste IP</button>
+          </form>}
           <dl className="followup-grid">{calcLabels.map(([key, label]) => <div key={key}><dt>{label}</dt>
             <dd>{value(entry.calculated[key])}{key === "totalPrice" && entry.calculated[key] ? ` ${item?.currencyCode ?? ""}` : ""}</dd></div>)}</dl>
           <h4>Etapas T0 a T5</h4><dl className="followup-grid">{Object.entries(entry.calculated.stages as Record<string, { targetDays: number | null; actualDays: number | null; delayDays: number | null }>).map(([name, stage]) =>

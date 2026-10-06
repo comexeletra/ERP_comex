@@ -22,7 +22,6 @@ const itemFields: Record<string, [string, FieldType, number?]> = {
   targetMrpDays: ["target_mrp_days", "integer"], targetOrderDays: ["target_order_days", "integer"],
   targetShipmentDays: ["target_shipment_days", "integer"], targetPortDays: ["target_port_days", "integer"],
   targetTransitDays: ["target_transit_days", "integer"], targetCustomsDays: ["target_customs_days", "integer"],
-  actualFactoryShipDate: ["actual_factory_ship_date", "date"],
 };
 const commonItemFields = new Set([
   "necessityDate", "requester", "scNumber", "scApprovalDate", "purpose",
@@ -190,6 +189,7 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
         WHERE a.process_id=$1 AND a.status='ACTIVE' AND po.importer=ANY($2::text[])
         ORDER BY number, id`, [id.data, scopes]);
       const allocations = await pool.query(`SELECT a.id, a.quantity::text AS "allocationQuantity", a.notes,
+          a.factory_ship_date::text AS factory_ship_date,
           item.id AS item_id, item.line_number, item.external_line_reference, item.product_code,
           item.description, item.ordered_quantity::text AS ordered_quantity, item.unit,
           item.unit_price::text AS unit_price, item.currency_code, item.necessity_date,
@@ -223,10 +223,11 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
           mrp_completed_date: row.mrp_completed_date, target_mrp_days: row.target_mrp_days,
           target_order_days: row.target_order_days, target_shipment_days: row.target_shipment_days,
           target_port_days: row.target_port_days, target_transit_days: row.target_transit_days,
-          target_customs_days: row.target_customs_days, actual_factory_ship_date: row.actual_factory_ship_date,
+          target_customs_days: row.target_customs_days, actual_factory_ship_date: row.factory_ship_date,
         });
         const calculated = calculateFollowup({ ...item, allocationQuantity: row.allocationQuantity }, process, docs);
         return { id: row.id, allocationQuantity: row.allocationQuantity, notes: row.notes,
+          factoryShipDate: row.factory_ship_date, legacyFactoryShipDate: row.actual_factory_ship_date,
           purchaseOrder: { id: row.po_id, number: row.po_number, importer: row.importer }, item, calculated };
       });
       const events = await pool.query(`SELECT id, entity_type AS "entityType", entity_id AS "entityId",
@@ -249,7 +250,9 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
       if (!po.rows[0]) return problem(reply, 404, "RESOURCE_NOT_FOUND", "PO não encontrada.");
       const items = await pool.query(`SELECT * FROM procurement.purchase_order_item WHERE purchase_order_id=$1 ORDER BY line_number`, [id.data]);
       const links = await pool.query(`SELECT a.id AS allocation_id, a.purchase_order_item_id AS item_id,
-        a.quantity::text AS allocation_quantity, p.* FROM procurement.po_item_allocation a
+        a.quantity::text AS allocation_quantity, a.notes AS allocation_notes,
+        a.factory_ship_date::text AS factory_ship_date, a.version::text AS allocation_version, p.*
+        FROM procurement.po_item_allocation a
         JOIN procurement.purchase_order_item i ON i.id=a.purchase_order_item_id
         JOIN imports.import_process p ON p.id=a.process_id
         WHERE i.purchase_order_id=$1 AND a.status='ACTIVE' AND p.importer=ANY($2::text[])
@@ -312,9 +315,12 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
         const process = camel(row);
         const item = itemRows.find(entry => entry.id === process.itemId)!;
         const documents = docs.rows.filter(doc => doc.process_id === row.id).map(camel);
+        const shipmentItem = { ...item, actualFactoryShipDate: row.factory_ship_date };
         return { allocationId: process.allocationId, allocationQuantity: process.allocationQuantity,
+          allocationVersion: process.allocationVersion, allocationNotes: process.allocationNotes,
+          factoryShipDate: process.factoryShipDate, legacyFactoryShipDate: item.actualFactoryShipDate,
           itemId: process.itemId, process,
-          calculated: calculateFollowup({ ...item, allocationQuantity: process.allocationQuantity }, process, documents) };
+          calculated: calculateFollowup({ ...shipmentItem, allocationQuantity: process.allocationQuantity }, process, documents) };
       });
       reply.header("ETag", `"${po.rows[0].version}"`);
       return { ...po.rows[0], items: itemRows, processes, shipments, events };

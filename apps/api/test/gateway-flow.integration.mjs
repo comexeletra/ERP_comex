@@ -106,9 +106,11 @@ try {
   const first = await createItem("100", `CI-A-${suffix}`);
   const second = await createItem("25", `CI-B-${suffix}`);
   let operational = expectStatus(await call("GET", `/api/v1/purchase-orders/${po.id}/operational`), 200);
+  const sharedDateRejected = await call("PATCH", `/api/v1/purchase-orders/${po.id}/items/${first.id}/followup`,
+    { fields: { actualFactoryShipDate: "2026-08-20" }, reason }, operational.version);
+  assert.equal(sharedDateRejected.statusCode, 400);
   expectStatus(await call("PATCH", `/api/v1/purchase-orders/${po.id}/items/${first.id}/followup`,
-    { fields: { scNumber: sc.requestNumber, scApprovalDate: "2026-08-01",
-      actualFactoryShipDate: "2026-08-20" }, reason }, operational.version), 200);
+    { fields: { scNumber: sc.requestNumber, scApprovalDate: "2026-08-01" }, reason }, operational.version), 200);
   operational = expectStatus(await call("GET", `/api/v1/purchase-orders/${po.id}/operational`), 200);
   const shared = expectStatus(await call("PATCH", `/api/v1/purchase-orders/${po.id}/items/followup`, {
     itemIds: [first.id, second.id], fields: { requester: "Analista do teste" }, reason,
@@ -124,9 +126,13 @@ try {
     `/api/v1/purchase-orders/${po.id}/allocations`, {
       itemId, processId, quantity, notes: "", reason,
     }), 201);
-  await allocate(first.id, ip1.id, "40");
-  await allocate(first.id, ip2.id, "60");
+  const firstAllocation = await allocate(first.id, ip1.id, "40");
+  const secondAllocation = await allocate(first.id, ip2.id, "60");
   await allocate(second.id, ip2.id, "25");
+  expectStatus(await call("PATCH", `/api/v1/purchase-orders/${po.id}/allocations/${firstAllocation.id}`,
+    { factoryShipDate: "2026-08-20", reason }, firstAllocation.version), 200);
+  expectStatus(await call("PATCH", `/api/v1/purchase-orders/${po.id}/allocations/${secondAllocation.id}`,
+    { factoryShipDate: "2026-08-28", reason }, secondAllocation.version), 200);
   operational = expectStatus(await call("GET", `/api/v1/purchase-orders/${po.id}/operational`), 200);
   assert.equal(operational.allocations.length, 3);
   assert.ok(operational.items.every(item => Number(item.remainingQuantity) === 0));
@@ -134,6 +140,9 @@ try {
   assert.equal(poFollowup.items.find(item => item.id === first.id).scNumber, sc.requestNumber);
   assert.equal(poFollowup.items.find(item => item.id === first.id).scApprovalDate, "2026-08-01");
   assert.ok(poFollowup.items.every(item => item.requester === "Analista do teste"));
+  assert.equal(poFollowup.shipments.find(item => item.allocationId === firstAllocation.id).factoryShipDate, "2026-08-20");
+  assert.equal(poFollowup.shipments.find(item => item.allocationId === secondAllocation.id).factoryShipDate, "2026-08-28");
+  assert.equal(operational.items.find(item => item.id === first.id).remainingQuantity, "0.00000000");
 
   expectStatus(await call("PATCH", `/api/v1/processes/${ip1.id}/followup`, {
     fields: { etd: "2026-09-01", actualPortDepartureDate: "2026-09-03", arrivalDate: "2026-10-01" }, reason,
@@ -146,6 +155,8 @@ try {
   assert.equal(ip1Followup.process.actualPortDepartureDate, "2026-09-03");
   assert.equal(ip2Followup.process.actualPortDepartureDate, null);
   assert.equal(ip2Followup.allocations.length, 2);
+  assert.equal(ip1Followup.allocations.find(item => item.id === firstAllocation.id).factoryShipDate, "2026-08-20");
+  assert.equal(ip2Followup.allocations.find(item => item.id === secondAllocation.id).factoryShipDate, "2026-08-28");
 
   const closed = expectStatus(await call("POST", `/api/v1/processes/${ip1.id}/close`, { reason }, "2"), 200);
   assert.equal(closed.lifecycleStatus, "CLOSED");
@@ -156,17 +167,22 @@ try {
 
   const stored = await pool.query(`SELECT i.sc_number, i.sc_approval_date, p1.actual_port_departure_date AS first_departure,
     p2.actual_port_departure_date AS second_departure, p2.delivery_date AS second_delivery,
+    (SELECT factory_ship_date FROM procurement.po_item_allocation WHERE id=$5) AS first_factory_departure,
+    (SELECT factory_ship_date FROM procurement.po_item_allocation WHERE id=$6) AS second_factory_departure,
     (SELECT count(*)::int FROM procurement.po_item_allocation a
       JOIN procurement.purchase_order_item item ON item.id=a.purchase_order_item_id
       WHERE item.purchase_order_id=$1 AND a.status='ACTIVE') AS allocation_count
     FROM procurement.purchase_order_item i
     CROSS JOIN imports.import_process p1 CROSS JOIN imports.import_process p2
-    WHERE i.id=$2 AND p1.id=$3 AND p2.id=$4`, [po.id, first.id, ip1.id, ip2.id]);
+    WHERE i.id=$2 AND p1.id=$3 AND p2.id=$4`,
+    [po.id, first.id, ip1.id, ip2.id, firstAllocation.id, secondAllocation.id]);
   assert.equal(stored.rows[0].sc_number, sc.requestNumber);
   assert.equal(stored.rows[0].sc_approval_date.toISOString().slice(0, 10), "2026-08-01");
   assert.equal(stored.rows[0].first_departure.toISOString().slice(0, 10), "2026-09-03");
   assert.equal(stored.rows[0].second_departure, null);
   assert.equal(stored.rows[0].second_delivery.toISOString().slice(0, 10), "2026-11-18");
+  assert.equal(stored.rows[0].first_factory_departure.toISOString().slice(0, 10), "2026-08-20");
+  assert.equal(stored.rows[0].second_factory_departure.toISOString().slice(0, 10), "2026-08-28");
   assert.equal(stored.rows[0].allocation_count, 3);
   console.log("Next.js → gateway → API → PostgreSQL flow passed (SC, complete PO, shared fields, split PO, IP dates, closure).");
 } finally {

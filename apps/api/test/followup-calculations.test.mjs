@@ -54,6 +54,19 @@ test("one PO item split across IPs keeps each allocation quantity and delivery d
   assert.equal(secondIp.clearanceDays, 8);
 });
 
+test("factory departure dates and port targets stay independent for each PO allocation", () => {
+  const item = { id: "split-item", orderedQuantity: "100", unitPrice: "12.50", currencyCode: "USD",
+    targetPortDays: 7 };
+  const firstIp = calculateFollowup({ ...item, allocationQuantity: "40", actualFactoryShipDate: "2026-08-10" },
+    { actualPortDepartureDate: "2026-08-20" }, [], "2026-08-30");
+  const secondIp = calculateFollowup({ ...item, allocationQuantity: "60", actualFactoryShipDate: "2026-08-15" },
+    { actualPortDepartureDate: "2026-08-22" }, [], "2026-08-30");
+  assert.equal(firstIp.portTargetDate, "2026-08-17");
+  assert.equal(secondIp.portTargetDate, "2026-08-22");
+  assert.equal(firstIp.stages.port.actualDays, 10);
+  assert.equal(secondIp.stages.port.actualDays, 7);
+});
+
 test("confirmed dates take precedence and delivered shipment has no alert", () => {
   const result = calculateFollowup({ id: "item", necessityDate: "2026-12-31" },
     { transportMode: "AIR", etd: "2026-09-01", etaConfirmed: "2026-09-03",

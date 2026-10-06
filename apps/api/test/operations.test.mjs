@@ -41,6 +41,8 @@ test("operational commands reject reader, invalid quantity, foreign importer and
     { ...body, importer: "ELETRA FOR" }, { "idempotency-key": "foreign-key" })).statusCode, 404);
   assert.equal((await call("writer", "PATCH", `/api/v1/purchase-orders/${poId}`,
     { number: "PO-TESTE", supplierText: null, orderDate: null, notes: "", reason: "Correção" })).statusCode, 428);
+  assert.equal((await call("writer", "PATCH", `/api/v1/purchase-orders/${poId}/allocations/${poId}`,
+    { factoryShipDate: "2026-10-06", reason: "Data do embarque" })).statusCode, 428);
   assert.equal((await call("writer", "POST", `/api/v1/purchase-orders/${poId}/allocations`,
     { itemId: poId, processId: poId, quantity: "101.123456789", notes: "", reason: "Teste" },
     { "idempotency-key": "invalid-quantity" })).statusCode, 400);

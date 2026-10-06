@@ -25,6 +25,12 @@ O código anterior da API foi preservado em
 antes da publicação está listado acima; não houve alteração na carga de dados
 históricos.
 
+## Preparação de release M025 (pendente)
+
+M025 moves factory departure from a shared PO-item input to the individual PO-item/IP allocation. It does not update allocation quantities, active balances, or historical source rows. Existing item-level factory dates remain stored and appear as unassigned legacy references; the API does not copy them to multiple IPs.
+
+`validate-m025-on-copy.py` verifies a restorable backup, applies M025 only to a disposable restore, checks that source-row counts and active allocation totals are unchanged, then runs the operational PO/IP and follow-up integration contracts. After review, `release-m025.sh` applies the same migration to production and swaps in the matching API with health-check rollback. The operational migration and API release have not been run from this checkout.
+
 ## Release M021: valores selecionáveis e campos operacionais (2026-10-05)
 
 M021 passou na validação em cópia restaurada, preservou as linhas históricas e

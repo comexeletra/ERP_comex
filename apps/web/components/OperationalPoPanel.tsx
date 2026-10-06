@@ -22,7 +22,7 @@ type Item = { id: string; lineNumber: number; externalLineReference: string | nu
   targetCustomsDays: number | null; actualFactoryShipDate: string | null;
   allocatedQuantity: string; remainingQuantity: string };
 type Allocation = { id: string; itemId: string; processId: string; ipNumber: string;
-  quantity: string; notes: string; version: string };
+  quantity: string; notes: string; factoryShipDate: string | null; version: string };
 type OperationalPo = { id: string; importer: string; number: string; supplierText: string | null;
   orderDate: string | null; notes: string; sourceKind: string; version: string;
   items: Item[]; allocations: Allocation[] };
@@ -413,11 +413,12 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       </details>}
       <h3>Distribuição por IP</h3>
       {data.allocations.length === 0 ? <p>Nenhuma quantidade distribuída operacionalmente.</p> :
-        <div className="table-scroll"><table><thead><tr><th>Item</th><th>IP</th><th>Quantidade</th><th>Ação</th></tr></thead>
+        <div className="table-scroll"><table><thead><tr><th>Item</th><th>IP</th><th>Quantidade</th><th>Saída da fábrica</th><th>Ação</th></tr></thead>
           <tbody>{data.allocations.map(allocation => <tr key={allocation.id}>
             <td>{data.items.find(item => item.id === allocation.itemId)?.productCode ?? "—"}</td>
             <td><Link className="text-link" href={`/processes/${allocation.processId}`}>{allocation.ipNumber}</Link></td>
             <td>{allocation.quantity} {data.items.find(item => item.id === allocation.itemId)?.unit ?? ""}</td>
+            <td>{allocation.factoryShipDate ?? "—"}</td>
             <td>{canAllocate && <button className="button secondary" type="button" onClick={() => {
               setEditingAllocation(allocation); setItemId(allocation.itemId); setProcessId(allocation.processId);
               setAllocationQuantity(allocation.quantity); setAllocationNotes(allocation.notes);

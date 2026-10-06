@@ -172,6 +172,8 @@ an administrator or that identity already exists. Remove the temporary opt-in
 and bootstrap credential after use. Never put bootstrap settings in the
 persistent API service environment.
 
+`M025_allocation_factory_ship_date.sql` stores factory departure per PO-item allocation. A PO item split across IPs can have different factory departure dates; existing item-level dates stay unchanged and are never copied automatically to each IP. Apply M025 before deploying the API/UI changes that read and edit this allocation date.
+
 The old SQLite migrations and .NET runner were removed with the retired local
 architecture. Historical validation results remain in
 `CHECKLIST_IMPLEMENTACAO.md`; they do not imply that the Node API has feature

@@ -103,7 +103,7 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
          'operationalAllocations', coalesce((SELECT jsonb_agg(jsonb_build_object(
            'id', allocation.id, 'poId', po.id, 'poNumber', po.external_number,
            'productCode', item.product_code, 'quantity', allocation.quantity::text,
-           'unit', item.unit
+           'unit', item.unit, 'factoryShipDate', allocation.factory_ship_date
          ) ORDER BY po.external_number, item.line_number, allocation.id)
          FROM procurement.po_item_allocation AS allocation
          JOIN procurement.purchase_order_item AS item ON item.id = allocation.purchase_order_item_id

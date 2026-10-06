@@ -13,6 +13,7 @@ type Document = { id: string; kind: "INVOICE" | "BL" | "NF"; number: string; pur
   issueDate: string | null; homologationDate: string | null; quantity: string | null; unitPrice: string | null;
   amount: string | null; currencyCode: string | null; notes: string; version: string };
 type Allocation = { id: string; allocationQuantity: string; purchaseOrder: { id: string; number: string; importer: string };
+  factoryShipDate: string | null;
   item: Row & { id: string; lineNumber: number; productCode: string; description: string; unit: string };
   calculated: Record<string, Value> };
 type Event = { id: string; operation: string; occurredAt: string; reason: string | null; actorId: string };
@@ -173,10 +174,11 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
       </> : <dl className="followup-grid">{fields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{format(data.process[field.key])}</dd></div>)}</dl>}
       <h3>POs, itens e quantidades nesta operação</h3>
       {data.allocations.length === 0 ? <p>Nenhum item operacional distribuído para este IP.</p> :
-        <div className="table-scroll"><table><thead><tr><th>PO</th><th>Item</th><th>Pedido</th><th>Neste IP</th><th>Status calculado</th><th>Alerta</th></tr></thead><tbody>
+        <div className="table-scroll"><table><thead><tr><th>PO</th><th>Item</th><th>Pedido</th><th>Neste IP</th><th>Saída da fábrica</th><th>Status calculado</th><th>Alerta</th></tr></thead><tbody>
           {data.allocations.map(allocation => <tr key={allocation.id}><td><Link className="text-link" href={`/purchase-orders/${allocation.purchaseOrder.id}`}>{allocation.purchaseOrder.number}</Link></td>
             <td>{allocation.item.productCode} · {allocation.item.description}</td>
             <td>{String(allocation.item.orderedQuantity)} {allocation.item.unit}</td><td>{allocation.allocationQuantity} {allocation.item.unit}</td>
+            <td>{allocation.factoryShipDate ?? "—"}</td>
             <td>{format(allocation.calculated.status)}</td><td>{format(allocation.calculated.alert)}</td></tr>)}
         </tbody></table></div>}
       <h3>Invoices, BLs e NFs deste IP</h3>

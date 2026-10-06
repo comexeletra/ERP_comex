@@ -36,8 +36,13 @@ const allocationFields = z.object({
   quantity, notes: z.string().trim().max(2000), reason: z.string().trim().min(3).max(1000),
 }).strict();
 const createAllocation = allocationFields.extend({
-  itemId: z.uuid(), processId: z.uuid(),
+  itemId: z.uuid(), processId: z.uuid(), factoryShipDate: z.iso.date().nullable().optional(),
 });
+const updateAllocation = z.object({
+  quantity: quantity.optional(), notes: z.string().trim().max(2000).optional(),
+  factoryShipDate: z.iso.date().nullable().optional(), reason: z.string().trim().min(3).max(1000),
+}).strict().refine(value => value.quantity !== undefined || value.notes !== undefined
+  || value.factoryShipDate !== undefined);
 const cancelAllocation = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
 const closeProcess = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
 const uuid = z.uuid();
@@ -187,7 +192,8 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
          WHERE item.purchase_order_id = $1 GROUP BY item.id ORDER BY item.line_number`, [id.data]);
       const allocations = await pool.query<Record<string, unknown>>(
         `SELECT a.id, a.purchase_order_item_id AS "itemId", a.process_id AS "processId",
-                process.ip_number AS "ipNumber", a.quantity::text, a.notes, a.version::text
+                process.ip_number AS "ipNumber", a.quantity::text, a.notes,
+                a.factory_ship_date::text AS "factoryShipDate", a.version::text
          FROM procurement.po_item_allocation a
          JOIN procurement.purchase_order_item item ON item.id = a.purchase_order_item_id
          JOIN imports.import_process process ON process.id = a.process_id
@@ -465,9 +471,9 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const allocationId = randomUUID();
         await client.query(
           `INSERT INTO procurement.po_item_allocation
-           (id,purchase_order_item_id,process_id,quantity,notes)
-           VALUES ($1,$2,$3,$4,$5)`,
-          [allocationId, body.itemId, body.processId, body.quantity, body.notes]);
+           (id,purchase_order_item_id,process_id,quantity,notes,factory_ship_date)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
+          [allocationId, body.itemId, body.processId, body.quantity, body.notes, body.factoryShipDate ?? null]);
         await client.query(
           `INSERT INTO procurement.process_purchase_order (purchase_order_id,process_id,source_kind)
            VALUES ($1,$2,'OPERATIONAL') ON CONFLICT DO NOTHING`, [id.data, body.processId]);
@@ -484,7 +490,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
     { config: permissionConfig("processes.write") }, async (request, reply) => {
       const id = uuid.safeParse(request.params.id);
       const allocationId = uuid.safeParse(request.params.allocationId);
-      const parsed = allocationFields.safeParse(request.body);
+      const parsed = updateAllocation.safeParse(request.body);
       if (!id.success || !allocationId.success || !parsed.success) {
         return problem(reply, 400, "INVALID_ALLOCATION", "Revise a quantidade.");
       }
@@ -504,9 +510,12 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         checkVersion(found.rows[0], expected);
         const body = parsed.data;
         const updated = await client.query<{ version: string }>(
-          `UPDATE procurement.po_item_allocation SET quantity = $2, notes = $3,
+          `UPDATE procurement.po_item_allocation SET
+            quantity = coalesce($2, quantity), notes = coalesce($3, notes),
+            factory_ship_date = CASE WHEN $4::boolean THEN $5::date ELSE factory_ship_date END,
             version = version + 1, updated_at = now() WHERE id = $1 RETURNING version::text`,
-          [allocationId.data, body.quantity, body.notes]);
+          [allocationId.data, body.quantity ?? null, body.notes ?? null,
+            body.factoryShipDate !== undefined, body.factoryShipDate ?? null]);
         await client.query("UPDATE procurement.purchase_order SET version = version + 1, updated_at = now() WHERE id = $1", [id.data]);
         await record(client, "PURCHASE_ORDER", id.data, "PO_ITEM_ALLOCATION", allocationId.data,
           "UPDATE", found.rows[0], body, auth.actor, body.reason);

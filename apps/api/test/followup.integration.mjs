@@ -88,6 +88,19 @@ test("followup persists item/IP inputs and individual documents in an isolated r
     { itemIds: [itemId], fields: { requester: "Outro analista" }, reason: "Lista incompleta" },
     { "if-match": '"3"' });
   assert.equal(changedSet.statusCode, 409, changedSet.body);
+  const firstFactoryDate = await call("PATCH", `/api/v1/purchase-orders/${poId}/allocations/${allocationId}`,
+    { factoryShipDate: "2026-08-20", reason: "Saída da fábrica do primeiro IP" }, { "if-match": '"1"' });
+  const secondFactoryDate = await call("PATCH", `/api/v1/purchase-orders/${poId}/allocations/${secondAllocationId}`,
+    { factoryShipDate: "2026-08-28", reason: "Saída da fábrica do segundo IP" }, { "if-match": '"1"' });
+  assert.equal(firstFactoryDate.statusCode, 200, firstFactoryDate.body);
+  assert.equal(secondFactoryDate.statusCode, 200, secondFactoryDate.body);
+  const datedShipments = await call("GET", `/api/v1/purchase-orders/${poId}/followup`);
+  const datedByAllocation = new Map(datedShipments.json().shipments.map(shipment => [shipment.allocationId, shipment]));
+  assert.equal(datedByAllocation.get(allocationId).factoryShipDate, "2026-08-20");
+  assert.equal(datedByAllocation.get(secondAllocationId).factoryShipDate, "2026-08-28");
+  const balances = await call("GET", `/api/v1/purchase-orders/${poId}/operational`);
+  assert.equal(balances.json().items.find(item => item.id === itemId).remainingQuantity, "0.00000000");
+  assert.deepEqual(balances.json().allocations.map(allocation => allocation.quantity).sort(), ["40.00000000", "60.00000000"]);
   const editedIp = await call("PATCH", `/api/v1/processes/${processId}/followup`,
     { fields: { transportMode: "SEA", etd: "2026-09-01", actualPortDepartureDate: "2026-09-03",
       arrivalDate: "2026-10-01" }, reason: "Conferido no embarque" },
@@ -145,13 +158,13 @@ test("followup persists item/IP inputs and individual documents in an isolated r
   assert.equal(shipments.get(processId).calculated.clearanceDays, null);
   assert.equal(shipments.get(secondProcessId).calculated.clearanceDays, 8);
   const blockedCancel = await call("DELETE", `/api/v1/purchase-orders/${poId}/allocations/${allocationId}`,
-    { reason: "Troca de embarque" }, { "if-match": '"1"' });
+    { reason: "Troca de embarque" }, { "if-match": '"2"' });
   assert.equal(blockedCancel.statusCode, 409, blockedCancel.body);
   const removed = await call("DELETE", `/api/v1/processes/${processId}/documents/${documentId}`,
     { reason: "Documento substituído" }, { "if-match": '"1"' });
   assert.equal(removed.statusCode, 200, removed.body);
   const unlinked = await call("DELETE", `/api/v1/purchase-orders/${poId}/allocations/${allocationId}`,
-    { reason: "Troca de embarque" }, { "if-match": '"1"' });
+    { reason: "Troca de embarque" }, { "if-match": '"2"' });
   assert.equal(unlinked.statusCode, 200, unlinked.body);
   const final = await call("GET", `/api/v1/purchase-orders/${poId}/followup`);
   assert.equal(final.json().shipments.length, 1);

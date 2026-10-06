@@ -268,6 +268,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .operational-help p { line-height: 1.5; }
 .operational-event-history { margin-top: 20px; }
 .operational-event-history > summary { border-bottom: 1px solid #e5ecef; padding: 12px 0; }
+.shipment-date-form { align-items: end; display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.shipment-date-form label { color: #405966; display: grid; font-size: .83rem; gap: 5px; max-width: 260px; }
 .po-entry-summary { align-items: center; display: flex; flex-wrap: wrap; gap: 6px 14px; justify-content: space-between; list-style: none; }
 .po-entry-summary::-webkit-details-marker { display: none; }
 .po-entry-summary strong { color: #264957; }
