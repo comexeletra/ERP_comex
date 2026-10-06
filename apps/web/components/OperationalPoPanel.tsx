@@ -11,7 +11,7 @@ import { CatalogChoice, CatalogProductSelect, loadCatalogChoices, loadOperationa
 import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
 
 type Item = { id: string; lineNumber: number; externalLineReference: string | null;
-  productCode: string; description: string; orderedQuantity: string; unit: string;
+  productCode: string; description: string; orderedQuantity: string; unit: string | null;
   unitPrice: string | null; currency: string | null; sourceKind: string;
   necessityDate: string | null; priority: string | null; demand: string | null; requester: string | null;
   scNumber: string | null; scApprovalDate: string | null; purpose: string | null; productGroup: string | null;
@@ -140,7 +140,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       setSupplier(po.supplierText ?? ""); setOrderDate(po.orderDate ?? ""); setNotes(po.notes);
       const drafts = Object.fromEntries(po.items.map(item => [item.id, {
         externalLineReference: item.externalLineReference ?? "", productCode: item.productCode,
-        description: item.description, orderedQuantity: item.orderedQuantity, unit: item.unit,
+        description: item.description, orderedQuantity: item.orderedQuantity, unit: item.unit ?? "",
         unitPrice: item.unitPrice ?? "", currency: item.currency ?? "", operational: operationalDraft(item),
       }]));
       setItemDrafts(drafts);
@@ -328,8 +328,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     purchaseOrderCommonItemFields.some(field =>
       new Set(data.items.map(item => operationalDraft(item)[field.key] ?? "")).size > 1));
   return <section className="card operational-panel" aria-label="Registro operacional da PO">
-    <h2>Preenchimento operacional da PO</h2>
-    <p className="muted">Saldo por item: quantidade pedida menos quantidade distribuída.</p>
+    <h2>Itens da PO</h2>
+    <p className="muted">Saldo por item: quantidade pedida menos quantidade distribuída aos IPs.</p>
     {loading && <p role="status">Carregando preenchimento…</p>}
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
@@ -351,7 +351,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
           <button className="button" disabled={saving}>Salvar PO</button>
         </form>
       </section>}
-      <h3>Complementos operacionais da PO</h3>
+      <h3>Dados e saldo por item</h3>
       {canWritePo && <section className="po-entry-section po-common-fields">
         <h4>Dados compartilhados pelos produtos</h4>
         <p className="muted">Preencha uma vez para manter iguais nos produtos. A data da PO é compartilhada no cabeçalho.</p>
@@ -366,12 +366,12 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             Aplicar campos alterados a todos os produtos</button>
         </form>
       </section>}
-      {data.items.length === 0 && <p>Nenhum complemento operacional cadastrado. Os itens de origem estão em <Link className="text-link" href="#source-po-items">Itens da planilha</Link>.</p>}
+      {data.items.length === 0 && <p>Nenhum item cadastrado para esta PO.</p>}
       {data.items.map(item => {
         const draft = itemDrafts[item.id] ?? blankItem();
         const setDraft = (change: Partial<ItemDraft>) => setItemDrafts(current => ({ ...current, [item.id]: { ...draft, ...change } }));
         return <details className="po-entry-item" key={item.id}>
-          <summary className="po-entry-summary"><strong>Item {item.lineNumber} - {item.productCode}</strong><span>{item.orderedQuantity} {item.unit} - {item.remainingQuantity} {item.unit} a distribuir</span></summary>
+          <summary className="po-entry-summary"><strong>Item {item.lineNumber} - {item.productCode}</strong><span>{item.orderedQuantity}{item.unit ? ` ${item.unit}` : ""} · saldo {item.remainingQuantity}{item.unit ? ` ${item.unit}` : ""}</span></summary>
           {canWritePo ? <form className="stack-form" data-item-id={item.id} onSubmit={saveItem}>
             <div className="operational-fields">
               <label>Linha no TOTVS<input maxLength={80} value={draft.externalLineReference} onChange={event => setDraft({ externalLineReference: event.target.value })} /></label>
@@ -389,7 +389,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
               setValues={operational => setDraft({ operational })} />
             <PurchaseOrderCalculatedFields quantity={draft.orderedQuantity} unitPrice={draft.unitPrice} currency={draft.currency} />
             <button className="button" disabled={saving || commonFieldsTouched.size > 0}>Salvar todos os campos deste item</button>
-          </form> : <p>{item.orderedQuantity} {item.unit} · {item.description}</p>}
+          </form> : <p>{item.orderedQuantity}{item.unit ? ` ${item.unit}` : ""} · {item.description}</p>}
         </details>;
       })}
       {canWritePo && <details><summary>Adicionar item à PO</summary>
@@ -447,7 +447,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         </form>}
         <form className="stack-form" onSubmit={saveAllocation}>
           <label>Item<select required value={itemId} disabled={Boolean(editingAllocation)} onChange={event => setItemId(event.target.value)}>
-            {data.items.map(item => <option key={item.id} value={item.id}>{item.productCode} · linha {item.lineNumber} · saldo {item.remainingQuantity} {item.unit}</option>)}
+            {data.items.map(item => <option key={item.id} value={item.id}>{item.productCode} · item {item.lineNumber} · saldo {item.remainingQuantity}{item.unit ? ` ${item.unit}` : ""}</option>)}
           </select></label>
           {!editingAllocation && <label>IP<select required value={processId} onChange={event => setProcessId(event.target.value)}>
             <option value="">Busque e selecione um IP</option>{ipOptions.map(item => <option key={item.id} value={item.id}>{item.ipNumber}</option>)}

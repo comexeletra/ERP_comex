@@ -106,9 +106,10 @@ try {
     assert.equal(overviewResponse.statusCode, 200);
     const overview = overviewResponse.json();
     assert.equal(overview.historicalItemCount, historicalCount);
+    assert.equal(overview.itemCount, row.operationalItemCount);
     assert.equal(overview.processes.length, linkedIps);
     assert.equal(overview.officialItemsKnown, false);
-    assert.equal(overview.balanceAvailable, false);
+    assert.equal(overview.balanceAvailable, overview.itemCount > 0);
     assert.equal("costs" in overview, false, "IP costs must not be totaled as PO costs");
     const historyResponse = await get(`/api/v1/purchase-orders/${row.id}/history-items?page=1&pageSize=50`);
     assert.equal(historyResponse.statusCode, 200);

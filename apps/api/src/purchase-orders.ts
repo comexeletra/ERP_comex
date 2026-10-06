@@ -222,7 +222,14 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
            'identityStatus', po.identity_status,
            'version', po.version::text,
            'officialItemsKnown', false,
-           'balanceAvailable', false,
+           'balanceAvailable', (
+             SELECT count(*) > 0 FROM procurement.purchase_order_item AS item
+             WHERE item.purchase_order_id = po.id
+           ),
+           'itemCount', (
+             SELECT count(*)::int FROM procurement.purchase_order_item AS item
+             WHERE item.purchase_order_id = po.id
+           ),
            'historicalItemCount', (
              SELECT count(*)::int FROM procurement.po_line_observation AS obs
              WHERE obs.purchase_order_id = po.id

@@ -93,7 +93,7 @@ export default function CatalogPage() {
           reason: automaticAuditReason, validFrom }) });
       await responseJson<Entry>(response);
       setDraft({ code: "", name: "", evidence: "", validFrom: "" });
-      setMessage("Cadastro operacional registrado. As linhas históricas não foram alteradas.");
+      setMessage("Cadastro registrado.");
       setPage(1); setRefresh(value => value + 1);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Erro ao salvar."); }
     finally { setSaving(false); }

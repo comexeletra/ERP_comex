@@ -369,7 +369,8 @@ test("production PO overview scopes the PO before reading linked processes and p
         rows: [{ item: {
           id: visibleId,
           officialItemsKnown: false,
-          balanceAvailable: false,
+          balanceAvailable: true,
+          itemCount: 3,
           historicalItemCount: 3,
           processes: [{ ipNumber: "IP-10", costs: [{ amount: "12.34000000", currency: "BRL" }] }],
         } }],
@@ -394,7 +395,8 @@ test("production PO overview scopes the PO before reading linked processes and p
   assert.deepEqual(visible.json(), {
     id: visibleId,
     officialItemsKnown: false,
-    balanceAvailable: false,
+    balanceAvailable: true,
+    itemCount: 3,
     historicalItemCount: 3,
     processes: [{ ipNumber: "IP-10", costs: [{ amount: "12.34000000", currency: "BRL" }] }],
   });

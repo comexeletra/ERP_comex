@@ -3,10 +3,10 @@ export type ExportPurchaseOrder = {
   number: string;
   importer: string;
   identityStatus: string;
-  historicalItemCount: number;
+  itemCount: number;
   linkedProcessCount: number;
-  historicalItemsWithIp: number;
-  historicalItemsWithoutIp: number;
+  itemsWithIp: number;
+  itemsWithoutIp: number;
   unresolvedIssueCount: number;
 };
 
@@ -20,9 +20,9 @@ function csvCell(value: string | number): string {
 
 export function purchaseOrdersCsv(orders: readonly ExportPurchaseOrder[]): string {
   const headers = ["ID", "PO TOTVS", "Importador", "Estado da identidade",
-    "Observações históricas", "IPs vinculados", "Linhas com IP", "Linhas sem IP", "Pendências abertas"];
+    "Itens", "IPs vinculados", "Itens com IP", "Itens sem IP", "Pendências abertas"];
   const lines = orders.map(order => [order.id, order.number, order.importer, order.identityStatus,
-    order.historicalItemCount, order.linkedProcessCount, order.historicalItemsWithIp,
-    order.historicalItemsWithoutIp, order.unresolvedIssueCount]);
+    order.itemCount, order.linkedProcessCount, order.itemsWithIp,
+    order.itemsWithoutIp, order.unresolvedIssueCount]);
   return [headers, ...lines].map(row => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
 }

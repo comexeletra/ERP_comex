@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
-import { formatUsDateTime } from "../lib/date-format";
-import { purchaseOrdersCsv, type ExportPurchaseOrder } from "../lib/po-export";
+import { purchaseOrdersCsv } from "../lib/po-export";
 import { portfolioFilterQuery, purchaseOrderListQuery, type PortfolioFilters } from "../lib/portfolio-query";
 
 type Filters = PortfolioFilters;
-type PurchaseOrder = ExportPurchaseOrder & {
+type PurchaseOrder = {
+  id: string; number: string; importer: string; identityStatus: string;
   officialItemsKnown: boolean; historicalItemCount: number; operationalItemCount: number; linkedProcessCount: number;
   historicalItemsWithIp: number; historicalItemsWithoutIp: number;
   unresolvedIssueCount: number; balanceAvailable: boolean;
@@ -133,7 +133,12 @@ export default function PortfolioPage() {
         }
       }
       if (rows.length !== expectedCount) throw new Error("A carteira mudou durante a exportação. Tente novamente.");
-      const blob = new Blob(["\uFEFF", purchaseOrdersCsv(rows)], { type: "text/csv;charset=utf-8" });
+      const blob = new Blob(["\uFEFF", purchaseOrdersCsv(rows.map(order => ({
+        id: order.id, number: order.number, importer: order.importer, identityStatus: order.identityStatus,
+        itemCount: order.operationalItemCount, linkedProcessCount: order.linkedProcessCount,
+        itemsWithIp: order.historicalItemsWithIp, itemsWithoutIp: order.historicalItemsWithoutIp,
+        unresolvedIssueCount: order.unresolvedIssueCount,
+      })))], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -155,13 +160,13 @@ export default function PortfolioPage() {
       <p>Consulte cada PO, seus produtos, os IPs associados e as pendências em um só lugar.</p>
       <nav className="portfolio-shortcuts" aria-label="Atalhos da carteira">
         <section className="portfolio-shortcut-group"><h2>Dados</h2><div>
-          <Link href="/source-audit">Planilha de origem</Link><Link href="/requests">Solicitações</Link><Link href="/catalog">Cadastros</Link>
+          <Link href="/requests">Solicitações</Link><Link href="/catalog">Cadastros</Link>
         </div></section>
         <section className="portfolio-shortcut-group"><h2>Operação</h2><div>
           <Link href="/processes">Consultar IPs</Link>
         </div></section>
         <section className="portfolio-shortcut-group"><h2>Pendências</h2><div>
-          <Link href="/pending-import-items">Linhas sem IP</Link><Link href="/unassigned-po-items">Linhas sem PO</Link><Link href="/quality">Revisar qualidade</Link>
+          <Link href="/pending-import-items">Itens sem IP</Link><Link href="/unassigned-po-items">Itens sem PO</Link><Link href="/quality">Revisar qualidade</Link>
         </div></section>
       </nav>
     </header>
@@ -174,17 +179,16 @@ export default function PortfolioPage() {
         <button className="button" type="submit">Aplicar filtros</button>
         <button className="button secondary" type="button" onClick={() => { setDraft(emptyFilters); navigate(emptyFilters, 1); }}>Limpar</button>
       </form>
-      <p className="muted">A busca por produto usa o código ou a descrição das linhas históricas e dos itens cadastrados. O saldo operacional aparece dentro de cada PO.</p>
+      <p className="muted">Busque pelo código ou pela descrição do item. Consulte as quantidades e os saldos dentro de cada PO.</p>
     </section>
     <section aria-label="Visão da carteira" aria-live="polite">
       <div className="metric-grid">
         <div className="metric"><span>POs no recorte</span><strong>{summaryLoading ? "…" : summary?.purchaseOrders.toLocaleString("pt-BR") ?? "—"}</strong></div>
         <div className="metric"><span>IPs das POs encontradas</span><strong>{summaryLoading ? "…" : summary?.linkedProcesses.toLocaleString("pt-BR") ?? "—"}</strong></div>
-        <div className="metric"><span>Linhas da planilha</span><strong>{summaryLoading ? "…" : summary?.lines.toLocaleString("pt-BR") ?? "—"}</strong></div>
-        <div className="metric"><span>Linhas sem IP</span><strong>{summaryLoading ? "…" : summary?.linesWithoutIp.toLocaleString("pt-BR") ?? "—"}</strong></div>
+        <div className="metric"><span>Itens vinculados a POs</span><strong>{summaryLoading ? "…" : summary?.lines.toLocaleString("pt-BR") ?? "—"}</strong></div>
+        <div className="metric"><span>Itens sem IP</span><strong>{summaryLoading ? "…" : summary?.linesWithoutIp.toLocaleString("pt-BR") ?? "—"}</strong></div>
       </div>
-      {summary && <p className="muted">Snapshot histórico registrado: {summary.sourceSnapshotAt
-        ? formatUsDateTime(summary.sourceSnapshotAt) : "sem linhas de origem no recorte"}. Isso não representa atualização do TOTVS.</p>}
+      {summary && <p className="muted">Itens e quantidades registrados para as POs deste recorte.</p>}
       {summaryError && <p className="notice error" role="alert">{summaryError}</p>}
       {summary && summary.byImporter.length > 1 && <div className="card">
         <h2>POs por importador</h2>
@@ -205,10 +209,10 @@ export default function PortfolioPage() {
         {result.items.length === 0 && result.totalCount > 0 ? <p>Esta página está fora do intervalo. <button className="button" onClick={() => navigate(applied, 1)}>Ir para a primeira página</button></p> : null}
         {result.totalCount === 0 ? <p>Nenhuma PO encontrada. Revise os filtros ou limpe a busca.</p> : null}
         {result.items.length > 0 && <div className="table-scroll"><table>
-          <thead><tr><th>PO TOTVS</th><th>Importador</th><th>Itens da planilha</th><th>Itens operacionais</th><th>IPs</th><th>Linhas sem IP</th><th>Pendências</th><th>Ação</th></tr></thead>
+          <thead><tr><th>PO TOTVS</th><th>Importador</th><th>Itens</th><th>IPs</th><th>Itens sem IP</th><th>Pendências</th><th>Ação</th></tr></thead>
           <tbody>{result.items.map(order => <tr key={order.id}>
             <td><strong>{order.number}</strong></td><td>{order.importer}</td>
-            <td>{order.historicalItemCount}</td><td>{order.operationalItemCount}</td><td>{order.linkedProcessCount}</td>
+            <td>{order.operationalItemCount}</td><td>{order.linkedProcessCount}</td>
             <td>{order.historicalItemsWithoutIp}</td><td>{order.unresolvedIssueCount}</td>
             <td><Link className="button" href={`/purchase-orders/${order.id}?return=${encodeURIComponent(returnPath)}`}>Abrir PO {order.number}</Link></td>
           </tr>)}</tbody>
