@@ -11,7 +11,7 @@ checklists, não uma confirmação do estado remoto ao vivo.
 | --- | --- | --- |
 | `POST /api/v1/purchase-orders/complete` | Não existe | O formulário usa as rotas antigas por etapa como fallback. |
 | `PATCH /api/v1/purchase-orders/:id/items/followup` | Não existe | A interface salva item a item em M021. Uma falha parcial é informada. |
-| `GET /api/v1/processes/:id/followup` | Não existe | Causava o HTTP 404 do painel Pós Embarque. Agora a tela recorre a `GET /processes/:id` e exibe POs e distribuições disponíveis, informando que documentos e os demais dados dependem da atualização da API. |
+| `GET /api/v1/processes/:id/followup` | Não existe | Causava o HTTP 404 do painel Pós Embarque. A tela agora verifica o suporte ao ciclo do IP em `GET /processes/:id` antes de chamar esta rota; na M021, não faz a chamada incompatível e exibe POs/distribuições disponíveis. |
 | `POST /api/v1/processes/:id/close` e `/reopen` | Não existem | A interface oculta essas ações se a resposta do IP não tiver `lifecycleStatus`. |
 | `events`, histórico de alterações do IP/PO | Estrutura M022 | Não disponível na API M021. O histórico local requer a publicação coordenada de M022–M024. |
 | `actualPortDepartureDate` | Campo M024 | Não disponível até a migration e o código M024 serem publicados juntos. |

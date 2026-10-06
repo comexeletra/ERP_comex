@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
-import { apiFetch, isMissingApiRoute, readApiJson } from "../lib/api";
+import { apiFetch, hasIpLifecycleSupport, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 
@@ -77,22 +77,19 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError(""); setData(undefined); setLegacyProcess(undefined);
     setCompatibilityWarning("");
-    Promise.all([apiFetch(`/api/v1/processes/${id}/followup`, { signal: controller.signal }),
+    Promise.all([apiFetch(`/api/v1/processes/${id}`, { signal: controller.signal }),
       apiFetch("/auth/me", { signal: controller.signal }), loadOperationalOptions()]).then(async ([response, identity, optionValues]) => {
       const user = await readApiJson<{ roles: string[] }>(identity);
-      if (response.status === 404) {
-        const body = await response.clone().json().catch(() => undefined);
-        if (isMissingApiRoute(response.status, body)) {
-          const legacyResponse = await apiFetch(`/api/v1/processes/${id}`, { signal: controller.signal });
-          const summary = await readApiJson<LegacyProcess>(legacyResponse);
-          if (!controller.signal.aborted) {
-            setLegacyProcess(summary); setData(undefined); setRoles(user.roles); setOptions(optionValues);
-            setCompatibilityWarning("A API publicada ainda não tem a rota de acompanhamento do IP. Os vínculos e as quantidades já cadastrados são exibidos abaixo; documentos e demais dados do pós embarque dependem da atualização da API.");
-          }
-          return;
+      const summary = await readApiJson<LegacyProcess>(response);
+      if (!hasIpLifecycleSupport(summary)) {
+        if (!controller.signal.aborted) {
+          setLegacyProcess(summary); setData(undefined); setRoles(user.roles); setOptions(optionValues);
+          setCompatibilityWarning("A API publicada ainda não tem todos os recursos de acompanhamento do IP. Os vínculos e as quantidades já cadastrados são exibidos abaixo; documentos e demais dados do pós embarque dependem da atualização da API.");
         }
+        return;
       }
-      const raw = await readApiJson<Partial<Data>>(response);
+      const followupResponse = await apiFetch(`/api/v1/processes/${id}/followup`, { signal: controller.signal });
+      const raw = await readApiJson<Partial<Data>>(followupResponse);
       if (!raw.process) throw new Error("A API retornou um formato antigo para o Pós Embarque. Atualize a API antes de continuar.");
       const missingCollections = ["purchaseOrders", "allocations", "documents", "events"]
         .filter(key => !Array.isArray(raw[key as keyof Data]));

@@ -31,6 +31,12 @@ export function isMissingApiRoute(status: number, body: unknown): boolean {
     || (Object.keys(error).length === 1 && error.error === "Recurso não encontrado.");
 }
 
+export function hasIpLifecycleSupport(process: unknown): boolean {
+  if (!process || typeof process !== "object" || Array.isArray(process)) return false;
+  const lifecycleStatus = (process as Record<string, unknown>).lifecycleStatus;
+  return lifecycleStatus === "OPEN" || lifecycleStatus === "CLOSED";
+}
+
 export async function readApiJson<T>(response: Response): Promise<T> {
   const raw = await response.text();
   let body: (T & { detail?: string }) | undefined;
