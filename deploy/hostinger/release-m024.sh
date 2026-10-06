@@ -12,6 +12,7 @@ test -f "$api_dir/dist/migrate.js"
 test -f "$api_dir/dist/followup.js"
 test -f "$api_dir/test/operations.integration.mjs"
 test -f "$api_dir/test/followup.integration.mjs"
+test -f "$api_dir/migrations/M021_operational_selectors.sql"
 for migration in M022_purchase_order_ip_event_history.sql M023_process_closure.sql M024_ip_specific_port_departure.sql; do
   test -f "$api_dir/migrations/$migration"
 done
@@ -90,7 +91,7 @@ done
 test "$ready" = true
 
 install -d "$target_dir/migrations"
-for migration in M022_purchase_order_ip_event_history.sql M023_process_closure.sql M024_ip_specific_port_departure.sql; do
+for migration in M021_operational_selectors.sql M022_purchase_order_ip_event_history.sql M023_process_closure.sql M024_ip_specific_port_departure.sql; do
   install -m 0644 "$api_dir/migrations/$migration" "$target_dir/migrations/$migration"
 done
 mv "$old_dist" "$rollback_dir/previous-dist"
