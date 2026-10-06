@@ -9,6 +9,7 @@ import { blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsE
   purchaseOrderItemFieldsPayload } from "./PurchaseOrderItemFields";
 import { CatalogChoice, CatalogProductSelect, loadCatalogChoices, loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
+import { formatUsDate } from "../lib/date-format";
 
 type Item = { id: string; lineNumber: number; externalLineReference: string | null;
   productCode: string; description: string; orderedQuantity: string; unit: string | null;
@@ -43,6 +44,20 @@ const allocationWriters = new Set(["Master", "Administrador", "Importação"]);
 
 async function responseData<T>(response: Response): Promise<T> {
   return readApiJson<T>(response);
+}
+function formatItemQuantity(value: string) {
+  const quantity = Number(value);
+  return Number.isFinite(quantity)
+    ? new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 8 }).format(quantity)
+    : value;
+}
+function formatItemPrice(value: string | null, currency: string | null) {
+  if (value == null) return "Não informado";
+  const price = Number(value);
+  const formatted = Number.isFinite(price)
+    ? new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(price)
+    : value;
+  return currency ? `${formatted} ${currency}` : formatted;
 }
 
 async function isLegacySharedFieldsEndpoint(response: Response): Promise<boolean> {
@@ -370,8 +385,42 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       {data.items.map(item => {
         const draft = itemDrafts[item.id] ?? blankItem();
         const setDraft = (change: Partial<ItemDraft>) => setItemDrafts(current => ({ ...current, [item.id]: { ...draft, ...change } }));
-        return <details className="po-entry-item" key={item.id}>
-          <summary className="po-entry-summary"><strong>Item {item.lineNumber} - {item.productCode}</strong><span>{item.sourceStatus?.toUpperCase() === "CANCELLED" || item.sourceStatus?.toUpperCase() === "CANCELED" ? "Cancelado" : `${item.orderedQuantity}${item.unit ? ` ${item.unit}` : ""} · saldo ${item.remainingQuantity}${item.unit ? ` ${item.unit}` : ""}`}</span></summary>
+        const canceled = item.sourceStatus?.toUpperCase() === "CANCELLED" || item.sourceStatus?.toUpperCase() === "CANCELED";
+        const itemAllocations = data.allocations.filter(allocation => allocation.itemId === item.id);
+        const price = formatItemPrice(item.unitPrice, item.currency);
+        const totalPrice = item.unitPrice == null ? "Não informado" : formatItemPrice(
+          String(Number(item.orderedQuantity) * Number(item.unitPrice)), item.currency);
+        return <details className="po-entry-item po-item-card" key={item.id}>
+          <summary className="po-item-summary">
+            <div className="po-item-heading">
+              <span className="po-item-number">Item {item.lineNumber}</span>
+              <strong className="po-item-code">{item.productCode}</strong>
+              <span className={`po-item-status${canceled ? " is-canceled" : ""}`}>
+                {canceled ? "Cancelado" : item.sourceStatus || "Ativo"}
+              </span>
+            </div>
+            <p className="po-item-description">{item.description || "Descrição não informada"}</p>
+            <div className="po-item-metrics" aria-label={`Resumo do item ${item.lineNumber}`}>
+              <div><span>Quantidade pedida</span><strong>{formatItemQuantity(item.orderedQuantity)}{item.unit ? ` ${item.unit}` : ""}</strong></div>
+              <div><span>Distribuída</span><strong>{formatItemQuantity(item.allocatedQuantity)}{item.unit ? ` ${item.unit}` : ""}</strong></div>
+              <div className={canceled ? "is-muted" : "is-balance"}>
+                <span>{canceled ? "Saldo bloqueado" : "Saldo disponível"}</span>
+                <strong>{formatItemQuantity(canceled ? "0" : item.remainingQuantity)}{item.unit ? ` ${item.unit}` : ""}</strong>
+              </div>
+            </div>
+            <div className="po-item-details">
+              <div><span>Preço unitário</span><strong>{price}</strong></div>
+              <div><span>Valor total</span><strong>{totalPrice}</strong></div>
+              <div><span>Data de necessidade</span><strong>{formatUsDate(item.necessityDate) || "Não informada"}</strong></div>
+            </div>
+            {itemAllocations.length > 0 && <div className="po-item-ip-summary">
+              <span>Distribuição por IP</span>
+              <div>{itemAllocations.map(allocation => <span className="po-item-ip-chip" key={allocation.id}>
+                {allocation.ipNumber} · {formatItemQuantity(allocation.quantity)}{item.unit ? ` ${item.unit}` : ""}
+              </span>)}</div>
+            </div>}
+            <span className="po-item-toggle" aria-hidden="true">⌄</span>
+          </summary>
           {canWritePo ? <form className="stack-form" data-item-id={item.id} onSubmit={saveItem}>
             <div className="operational-fields">
               <label>Linha no TOTVS<input maxLength={80} value={draft.externalLineReference} onChange={event => setDraft({ externalLineReference: event.target.value })} /></label>
