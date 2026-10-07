@@ -102,6 +102,79 @@ function problem(reply: FastifyReply, status: number, code: string, detail: stri
 }
 
 export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool): Promise<void> {
+  app.get("/api/v1/reports/summary", { config: permissionConfig("processes.read") }, async request => {
+    const scopes = request.authorizationContext?.importerScopes ?? [];
+    const [pre, post] = await Promise.all([
+      pool.query<Record<string, unknown>>(
+        `WITH scoped_po AS MATERIALIZED (
+           SELECT po.* FROM procurement.purchase_order AS po WHERE po.importer = ANY($1::text[])
+         ), items AS (
+           SELECT item.*, po.importer FROM procurement.purchase_order_item AS item
+           JOIN scoped_po AS po ON po.id = item.purchase_order_id
+         ), status_counts AS (
+           SELECT coalesce(identity_status, 'Sem status') AS status, count(*)::int AS status_count
+           FROM scoped_po GROUP BY 1
+         )
+         SELECT (SELECT count(*)::int FROM scoped_po) AS total_records,
+           (SELECT count(*)::int FROM scoped_po WHERE source_kind = 'HISTORICAL_EXCEL') AS historical_records,
+           (SELECT count(*)::int FROM scoped_po WHERE source_kind <> 'HISTORICAL_EXCEL') AS new_records,
+           (SELECT count(*)::int FROM items) AS operational_items,
+           (SELECT count(*)::int FROM items AS item WHERE EXISTS (
+             SELECT 1 FROM procurement.po_item_allocation AS allocation
+             WHERE allocation.purchase_order_item_id = item.id AND allocation.status = 'ACTIVE')
+             OR EXISTS (SELECT 1 FROM procurement.po_line_observation AS observation
+               JOIN imports.import_process AS process
+                 ON process.normalized_ip_number = upper(btrim(observation.source_ip_text))
+                AND process.importer = item.importer
+               WHERE observation.source_row_id = item.source_observation_id
+                 AND ${validIp("observation.source_ip_text")})) AS allocated_items,
+           (SELECT count(*)::int FROM items AS item
+            WHERE upper(coalesce(item.source_status, '')) NOT IN ('CANCELLED', 'CANCELED')
+              AND NOT EXISTS (SELECT 1 FROM procurement.po_item_allocation AS allocation
+                WHERE allocation.purchase_order_item_id = item.id AND allocation.status = 'ACTIVE')
+              AND NOT EXISTS (SELECT 1 FROM procurement.po_line_observation AS observation
+                JOIN imports.import_process AS process
+                  ON process.normalized_ip_number = upper(btrim(observation.source_ip_text))
+                 AND process.importer = item.importer
+                WHERE observation.source_row_id = item.source_observation_id
+                  AND ${validIp("observation.source_ip_text")})) AS unallocated_items,
+           (SELECT coalesce(jsonb_agg(jsonb_build_object('status', status, 'count', status_count)
+              ORDER BY status_count DESC, status), '[]'::jsonb) FROM status_counts) AS statuses`, [scopes]),
+      pool.query<Record<string, unknown>>(
+        `WITH scoped_process AS MATERIALIZED (
+           SELECT process.* FROM imports.import_process AS process
+           WHERE process.importer = ANY($1::text[])
+         ), status_counts AS (
+           SELECT coalesce(nullif(btrim(logistics_status), ''), 'Sem status') AS status, count(*)::int AS status_count
+           FROM scoped_process GROUP BY 1
+         )
+         SELECT count(*)::int AS total_records,
+           count(*) FILTER (WHERE source_kind = 'HISTORICAL_EXCEL')::int AS historical_records,
+           count(*) FILTER (WHERE source_kind <> 'HISTORICAL_EXCEL')::int AS new_records,
+           count(*) FILTER (WHERE lifecycle_status = 'OPEN')::int AS open_records,
+           count(*) FILTER (WHERE arrival_date IS NOT NULL)::int AS rows_with_arrival,
+           count(*) FILTER (WHERE duimp_number IS NOT NULL)::int AS rows_with_duimp,
+           count(*) FILTER (WHERE delivery_date IS NOT NULL)::int AS rows_with_delivery,
+           count(*) FILTER (WHERE coalesce(fine_brl, 0) > 0 OR coalesce(storage_brl, 0) > 0
+                            OR coalesce(demurrage_brl, 0) > 0)::int AS rows_with_additional_costs,
+           coalesce((SELECT jsonb_agg(jsonb_build_object('status', status, 'count', status_count)
+              ORDER BY status_count DESC, status) FROM status_counts), '[]'::jsonb) AS statuses
+         FROM scoped_process`, [scopes]),
+    ]);
+    const po = pre.rows[0] ?? {};
+    const ip = post.rows[0] ?? {};
+    return {
+      preShipment: { totalRecords: Number(po.total_records ?? 0), historicalRecords: Number(po.historical_records ?? 0),
+        newRecords: Number(po.new_records ?? 0), operationalItems: Number(po.operational_items ?? 0),
+        allocatedItems: Number(po.allocated_items ?? 0), unallocatedItems: Number(po.unallocated_items ?? 0), statuses: po.statuses ?? [] },
+      postShipment: { totalRecords: Number(ip.total_records ?? 0), historicalRecords: Number(ip.historical_records ?? 0),
+        newRecords: Number(ip.new_records ?? 0), openRecords: Number(ip.open_records ?? 0),
+        rowsWithArrival: Number(ip.rows_with_arrival ?? 0), rowsWithDuimp: Number(ip.rows_with_duimp ?? 0),
+        rowsWithDelivery: Number(ip.rows_with_delivery ?? 0), rowsWithAdditionalCosts: Number(ip.rows_with_additional_costs ?? 0),
+        statuses: ip.statuses ?? [] },
+    };
+  });
+
   app.get("/api/v1/source-rows/column-values", { config: permissionConfig("processes.read") }, async (request, reply) => {
     const parsed = valuesQuerySchema.safeParse(request.query);
     if (!parsed.success) return problem(reply, 400, "INVALID_QUERY", "Revise a coluna e os filtros para listar os valores.");

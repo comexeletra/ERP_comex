@@ -162,7 +162,7 @@ export default function PortfolioPage() {
       <p>Consulte cada PO, seus produtos, os IPs associados e as pendências em um só lugar.</p>
       <nav className="portfolio-shortcuts" aria-label="Atalhos da carteira">
         <section className="portfolio-shortcut-group"><h2>Dados</h2><div>
-          <Link href="/source-audit">Planilha de origem</Link><Link href="/requests">Solicitações</Link><Link href="/catalog">Cadastros</Link>
+          <Link href="/source-audit">Planilha de origem</Link><Link href="/reports">Relatórios</Link><Link href="/requests">Solicitações</Link><Link href="/catalog">Cadastros</Link>
         </div></section>
         <section className="portfolio-shortcut-group"><h2>Operação</h2><div>
           <Link href="/processes">Consultar IPs</Link>

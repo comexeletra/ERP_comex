@@ -198,6 +198,22 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .operational-panel summary { color: #165665; cursor: pointer; font-weight: 700; }
 .operational-panel details form { margin-top: 16px; }
 .operational-summary { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin: 0; }
+.report-section { margin: 32px 0 42px; }
+.report-section-heading { align-items: center; display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; margin-bottom: 18px; }
+.report-section-heading h2 { color: #183744; font-size: 1.55rem; letter-spacing: -.025em; margin: 0 0 5px; }
+.report-section-heading p { margin: 4px 0; }
+.report-section-heading .eyebrow { margin: 0 0 5px; }
+.report-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.report-actions .secondary { margin: 0; }
+.report-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.report-status-card h3 { color: #203744; margin: 0 0 14px; }
+.report-status-list { display: grid; gap: 12px; list-style: none; margin: 0; max-width: 860px; padding: 0; }
+.report-status-list li > div { align-items: center; color: #425b67; display: flex; font-size: .88rem; justify-content: space-between; margin-bottom: 5px; }
+.report-status-list strong { color: #203744; font-variant-numeric: tabular-nums; }
+.report-status-track { background: #e8eff2; border-radius: 999px; display: block; height: 8px; overflow: hidden; }
+.report-status-track > span { background: #0d7885; border-radius: inherit; display: block; height: 100%; }
+@media (max-width: 760px) { .report-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }.report-actions { width: 100%; }.report-actions .button { text-align: center; } }
+@media (max-width: 480px) { .report-metrics { grid-template-columns: 1fr 1fr; }.report-section-heading { align-items: flex-start; flex-direction: column; } }
 .operational-summary > div { background: #f3f8f9; border-radius: 8px; padding: 12px; }
 .operational-summary dt { color: #617985; font-size: .76rem; font-weight: 700; }
 .operational-summary dd { margin: 5px 0 0; overflow-wrap: anywhere; }
