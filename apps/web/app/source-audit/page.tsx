@@ -17,11 +17,12 @@ type SourceRow = {
   importer: string; sourceValues: Record<string, string | null>; cellErrors: string[];
   poNumber: string | null; ipNumber: string | null;
   auditFlags: { withoutPurchaseOrder: boolean; withoutValidIp: boolean;
-    cellErrors: number; anyGap: boolean };
+    cellErrors: number; dataIssues: Array<{ code: string; fieldName: string | null;
+      severity: string; evidence: Record<string, unknown> }>; anyGap: boolean };
 };
 type AuditResult = {
   page: number; pageSize: number; totalCount: number; rowsBeforeGapFilter: number;
-  summary: { withoutPurchaseOrder: number; withoutValidIp: number; cellErrors: number; anyGap: number };
+  summary: { withoutPurchaseOrder: number; withoutValidIp: number; cellErrors: number; dataIssues: number; anyGap: number };
   columns: string[]; columnHeaders: Record<string, string>; items: SourceRow[];
 };
 type Importer = { code: string };
@@ -45,8 +46,28 @@ const gapOptions: Array<{ value: Gap; label: string }> = [
   { value: "any", label: "Qualquer sinalizador" },
   { value: "without-ip", label: "Sem IP válido na origem" },
   { value: "without-po", label: "Sem PO na origem" },
-  { value: "quality", label: "Célula com erro de cálculo" },
+  { value: "quality", label: "Erros e inconsistências" },
 ];
+
+const issueLabels: Record<string, string> = {
+  EXCEL_CELL_ERROR: "Erro de fórmula",
+  INVALID_NUMERIC: "Número inválido",
+  INVALID_CURRENCY: "Moeda inválida",
+  INVALID_DATE: "Data inválida",
+  INVALID_STATUS: "Status inválido",
+  INVALID_COST: "Custo inválido",
+  MISSING_PO: "PO ausente",
+  TEXT_WHITESPACE_NOISE: "Espaço ou caractere de controle extra",
+};
+
+function describeIssue(issue: SourceRow["auditFlags"]["dataIssues"][number]): string {
+  const label = issueLabels[issue.code] ?? issue.code.replaceAll("_", " ").toLocaleLowerCase("pt-BR");
+  const field = issue.fieldName ? ` · coluna ${issue.fieldName}` : "";
+  const evidenceValue = issue.evidence.value ?? issue.evidence.amount;
+  const value = evidenceValue == null ? "" : ` · valor: ${display(evidenceValue)}`;
+  const reason = issue.evidence.reason === "control-character" ? " · caractere de controle" : "";
+  return `${label}${field}${reason}${value}`;
+}
 
 function readColumnFilters(raw: string | null): ColumnFilters {
   try {
@@ -370,6 +391,7 @@ export default function SourceAuditPage() {
       <div className="metric"><span>Sem PO informado na origem</span><strong>{loading ? "…" : result?.summary.withoutPurchaseOrder.toLocaleString("pt-BR") ?? "—"}</strong></div>
       <div className="metric"><span>Sem IP válido na origem</span><strong>{loading ? "…" : result?.summary.withoutValidIp.toLocaleString("pt-BR") ?? "—"}</strong></div>
       <div className="metric"><span>Células com erro de cálculo</span><strong>{loading ? "…" : result?.summary.cellErrors.toLocaleString("pt-BR") ?? "—"}</strong></div>
+      <div className="metric"><span>Linhas com inconsistências identificadas</span><strong>{loading ? "…" : result?.summary.dataIssues.toLocaleString("pt-BR") ?? "—"}</strong></div>
       <div className="metric"><span>Linhas com sinalizador</span><strong>{loading ? "…" : result?.summary.anyGap.toLocaleString("pt-BR") ?? "—"}</strong></div>
     </section>
 
@@ -417,6 +439,10 @@ export default function SourceAuditPage() {
                   {row.auditFlags.withoutPurchaseOrder && <span className="source-gap-tag">Sem PO na origem</span>}
                   {row.auditFlags.withoutValidIp && <span className="source-gap-tag">Sem IP válido na origem</span>}
                   {row.auditFlags.cellErrors > 0 && <span className="source-gap-tag">{row.auditFlags.cellErrors} erro(s) de cálculo</span>}
+                  {row.auditFlags.dataIssues.map((issue, index) => <span key={`${issue.code}-${issue.fieldName}-${index}`}
+                    className="source-gap-tag" title={`${result.columnHeaders[issue.fieldName ?? ""] ?? ""} · ${JSON.stringify(issue.evidence)}`}>
+                    {describeIssue(issue)}{result.columnHeaders[issue.fieldName ?? ""] ? ` (${result.columnHeaders[issue.fieldName ?? ""]})` : ""}
+                  </span>)}
                   {!row.auditFlags.anyGap && <span className="source-ok-tag">Sem sinalizador</span>}
                 </div></td>
                 {columns.map(column => <td key={column} title={displayCell(row.sourceSheetName, column, row.sourceValues[column])}>{displayCell(row.sourceSheetName, column, row.sourceValues[column])}</td>)}

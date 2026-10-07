@@ -124,8 +124,27 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
       `WITH visible AS MATERIALIZED (
          SELECT source.id, source.batch_id, source.sheet_name, source.row_number, source.raw_values,
                 source.error_columns,
-                (${noPo}) AS missing_po, (${noIp}) AS missing_ip, ${calculationError} AS has_calculation_error
+                (${noPo}) AS missing_po, (${noIp}) AS missing_ip, ${calculationError} AS has_calculation_error,
+                coalesce(issues.items, '[]'::jsonb) AS audit_issues,
+                coalesce(issues.issue_count, 0) > 0 AS has_open_data_issue
          FROM migration.source_row AS source
+         LEFT JOIN LATERAL (
+           SELECT count(*)::int AS issue_count, jsonb_agg(finding.item ORDER BY finding.code, finding.field_name) AS items
+           FROM (
+             SELECT issue.issue_code AS code, issue.field_name,
+                    jsonb_build_object('code', issue.issue_code, 'fieldName', issue.field_name,
+                      'severity', issue.severity, 'evidence', issue.evidence) AS item
+             FROM migration.data_issue AS issue
+             WHERE issue.source_row_id = source.id AND issue.status = 'OPEN'
+             UNION ALL
+             SELECT 'TEXT_WHITESPACE_NOISE', cell.key,
+                    jsonb_build_object('code', 'TEXT_WHITESPACE_NOISE', 'fieldName', cell.key,
+                      'severity', 'WARNING', 'evidence', jsonb_build_object('value', cell.value,
+                        'reason', CASE WHEN cell.value ~ '[[:cntrl:]]' THEN 'control-character' ELSE 'edge-whitespace' END))
+             FROM jsonb_each_text(source.raw_values) AS cell(key, value)
+             WHERE cell.value <> btrim(cell.value) OR cell.value ~ '[[:cntrl:]]'
+           ) AS finding
+         ) AS issues ON TRUE
          WHERE btrim(source.raw_values->>'F') = ANY($1::text[])
            AND ($2::text = 'all' OR source.sheet_name = $2)
            AND ($3::text IS NULL OR btrim(source.raw_values->>'F') = $3)
@@ -137,8 +156,8 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
            AND ($7::text = 'all'
              OR ($7::text = 'without-ip' AND source.missing_ip)
              OR ($7::text = 'without-po' AND source.missing_po)
-             OR ($7::text = 'quality' AND source.has_calculation_error)
-             OR ($7::text = 'any' AND (source.missing_ip OR source.missing_po OR source.has_calculation_error)))
+             OR ($7::text = 'quality' AND (source.has_calculation_error OR source.has_open_data_issue))
+             OR ($7::text = 'any' AND (source.missing_ip OR source.missing_po OR source.has_calculation_error OR source.has_open_data_issue)))
        ), grouped AS MATERIALIZED (
          SELECT coalesce(source.raw_values->>$5, '') AS value, count(*)::int AS row_count
          FROM filtered AS source GROUP BY 1
@@ -186,17 +205,36 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
       : "";
     const result = await pool.query<{
       total_count: number; rows_before_gap_filter: number; without_po: number; without_ip: number;
-      cell_errors: number; any_gap: number; items: Array<Record<string, unknown>>;
+      cell_errors: number; data_issues: number; any_gap: number; items: Array<Record<string, unknown>>;
     }>(
       `WITH visible AS MATERIALIZED (
          SELECT source.id, source.batch_id, source.sheet_name, source.row_number,
                 source.raw_values, source.error_columns, btrim(source.raw_values->>'F') AS importer,
+                coalesce(issues.items, '[]'::jsonb) AS audit_issues,
+                coalesce(issues.issue_count, 0) > 0 AS has_open_data_issue,
                 po.id AS purchase_order_id, po.external_number AS po_number,
                 process.id AS process_id, process.ip_number,
                 (${noPo}) AS missing_po,
                 (${noIp}) AS missing_ip,
                 ${calculationError} AS has_calculation_error
          FROM migration.source_row AS source
+         LEFT JOIN LATERAL (
+           SELECT count(*)::int AS issue_count, jsonb_agg(finding.item ORDER BY finding.code, finding.field_name) AS items
+           FROM (
+             SELECT issue.issue_code AS code, issue.field_name,
+                    jsonb_build_object('code', issue.issue_code, 'fieldName', issue.field_name,
+                      'severity', issue.severity, 'evidence', issue.evidence) AS item
+             FROM migration.data_issue AS issue
+             WHERE issue.source_row_id = source.id AND issue.status = 'OPEN'
+             UNION ALL
+             SELECT 'TEXT_WHITESPACE_NOISE', cell.key,
+                    jsonb_build_object('code', 'TEXT_WHITESPACE_NOISE', 'fieldName', cell.key,
+                      'severity', 'WARNING', 'evidence', jsonb_build_object('value', cell.value,
+                        'reason', CASE WHEN cell.value ~ '[[:cntrl:]]' THEN 'control-character' ELSE 'edge-whitespace' END))
+             FROM jsonb_each_text(source.raw_values) AS cell(key, value)
+             WHERE cell.value <> btrim(cell.value) OR cell.value ~ '[[:cntrl:]]'
+           ) AS finding
+         ) AS issues ON TRUE
          LEFT JOIN procurement.po_line_observation AS observation ON observation.source_row_id = source.id
          LEFT JOIN procurement.purchase_order AS po ON po.id = observation.purchase_order_id
          LEFT JOIN imports.import_process AS process
@@ -217,8 +255,8 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
          WHERE $6::text = 'all'
             OR ($6::text = 'without-ip' AND source.missing_ip)
             OR ($6::text = 'without-po' AND source.missing_po)
-            OR ($6::text = 'quality' AND source.has_calculation_error)
-            OR ($6::text = 'any' AND (source.missing_ip OR source.missing_po OR source.has_calculation_error))
+            OR ($6::text = 'quality' AND (source.has_calculation_error OR source.has_open_data_issue))
+            OR ($6::text = 'any' AND (source.missing_ip OR source.missing_po OR source.has_calculation_error OR source.has_open_data_issue))
        ), page AS (
          SELECT * FROM gap_filtered AS source ORDER BY ${sortExpression} sheet_name, row_number, id LIMIT $7 OFFSET $8
        )
@@ -227,7 +265,8 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
               (SELECT count(*) FILTER (WHERE missing_po)::int FROM filtered) AS without_po,
               (SELECT count(*) FILTER (WHERE missing_ip)::int FROM filtered) AS without_ip,
               (SELECT count(*) FILTER (WHERE jsonb_array_length(error_columns) > 0)::int FROM filtered) AS cell_errors,
-              (SELECT count(*) FILTER (WHERE missing_ip OR missing_po OR has_calculation_error)::int FROM filtered) AS any_gap,
+              (SELECT count(*) FILTER (WHERE has_open_data_issue)::int FROM filtered) AS data_issues,
+              (SELECT count(*) FILTER (WHERE missing_ip OR missing_po OR has_calculation_error OR has_open_data_issue)::int FROM filtered) AS any_gap,
               coalesce(jsonb_agg(jsonb_build_object(
                 'id', page.id, 'batchId', page.batch_id,
                 'sourceSheetName', page.sheet_name, 'sourceRowNumber', page.row_number,
@@ -237,8 +276,9 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
                 'processId', page.process_id, 'ipNumber', page.ip_number,
                 'auditFlags', jsonb_build_object('withoutPurchaseOrder', page.missing_po,
                   'withoutValidIp', page.missing_ip,
-                  'cellErrors', jsonb_array_length(page.error_columns), 'anyGap',
-                  page.missing_ip OR page.missing_po OR page.has_calculation_error)
+                  'cellErrors', jsonb_array_length(page.error_columns),
+                  'dataIssues', page.audit_issues,
+                  'anyGap', page.missing_ip OR page.missing_po OR page.has_calculation_error OR page.has_open_data_issue)
               ) ORDER BY page.sheet_name, page.row_number, page.id)
                 FILTER (WHERE page.id IS NOT NULL), '[]'::jsonb) AS items
        FROM page`,
@@ -263,6 +303,7 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
       summary: { withoutPurchaseOrder: Number(result.rows[0]?.without_po ?? 0),
         withoutValidIp: Number(result.rows[0]?.without_ip ?? 0),
         cellErrors: Number(result.rows[0]?.cell_errors ?? 0),
+        dataIssues: Number(result.rows[0]?.data_issues ?? 0),
         anyGap: Number(result.rows[0]?.any_gap ?? 0) },
       columns,
       columnHeaders,
