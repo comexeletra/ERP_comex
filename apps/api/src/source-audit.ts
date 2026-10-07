@@ -19,6 +19,7 @@ const querySchema = z.object({
   sortDirection: z.enum(["asc", "desc"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50),
+  all: z.literal("true").optional(),
 }).strict();
 const columnFilterSchema = z.union([
   z.string().trim().min(1).max(200),
@@ -258,6 +259,7 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
     const parsed = querySchema.safeParse(request.query);
     if (!parsed.success) return problem(reply, 400, "INVALID_QUERY", "Revise a aba, os filtros de coluna ou a paginação.");
     const { sheet, importer, search, gap, page, pageSize, sortColumn, sortDirection } = parsed.data;
+    const allRows = parsed.data.all === "true";
     const columnFilters = parseColumnFilters(parsed.data.filters, sheet, reply);
     if (!columnFilters) return;
     if ((sortColumn && !sortDirection) || (!sortColumn && sortDirection)
@@ -331,7 +333,9 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
             OR ($6::text = 'quality' AND (source.has_calculation_error OR source.has_open_data_issue))
             OR ($6::text = 'any' AND (source.missing_ip OR source.missing_po OR source.has_calculation_error OR source.has_open_data_issue))
        ), page AS (
-         SELECT * FROM gap_filtered AS source ORDER BY ${sortExpression} sheet_name, row_number, id LIMIT $7 OFFSET $8
+         SELECT * FROM gap_filtered AS source ORDER BY ${sortExpression} sheet_name, row_number, id
+         LIMIT CASE WHEN $9::boolean THEN NULL::bigint ELSE $7::bigint END
+         OFFSET CASE WHEN $9::boolean THEN 0 ELSE $8::bigint END
        )
        SELECT (SELECT count(*)::int FROM gap_filtered) AS total_count,
               (SELECT count(*)::int FROM filtered) AS rows_before_gap_filter,
@@ -356,7 +360,7 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
                 FILTER (WHERE page.id IS NOT NULL), '[]'::jsonb) AS items
        FROM page`,
       [scopes, sheet, importer || null, JSON.stringify(columnFilters), search || null, gap,
-        pageSize, (page - 1) * pageSize]);
+        pageSize, (page - 1) * pageSize, allRows]);
 
     const columns = sheet === "Pré Embarque" ? preColumns : sheet === "Pós Embarque" ? postColumns
       : [...new Set([...preColumns, ...postColumns])].sort((left, right) => excelColumnNumber(left) - excelColumnNumber(right));
@@ -371,7 +375,9 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
     }
     const items = (result.rows[0]?.items ?? []) as Array<Record<string, unknown>>;
     return {
-      page, pageSize, sheet, gap, totalCount: Number(result.rows[0]?.total_count ?? 0),
+      page: allRows ? 1 : page,
+      pageSize: allRows ? Number(result.rows[0]?.total_count ?? 0) : pageSize,
+      sheet, gap, totalCount: Number(result.rows[0]?.total_count ?? 0),
       rowsBeforeGapFilter: Number(result.rows[0]?.rows_before_gap_filter ?? 0),
       summary: { withoutPurchaseOrder: Number(result.rows[0]?.without_po ?? 0),
         withoutValidIp: Number(result.rows[0]?.without_ip ?? 0),
