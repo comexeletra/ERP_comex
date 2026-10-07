@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
+import AppSidebar from "./AppSidebar";
 
 type Identity = {
   authenticated: boolean;
@@ -18,6 +19,11 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   const [identity, setIdentity] = useState<Identity>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    setSidebarCollapsed(window.localStorage.getItem("erp-comex-sidebar-collapsed") === "true");
+  }, []);
 
   useEffect(() => {
     if (pathname === "/login") {
@@ -44,6 +50,14 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     }
   }
 
+  function toggleSidebar() {
+    setSidebarCollapsed(current => {
+      const next = !current;
+      window.localStorage.setItem("erp-comex-sidebar-collapsed", String(next));
+      return next;
+    });
+  }
+
   if (pathname === "/login") return <>{children}</>;
   if (loading) return <main className="shell"><p>Verificando sessão…</p></main>;
   if (error) return <main className="shell"><p className="notice error">{error}</p><Link className="button" href="/login">Entrar</Link></main>;
@@ -52,7 +66,9 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     return <main className="shell"><p className="notice">Troque sua senha inicial para continuar.</p><Link className="button" href="/change-password">Trocar senha</Link></main>;
   }
 
-  return <>
+  return <div className={sidebarCollapsed ? "app-layout sidebar-collapsed" : "app-layout"}>
+    <AppSidebar collapsed={sidebarCollapsed} isMaster={identity.roles.includes("Master")} onToggle={toggleSidebar} />
+    <div className="app-main">
     <div className="session-bar">
       <div className="session-identity">
         <span>{identity.user.displayName ?? "Usuário autenticado"}</span>
@@ -64,11 +80,10 @@ export default function AuthGate({ children }: { children: ReactNode }) {
             : identity.importerScopes.length > 0 ? identity.importerScopes.join(", ") : "Nenhuma atribuída"}
         </small>
       </div>
-      {identity.roles.includes("Master") && <Link className="text-link" href="/admin/users">Gerenciar acessos</Link>}
-      {identity.roles.includes("Master") && <Link className="text-link" href="/admin/outbox">Fila de eventos</Link>}
       <Link className="text-link" href="/change-password">Trocar senha</Link>
       <button className="button secondary" type="button" onClick={() => void logout()}>Sair</button>
     </div>
     {children}
-  </>;
+    </div>
+  </div>;
 }

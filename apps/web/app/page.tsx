@@ -160,17 +160,6 @@ export default function PortfolioPage() {
     <header className="page-header portfolio-header">
       <p className="eyebrow">ERP Comex</p><h1>Carteira de POs TOTVS</h1>
       <p>Consulte cada PO, seus produtos, os IPs associados e as pendências em um só lugar.</p>
-      <nav className="portfolio-shortcuts" aria-label="Atalhos da carteira">
-        <section className="portfolio-shortcut-group"><h2>Dados</h2><div>
-          <Link href="/source-audit">Planilha de origem</Link><Link href="/reports">Relatórios</Link><Link href="/requests">Solicitações</Link><Link href="/catalog">Cadastros</Link>
-        </div></section>
-        <section className="portfolio-shortcut-group"><h2>Operação</h2><div>
-          <Link href="/processes">Consultar IPs</Link>
-        </div></section>
-        <section className="portfolio-shortcut-group"><h2>Pendências</h2><div>
-          <Link href="/pending-import-items">Itens sem IP</Link><Link href="/unassigned-po-items">Itens sem PO</Link><Link href="/quality">Revisar qualidade</Link>
-        </div></section>
-      </nav>
     </header>
     <section className="card">
       <form className="portfolio-filter" onSubmit={filter}>
