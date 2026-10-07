@@ -18,7 +18,7 @@ type SourceRow = {
   importer: string; sourceValues: Record<string, string | null>; cellErrors: string[];
   poNumber: string | null; ipNumber: string | null;
   auditFlags: { withoutPurchaseOrder: boolean; withoutValidIp: boolean;
-    cellErrors: number; dataIssues: Array<{ code: string; fieldName: string | null;
+    cellErrors: number; dataIssues?: Array<{ code: string; fieldName: string | null;
       severity: string; evidence: Record<string, unknown> }>; anyGap: boolean };
 };
 type AuditResult = {
@@ -61,7 +61,7 @@ const issueLabels: Record<string, string> = {
   TEXT_WHITESPACE_NOISE: "Espaço ou caractere de controle extra",
 };
 
-function describeIssue(issue: SourceRow["auditFlags"]["dataIssues"][number]): string {
+function describeIssue(issue: NonNullable<SourceRow["auditFlags"]["dataIssues"]>[number]): string {
   const label = issueLabels[issue.code] ?? issue.code.replaceAll("_", " ").toLocaleLowerCase("pt-BR");
   const field = issue.fieldName ? ` · coluna ${issue.fieldName}` : "";
   const evidenceValue = issue.evidence.value ?? issue.evidence.amount;
@@ -440,7 +440,7 @@ export default function SourceAuditPage() {
                   {row.auditFlags.withoutPurchaseOrder && <span className="source-gap-tag">Sem PO na origem</span>}
                   {row.auditFlags.withoutValidIp && <span className="source-gap-tag">Sem IP válido na origem</span>}
                   {row.auditFlags.cellErrors > 0 && <span className="source-gap-tag">{row.auditFlags.cellErrors} erro(s) de cálculo</span>}
-                  {row.auditFlags.dataIssues.map((issue, index) => <span key={`${issue.code}-${issue.fieldName}-${index}`}
+                  {(row.auditFlags.dataIssues ?? []).map((issue, index) => <span key={`${issue.code}-${issue.fieldName}-${index}`}
                     className="source-gap-tag" title={`${result.columnHeaders[issue.fieldName ?? ""] ?? ""} · ${JSON.stringify(issue.evidence)}`}>
                     {describeIssue(issue)}{result.columnHeaders[issue.fieldName ?? ""] ? ` (${result.columnHeaders[issue.fieldName ?? ""]})` : ""}
                   </span>)}
