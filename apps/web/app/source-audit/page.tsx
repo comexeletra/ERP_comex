@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { apiFetch } from "../../lib/api";
 import { formatUsDate } from "../../lib/date-format";
+import { formatCount } from "../../lib/format-count";
 
 type Sheet = "all" | "Pré Embarque" | "Pós Embarque";
 type Gap = "all" | "without-ip" | "without-po" | "quality" | "any";
@@ -67,12 +68,6 @@ function describeIssue(issue: SourceRow["auditFlags"]["dataIssues"][number]): st
   const value = evidenceValue == null ? "" : ` · valor: ${display(evidenceValue)}`;
   const reason = issue.evidence.reason === "control-character" ? " · caractere de controle" : "";
   return `${label}${field}${reason}${value}`;
-}
-
-function formatCount(value: unknown): string {
-  const count = typeof value === "number" ? value
-    : typeof value === "string" && value.trim() ? Number(value) : Number.NaN;
-  return Number.isFinite(count) ? count.toLocaleString("pt-BR") : "—";
 }
 
 function readColumnFilters(raw: string | null): ColumnFilters {
@@ -502,7 +497,7 @@ export default function SourceAuditPage() {
               <input type="checkbox" checked={checked} disabled={!canAdd}
                 onChange={event => toggleOption(activeColumn, option.value, event.target.checked)} />
               <span>{option.value === "" ? "(em branco)" : displayCell(result?.items[0]?.sourceSheetName ?? sheet, activeColumn, option.value)}</span>
-              <small>{option.rowCount ? option.rowCount.toLocaleString("pt-BR") : ""}</small>
+              <small>{formatCount(option.rowCount)}</small>
             </label>;
           })}
           {valueOptions?.hasMore && <p className="source-option-hint">Há mais valores. Pesquise acima para localizar outros.</p>}

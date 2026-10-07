@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
+import { formatCount } from "../lib/format-count";
 import { purchaseOrdersCsv } from "../lib/po-export";
 import { portfolioFilterQuery, purchaseOrderListQuery, type PortfolioFilters } from "../lib/portfolio-query";
 
@@ -19,11 +20,6 @@ type PortfolioSummary = { purchaseOrders: number; linkedProcesses: number; items
 type PortfolioSummaryState = { query: string; value: PortfolioSummary };
 type PortfolioSummaryFailure = { query: string; message: string };
 
-function formatCount(value: unknown): string {
-  const count = typeof value === "number" ? value
-    : typeof value === "string" && value.trim() ? Number(value) : Number.NaN;
-  return Number.isFinite(count) ? count.toLocaleString("pt-BR") : "—";
-}
 const emptyFilters: Filters = { number: "", importer: "", product: "", ipNumber: "" };
 const pageSize = 50;
 
