@@ -18,6 +18,12 @@ type PortfolioSummary = { purchaseOrders: number; linkedProcesses: number; items
   byImporter: Array<{ importer: string; purchaseOrders: number }> };
 type PortfolioSummaryState = { query: string; value: PortfolioSummary };
 type PortfolioSummaryFailure = { query: string; message: string };
+
+function formatCount(value: unknown): string {
+  const count = typeof value === "number" ? value
+    : typeof value === "string" && value.trim() ? Number(value) : Number.NaN;
+  return Number.isFinite(count) ? count.toLocaleString("pt-BR") : "—";
+}
 const emptyFilters: Filters = { number: "", importer: "", product: "", ipNumber: "" };
 const pageSize = 50;
 
@@ -153,6 +159,7 @@ export default function PortfolioPage() {
 
   const totalPages = result ? Math.ceil(result.totalCount / pageSize) : 0;
   const returnPath = `/?${queryFor(applied, page)}`;
+  const byImporter = Array.isArray(summary?.byImporter) ? summary.byImporter : [];
   return <main className="shell">
     <header className="page-header portfolio-header">
       <p className="eyebrow">ERP Comex</p><h1>Carteira de POs TOTVS</h1>
@@ -182,18 +189,18 @@ export default function PortfolioPage() {
     </section>
     <section aria-label="Visão da carteira" aria-live="polite">
       <div className="metric-grid">
-        <div className="metric"><span>POs no recorte</span><strong>{summaryLoading ? "…" : summary?.purchaseOrders.toLocaleString("pt-BR") ?? "—"}</strong></div>
-        <div className="metric"><span>IPs das POs encontradas</span><strong>{summaryLoading ? "…" : summary?.linkedProcesses.toLocaleString("pt-BR") ?? "—"}</strong></div>
-        <div className="metric"><span>Itens nas POs</span><strong>{summaryLoading ? "…" : summary?.items.toLocaleString("pt-BR") ?? "—"}</strong></div>
-        <div className="metric"><span>Itens sem IP</span><strong>{summaryLoading ? "…" : summary?.itemsWithoutIp.toLocaleString("pt-BR") ?? "—"}</strong></div>
+        <div className="metric"><span>POs no recorte</span><strong>{summaryLoading ? "…" : formatCount(summary?.purchaseOrders)}</strong></div>
+        <div className="metric"><span>IPs das POs encontradas</span><strong>{summaryLoading ? "…" : formatCount(summary?.linkedProcesses)}</strong></div>
+        <div className="metric"><span>Itens nas POs</span><strong>{summaryLoading ? "…" : formatCount(summary?.items)}</strong></div>
+        <div className="metric"><span>Itens sem IP</span><strong>{summaryLoading ? "…" : formatCount(summary?.itemsWithoutIp)}</strong></div>
       </div>
       {summary && <p className="muted">Itens e quantidades registrados para as POs deste recorte.</p>}
       {summaryError && <p className="notice error" role="alert">{summaryError}</p>}
-      {summary && summary.byImporter.length > 1 && <div className="card">
+      {byImporter.length > 1 && <div className="card">
         <h2>POs por importador</h2>
         <div className="table-scroll"><table><thead><tr><th>Importador</th><th>POs</th></tr></thead>
-          <tbody>{summary.byImporter.map(item => <tr key={item.importer}><td>{item.importer}</td>
-            <td>{item.purchaseOrders.toLocaleString("pt-BR")}</td></tr>)}</tbody></table></div>
+          <tbody>{byImporter.map(item => <tr key={item.importer}><td>{item.importer}</td>
+            <td>{formatCount(item.purchaseOrders)}</td></tr>)}</tbody></table></div>
       </div>}
     </section>
     <section className="card" aria-live="polite">
