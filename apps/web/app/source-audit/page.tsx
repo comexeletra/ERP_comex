@@ -69,6 +69,12 @@ function describeIssue(issue: SourceRow["auditFlags"]["dataIssues"][number]): st
   return `${label}${field}${reason}${value}`;
 }
 
+function formatCount(value: unknown): string {
+  const count = typeof value === "number" ? value
+    : typeof value === "string" && value.trim() ? Number(value) : Number.NaN;
+  return Number.isFinite(count) ? count.toLocaleString("pt-BR") : "—";
+}
+
 function readColumnFilters(raw: string | null): ColumnFilters {
   try {
     const parsed: unknown = JSON.parse(raw ?? "{}");
@@ -387,12 +393,12 @@ export default function SourceAuditPage() {
     </section>
 
     <section className="metric-grid source-audit-metrics" aria-live="polite">
-      <div className="metric"><span>Linhas no recorte</span><strong>{loading ? "…" : result?.totalCount.toLocaleString("pt-BR") ?? "—"}</strong></div>
-      <div className="metric"><span>Sem PO informado na origem</span><strong>{loading ? "…" : result?.summary.withoutPurchaseOrder.toLocaleString("pt-BR") ?? "—"}</strong></div>
-      <div className="metric"><span>Sem IP válido na origem</span><strong>{loading ? "…" : result?.summary.withoutValidIp.toLocaleString("pt-BR") ?? "—"}</strong></div>
-      <div className="metric"><span>Células com erro de cálculo</span><strong>{loading ? "…" : result?.summary.cellErrors.toLocaleString("pt-BR") ?? "—"}</strong></div>
-      <div className="metric"><span>Linhas com inconsistências identificadas</span><strong>{loading ? "…" : result?.summary.dataIssues.toLocaleString("pt-BR") ?? "—"}</strong></div>
-      <div className="metric"><span>Linhas com sinalizador</span><strong>{loading ? "…" : result?.summary.anyGap.toLocaleString("pt-BR") ?? "—"}</strong></div>
+      <div className="metric"><span>Linhas no recorte</span><strong>{loading ? "…" : formatCount(result?.totalCount)}</strong></div>
+      <div className="metric"><span>Sem PO informado na origem</span><strong>{loading ? "…" : formatCount(result?.summary?.withoutPurchaseOrder)}</strong></div>
+      <div className="metric"><span>Sem IP válido na origem</span><strong>{loading ? "…" : formatCount(result?.summary?.withoutValidIp)}</strong></div>
+      <div className="metric"><span>Células com erro de cálculo</span><strong>{loading ? "…" : formatCount(result?.summary?.cellErrors)}</strong></div>
+      <div className="metric"><span>Linhas com inconsistências identificadas</span><strong>{loading ? "…" : formatCount(result?.summary?.dataIssues)}</strong></div>
+      <div className="metric"><span>Linhas com sinalizador</span><strong>{loading ? "…" : formatCount(result?.summary?.anyGap)}</strong></div>
     </section>
 
     <section className="card source-audit-grid-card" aria-live="polite">
@@ -400,7 +406,7 @@ export default function SourceAuditPage() {
       {error && <div className="notice error" role="alert"><p>{error}</p><button className="button" onClick={() => setRetry(value => value + 1)}>Tentar novamente</button></div>}
       {!loading && !error && result && <>
         <div className="source-grid-toolbar">
-          <p><strong>{result.totalCount.toLocaleString("pt-BR")}</strong> linha(s){result.rowsBeforeGapFilter !== result.totalCount ? ` · ${result.rowsBeforeGapFilter.toLocaleString("pt-BR")} antes dos sinais de auditoria` : ""}
+          <p><strong>{formatCount(result.totalCount)}</strong> linha(s){result.rowsBeforeGapFilter !== result.totalCount ? ` · ${formatCount(result.rowsBeforeGapFilter)} antes dos sinais de auditoria` : ""}
             {totalPages > 0 && ` · página ${page} de ${totalPages}`}</p>
           <label>Linhas por página<select value={pageSize} onChange={event => changePageSize(Number(event.target.value))}>
             {pageSizeOptions.map(size => <option key={size} value={size}>{size}</option>)}
