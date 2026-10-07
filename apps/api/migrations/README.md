@@ -177,6 +177,8 @@ M025 passed restored-copy validation and was applied to the operational VPS data
 
 `M026_source_observations_as_po_items.sql` promotes each PO line to an item, retaining its quantity and source status. It assigns quantity only to a matching linked IP; canceled lines and lines without a linked IP remain unallocated, and canceled items cannot be distributed. Imported items keep a link to their original immutable record. Validate M026 on a restored copy before deploying the matching API/UI.
 
+`M027_operationalize_historical_workbook.sql` promotes unambiguous historical Pre/Post values into empty operational PO, item, and IP fields and creates active IP-level invoice, BL, and NF records. Post logistics values stay on their matching IP; Pre item fields stay with the source PO line. A PO item split over IPs does not copy or share IP dates. Existing operational values win. Conflicting repeated values are left unfilled and recorded as `IP_SOURCE_CONFLICT` or `PO_SOURCE_CONFLICT` issues. Invoice total and currency are retained in the document notes because the current document model has no total-amount field. Validate M027 on a restored copy before deployment.
+
 The old SQLite migrations and .NET runner were removed with the retired local
 architecture. Historical validation results remain in
 `CHECKLIST_IMPLEMENTACAO.md`; they do not imply that the Node API has feature
