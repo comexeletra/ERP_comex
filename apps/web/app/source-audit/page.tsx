@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { apiFetch } from "../../lib/api";
 import { formatUsDate } from "../../lib/date-format";
@@ -30,6 +30,7 @@ type Importer = { code: string };
 type ValueOption = { value: string; rowCount: number };
 type ValueOptionsResult = { items: ValueOption[]; totalCount: number; hasMore: boolean };
 type GridFilters = typeof emptyFilters;
+type GridDrag = { pointerId: number; startX: number; scrollLeft: number };
 
 const emptyFilters = { importer: "", search: "", gap: "all" as Gap };
 const dateColumnsBySheet: Record<Exclude<Sheet, "all">, Set<string>> = {
@@ -168,6 +169,8 @@ export default function SourceAuditPage() {
   const [valueOptions, setValueOptions] = useState<ValueOptionsResult>();
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [optionsError, setOptionsError] = useState<string>();
+  const [draggingGrid, setDraggingGrid] = useState(false);
+  const gridDrag = useRef<GridDrag | undefined>(undefined);
   const filterPopoverRef = useRef<HTMLElement>(null);
   const filterTriggerRef = useRef<HTMLButtonElement>(null);
   const sheetTabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -312,6 +315,33 @@ export default function SourceAuditPage() {
   function clearColumnFilter(column: string) {
     setDraftColumnFilters(current => { const next = { ...current }; delete next[column]; return next; });
   }
+  function startGridDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.pointerType !== "mouse" || event.button !== 0
+      || !(event.target as HTMLElement).closest("table")
+      || (event.target as HTMLElement).closest("button, a, input, select, textarea, [role=button]")) return;
+    gridDrag.current = { pointerId: event.pointerId, startX: event.clientX,
+      scrollLeft: event.currentTarget.scrollLeft };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+  function moveGridDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = gridDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const distance = event.clientX - drag.startX;
+    if (Math.abs(distance) > 4) {
+      setDraggingGrid(true);
+      event.preventDefault();
+    }
+    event.currentTarget.scrollLeft = drag.scrollLeft - distance;
+  }
+  function stopGridDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = gridDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    gridDrag.current = undefined;
+    setDraggingGrid(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
   function handleFilterDialogKeyDown(event: React.KeyboardEvent<HTMLElement>) {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -392,7 +422,10 @@ export default function SourceAuditPage() {
           <p><strong>{formatCount(result.totalCount)}</strong> linha(s) carregadas na planilha{result.rowsBeforeGapFilter !== result.totalCount ? ` · ${formatCount(result.rowsBeforeGapFilter)} antes dos sinais de auditoria` : ""}</p>
         </div>
         {result.items.length === 0 ? <p>Nenhuma linha corresponde aos filtros atuais.</p> :
-          <div className="source-grid-scroll" role="region" aria-label="Tabela completa da planilha" tabIndex={0}>
+          <div className={draggingGrid ? "source-grid-scroll is-dragging" : "source-grid-scroll"}
+            role="region" aria-label="Tabela completa da planilha. Arraste horizontalmente com o mouse para percorrer as colunas."
+            tabIndex={0} onPointerDown={startGridDrag} onPointerMove={moveGridDrag}
+            onPointerUp={stopGridDrag} onPointerCancel={stopGridDrag}>
             <table className="source-grid">
               <thead>
                 <tr className="source-grid-head">
