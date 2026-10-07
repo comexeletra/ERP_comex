@@ -86,7 +86,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .source-row-has-gap td { background-color: #fffdf9; }
 .source-row-has-gap .source-pin { background: #fffaf2 !important; }
 .source-filter-backdrop { background: transparent; border: 0; inset: 0; padding: 0; position: fixed; z-index: 1100; }
-.source-filter-popover { background: #fff; border: 1px solid #cbd6df; border-radius: 10px; box-shadow: 0 14px 44px #13263840; display: flex; flex-direction: column; max-height: calc(100vh - 24px); overflow: hidden; position: fixed; width: min(360px, calc(100vw - 24px)); z-index: 1101; }
+.source-filter-popover { background: #fff; border: 1px solid #cbd6df; border-radius: 10px; box-shadow: 0 14px 44px #13263840; display: flex; flex-direction: column; max-height: min(500px, calc(100dvh - 24px)); overflow-x: hidden; overflow-y: auto; position: fixed; width: min(360px, calc(100vw - 24px)); z-index: 1101; }
 .source-filter-title { align-items: center; background: #f4f8fa; border-bottom: 1px solid #e2e8ed; color: #29414f; display: flex; justify-content: space-between; padding: 11px 14px; }
 .source-filter-close { background: transparent; border: 0; color: #526371; cursor: pointer; font-size: 1.4rem; line-height: 1; padding: 0 4px; }
 .source-sort-actions { display: grid; gap: 6px; grid-template-columns: 1fr 1fr; padding: 10px 12px 4px; }
@@ -96,7 +96,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .source-filter-text-label input { border: 1px solid #b7c5cf; border-radius: 6px; font: inherit; font-weight: 400; min-width: 0; padding: 8px; width: 100%; }
 .source-value-actions { display: flex; gap: 8px; padding: 10px 12px 6px; }
 .source-value-actions button { flex: 1; }
-.source-value-list { border-bottom: 1px solid #e2e8ed; border-top: 1px solid #e2e8ed; margin-top: 6px; min-height: 110px; overflow-y: auto; padding: 4px 12px; }
+.source-value-list { border-bottom: 1px solid #e2e8ed; border-top: 1px solid #e2e8ed; flex: 1 1 110px; margin-top: 6px; min-height: 0; overflow-y: auto; padding: 4px 12px; }
 .source-value-list > p { color: #627381; font-size: .8rem; margin: 10px 0; }
 .source-value-option { align-items: center; border-bottom: 1px solid #f0f3f5; color: #293b46; display: flex; font-size: .8rem; gap: 8px; min-height: 32px; padding: 4px 2px; }
 .source-value-option input { accent-color: #086d7e; flex: 0 0 auto; }
