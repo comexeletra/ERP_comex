@@ -35,6 +35,7 @@ const valuesQuerySchema = z.object({
   filters: z.string().max(48000).optional(), column: z.string().regex(/^[A-Z]{1,2}$/u),
   valueSearch: z.string().trim().max(160).optional(),
 }).strict();
+const reportsQuerySchema = z.object({ scope: z.enum(["pre", "post"]).optional() }).strict();
 
 type ColumnFilter = z.infer<typeof columnFilterSchema>;
 
@@ -103,10 +104,13 @@ function problem(reply: FastifyReply, status: number, code: string, detail: stri
 }
 
 export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool): Promise<void> {
-  app.get("/api/v1/reports/summary", { config: permissionConfig("processes.read") }, async request => {
+  app.get("/api/v1/reports/summary", { config: permissionConfig("processes.read") }, async (request, reply) => {
+    const parsed = reportsQuerySchema.safeParse(request.query);
+    if (!parsed.success) return problem(reply, 400, "INVALID_QUERY", "Escolha Pré ou Pós Embarque.");
+    const { scope } = parsed.data;
     const scopes = request.authorizationContext?.importerScopes ?? [];
     const [pre, post] = await Promise.all([
-      pool.query<Record<string, unknown>>(
+      scope === "post" ? Promise.resolve(null) : pool.query<Record<string, unknown>>(
         `WITH scoped_po AS MATERIALIZED (
            SELECT po.* FROM procurement.purchase_order AS po WHERE po.importer = ANY($1::text[])
          ), items AS (
@@ -141,7 +145,7 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
                   AND ${validIp("observation.source_ip_text")})) AS unallocated_items,
            (SELECT coalesce(jsonb_agg(jsonb_build_object('status', status, 'count', status_count)
               ORDER BY status_count DESC, status), '[]'::jsonb) FROM status_counts) AS statuses`, [scopes]),
-      pool.query<Record<string, unknown>>(
+      scope === "pre" ? Promise.resolve(null) : pool.query<Record<string, unknown>>(
         `WITH scoped_process AS MATERIALIZED (
            SELECT process.* FROM imports.import_process AS process
            WHERE process.importer = ANY($1::text[])
@@ -162,9 +166,9 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
               ORDER BY status_count DESC, status) FROM status_counts), '[]'::jsonb) AS statuses
          FROM scoped_process`, [scopes]),
     ]);
-    const po = pre.rows[0] ?? {};
-    const ip = post.rows[0] ?? {};
-    return {
+    const po = pre?.rows[0] ?? {};
+    const ip = post?.rows[0] ?? {};
+    const summary = {
       preShipment: { totalRecords: Number(po.total_records ?? 0), historicalRecords: Number(po.historical_records ?? 0),
         newRecords: Number(po.new_records ?? 0), operationalItems: Number(po.operational_items ?? 0),
         allocatedItems: Number(po.allocated_items ?? 0), unallocatedItems: Number(po.unallocated_items ?? 0), statuses: po.statuses ?? [] },
@@ -174,6 +178,9 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
         rowsWithDelivery: Number(ip.rows_with_delivery ?? 0), rowsWithAdditionalCosts: Number(ip.rows_with_additional_costs ?? 0),
         statuses: ip.statuses ?? [] },
     };
+    if (scope === "pre") return { preShipment: summary.preShipment };
+    if (scope === "post") return { postShipment: summary.postShipment };
+    return summary;
   });
 
   app.get("/api/v1/source-rows/column-values", { config: permissionConfig("processes.read") }, async (request, reply) => {

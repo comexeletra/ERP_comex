@@ -14,8 +14,11 @@ const groups: SidebarGroup[] = [
     { label: "Carteira de POs", href: "/", icon: "orders", match: ["/purchase-orders"] },
     { label: "Processos de importação", href: "/processes", icon: "ship" },
   ] },
-  { label: "Relatórios", items: [
-    { label: "Indicadores", href: "/reports", icon: "reports" },
+  { label: "Indicadores", items: [
+    { label: "Pré Embarque", href: "/reports/pre", icon: "reports" },
+    { label: "Pós Embarque", href: "/reports/post", icon: "reports" },
+  ] },
+  { label: "Histórico", items: [
     { label: "Planilha de origem", href: "/source-audit", icon: "sheet" },
   ] },
   { label: "Gestão", items: [
@@ -92,7 +95,8 @@ export default function AppSidebar({ collapsed, isMaster, displayName, roles, im
         <ul>{group.items.map(item => {
           const active = isItemActive(pathname, item);
           return <li key={item.href}><Link href={item.href} className={active ? "sidebar-link active" : "sidebar-link"}
-            aria-current={active ? "page" : undefined} title={collapsed ? item.label : undefined}>
+            aria-current={active ? "page" : undefined} aria-label={collapsed ? `${group.label}: ${item.label}` : undefined}
+            title={collapsed ? `${group.label}: ${item.label}` : undefined}>
             <SidebarIcon name={item.icon} /><span>{item.label}</span>
           </Link></li>;
       })}</ul>

@@ -48,6 +48,7 @@ const webRoutes = [
   ["GET", "/api/v1/operational-values"], ["POST", "/api/v1/operational-values"],
   ["GET", "/api/v1/data-issues"], ["POST", "/api/v1/data-issues/:id/resolve"],
   ["GET", "/api/v1/source-rows"], ["GET", "/api/v1/source-rows/column-values"],
+  ["GET", "/api/v1/reports/summary"],
   ["GET", "/api/v1/pending-import-items"], ["GET", "/api/v1/unassigned-po-items"],
   ["GET", "/api/v1/admin/users"], ["POST", "/api/v1/admin/users"],
   ["PATCH", "/api/v1/admin/users/:id"],
