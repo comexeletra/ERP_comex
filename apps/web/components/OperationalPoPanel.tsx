@@ -8,6 +8,7 @@ import { blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsE
   purchaseOrderCommonItemFields, purchaseOrderSpecificItemFields, purchaseOrderItemFields,
   purchaseOrderItemFieldsPayload } from "./PurchaseOrderItemFields";
 import { CatalogChoice, CatalogProductSelect, loadCatalogChoices, loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
+import { loadPurchaseRequests, PurchaseRequestChoice, PurchaseRequestSelect } from "./PurchaseRequestSelect";
 import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
 import { formatUsDate } from "../lib/date-format";
 
@@ -26,6 +27,9 @@ type Allocation = { id: string; itemId: string; processId: string; ipNumber: str
   quantity: string; notes: string; factoryShipDate: string | null; version: string };
 type OperationalPo = { id: string; importer: string; number: string; supplierText: string | null;
   orderDate: string | null; notes: string; sourceKind: string; version: string;
+  purchaseRequestId: string | null;
+  purchaseRequest: { id: string; importer: string; scNumber: string; commercialPlanReceivedDate: string | null;
+    requester: string; approvalDate: string | null } | null;
   items: Item[]; allocations: Allocation[] };
 type FollowupItem = { id: string } & Record<string, unknown>;
 type ProcessOption = { id: string; ipNumber: string; importer: string };
@@ -107,6 +111,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   const [number, setNumber] = useState("");
   const [supplier, setSupplier] = useState("");
   const [orderDate, setOrderDate] = useState("");
+  const [purchaseRequestId, setPurchaseRequestId] = useState("");
   const [notes, setNotes] = useState("");
   const [itemDraft, setItemDraft] = useState<ItemDraft>(blankItem);
   const [itemDrafts, setItemDrafts] = useState<Record<string, ItemDraft>>({});
@@ -132,6 +137,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   const [products, setProducts] = useState<CatalogChoice[]>([]);
   const [suppliers, setSuppliers] = useState<CatalogChoice[]>([]);
   const [options, setOptions] = useState<OperationalOption[]>([]);
+  const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequestChoice[]>([]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -148,9 +154,12 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       const [productChoices, supplierChoices] = await Promise.all([
         loadCatalogChoices("products", po.importer), loadCatalogChoices("suppliers", po.importer),
       ]);
+      const requestChoices = identity.roles.some(role => poWriters.has(role))
+        ? await loadPurchaseRequests(po.importer, controller.signal) : [];
       if (controller.signal.aborted) return;
       setData(po); setRoles(identity.roles); setOptions(optionValues);
       setProducts(productChoices); setSuppliers(supplierChoices);
+      setPurchaseRequests(requestChoices); setPurchaseRequestId(po.purchaseRequestId ?? "");
       setNumber(po.number);
       setSupplier(po.supplierText ?? ""); setOrderDate(po.orderDate ?? ""); setNotes(po.notes);
       const drafts = Object.fromEntries(po.items.map(item => [item.id, {
@@ -221,7 +230,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     event.preventDefault(); if (!data) return;
     await save(async () => {
       await send(`/api/v1/purchase-orders/${id}`, "PATCH",
-        { number, supplierText: supplier || null, orderDate: orderDate || null, notes, reason: automaticAuditReason }, data.version);
+        { number, supplierText: supplier || null, orderDate: orderDate || null, notes,
+          purchaseRequestId: purchaseRequestId || null, reason: automaticAuditReason }, data.version);
       if (commonFieldsTouched.size) {
         const fieldsToSave = purchaseOrderCommonItemFields.filter(field => commonFieldsTouched.has(field.key));
         await applyCommonFieldsToItems(purchaseOrderItemFieldsPayload(commonOperationalDraft, true, fieldsToSave));
@@ -352,6 +362,15 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       <details className="operational-help"><summary>Adicionar opções aos campos</summary><p>Fornecedores e produtos ficam em <Link className="text-link" href="/catalog">Cadastros</Link>; as demais opções ficam em <Link className="text-link" href="/catalog/values">Valores das entidades</Link>.</p></details>
       <dl className="operational-summary"><div><dt>Fornecedor informado</dt><dd>{data.supplierText ?? "—"}</dd></div>
         <div><dt>Data da PO</dt><dd>{data.orderDate ?? "—"}</dd></div><div><dt>Observações</dt><dd>{data.notes || "—"}</dd></div></dl>
+      <section className="po-entry-section">
+        <h3>Solicitação de Compra vinculada</h3>
+        {data.purchaseRequest ? <dl className="operational-summary">
+          <div><dt>Número da SC</dt><dd>{data.purchaseRequest.scNumber}</dd></div>
+          <div><dt>Solicitante</dt><dd>{data.purchaseRequest.requester}</dd></div>
+          <div><dt>Recebimento do plano comercial</dt><dd>{data.purchaseRequest.commercialPlanReceivedDate ?? "Não informado"}</dd></div>
+          <div><dt>Aprovação</dt><dd>{data.purchaseRequest.approvalDate ?? "Pendente"}</dd></div>
+        </dl> : <p className="muted">Esta PO não tem uma SC vinculada.</p>}
+      </section>
       {canWritePo && <section className="po-entry-section">
         <h3>Dados da PO</h3>
         <form className="stack-form" onSubmit={saveHeader}>
@@ -362,6 +381,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             {suppliers.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
           </select></label>
           <label>Data da PO<input type="date" value={orderDate} onChange={event => setOrderDate(event.target.value)} /></label>
+          <PurchaseRequestSelect importer={data.importer} value={purchaseRequestId} choices={purchaseRequests}
+            onChange={setPurchaseRequestId} />
           <label>Observações<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
           <button className="button" disabled={saving}>Salvar PO</button>
         </form>

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
 import { generateTemporaryPassword, hashPassword } from "./password.js";
 
-const roles = ["Administrador", "Importação", "Compras", "Fiscal", "Logística", "Gestor", "Consulta"] as const;
+const roles = ["Administrador", "PCM", "Importação", "Compras", "Fiscal", "Logística", "Gestor", "Consulta"] as const;
 const emailField = z.email().trim().max(254).transform((value) => value.toLowerCase());
 const scopesField = z.array(z.string().trim().min(1).max(120)).max(50)
   .refine((values) => new Set(values).size === values.length);

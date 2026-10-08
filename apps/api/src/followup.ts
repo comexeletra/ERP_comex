@@ -5,7 +5,7 @@ import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
 import { calculateFollowup, invoiceTotals } from "./followup-calculations.js";
 import { actorAndScopes, BusinessError, checkVersion, createPo as createPoSchema,
-  itemFields as basicItemSchema, keyFrom, lockedPo, problem,
+  itemFields as basicItemSchema, keyFrom, lockedPo, problem, validatePurchaseRequest,
   receipt, record, saveReceipt, transaction, versionFrom } from "./operations.js";
 
 type FieldType = "text" | "date" | "integer" | "money" | "boolean";
@@ -24,8 +24,7 @@ const itemFields: Record<string, [string, FieldType, number?]> = {
   targetTransitDays: ["target_transit_days", "integer"], targetCustomsDays: ["target_customs_days", "integer"],
 };
 const commonItemFields = new Set([
-  "necessityDate", "requester", "scNumber", "scApprovalDate", "purpose",
-  "commercialPlanReceivedDate", "mrpCompletedDate", "poApprovalDate", "poSentDate",
+  "necessityDate", "requester", "purpose", "mrpCompletedDate", "poApprovalDate", "poSentDate",
 ]);
 const processFields: Record<string, [string, FieldType, number?]> = {
   logisticsStatus: ["logistics_status", "text", 40],
@@ -133,11 +132,13 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
             WHERE entity_key='IMPORTER' AND value=$1 LIMIT 1`, [body.header.importer]);
         if (!known.rowCount) throw new BusinessError(404, "UNKNOWN_IMPORTER", "Importadora ainda não cadastrada.");
         const poId = randomUUID(); const header = body.header;
+        await validatePurchaseRequest(client, header.purchaseRequestId, header.importer);
         await client.query(`INSERT INTO procurement.purchase_order
           (id,importer,external_number,normalized_number,identity_status,source_kind,version,
-           supplier_text,order_date,notes)
-          VALUES ($1,$2,$3::text,upper($3::text),'MANUAL_UNVERIFIED','MANUAL_TOTVS_REFERENCE',1,$4,$5,$6)`,
-          [poId, header.importer, header.number, header.supplierText, header.orderDate, header.notes]);
+           supplier_text,order_date,notes,purchase_request_id)
+          VALUES ($1,$2,$3::text,upper($3::text),'MANUAL_UNVERIFIED','MANUAL_TOTVS_REFERENCE',1,$4,$5,$6,$7)`,
+          [poId, header.importer, header.number, header.supplierText, header.orderDate, header.notes,
+            header.purchaseRequestId ?? null]);
         await record(client, "PURCHASE_ORDER", poId, "PURCHASE_ORDER", poId, "CREATE",
           null, header, auth.actor, header.reason);
         const itemIds: string[] = [];

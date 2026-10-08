@@ -17,8 +17,6 @@ export const purchaseOrderItemFields: OperationalField[] = [
   { key: "priority", label: "Prioridade", type: "select", entity: "priority" },
   { key: "demand", label: "Demanda", type: "select", entity: "demand" },
   { key: "requester", label: "Solicitante", type: "select", entity: "requester" },
-  { key: "scNumber", label: "Número da SC no TOTVS", max: 80 },
-  { key: "scApprovalDate", label: "Data de aprovação da SC", type: "date" },
   { key: "purpose", label: "Finalidade", type: "select", entity: "purpose" },
   { key: "costCenter", label: "Centro de custo", type: "select", entity: "cost_center" },
   { key: "draftPo", label: "Número da Draft PO", max: 80 },
@@ -28,7 +26,6 @@ export const purchaseOrderItemFields: OperationalField[] = [
   { key: "productGroup", label: "Grupo do produto", type: "select", entity: "product_group" },
   { key: "ncm", label: "NCM", max: 16 },
   { key: "remarks", label: "Observações do item", max: 4000 },
-  { key: "commercialPlanReceivedDate", label: "Data de recebimento do plano comercial", type: "date" },
   { key: "mrpCompletedDate", label: "Data de conclusão do MRP", type: "date" },
   { key: "targetMrpDays", label: "Meta MRP (dias)", type: "number" },
   { key: "targetOrderDays", label: "Meta do pedido (dias)", type: "number" },
@@ -39,8 +36,7 @@ export const purchaseOrderItemFields: OperationalField[] = [
 ];
 
 const sharedItemFieldKeys = new Set([
-  "necessityDate", "requester", "scNumber", "scApprovalDate", "purpose",
-  "commercialPlanReceivedDate", "mrpCompletedDate", "poApprovalDate", "poSentDate",
+  "necessityDate", "requester", "purpose", "mrpCompletedDate", "poApprovalDate", "poSentDate",
 ]);
 export const purchaseOrderCommonItemFields = purchaseOrderItemFields.filter(field => sharedItemFieldKeys.has(field.key));
 export const purchaseOrderSpecificItemFields = purchaseOrderItemFields.filter(field => !sharedItemFieldKeys.has(field.key));

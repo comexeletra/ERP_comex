@@ -14,6 +14,7 @@ import {
   OperationalOptionSelect,
 } from "./OperationalOptionSelect";
 import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
+import { loadPurchaseRequests, PurchaseRequestChoice, PurchaseRequestSelect } from "./PurchaseRequestSelect";
 
 const poRoles = new Set(["Master", "Administrador", "Importação", "Compras"]);
 const ipRoles = new Set(["Master", "Administrador", "Importação"]);
@@ -37,6 +38,7 @@ type PoDraft = {
   notes: string;
   items: PoItemDraft[];
   commonItemFields: OperationalFieldDraft;
+  purchaseRequestId: string;
   createdPoId: string;
 };
 
@@ -57,6 +59,8 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
   const [roles, setRoles] = useState<string[]>([]);
   const [importers, setImporters] = useState<string[]>([]);
   const [importer, setImporter] = useState("");
+  const [purchaseRequestId, setPurchaseRequestId] = useState("");
+  const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequestChoice[]>([]);
   const [number, setNumber] = useState("");
   const [supplier, setSupplier] = useState("");
   const [orderDate, setOrderDate] = useState("");
@@ -83,6 +87,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
         const draft = JSON.parse(raw) as Partial<PoDraft>;
         if (Array.isArray(draft.items) && draft.items.length > 0) {
           setImporter(typeof draft.importer === "string" ? draft.importer : "");
+          setPurchaseRequestId(typeof draft.purchaseRequestId === "string" ? draft.purchaseRequestId : "");
           setNumber(typeof draft.number === "string" ? draft.number : "");
           setSupplier(typeof draft.supplier === "string" ? draft.supplier : "");
           setOrderDate(typeof draft.orderDate === "string" ? draft.orderDate : "");
@@ -101,9 +106,9 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
 
   useEffect(() => {
     if (kind !== "po" || !draftReady) return;
-    const draft: PoDraft = { importer, number, supplier, orderDate, notes, items, commonItemFields, createdPoId };
+    const draft: PoDraft = { importer, number, supplier, orderDate, notes, items, commonItemFields, purchaseRequestId, createdPoId };
     sessionStorage.setItem(poDraftKey, JSON.stringify(draft));
-  }, [kind, draftReady, importer, number, supplier, orderDate, notes, items, commonItemFields, createdPoId]);
+  }, [kind, draftReady, importer, number, supplier, orderDate, notes, items, commonItemFields, purchaseRequestId, createdPoId]);
 
   useEffect(() => {
     Promise.all([apiFetch("/auth/me"), apiFetch("/api/v1/importers"), loadOperationalOptions()])
@@ -137,6 +142,15 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
     return () => { active = false; };
   }, [importer, kind]);
 
+  useEffect(() => {
+    if (!importer || kind !== "po") { setPurchaseRequests([]); return; }
+    const controller = new AbortController();
+    loadPurchaseRequests(importer, controller.signal)
+      .then(setPurchaseRequests)
+      .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro ao carregar SCs."); });
+    return () => controller.abort();
+  }, [importer, kind]);
+
   const allowed = roles.some(role => (kind === "po" ? poRoles : ipRoles).has(role));
 
   function updateItem(index: number, change: Partial<PoItemDraft>) {
@@ -163,7 +177,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
         ...purchaseOrderItemFieldsPayload(commonItemFields, false, purchaseOrderCommonItemFields),
       },
     }));
-    const completePayload = JSON.stringify({ header: { importer, number, supplierText: supplier || null,
+    const completePayload = JSON.stringify({ header: { importer, number, purchaseRequestId: purchaseRequestId || null, supplierText: supplier || null,
       orderDate: orderDate || null, notes, reason: automaticAuditReason }, items: completeItems });
     let previousCommand: { payload: string; key: string } | null = null;
     try { previousCommand = JSON.parse(sessionStorage.getItem(poCommandKey) ?? "null"); } catch { /* Recria a chave. */ }
@@ -184,12 +198,14 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
       const followup = await readResponse<{ number: string; importer: string;
         items: ({ id: string } & Record<string, unknown>)[] }>(
         await apiFetch(`/api/v1/purchase-orders/${created.id}/followup`, { cache: "no-store" }));
-      const savedHeader = await readResponse<{ supplierText: string | null; orderDate: string | null; notes: string }>(
+      const savedHeader = await readResponse<{ supplierText: string | null; orderDate: string | null; notes: string;
+        purchaseRequestId: string | null }>(
         await apiFetch(`/api/v1/purchase-orders/${created.id}/operational`, { cache: "no-store" }));
       if (!Array.isArray(created.itemIds) || created.itemIds.length !== completeItems.length ||
           !Array.isArray(followup.items) || followup.number !== number.trim() ||
           followup.importer !== importer.trim() || savedHeader.supplierText !== (supplier.trim() || null) ||
           savedHeader.orderDate !== (orderDate || null) || savedHeader.notes !== notes.trim() ||
+          savedHeader.purchaseRequestId !== (purchaseRequestId || null) ||
           completeItems.some((item, index) => {
             const saved = followup.items.find(row => row.id === created.itemIds[index]);
             return !saved || saved.lineNumber !== index + 1 ||
@@ -215,7 +231,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
       method: "POST",
       headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
       body: JSON.stringify({ importer, number, supplierText: supplier || null,
-        orderDate: orderDate || null, notes, reason: automaticAuditReason }),
+        orderDate: orderDate || null, notes, purchaseRequestId: purchaseRequestId || null, reason: automaticAuditReason }),
     }));
     setCreatedPoId(header.id);
 
@@ -315,9 +331,10 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
           <h2>Dados do pedido</h2>
           <p className="muted">Informe a importadora e os dados que identificam a PO no TOTVS.</p>
           <div className="operational-fields">
-            <label>Importadora<select required value={importer} onChange={event => setImporter(event.target.value)}>
+            <label>Importadora<select required value={importer} onChange={event => { setImporter(event.target.value); setPurchaseRequestId(""); }}>
               <option value="">Selecione</option>{importers.map(value => <option key={value} value={value}>{value}</option>)}
             </select></label>
+            <PurchaseRequestSelect importer={importer} value={purchaseRequestId} choices={purchaseRequests} onChange={setPurchaseRequestId} />
             <label>Número da PO no TOTVS<input required maxLength={80} value={number} onChange={event => setNumber(event.target.value)} /></label>
             <label>Fornecedor<select value={supplier} onChange={event => setSupplier(event.target.value)}>
               <option value="">Selecione</option>{suppliers.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}

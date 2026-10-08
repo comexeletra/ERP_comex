@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 
-const roles = ["Administrador", "Importação", "Compras", "Fiscal", "Logística", "Gestor", "Consulta"] as const;
+const roles = ["Administrador", "PCM", "Importação", "Compras", "Fiscal", "Logística", "Gestor", "Consulta"] as const;
 type Role = typeof roles[number];
 type User = {
   id: string; email: string; displayName: string | null; isActive: boolean;

@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 type IconName = "orders" | "ship" | "reports" | "sheet" | "requests" | "catalog"
-  | "values" | "noIp" | "noPo" | "quality" | "users" | "events" | "collapse" | "password" | "logout";
+  | "values" | "sc" | "noIp" | "noPo" | "quality" | "users" | "events" | "collapse" | "password" | "logout";
 type SidebarItem = { label: string; href: string; icon: IconName; match?: string[]; exact?: boolean };
 type SidebarGroup = { label: string; items: SidebarItem[] };
 
@@ -38,6 +38,10 @@ const adminGroup: SidebarGroup = { label: "Administração", items: [
   { label: "Fila de eventos", href: "/admin/outbox", icon: "events" },
 ] };
 
+const pcmGroup: SidebarGroup = { label: "PCM", items: [
+  { label: "Solicitações de Compra", href: "/pcm", icon: "sc" },
+] };
+
 const icons: Record<IconName, ReactNode> = {
   orders: <><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6M9 12h6M9 16h4" /></>,
   ship: <><path d="m3 17 2 2h14l2-2-3-2H6z" /><path d="M12 3v12m0-12 4 4m-4-4L8 7M5 15l2-3h10l2 3" /></>,
@@ -46,6 +50,7 @@ const icons: Record<IconName, ReactNode> = {
   requests: <><path d="M4 4h16v13H8l-4 3z" /><path d="M8 9h8M8 13h5" /></>,
   catalog: <><path d="m4 5 6-2 10 4v14l-10-4-6 2z" /><path d="M10 3v14m0 0 10-3" /></>,
   values: <><path d="M4 7h16M4 17h16" /><circle cx="9" cy="7" r="2" /><circle cx="15" cy="17" r="2" /></>,
+  sc: <><path d="M5 3h10l4 4v14H5z" /><path d="M14 3v5h5M8 12h8M8 16h8" /></>,
   noIp: <><path d="M8 12a4 4 0 0 1 4-4h3" /><path d="M16 12a4 4 0 0 1-4 4H9" /><path d="m4 4 16 16" /></>,
   noPo: <><path d="M5 3h10l4 4v14H5z" /><path d="M14 3v5h5M8 13h8M8 17h5" /><path d="m16 12 4 4m0-4-4 4" /></>,
   quality: <><path d="M12 3 20 6v5c0 5-3.4 8.3-8 10-4.6-1.7-8-5-8-10V6z" /><path d="m8.5 12 2.2 2.2 4.8-4.8" /></>,
@@ -72,7 +77,11 @@ export default function AppSidebar({ collapsed, isMaster, displayName, roles, im
   importerScopes: string[]; onToggle: () => void; onLogout: () => void;
 }) {
   const pathname = usePathname();
-  const visibleGroups = isMaster ? [...groups, adminGroup] : groups;
+  const visibleGroups = [
+    ...groups,
+    ...(isMaster ? [adminGroup] : []),
+    ...(isMaster || roles.includes("Administrador") || roles.includes("PCM") ? [pcmGroup] : []),
+  ];
   const userName = displayName ?? "Usuário autenticado";
   const initials = userName.split(/\s+/u).filter(Boolean).slice(0, 2).map(name => name[0]).join("").toLocaleUpperCase("pt-BR");
   const roleText = roles.length > 0 ? roles.join(", ") : "Não atribuído";

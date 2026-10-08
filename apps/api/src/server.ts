@@ -16,6 +16,7 @@ import { registerSourceAuditRoutes } from "./source-audit.js";
 import { registerAdminOutboxRoutes } from "./admin-outbox.js";
 import { registerOperationalRoutes } from "./operations.js";
 import { registerFollowupRoutes } from "./followup.js";
+import { registerPurchaseRequestRoutes } from "./purchase-requests.js";
 
 const gatewayToken = process.env.GATEWAY_TOKEN;
 const connectionString = process.env.DATABASE_URL;
@@ -78,6 +79,7 @@ await registerSourceAuditRoutes(app, pool);
 await registerAdminOutboxRoutes(app, pool);
 await registerOperationalRoutes(app, pool);
 await registerFollowupRoutes(app, pool);
+await registerPurchaseRequestRoutes(app, pool);
 
 app.get("/health/live", async () => ({ status: "ok" }));
 
