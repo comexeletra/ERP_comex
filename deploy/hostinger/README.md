@@ -8,7 +8,10 @@ operational `erp_po_totvs_test` database. The ledger is 31/31 and the API servic
 remained active. Backup:
 `/var/backups/import-erp/erp_po_totvs_test_20261008T184649Z.dump`; SHA-256:
 `b5ee5a80e96fb4a76a724060259864279811d94e3d02f4dc0a475a47cd539400`.
-The API and web code that expose `Group` for new writes still require release.
+`release-m031-api.sh` installed the matching catalog API change and passed the
+live/ready health checks. The previous API files are in
+`/var/backups/import-erp/m031-api-20261008T210946Z`. Vercel Production marked
+commit `726f82d` READY and assigned the `fup-comex-eletra.vercel.app` alias.
 
 > O [checklist vigente](../../CHECKLIST_ATUAL_IMPLEMENTACAO.md) registra M001–M024 aplicadas no banco operacional. As instruções de release M013/M014 abaixo são históricas. Confira o ledger real antes de qualquer release futuro.
 
