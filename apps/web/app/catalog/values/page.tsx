@@ -8,7 +8,7 @@ import { automaticAuditReason } from "../../../lib/audit";
 const entities = [
   ["importer", "Importadora"], ["incoterm", "Incoterm"], ["transport_mode", "Modal"], ["port_loading", "POL / porto de origem"],
   ["port_discharge", "POD / porto de destino"], ["currency", "Moeda"], ["category", "Categoria"],
-  ["product_group", "Grupo de produto"], ["purpose", "Finalidade"], ["demand", "Demanda"],
+  ["product_group", "Grupo de produto"], ["group", "Group"], ["purpose", "Finalidade"], ["demand", "Demanda"],
   ["logistics_status", "Status logístico"], ["customs_channel", "Canal aduaneiro"],
   ["container_type", "Tipo de container"], ["priority", "Prioridade"],
   ["unit_of_measure", "Unidade de medida"],

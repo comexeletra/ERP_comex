@@ -1,5 +1,15 @@
 # API ERP na VPS Hostinger
 
+## M031 Group (2026-10-08)
+
+`release-m031.sh` verified a restorable backup, applied M031 to a disposable
+restore, checked the four seeded `GROUP` values, then applied M031 to the
+operational `erp_po_totvs_test` database. The ledger is 31/31 and the API service
+remained active. Backup:
+`/var/backups/import-erp/erp_po_totvs_test_20261008T184649Z.dump`; SHA-256:
+`b5ee5a80e96fb4a76a724060259864279811d94e3d02f4dc0a475a47cd539400`.
+The API and web code that expose `Group` for new writes still require release.
+
 > O [checklist vigente](../../CHECKLIST_ATUAL_IMPLEMENTACAO.md) registra M001–M024 aplicadas no banco operacional. As instruções de release M013/M014 abaixo são históricas. Confira o ledger real antes de qualquer release futuro.
 
 ## Release M022–M024: histórico PO/IP e pós embarque (2026-10-06)

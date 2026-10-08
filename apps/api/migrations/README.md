@@ -35,6 +35,9 @@ deploying the PCM and PO form changes.
 `M030_purchase_request_date.sql` adds the SC issue date to the PCM record and
 the corresponding PO-item operation field. Apply M030 before deploying the
 updated API and PCM/PO forms.
+`M031_group_operational_value.sql` adds `Group` as an independent selectable
+value entity in `/catalog/values`, seeded with Energy, Livoltek, Recloser and
+Water. Apply M031 before deploying the API change that accepts values for this entity.
 `M022_purchase_order_ip_event_history.sql` exposes filtered, read-only views of
 the immutable PO/allocation and IP/document audit events. The follow-up handler
 checks importer scope before reading them and renders the split history with
