@@ -33,6 +33,7 @@ async function createApp(t) {
           }
           if (sql.includes("SELECT payload_sha256, resource_type, resource_id")) return { rows: [] };
           if (sql.includes("INSERT INTO procurement.purchase_request")) {
+            assert.match(sql, /VALUES \(\$1,\$2,\$3::varchar,upper\(btrim\(\$3::varchar\)\)/);
             return { rows: [{ id: scId, importer: values[1], scNumber: values[2],
               commercialPlanReceivedDate: values[3], requester: values[4], approvalDate: values[5], version: "1" }] };
           }

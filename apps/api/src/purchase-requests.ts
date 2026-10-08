@@ -80,7 +80,7 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
         `INSERT INTO procurement.purchase_request
            (id, importer, sc_number, normalized_sc_number, commercial_plan_received_date,
             requester, approval_date, created_by)
-         VALUES ($1,$2,$3,upper(btrim($3)),$4,$5,$6,$7)
+         VALUES ($1,$2,$3::varchar,upper(btrim($3::varchar)),$4,$5,$6,$7)
          RETURNING id, importer, sc_number AS "scNumber",
                    commercial_plan_received_date::text AS "commercialPlanReceivedDate",
                    requester, approval_date::text AS "approvalDate", version::text`,
