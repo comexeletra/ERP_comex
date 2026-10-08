@@ -40,6 +40,12 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, [pathname]);
 
+  useEffect(() => {
+    if (!loading && !error && !identity && pathname !== "/login") {
+      window.location.replace("/login");
+    }
+  }, [error, identity, loading, pathname]);
+
   async function logout() {
     try {
       const response = await apiFetch("/auth/logout", { method: "POST" });
@@ -61,7 +67,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   if (pathname === "/login") return <>{children}</>;
   if (loading) return <main className="shell"><p>Verificando sessão…</p></main>;
   if (error) return <main className="shell"><p className="notice error">{error}</p><Link className="button" href="/login">Entrar</Link></main>;
-  if (!identity) return <main className="shell"><header className="page-header"><p className="eyebrow">ERP Comex</p><h1>Acesso ao portal</h1><p>Entre com sua conta para consultar as POs e a fila de qualidade.</p><Link className="button" href="/login">Entrar</Link></header></main>;
+  if (!identity) return <main className="shell"><p role="status">Redirecionando para o login…</p></main>;
   if (identity.mustChangePassword && pathname !== "/change-password") {
     return <main className="shell"><p className="notice">Troque sua senha inicial para continuar.</p><Link className="button" href="/change-password">Trocar senha</Link></main>;
   }

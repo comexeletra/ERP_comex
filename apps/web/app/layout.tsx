@@ -2,8 +2,8 @@ import "./styles.css";
 import AuthGate from "../components/AuthGate";
 
 export const metadata = {
-  title: "ERP Comex | POs TOTVS",
-  description: "Acompanhamento de POs TOTVS e importações"
+  title: "TMS - Supply Chain | Eletra",
+  description: "Gestão integrada de operações e importações da Eletra."
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
