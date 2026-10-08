@@ -20,9 +20,14 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
 
   useEffect(() => {
     setSidebarCollapsed(window.localStorage.getItem("erp-comex-sidebar-collapsed") === "true");
+    const savedTheme = window.localStorage.getItem("erp-comex-theme");
+    const nextTheme = savedTheme === "dark" ? "dark" : "light";
+    setTheme(nextTheme);
+    document.documentElement.dataset.theme = nextTheme;
   }, []);
 
   useEffect(() => {
@@ -64,6 +69,13 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     });
   }
 
+  function toggleTheme() {
+    const nextTheme = theme === "dark" ? "light" : "dark";
+    setTheme(nextTheme);
+    document.documentElement.dataset.theme = nextTheme;
+    window.localStorage.setItem("erp-comex-theme", nextTheme);
+  }
+
   if (pathname === "/login") return <>{children}</>;
   if (loading) return <main className="shell"><p>Verificando sessão…</p></main>;
   if (error) return <main className="shell"><p className="notice error">{error}</p><Link className="button" href="/login">Entrar</Link></main>;
@@ -75,7 +87,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   return <div className={sidebarCollapsed ? "app-layout sidebar-collapsed" : "app-layout"}>
     <AppSidebar collapsed={sidebarCollapsed} isMaster={identity.roles.includes("Master")}
       displayName={identity.user.displayName} roles={identity.roles} importerScopes={identity.importerScopes}
-      onToggle={toggleSidebar} onLogout={() => void logout()} />
+      theme={theme} onToggleTheme={toggleTheme} onToggle={toggleSidebar} onLogout={() => void logout()} />
     <div className="app-main">
 
     {children}
