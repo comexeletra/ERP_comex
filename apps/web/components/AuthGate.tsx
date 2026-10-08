@@ -67,22 +67,11 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   }
 
   return <div className={sidebarCollapsed ? "app-layout sidebar-collapsed" : "app-layout"}>
-    <AppSidebar collapsed={sidebarCollapsed} isMaster={identity.roles.includes("Master")} onToggle={toggleSidebar} />
+    <AppSidebar collapsed={sidebarCollapsed} isMaster={identity.roles.includes("Master")}
+      displayName={identity.user.displayName} roles={identity.roles} importerScopes={identity.importerScopes}
+      onToggle={toggleSidebar} onLogout={() => void logout()} />
     <div className="app-main">
-    <div className="session-bar">
-      <div className="session-identity">
-        <span>{identity.user.displayName ?? "Usuário autenticado"}</span>
-        <small>
-          Papel: {identity.roles.length > 0 ? identity.roles.join(", ") : "não atribuído"}
-          {" · Importadoras: "}
-          {identity.roles.includes("Master")
-            ? "Todas (Master)"
-            : identity.importerScopes.length > 0 ? identity.importerScopes.join(", ") : "Nenhuma atribuída"}
-        </small>
-      </div>
-      <Link className="text-link" href="/change-password">Trocar senha</Link>
-      <button className="button secondary" type="button" onClick={() => void logout()}>Sair</button>
-    </div>
+
     {children}
     </div>
   </div>;

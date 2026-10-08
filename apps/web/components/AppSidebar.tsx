@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 type IconName = "orders" | "ship" | "reports" | "sheet" | "requests" | "catalog"
-  | "values" | "noIp" | "noPo" | "quality" | "users" | "events" | "collapse";
+  | "values" | "noIp" | "noPo" | "quality" | "users" | "events" | "collapse" | "password" | "logout";
 type SidebarItem = { label: string; href: string; icon: IconName; match?: string[]; exact?: boolean };
 type SidebarGroup = { label: string; items: SidebarItem[] };
 
@@ -49,6 +49,8 @@ const icons: Record<IconName, ReactNode> = {
   users: <><circle cx="9" cy="8" r="3" /><path d="M3 20v-1a6 6 0 0 1 12 0v1zM16 5a3 3 0 0 1 0 6m2 3a5 5 0 0 1 3 5v1h-3" /></>,
   events: <><path d="M4 19V5m0 14h16" /><path d="m7 14 3-4 3 2 5-6" /><circle cx="18" cy="6" r="2" /></>,
   collapse: <><path d="m14 6-6 6 6 6" /></>,
+  password: <><circle cx="8" cy="15" r="4" /><path d="m11 12 8-8 2 2-2 2 2 2-3 3-2-2-3 3" /></>,
+  logout: <><path d="M10 17l5-5-5-5M15 12H3" /><path d="M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7" /></>,
 };
 
 function SidebarIcon({ name }: { name: IconName }) {
@@ -62,11 +64,16 @@ function isItemActive(pathname: string, item: SidebarItem) {
   return pathname === item.href || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
 }
 
-export default function AppSidebar({ collapsed, isMaster, onToggle }: {
-  collapsed: boolean; isMaster: boolean; onToggle: () => void;
+export default function AppSidebar({ collapsed, isMaster, displayName, roles, importerScopes, onToggle, onLogout }: {
+  collapsed: boolean; isMaster: boolean; displayName: string | null; roles: string[];
+  importerScopes: string[]; onToggle: () => void; onLogout: () => void;
 }) {
   const pathname = usePathname();
   const visibleGroups = isMaster ? [...groups, adminGroup] : groups;
+  const userName = displayName ?? "Usuário autenticado";
+  const initials = userName.split(/\s+/u).filter(Boolean).slice(0, 2).map(name => name[0]).join("").toLocaleUpperCase("pt-BR");
+  const roleText = roles.length > 0 ? roles.join(", ") : "Não atribuído";
+  const importerText = isMaster ? "Todas (Master)" : importerScopes.length > 0 ? importerScopes.join(", ") : "Nenhuma atribuída";
 
   return <aside className={collapsed ? "app-sidebar is-collapsed" : "app-sidebar"}>
     <Link className="sidebar-brand" href="/" aria-label="ERP Comex, carteira de POs">
@@ -88,8 +95,21 @@ export default function AppSidebar({ collapsed, isMaster, onToggle }: {
             aria-current={active ? "page" : undefined} title={collapsed ? item.label : undefined}>
             <SidebarIcon name={item.icon} /><span>{item.label}</span>
           </Link></li>;
-        })}</ul>
+      })}</ul>
       </section>)}
     </nav>
+    <section className="sidebar-account" aria-label="Conta do usuário">
+      <div className="sidebar-user" title={collapsed ? `${userName} · Papel: ${roleText} · Importadoras: ${importerText}` : undefined}>
+        <span className="sidebar-avatar" aria-hidden="true">{initials || "U"}</span>
+        <span className="sidebar-user-copy"><strong>{userName}</strong><small>Papel: {roleText}</small><small>Importadoras: {importerText}</small></span>
+      </div>
+      <Link className="sidebar-account-action" href="/change-password" title={collapsed ? "Trocar senha" : undefined}>
+        <SidebarIcon name="password" /><span>Trocar senha</span>
+      </Link>
+      <button className="sidebar-account-action" type="button" onClick={onLogout}
+        title={collapsed ? "Sair" : undefined}>
+        <SidebarIcon name="logout" /><span>Sair</span>
+      </button>
+    </section>
   </aside>;
 }
