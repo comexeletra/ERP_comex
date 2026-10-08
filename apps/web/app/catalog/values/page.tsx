@@ -10,7 +10,10 @@ const entities = [
   ["port_discharge", "POD / porto de destino"], ["currency", "Moeda"], ["category", "Categoria"],
   ["product_group", "Grupo de produto"], ["purpose", "Finalidade"], ["demand", "Demanda"],
   ["logistics_status", "Status logístico"], ["customs_channel", "Canal aduaneiro"],
-  ["container_type", "Tipo de container"],
+  ["container_type", "Tipo de container"], ["priority", "Prioridade"],
+  ["unit_of_measure", "Unidade de medida"],
+  ["requester", "Solicitante"], ["cost_center", "Centro de custo"], ["broker", "Despachante"],
+  ["forwarder", "Agente de carga"],
 ] as const;
 type Option = { entity: string; value: string };
 

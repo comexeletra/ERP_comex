@@ -22,6 +22,11 @@ the PO-item product group. Apply it before deploying the UI/API changes. Values
 are administered in `/catalog/values`; product and supplier selectors include
 source observations and reviewed active entries, which remain managed in
 `/catalog`.
+`M028_operational_reference_values.sql` extends the selectable catalog with
+priority, unit of measure, requester, cost center, broker, and forwarder. It
+seeds distinct values already recorded on PO items and import processes, while
+keeping those operational fields unchanged. Validate it on a restored database
+copy before applying it to an operational database.
 `M022_purchase_order_ip_event_history.sql` exposes filtered, read-only views of
 the immutable PO/allocation and IP/document audit events. The follow-up handler
 checks importer scope before reading them and renders the split history with

@@ -14,13 +14,13 @@ export type OperationalFieldDraft = Record<string, string>;
 
 export const purchaseOrderItemFields: OperationalField[] = [
   { key: "necessityDate", label: "Data de necessidade", type: "date" },
-  { key: "priority", label: "Prioridade", max: 20 },
+  { key: "priority", label: "Prioridade", type: "select", entity: "priority" },
   { key: "demand", label: "Demanda", type: "select", entity: "demand" },
-  { key: "requester", label: "Solicitante", max: 160 },
+  { key: "requester", label: "Solicitante", type: "select", entity: "requester" },
   { key: "scNumber", label: "Número da SC no TOTVS", max: 80 },
   { key: "scApprovalDate", label: "Data de aprovação da SC", type: "date" },
   { key: "purpose", label: "Finalidade", type: "select", entity: "purpose" },
-  { key: "costCenter", label: "Centro de custo", max: 80 },
+  { key: "costCenter", label: "Centro de custo", type: "select", entity: "cost_center" },
   { key: "draftPo", label: "Número da Draft PO", max: 80 },
   { key: "poApprovalDate", label: "Data de aprovação da PO", type: "date" },
   { key: "poSentDate", label: "Data de envio da PO", type: "date" },

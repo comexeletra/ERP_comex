@@ -68,10 +68,13 @@ e rollback de falha injetada na outbox. Na URL pública, abrir **Cadastros** e
 verificar estados de carregamento, vazio e erro. Criar um cadastro real apenas
 com evidência de negócio; os testes automatizados criam dados só na cópia.
 
-Continuam pendentes para a operação nova: empresa/filial oficial por importador;
-identificadores canônicos e aliases que ligam os valores literais aos cadastros;
-fonte e vigência fiscal para novos cadastros de NCM; lista de unidades para
-novos lançamentos; origem das linhas oficiais TOTVS, finalidade e centro de
-custo. Essas decisões não invalidam os valores históricos da planilha. Sem a
-fonte oficial de linhas/quantidades, não calcular saldo ou atendimento
-quantitativo.
+M028 amplia `/catalog/values` com prioridade, unidade, solicitante, centro de
+custo, despachante e agente de carga. Valores já usados nos itens de PO e nos
+IPs são incluídos nas listas; isso permite selecionar e alimentar novas opções,
+mas não os torna cadastros oficiais nem cria vínculos retroativos.
+
+Continuam pendentes: empresa/filial oficial por importador; identificadores
+canônicos e aliases que ligam os valores literais aos cadastros; fonte e
+vigência fiscal para novos NCMs; e origem das linhas oficiais TOTVS. Essas
+decisões não invalidam os valores históricos da planilha. Sem a fonte oficial
+de linhas/quantidades, não calcular saldo ou atendimento quantitativo.

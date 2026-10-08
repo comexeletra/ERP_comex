@@ -429,7 +429,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
               <label>Código do produto<input readOnly value={draft.productCode} /></label>
               <label>Descrição<input readOnly value={draft.description} /></label>
               <label>Quantidade pedida<input required inputMode="decimal" value={draft.orderedQuantity} onChange={event => setDraft({ orderedQuantity: event.target.value })} /></label>
-              <label>Unidade<input required maxLength={32} value={draft.unit} onChange={event => setDraft({ unit: event.target.value })} /></label>
+              <label>Unidade<OperationalOptionSelect required entity="unit_of_measure" value={draft.unit} values={options}
+                onChange={unit => setDraft({ unit })} /></label>
               <label>Preço unitário<input inputMode="decimal" value={draft.unitPrice} onChange={event => setDraft({ unitPrice: event.target.value })} /></label>
               <label>Moeda do preço<OperationalOptionSelect entity="currency" value={draft.currency} values={options} onChange={currency => setDraft({ currency })} /></label>
             </div>
@@ -450,7 +451,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             <label>Código do produto<input readOnly value={itemDraft.productCode} /></label>
             <label>Descrição<input readOnly value={itemDraft.description} /></label>
             <label>Quantidade pedida<input required inputMode="decimal" value={itemDraft.orderedQuantity} onChange={event => setItemDraft({ ...itemDraft, orderedQuantity: event.target.value })} /></label>
-            <label>Unidade<input required maxLength={32} value={itemDraft.unit} onChange={event => setItemDraft({ ...itemDraft, unit: event.target.value })} /></label>
+            <label>Unidade<OperationalOptionSelect required entity="unit_of_measure" value={itemDraft.unit} values={options}
+              onChange={unit => setItemDraft({ ...itemDraft, unit })} /></label>
             <label>Preço unitário<input inputMode="decimal" value={itemDraft.unitPrice} onChange={event => setItemDraft({ ...itemDraft, unitPrice: event.target.value })} /></label>
             <label>Moeda do preço<OperationalOptionSelect entity="currency" value={itemDraft.currency} values={options} onChange={currency => setItemDraft({ ...itemDraft, currency })} /></label>
           </div>
@@ -487,8 +489,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
               onChange={event => setNewIpNumber(event.target.value)} /></label>
             <label>Status logístico<OperationalOptionSelect entity="logistics_status" value={newIpStatus}
               values={options} onChange={setNewIpStatus} /></label>
-            <label>Prioridade<input maxLength={20} value={newIpPriority}
-              onChange={event => setNewIpPriority(event.target.value)} /></label>
+            <label>Prioridade<OperationalOptionSelect entity="priority" value={newIpPriority} values={options}
+              onChange={setNewIpPriority} /></label>
             <label>Observações<textarea maxLength={4000} value={newIpNotes}
               onChange={event => setNewIpNotes(event.target.value)} /></label>
           </div>

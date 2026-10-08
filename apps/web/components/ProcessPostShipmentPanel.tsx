@@ -28,12 +28,12 @@ type DocDraft = { kind: Document["kind"]; purchaseOrderItemId: string; number: s
 
 const fields: Field[] = [
   { key: "logisticsStatus", label: "Status logístico", type: "select", entity: "logistics_status" },
-  { key: "priority", label: "Prioridade do IP", max: 20 },
+  { key: "priority", label: "Prioridade do IP", type: "select", entity: "priority" },
   { key: "ipTotvsDate", label: "Data do IP no TOTVS", type: "date" },
   { key: "actualPortDepartureDate", label: "Saída efetiva do porto de origem", type: "date" },
   { key: "transportMode", label: "Modal", type: "select", entity: "transport_mode" },
   { key: "incoterm", label: "Incoterm", type: "select", entity: "incoterm" },
-  { key: "broker", label: "Despachante", max: 160 },
+  { key: "broker", label: "Despachante", type: "select", entity: "broker" },
   { key: "portLoading", label: "Porto de origem", type: "select", entity: "port_loading" },
   { key: "portDischarge", label: "Porto de destino", type: "select", entity: "port_discharge" },
   { key: "etd", label: "ETD", type: "date" }, { key: "etaConfirmed", label: "ETA confirmada", type: "date" },
@@ -46,7 +46,7 @@ const fields: Field[] = [
   { key: "freightCost", label: "Frete", type: "money" }, { key: "containerNumber", label: "Container", max: 120 },
   { key: "containerType", label: "Tipo de container", type: "select", entity: "container_type" },
   { key: "containerQuantity", label: "Quantidade de containers", type: "number" },
-  { key: "forwarder", label: "Agente de carga", max: 160 },
+  { key: "forwarder", label: "Agente de carga", type: "select", entity: "forwarder" },
   { key: "documentsOk", label: "Documentação conferida", type: "boolean" },
   { key: "storageDueOverride", label: "Vencimento confirmado da armazenagem", type: "date" },
   { key: "taxesPaidBrl", label: "Impostos pagos (R$)", type: "money" },

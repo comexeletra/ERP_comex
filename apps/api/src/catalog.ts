@@ -13,12 +13,14 @@ const resources: ReadonlyArray<{ path: string; kind: Kind; sourceColumn: string 
 const operationalValueKeys = new Set([
   "IMPORTER", "INCOTERM", "TRANSPORT_MODE", "PORT_LOADING", "PORT_DISCHARGE", "CURRENCY",
   "CATEGORY", "PRODUCT_GROUP", "PURPOSE", "DEMAND", "LOGISTICS_STATUS",
-  "CUSTOMS_CHANNEL", "CONTAINER_TYPE",
+  "CUSTOMS_CHANNEL", "CONTAINER_TYPE", "PRIORITY", "UNIT_OF_MEASURE", "REQUESTER",
+  "COST_CENTER", "BROKER", "FORWARDER",
 ]);
 const operationalValueMax: Record<string, number> = {
   IMPORTER: 120, INCOTERM: 20, TRANSPORT_MODE: 40, PORT_LOADING: 160, PORT_DISCHARGE: 160,
   CURRENCY: 3, CATEGORY: 120, PRODUCT_GROUP: 120, PURPOSE: 160, DEMAND: 160,
   LOGISTICS_STATUS: 40, CUSTOMS_CHANNEL: 80, CONTAINER_TYPE: 80,
+  PRIORITY: 40, UNIT_OF_MEASURE: 32, REQUESTER: 160, COST_CENTER: 80, BROKER: 160, FORWARDER: 160,
 };
 const listQuery = z.object({ importer: z.string().trim().min(1).max(120).optional(),
   search: z.string().trim().max(120).optional(), page: z.coerce.number().int().min(1).default(1),

@@ -9,10 +9,11 @@ import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } fr
 type Field = { key: string; label: string; type?: "date" | "number" | "money" | "boolean" | "select"; max?: number; entity?: string };
 const processFields: Field[] = [
   { key: "logisticsStatus", label: "Status", type: "select", entity: "logistics_status" },
-  { key: "priority", label: "Prioridade do IP", max: 20 },
+  { key: "priority", label: "Prioridade do IP", type: "select", entity: "priority" },
   { key: "ipTotvsDate", label: "Data do IP no TOTVS", type: "date" },
   { key: "transportMode", label: "Modal (SEA, AIR...) ", type: "select", entity: "transport_mode" },
-  { key: "incoterm", label: "Incoterm", type: "select", entity: "incoterm" }, { key: "broker", label: "Despachante", max: 160 },
+  { key: "incoterm", label: "Incoterm", type: "select", entity: "incoterm" },
+  { key: "broker", label: "Despachante", type: "select", entity: "broker" },
   { key: "portLoading", label: "POL / origem", type: "select", entity: "port_loading" }, { key: "portDischarge", label: "POD / destino", type: "select", entity: "port_discharge" },
   { key: "etd", label: "ETD", type: "date" }, { key: "etaConfirmed", label: "ETA confirmada", type: "date" },
   { key: "arrivalDate", label: "Chegada efetiva", type: "date" },
@@ -24,7 +25,7 @@ const processFields: Field[] = [
   { key: "freightCurrency", label: "Moeda do frete", type: "select", entity: "currency" }, { key: "freightCost", label: "Frete", type: "money" },
   { key: "containerNumber", label: "Container", max: 120 }, { key: "containerType", label: "Tipo do container", type: "select", entity: "container_type" },
   { key: "containerQuantity", label: "Qtd. containers", type: "number" },
-  { key: "forwarder", label: "Agente de carga", max: 160 },
+  { key: "forwarder", label: "Agente de carga", type: "select", entity: "forwarder" },
   { key: "documentsOk", label: "Documentação conferida", type: "boolean" },
   { key: "storageDueOverride", label: "Vencimento armazenagem confirmado", type: "date" },
   { key: "taxesPaidBrl", label: "Impostos pagos (R$)", type: "money" },

@@ -351,8 +351,8 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
               <label>Descrição<input readOnly value={item.description} placeholder="Preenchida pelo produto selecionado" /></label>
               <label>Quantidade pedida<input required inputMode="decimal" value={item.orderedQuantity}
                 onChange={event => updateItem(index, { orderedQuantity: event.target.value })} placeholder="Ex.: 100 ou 100,5" /></label>
-              <label>Unidade<input required maxLength={32} value={item.unit}
-                onChange={event => updateItem(index, { unit: event.target.value })} placeholder="Ex.: PC" /></label>
+              <label>Unidade<OperationalOptionSelect required entity="unit_of_measure" value={item.unit} values={options}
+                onChange={unit => updateItem(index, { unit })} /></label>
               <label>Preço unitário<input inputMode="decimal" value={item.unitPrice}
                 onChange={event => updateItem(index, { unitPrice: event.target.value })} /></label>
               <label>Moeda do preço<OperationalOptionSelect entity="currency" value={item.currency} values={options}
@@ -379,7 +379,8 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
         </select></label>
         <label>Número do IP<input required maxLength={80} value={number} onChange={event => setNumber(event.target.value)} /></label>
         <label>Status logístico<OperationalOptionSelect entity="logistics_status" value={status} values={options} onChange={setStatus} /></label>
-        <label>Prioridade<input maxLength={20} value={priority} onChange={event => setPriority(event.target.value)} /></label>
+        <label>Prioridade<OperationalOptionSelect entity="priority" value={priority} values={options}
+          onChange={setPriority} /></label>
         <label>Observações<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
         </div>
         <button className="button" disabled={saving || !importer}>{saving ? "Salvando…" : "Salvar IP"}</button>
