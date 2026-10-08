@@ -12,6 +12,7 @@ const querySchema = z.object({ importer: z.string().trim().min(1).max(120).optio
 const createSchema = z.object({
   importer: z.string().trim().min(1).max(120),
   scNumber: z.string().trim().min(1).max(80),
+  scDate: date,
   commercialPlanReceivedDate: date,
   requester: z.string().trim().min(1).max(160),
   approvalDate: date,
@@ -27,7 +28,7 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
       return problem(reply, 404, "RESOURCE_NOT_FOUND", "Importadora fora do seu escopo.");
     }
     const result = await pool.query(
-      `SELECT sc.id, sc.importer, sc.sc_number AS "scNumber",
+      `SELECT sc.id, sc.importer, sc.sc_number AS "scNumber", sc.sc_date::text AS "scDate",
               sc.commercial_plan_received_date::text AS "commercialPlanReceivedDate",
               sc.requester, sc.approval_date::text AS "approvalDate", sc.version::text,
               count(po.id)::int AS "purchaseOrderCount"
@@ -66,7 +67,7 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
       const claim = await receipt(client, actor.actor.userId, key, "PURCHASE_REQUEST", parsed.data);
       if (claim.existingId) {
         const existing = await client.query(
-          `SELECT id, importer, sc_number AS "scNumber",
+          `SELECT id, importer, sc_number AS "scNumber", sc_date::text AS "scDate",
                   commercial_plan_received_date::text AS "commercialPlanReceivedDate",
                   requester, approval_date::text AS "approvalDate", version::text
            FROM procurement.purchase_request WHERE id = $1 AND importer = ANY($2::text[])`,
@@ -78,14 +79,15 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
       const id = randomUUID();
       const inserted = await client.query(
         `INSERT INTO procurement.purchase_request
-           (id, importer, sc_number, normalized_sc_number, commercial_plan_received_date,
+           (id, importer, sc_number, normalized_sc_number, sc_date, commercial_plan_received_date,
             requester, approval_date, created_by)
-         VALUES ($1,$2,$3::varchar,upper(btrim($3::varchar)),$4,$5,$6,$7)
-         RETURNING id, importer, sc_number AS "scNumber",
+         VALUES ($1,$2,$3::varchar,upper(btrim($3::varchar)),$4,$5,$6,$7,$8)
+         RETURNING id, importer, sc_number AS "scNumber", sc_date::text AS "scDate",
                    commercial_plan_received_date::text AS "commercialPlanReceivedDate",
                    requester, approval_date::text AS "approvalDate", version::text`,
-        [id, parsed.data.importer, parsed.data.scNumber, parsed.data.commercialPlanReceivedDate,
-          parsed.data.requester, parsed.data.approvalDate, `${actor.actor.issuer}#${actor.actor.subject}`]);
+        [id, parsed.data.importer, parsed.data.scNumber, parsed.data.scDate,
+          parsed.data.commercialPlanReceivedDate, parsed.data.requester, parsed.data.approvalDate,
+          `${actor.actor.issuer}#${actor.actor.subject}`]);
       await saveReceipt(client, actor.actor.userId, key, claim.hash, "PURCHASE_REQUEST", id);
       await record(client, "PURCHASE_REQUEST", id, "PURCHASE_REQUEST", id, "CREATE", null,
         parsed.data, actor.actor, parsed.data.reason);

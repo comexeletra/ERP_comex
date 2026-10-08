@@ -13,6 +13,7 @@ export default function PcmPage() {
   const [importer, setImporter] = useState("");
   const [items, setItems] = useState<PurchaseRequestChoice[]>([]);
   const [scNumber, setScNumber] = useState("");
+  const [scDate, setScDate] = useState("");
   const [requester, setRequester] = useState("");
   const [commercialPlanReceivedDate, setCommercialPlanReceivedDate] = useState("");
   const [approvalDate, setApprovalDate] = useState("");
@@ -57,12 +58,12 @@ export default function PcmPage() {
       const response = await apiFetch("/api/v1/purchase-requests", {
         method: "POST",
         headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({ importer, scNumber, requester,
+        body: JSON.stringify({ importer, scNumber, scDate: scDate || null, requester,
           commercialPlanReceivedDate: commercialPlanReceivedDate || null,
           approvalDate: approvalDate || null, reason: automaticAuditReason }),
       });
       const created = await readApiJson<PurchaseRequestChoice>(response);
-      setScNumber(""); setRequester(""); setCommercialPlanReceivedDate(""); setApprovalDate("");
+      setScNumber(""); setScDate(""); setRequester(""); setCommercialPlanReceivedDate(""); setApprovalDate("");
       const query = new URLSearchParams({ importer });
       const list = await readApiJson<{ items: PurchaseRequestChoice[] }>(
         await apiFetch(`/api/v1/purchase-requests?${query}`, { cache: "no-store" }));
@@ -91,6 +92,7 @@ export default function PcmPage() {
             <option value="">Selecione</option>{importers.map(item => <option key={item.code} value={item.code}>{item.code}</option>)}
           </select></label>
           <label>Número da SC<input required maxLength={80} value={scNumber} onChange={event => setScNumber(event.target.value)} /></label>
+          <label>Data da SC<input required type="date" value={scDate} onChange={event => setScDate(event.target.value)} /></label>
           <label>Data de recebimento do plano comercial<input type="date" value={commercialPlanReceivedDate}
             onChange={event => setCommercialPlanReceivedDate(event.target.value)} /></label>
           <label>Solicitante<input required maxLength={160} value={requester} onChange={event => setRequester(event.target.value)} /></label>
@@ -106,9 +108,9 @@ export default function PcmPage() {
       </select></label>
       {items.length === 0 ? <p>Nenhuma SC cadastrada para esta importadora.</p> :
         <div className="table-scroll"><table><thead><tr>
-          <th>Número da SC</th><th>Solicitante</th><th>Plano comercial recebido</th><th>Aprovação</th><th>POs vinculadas</th>
+          <th>Número da SC</th><th>Data da SC</th><th>Solicitante</th><th>Plano comercial recebido</th><th>Aprovação</th><th>POs vinculadas</th>
         </tr></thead><tbody>{items.map(item => <tr key={item.id}>
-          <td>{item.scNumber}</td><td>{item.requester}</td><td>{item.commercialPlanReceivedDate ?? "—"}</td>
+          <td>{item.scNumber}</td><td>{item.scDate ?? "—"}</td><td>{item.requester}</td><td>{item.commercialPlanReceivedDate ?? "—"}</td>
           <td>{item.approvalDate ?? "Pendente"}</td><td>{item.purchaseOrderCount ?? 0}</td>
         </tr>)}</tbody></table></div>}
     </section>}

@@ -14,6 +14,10 @@ export type OperationalFieldDraft = Record<string, string>;
 
 export const purchaseOrderItemFields: OperationalField[] = [
   { key: "necessityDate", label: "Data de necessidade", type: "date" },
+  { key: "scNumber", label: "Número da SC", max: 80 },
+  { key: "scDate", label: "Data da SC", type: "date" },
+  { key: "scApprovalDate", label: "Data de aprovação da SC", type: "date" },
+  { key: "commercialPlanReceivedDate", label: "Data de recebimento do plano comercial", type: "date" },
   { key: "priority", label: "Prioridade", type: "select", entity: "priority" },
   { key: "demand", label: "Demanda", type: "select", entity: "demand" },
   { key: "requester", label: "Solicitante", type: "select", entity: "requester" },
@@ -36,7 +40,8 @@ export const purchaseOrderItemFields: OperationalField[] = [
 ];
 
 const sharedItemFieldKeys = new Set([
-  "necessityDate", "requester", "purpose", "mrpCompletedDate", "poApprovalDate", "poSentDate",
+  "necessityDate", "scNumber", "scDate", "scApprovalDate", "commercialPlanReceivedDate", "requester",
+  "purpose", "mrpCompletedDate", "poApprovalDate", "poSentDate",
 ]);
 export const purchaseOrderCommonItemFields = purchaseOrderItemFields.filter(field => sharedItemFieldKeys.has(field.key));
 export const purchaseOrderSpecificItemFields = purchaseOrderItemFields.filter(field => !sharedItemFieldKeys.has(field.key));

@@ -8,7 +8,7 @@ import { blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsE
   purchaseOrderCommonItemFields, purchaseOrderSpecificItemFields, purchaseOrderItemFields,
   purchaseOrderItemFieldsPayload } from "./PurchaseOrderItemFields";
 import { CatalogChoice, CatalogProductSelect, loadCatalogChoices, loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
-import { loadPurchaseRequests, PurchaseRequestChoice, PurchaseRequestSelect } from "./PurchaseRequestSelect";
+import { loadPurchaseRequests, purchaseRequestOperationalFields, PurchaseRequestChoice, PurchaseRequestSelect } from "./PurchaseRequestSelect";
 import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
 import { formatUsDate } from "../lib/date-format";
 
@@ -28,7 +28,7 @@ type Allocation = { id: string; itemId: string; processId: string; ipNumber: str
 type OperationalPo = { id: string; importer: string; number: string; supplierText: string | null;
   orderDate: string | null; notes: string; sourceKind: string; version: string;
   purchaseRequestId: string | null;
-  purchaseRequest: { id: string; importer: string; scNumber: string; commercialPlanReceivedDate: string | null;
+  purchaseRequest: { id: string; importer: string; scNumber: string; scDate: string | null; commercialPlanReceivedDate: string | null;
     requester: string; approvalDate: string | null } | null;
   items: Item[]; allocations: Allocation[] };
 type FollowupItem = { id: string } & Record<string, unknown>;
@@ -232,7 +232,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       await send(`/api/v1/purchase-orders/${id}`, "PATCH",
         { number, supplierText: supplier || null, orderDate: orderDate || null, notes,
           purchaseRequestId: purchaseRequestId || null, reason: automaticAuditReason }, data.version);
-      if (commonFieldsTouched.size) {
+      if (commonFieldsTouched.size && data.items.length) {
         const fieldsToSave = purchaseOrderCommonItemFields.filter(field => commonFieldsTouched.has(field.key));
         await applyCommonFieldsToItems(purchaseOrderItemFieldsPayload(commonOperationalDraft, true, fieldsToSave));
         setCommonFieldsTouched(new Set());
@@ -265,6 +265,13 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     setCommonFieldsTouched(current => new Set(current).add(key));
     setItemDrafts(current => Object.fromEntries(Object.entries(current).map(([rowId, draft]) =>
       [rowId, { ...draft, operational: { ...draft.operational, [key]: value } }])));
+  }
+  function selectPurchaseRequest(value: string) {
+    setPurchaseRequestId(value);
+    const selected = purchaseRequests.find(choice => choice.id === value);
+    for (const [key, fieldValue] of Object.entries(purchaseRequestOperationalFields(selected))) {
+      updateCommonField(key, fieldValue);
+    }
   }
   async function saveCommonFields(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!data || !commonFieldsTouched.size) return;
@@ -362,15 +369,6 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       <details className="operational-help"><summary>Adicionar opções aos campos</summary><p>Fornecedores e produtos ficam em <Link className="text-link" href="/catalog">Cadastros</Link>; as demais opções ficam em <Link className="text-link" href="/catalog/values">Valores das entidades</Link>.</p></details>
       <dl className="operational-summary"><div><dt>Fornecedor informado</dt><dd>{data.supplierText ?? "—"}</dd></div>
         <div><dt>Data da PO</dt><dd>{data.orderDate ?? "—"}</dd></div><div><dt>Observações</dt><dd>{data.notes || "—"}</dd></div></dl>
-      <section className="po-entry-section">
-        <h3>Solicitação de Compra vinculada</h3>
-        {data.purchaseRequest ? <dl className="operational-summary">
-          <div><dt>Número da SC</dt><dd>{data.purchaseRequest.scNumber}</dd></div>
-          <div><dt>Solicitante</dt><dd>{data.purchaseRequest.requester}</dd></div>
-          <div><dt>Recebimento do plano comercial</dt><dd>{data.purchaseRequest.commercialPlanReceivedDate ?? "Não informado"}</dd></div>
-          <div><dt>Aprovação</dt><dd>{data.purchaseRequest.approvalDate ?? "Pendente"}</dd></div>
-        </dl> : <p className="muted">Esta PO não tem uma SC vinculada.</p>}
-      </section>
       {canWritePo && <section className="po-entry-section">
         <h3>Dados da PO</h3>
         <form className="stack-form" onSubmit={saveHeader}>
@@ -382,7 +380,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
           </select></label>
           <label>Data da PO<input type="date" value={orderDate} onChange={event => setOrderDate(event.target.value)} /></label>
           <PurchaseRequestSelect importer={data.importer} value={purchaseRequestId} choices={purchaseRequests}
-            onChange={setPurchaseRequestId} />
+            onChange={selectPurchaseRequest} />
           <label>Observações<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
           <button className="button" disabled={saving}>Salvar PO</button>
         </form>

@@ -14,7 +14,7 @@ import {
   OperationalOptionSelect,
 } from "./OperationalOptionSelect";
 import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
-import { loadPurchaseRequests, PurchaseRequestChoice, PurchaseRequestSelect } from "./PurchaseRequestSelect";
+import { loadPurchaseRequests, purchaseRequestOperationalFields, PurchaseRequestChoice, PurchaseRequestSelect } from "./PurchaseRequestSelect";
 
 const poRoles = new Set(["Master", "Administrador", "Importação", "Compras"]);
 const ipRoles = new Set(["Master", "Administrador", "Importação"]);
@@ -155,6 +155,12 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
 
   function updateItem(index: number, change: Partial<PoItemDraft>) {
     setItems(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...change } : item));
+  }
+
+  function selectPurchaseRequest(id: string) {
+    setPurchaseRequestId(id);
+    const selected = purchaseRequests.find(choice => choice.id === id);
+    setCommonItemFields(current => ({ ...current, ...purchaseRequestOperationalFields(selected) }));
   }
 
   async function createPurchaseOrder() {
@@ -331,10 +337,12 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
           <h2>Dados do pedido</h2>
           <p className="muted">Informe a importadora e os dados que identificam a PO no TOTVS.</p>
           <div className="operational-fields">
-            <label>Importadora<select required value={importer} onChange={event => { setImporter(event.target.value); setPurchaseRequestId(""); }}>
+            <label>Importadora<select required value={importer} onChange={event => {
+              setImporter(event.target.value); selectPurchaseRequest("");
+            }}>
               <option value="">Selecione</option>{importers.map(value => <option key={value} value={value}>{value}</option>)}
             </select></label>
-            <PurchaseRequestSelect importer={importer} value={purchaseRequestId} choices={purchaseRequests} onChange={setPurchaseRequestId} />
+            <PurchaseRequestSelect importer={importer} value={purchaseRequestId} choices={purchaseRequests} onChange={selectPurchaseRequest} />
             <label>Número da PO no TOTVS<input required maxLength={80} value={number} onChange={event => setNumber(event.target.value)} /></label>
             <label>Fornecedor<select value={supplier} onChange={event => setSupplier(event.target.value)}>
               <option value="">Selecione</option>{suppliers.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}

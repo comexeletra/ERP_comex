@@ -174,6 +174,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
                 po.purchase_request_id AS "purchaseRequestId",
                 CASE WHEN sc.id IS NULL THEN NULL ELSE jsonb_build_object(
                   'id', sc.id, 'scNumber', sc.sc_number,
+                  'scDate', sc.sc_date::text,
                   'commercialPlanReceivedDate', sc.commercial_plan_received_date::text,
                   'requester', sc.requester, 'approvalDate', sc.approval_date::text,
                   'importer', sc.importer) END AS "purchaseRequest"
@@ -187,7 +188,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
                 item.product_code AS "productCode", item.description,
                 item.ordered_quantity::text AS "orderedQuantity", item.unit,
                 item.unit_price::text AS "unitPrice", item.currency_code AS currency,
-                item.necessity_date::text AS "necessityDate", item.priority, item.demand,
+                item.necessity_date::text AS "necessityDate", item.sc_date::text AS "scDate", item.priority, item.demand,
                 item.requester, item.sc_number AS "scNumber", item.sc_approval_date::text AS "scApprovalDate",
                 item.purpose, item.product_group AS "productGroup", item.cost_center AS "costCenter",
                 item.draft_po AS "draftPo", item.po_approval_date::text AS "poApprovalDate",

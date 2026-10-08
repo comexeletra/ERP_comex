@@ -29,9 +29,12 @@ keeping those operational fields unchanged. Validate it on a restored database
 copy before applying it to an operational database.
 `M029_pcm_purchase_requests.sql` adds the PCM SC register and an optional,
 importer-matched SC link on each PO. Plan receipt date, requester, and approval
-date are read from that shared SC record on every linked PO; legacy item-level
-SC values remain untouched. Apply M029 before deploying the PCM and PO form
-changes.
+date are stored in the corresponding operational PO-item fields when the SC is
+selected; legacy item-level SC values remain untouched. Apply M029 before
+deploying the PCM and PO form changes.
+`M030_purchase_request_date.sql` adds the SC issue date to the PCM record and
+the corresponding PO-item operation field. Apply M030 before deploying the
+updated API and PCM/PO forms.
 `M022_purchase_order_ip_event_history.sql` exposes filtered, read-only views of
 the immutable PO/allocation and IP/document audit events. The follow-up handler
 checks importer scope before reading them and renders the split history with
