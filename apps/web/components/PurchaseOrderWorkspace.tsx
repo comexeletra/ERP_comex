@@ -80,19 +80,28 @@ export default function PurchaseOrderWorkspace({ id, returnPath }: { id: string;
         <p className="eyebrow">PO TOTVS · {data.importer}</p>
         <h1>{data.number}</h1>
         <p>{data.itemCount} itens · {data.processes.length} IPs vinculados.</p>
+        <p>Gerencie a PO, distribua quantidades e acompanhe cada IP nesta mesma tela.</p>
       </header>
+
+      <nav className="po-workflow-nav" aria-label="Etapas do fluxo da PO">
+        <a href="#po-record">1. PO e itens</a>
+        <a href="#ip-distribution">2. Distribuir por IP</a>
+        <a href="#shipment-followup">3. Pós-embarque por IP</a>
+        <a href="#linked-ips">IPs relacionados</a>
+      </nav>
 
       <OperationalPoPanel id={id} onChanged={() => { refreshOverview(); setOperationalRevision(value => value + 1); }} />
       <FollowupPanel key={operationalRevision} id={id} />
 
-      <section className="card"><h2>IPs vinculados</h2>
+      <details id="linked-ips" className="card po-linked-ip-summary">
+        <summary>Resumo dos {data.processes.length} IPs relacionados e custos históricos</summary>
         {data.processes.length === 0 && <p>Nenhum IP vinculado disponível no escopo desta PO.</p>}
         {data.processes.map(process => <article className="process" key={process.id}><h3>{process.ipNumber} <span>{process.logisticsStatus ?? "Status logístico não informado"}</span></h3>
           <p className="muted">Qualidade do IP: {process.qualityStatus}. Vínculo: {process.linkSource}. POs visíveis vinculadas a este IP: {process.linkedPurchaseOrderCount}.</p>
           <Link className="text-link" href={`/processes/${process.id}`}>Abrir detalhe do IP →</Link>
           {process.costs.length > 0 && <details className="historical-costs"><summary>Custos históricos ({process.costs.length})</summary><ul>{process.costs.map((cost, index) => <li key={`${cost.type}-${cost.currency}-${index}`}>{cost.type}: {formatDecimal(cost.amount)} {cost.currency} · {cost.status}</li>)}</ul></details>}
         </article>)}
-      </section>
+      </details>
     </main>
   );
 }

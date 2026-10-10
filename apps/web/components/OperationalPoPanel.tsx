@@ -448,7 +448,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   const commonValuesDiffer = Boolean(data && data.items.length > 1 &&
     purchaseOrderCommonItemFields.some(field =>
       new Set(data.items.map(item => operationalDraft(item)[field.key] ?? "")).size > 1));
-  return <section className="card operational-panel" aria-label="Registro operacional da PO">
+  return <section id="po-record" className="card operational-panel" aria-label="Registro operacional da PO">
     <h2>Itens da PO</h2>
     <p className="muted">Saldo por item: quantidade pedida menos quantidade distribuída aos IPs.</p>
     {loading && <p role="status">Carregando preenchimento…</p>}
@@ -570,7 +570,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
           <button className="button" disabled={saving || (commonFieldsTouched.size > 0 && data.items.length > 0)}>Salvar item completo</button>
         </form>
       </details>}
-      <h3>Distribuição por IP</h3>
+      <h3 id="ip-distribution">Distribuição por IP</h3>
       <p className="muted">O saldo restante é calculado por item na PO, somando as quantidades distribuídas a todos os IPs vinculados.</p>
       {data.allocations.length === 0 ? <p>Nenhuma quantidade distribuída operacionalmente.</p> :
         <div className="table-scroll"><table><thead><tr><th>Item</th><th>IP</th><th>Quantidade neste IP</th><th>Quantidade pedida</th><th>Saldo restante na PO</th><th>Saída da fábrica</th><th>Ação</th></tr></thead>

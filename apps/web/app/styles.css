@@ -377,6 +377,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .catalog-product-option:hover, .catalog-product-option[aria-selected="true"] { background: #edf5f7; }
 .catalog-product-empty { color: #617985; margin: 8px; }
 .po-entry-section { display: grid; gap: 14px; }
+.po-workflow-nav { align-items: center; background: #f4f7faeF; border: 1px solid #dce6eb; border-radius: 10px; box-shadow: 0 3px 12px #18314312; display: flex; flex-wrap: wrap; gap: 8px; margin: -10px 0 18px; padding: 8px; position: sticky; top: 8px; z-index: 5; }
+.po-workflow-nav a { border-radius: 7px; color: #24505c; font-size: .88rem; font-weight: 700; padding: 9px 12px; text-decoration: none; }
+.po-workflow-nav a:hover, .po-workflow-nav a:focus-visible { background: #e4f0f1; outline-color: #087889; }
+#po-record, #ip-distribution, #shipment-followup, #linked-ips { scroll-margin-top: 82px; }
+.po-linked-ip-summary > summary { color: #24505c; cursor: pointer; font-weight: 700; }
 .po-entry-section h2, .po-entry-section h3, .po-entry-item h4, .po-entry-item h5 { margin: 0; }
 .po-entry-item { background: #fbfdfe; border: 1px solid #dce6eb; border-radius: 10px; display: grid; gap: 14px; min-width: 0; max-width: 100%; padding: 16px; }
 .po-entry-heading { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }

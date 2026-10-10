@@ -197,7 +197,7 @@ export default function FollowupPanel({ id }: { id: string }) {
     }, activeId ? "Documento atualizado." : "Documento cadastrado.");
   }
   const processes = data?.processes ?? [];
-  return <section className="card operational-panel" aria-label="Acompanhamento da PO">
+  return <section id="shipment-followup" className="card operational-panel" aria-label="Acompanhamento da PO">
     <h2>Acompanhamento da PO</h2>
     <p className="muted">Prazos e alertas são calculados automaticamente após distribuir quantidades.</p>
     <details className="operational-help"><summary>Adicionar opções aos campos</summary><p>Fornecedores e produtos ficam em <Link className="text-link" href="/catalog">Cadastros</Link>; as demais opções ficam em <Link className="text-link" href="/catalog/values">Valores das entidades</Link>.</p></details>
