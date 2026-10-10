@@ -11,25 +11,13 @@ type SidebarGroup = { label: string; items: SidebarItem[] };
 
 const groups: SidebarGroup[] = [
   { label: "Operação", items: [
-    { label: "Carteira de POs", href: "/", icon: "orders", match: ["/purchase-orders"] },
-    { label: "Processos de importação", href: "/processes", icon: "ship" },
-  ] },
-  { label: "Indicadores", items: [
-    { label: "Pré Embarque", href: "/reports/pre", icon: "reports" },
-    { label: "Pós Embarque", href: "/reports/post", icon: "reports" },
-  ] },
-  { label: "Histórico", items: [
-    { label: "Planilha de origem", href: "/source-audit", icon: "sheet" },
+    { label: "Pré embarque · POs", href: "/", icon: "orders", match: ["/purchase-orders"] },
+    { label: "Pós embarque · IPs", href: "/processes", icon: "ship" },
   ] },
   { label: "Gestão", items: [
     { label: "Solicitações", href: "/requests", icon: "requests" },
     { label: "Cadastros", href: "/catalog", icon: "catalog", exact: true },
     { label: "Valores de entidades", href: "/catalog/values", icon: "values" },
-  ] },
-  { label: "Pendências", items: [
-    { label: "Itens sem IP", href: "/pending-import-items", icon: "noIp" },
-    { label: "Itens sem PO", href: "/unassigned-po-items", icon: "noPo" },
-    { label: "Revisar qualidade", href: "/quality", icon: "quality" },
   ] },
 ];
 

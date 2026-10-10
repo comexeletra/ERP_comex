@@ -373,7 +373,8 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
       const id = z.uuid().safeParse(request.params.id);
       if (!id.success) return problem(reply, 400, "INVALID_ID", "PO inválida.");
       const scopes = request.authorizationContext?.importerScopes ?? [];
-      const po = await pool.query(`SELECT id, importer, external_number AS number, version::text
+        const po = await pool.query(`SELECT id, importer, external_number AS number, version::text,
+          supplier_text AS "supplierText", order_date::text AS "orderDate"
         FROM procurement.purchase_order WHERE id=$1 AND importer=ANY($2::text[])`, [id.data, scopes]);
       if (!po.rows[0]) return problem(reply, 404, "RESOURCE_NOT_FOUND", "PO não encontrada.");
       const items = await pool.query(`SELECT * FROM procurement.purchase_order_item WHERE purchase_order_id=$1 ORDER BY line_number`, [id.data]);

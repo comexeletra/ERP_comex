@@ -40,6 +40,13 @@ export default function PortfolioPage() {
   const [exportError, setExportError] = useState("");
   const [summaryState, setSummaryState] = useState<PortfolioSummaryState>();
   const [summaryFailure, setSummaryFailure] = useState<PortfolioSummaryFailure>();
+  const [roles, setRoles] = useState<string[]>([]);
+
+  useEffect(() => {
+    apiFetch("/auth/me").then(async response => {
+      if (response.ok) setRoles((await response.json() as { roles: string[] }).roles);
+    }).catch(() => undefined);
+  }, []);
   const summaryQuery = portfolioFilterQuery(applied).toString();
   const summary = summaryState?.query === summaryQuery ? summaryState.value : undefined;
   const summaryError = summaryFailure?.query === summaryQuery ? summaryFailure.message : "";
@@ -159,7 +166,10 @@ export default function PortfolioPage() {
   return <main className="shell">
     <header className="page-header portfolio-header">
       <p className="eyebrow">ERP Comex</p><h1>Carteira de POs TOTVS</h1>
-      <p>Consulte cada PO, seus produtos, os IPs associados e as pendências em um só lugar.</p>
+      <p>Pré embarque: cadastre a PO e distribua as quantidades aos IPs. O pós embarque é preenchido uma vez por IP e aparece nas linhas vinculadas.</p>
+      {roles.some(role => ["Master", "Administrador", "Importação", "Compras"].includes(role)) &&
+        <p><Link className="button" href="/purchase-orders/new">Cadastrar PO</Link></p>}
+      <p><Link className="text-link" href="/reports/pre">Indicadores de POs</Link> · <Link className="text-link" href="/quality">Revisar qualidade</Link></p>
     </header>
     <section className="card">
       <form className="portfolio-filter" onSubmit={filter}>

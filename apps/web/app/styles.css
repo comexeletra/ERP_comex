@@ -398,6 +398,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .followup-grid dt { color: #617985; font-size: .76rem; font-weight: 700; }
 .followup-grid dd { margin: 4px 0 0; overflow-wrap: anywhere; }
 .shipment-milestones { border-bottom: 1px solid #dce6eb; margin-bottom: 14px; padding-bottom: 14px; }
+.po-ip-lines td { vertical-align: top; }
+.po-ip-lines td small { color: #617985; display: block; margin-top: 3px; max-width: 220px; }
+.po-ip-lines td > details { min-width: 150px; }
+.po-ip-lines td > details[open] { min-width: min(720px, 75vw); }
+.po-ip-lines .po-ip-pending { color: #966318; font-weight: 700; }
+:root[data-theme="dark"] .po-ip-lines td small { color: #a9c2ce; }
+:root[data-theme="dark"] .po-ip-lines .po-ip-pending { color: #e1b86f; }
 .operational-event-list { border-left: 2px solid #b8d0d6; display: grid; gap: 12px; list-style: none; margin: 0; padding: 0 0 0 18px; }
 .operational-event-list > li { background: #f8fafb; border: 1px solid #dce6eb; border-radius: 8px; min-width: 0; padding: 12px; }
 .operational-event-heading { align-items: baseline; display: flex; flex-wrap: wrap; gap: 8px 14px; }

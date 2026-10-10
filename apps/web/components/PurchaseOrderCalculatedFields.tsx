@@ -1,6 +1,6 @@
 "use client";
 
-function calculatedTotal(quantity: string, price: string): string {
+export function calculatedTotal(quantity: string, price: string): string {
   const normalizedQuantity = quantity.trim().replace(",", ".");
   const normalizedPrice = price.trim().replace(",", ".");
   if (!normalizedQuantity || !normalizedPrice) return "Aguardando quantidade e preço";

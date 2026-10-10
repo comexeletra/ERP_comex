@@ -80,14 +80,13 @@ export default function PurchaseOrderWorkspace({ id, returnPath }: { id: string;
         <p className="eyebrow">PO TOTVS · {data.importer}</p>
         <h1>{data.number}</h1>
         <p>{data.itemCount} itens · {data.processes.length} IPs vinculados.</p>
-        <p>Gerencie a PO, distribua quantidades e acompanhe cada IP nesta mesma tela.</p>
+        <p>Pré embarque na PO; quantidades e pós embarque por IP nesta mesma tela.</p>
       </header>
 
       <nav className="po-workflow-nav" aria-label="Etapas do fluxo da PO">
-        <a href="#po-record">1. PO e itens</a>
-        <a href="#ip-distribution">2. Distribuir por IP</a>
-        <a href="#shipment-followup">3. Pós-embarque por IP</a>
-        <a href="#linked-ips">IPs relacionados</a>
+        <a href="#po-record">1. Dados da PO</a>
+        <a href="#ip-distribution">2. Quantidades por IP</a>
+        <a href="#shipment-followup">3. Linhas e pós embarque</a>
       </nav>
 
       <OperationalPoPanel id={id} onChanged={() => { refreshOverview(); setOperationalRevision(value => value + 1); }} />

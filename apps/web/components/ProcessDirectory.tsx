@@ -73,10 +73,10 @@ export default function ProcessDirectory() {
   const returnPath = `/processes?${query(filters, page)}`;
   return <main className="shell">
     <Link className="back" href="/">← Carteira de POs</Link>
-    <header className="page-header"><p className="eyebrow">Execução logística</p><h1>Processos de importação</h1><p>IPs históricos e operacionais, com POs relacionadas e custos históricos no próprio IP.</p>
+    <header className="page-header"><p className="eyebrow">Pós embarque</p><h1>IPs e quantidades vinculadas</h1><p>Preencha cada IP uma vez; seus dados aparecem nas linhas de todas as POs vinculadas.</p>
       {roles.some(role => ["Master", "Administrador", "Importação"].includes(role)) &&
         <p><Link className="button" href="/processes/new">Criar IP</Link></p>}
-      <Link className="text-link" href="/pending-import-items">Linhas sem IP →</Link> · <Link className="text-link" href="/unassigned-po-items">Linhas sem PO →</Link>
+      <Link className="text-link" href="/reports/post">Indicadores de IPs</Link> · <Link className="text-link" href="/pending-import-items">Linhas sem IP →</Link> · <Link className="text-link" href="/unassigned-po-items">Linhas sem PO →</Link>
     </header>
     <section className="card"><form className="portfolio-filter" onSubmit={apply}>
       <label>IP<input value={draft.ipNumber} onChange={event => setDraft({ ...draft, ipNumber: event.target.value })} placeholder="NH-017/2025" /></label>
