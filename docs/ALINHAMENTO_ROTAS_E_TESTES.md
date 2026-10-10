@@ -2,6 +2,8 @@
 
 Verificação em 2026-10-05. O contrato de métodos/caminhos usados pelo Next.js é executado em `apps/api/test/web-route-contract.test.mjs` contra o roteador Fastify real. O build do Next.js verifica as páginas. O teste `apps/api/test/gateway-flow.integration.mjs` atravessa Next.js, gateway, API e um PostgreSQL **local descartável**.
 
+> Atualização em 2026-10-10: foi validado o ledger M031 da base operacional e executados testes de relatórios e do fluxo PO/IP em cópias descartáveis. A evidência detalhada dos indicadores, comandos, resultados e limitações está em [VALIDACAO_DASHBOARDS_E_E2E_PO_IP.md](VALIDACAO_DASHBOARDS_E_E2E_PO_IP.md). O ledger M031 confirma o schema observado; por si só, não identifica o commit do código de API ativo na VPS. As observações de compatibilidade abaixo foram registradas em 2026-10-05 e devem ser lidas como o estado conhecido naquela data.
+
 ## Caminho de cada ação
 
 | Etapa | Tela Next.js | API | Persistência e releitura |
