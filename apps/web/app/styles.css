@@ -615,3 +615,187 @@ td .button + .button { margin-left: 6px; }
   .app-sidebar.is-collapsed .sidebar-toggle svg { transform: none; }
   .sidebar-account { margin-top: 12px; }
 }
+
+/* Contraste e superfícies do tema escuro */
+:root[data-theme="dark"] {
+  --dark-page: #101a21;
+  --dark-surface: #1d2d37;
+  --dark-surface-raised: #263943;
+  --dark-surface-inset: #121f27;
+  --dark-border: #4a606c;
+  --dark-text: #f0f5f7;
+  --dark-muted: #c0cdd4;
+  --dark-link: #83d4df;
+  background: var(--dark-page);
+  color: var(--dark-text);
+}
+:root[data-theme="dark"] body { background: var(--dark-page); color: var(--dark-text); }
+:root[data-theme="dark"] .app-main { background: var(--dark-page); }
+:root[data-theme="dark"] .card,
+:root[data-theme="dark"] .metric,
+:root[data-theme="dark"] .session-bar,
+:root[data-theme="dark"] .auth-page .auth-card,
+:root[data-theme="dark"] .auth-form-panel,
+:root[data-theme="dark"] .source-filter-popover,
+:root[data-theme="dark"] .source-field,
+:root[data-theme="dark"] .catalog-product-menu,
+:root[data-theme="dark"] .catalog-product-option,
+:root[data-theme="dark"] .po-item-card,
+:root[data-theme="dark"] .operational-panel details { background: var(--dark-surface); border-color: var(--dark-border); color: var(--dark-text); }
+:root[data-theme="dark"] .page-header h1,
+:root[data-theme="dark"] .card > h2,
+:root[data-theme="dark"] .metric strong,
+:root[data-theme="dark"] .quality-heading h2,
+:root[data-theme="dark"] .report-section-heading h2,
+:root[data-theme="dark"] .report-status-card h3,
+:root[data-theme="dark"] .report-status-list strong,
+:root[data-theme="dark"] .quality-summary,
+:root[data-theme="dark"] .source-detail-heading strong,
+:root[data-theme="dark"] .source-field dd,
+:root[data-theme="dark"] .po-entry-item h4,
+:root[data-theme="dark"] .po-entry-item h5,
+:root[data-theme="dark"] .po-item-summary,
+:root[data-theme="dark"] .po-item-code,
+:root[data-theme="dark"] .po-item-metrics strong,
+:root[data-theme="dark"] .po-item-details strong,
+:root[data-theme="dark"] .catalog-product-option { color: var(--dark-text); }
+:root[data-theme="dark"] .muted,
+:root[data-theme="dark"] .page-header p:not(.eyebrow),
+:root[data-theme="dark"] .metric span,
+:root[data-theme="dark"] .pagination,
+:root[data-theme="dark"] .source-grid-toolbar p,
+:root[data-theme="dark"] .source-field dt,
+:root[data-theme="dark"] .source-field dt small,
+:root[data-theme="dark"] .source-detail-heading span,
+:root[data-theme="dark"] .report-status-list li > div,
+:root[data-theme="dark"] .report-status-list p,
+:root[data-theme="dark"] .operational-summary dt,
+:root[data-theme="dark"] .followup-grid dt,
+:root[data-theme="dark"] .po-item-number,
+:root[data-theme="dark"] .po-item-description,
+:root[data-theme="dark"] .po-item-ip-summary > span,
+:root[data-theme="dark"] .po-item-metrics span,
+:root[data-theme="dark"] .po-item-details span,
+:root[data-theme="dark"] .po-item-description,
+:root[data-theme="dark"] .session-identity small { color: var(--dark-muted); }
+:root[data-theme="dark"] .operational-summary > div,
+:root[data-theme="dark"] .inline-ip-form,
+:root[data-theme="dark"] .review-history,
+:root[data-theme="dark"] .po-entry-item,
+:root[data-theme="dark"] .po-item-metrics > div,
+:root[data-theme="dark"] .po-item-details > div,
+:root[data-theme="dark"] .followup-grid > div,
+:root[data-theme="dark"] .operational-event-list > li,
+:root[data-theme="dark"] .entity-value-list li,
+:root[data-theme="dark"] .process h3 span,
+:root[data-theme="dark"] .catalog-product-option:hover,
+:root[data-theme="dark"] .catalog-product-option[aria-selected="true"],
+:root[data-theme="dark"] .source-filter-title,
+:root[data-theme="dark"] .source-filter-footer,
+:root[data-theme="dark"] .table-scroll th,
+:root[data-theme="dark"] .source-grid thead .source-grid-head th,
+:root[data-theme="dark"] .source-grid thead .source-grid-filters th,
+:root[data-theme="dark"] .source-grid tbody .source-pin,
+:root[data-theme="dark"] .table-scroll tbody tr:nth-child(even) td,
+:root[data-theme="dark"] .source-detail-row > td { background: var(--dark-surface-raised); }
+:root[data-theme="dark"] .table-scroll td,
+:root[data-theme="dark"] .source-grid th,
+:root[data-theme="dark"] .source-grid td,
+:root[data-theme="dark"] .source-values dd,
+:root[data-theme="dark"] .table-scroll details,
+:root[data-theme="dark"] .quality-item details,
+:root[data-theme="dark"] .operational-panel details,
+:root[data-theme="dark"] .source-grid tbody td { background: var(--dark-surface); color: var(--dark-text); }
+:root[data-theme="dark"] .source-grid tbody tr:hover td,
+:root[data-theme="dark"] .source-grid tbody tr:hover .source-pin,
+:root[data-theme="dark"] .table-scroll tbody tr:hover td,
+:root[data-theme="dark"] .catalog-product-option:hover,
+:root[data-theme="dark"] .catalog-product-option[aria-selected="true"] { background: #304752; }
+:root[data-theme="dark"] .source-row-has-gap td { background: #3a3325; }
+:root[data-theme="dark"] .source-row-has-gap .source-pin { background: #403727 !important; }
+:root[data-theme="dark"] .source-grid-scroll,
+:root[data-theme="dark"] .table-scroll,
+:root[data-theme="dark"] .source-audit-tabs,
+:root[data-theme="dark"] .source-grid th,
+:root[data-theme="dark"] .source-grid td,
+:root[data-theme="dark"] .source-field,
+:root[data-theme="dark"] .po-entry-item,
+:root[data-theme="dark"] .po-item-card,
+:root[data-theme="dark"] .po-item-metrics > div,
+:root[data-theme="dark"] .po-item-details > div,
+:root[data-theme="dark"] .scope-list,
+:root[data-theme="dark"] .request-line,
+:root[data-theme="dark"] .operational-panel details,
+:root[data-theme="dark"] .followup-grid > div,
+:root[data-theme="dark"] .operational-event-list > li { border-color: var(--dark-border); }
+:root[data-theme="dark"] .field-form input,
+:root[data-theme="dark"] .quality-filter input,
+:root[data-theme="dark"] .quality-filter select,
+:root[data-theme="dark"] .review-form input,
+:root[data-theme="dark"] .review-form select,
+:root[data-theme="dark"] .review-form textarea,
+:root[data-theme="dark"] .stack-form input:not([type="checkbox"]),
+:root[data-theme="dark"] .stack-form select,
+:root[data-theme="dark"] .stack-form textarea,
+:root[data-theme="dark"] .catalog-controls input,
+:root[data-theme="dark"] .catalog-controls select,
+:root[data-theme="dark"] .portfolio-filter input,
+:root[data-theme="dark"] .request-form select,
+:root[data-theme="dark"] .request-form textarea,
+:root[data-theme="dark"] .request-form input,
+:root[data-theme="dark"] .source-audit-filter input,
+:root[data-theme="dark"] .source-audit-filter select,
+:root[data-theme="dark"] .source-grid-toolbar select,
+:root[data-theme="dark"] .source-grid-filters input,
+:root[data-theme="dark"] .source-filter-text-label input,
+:root[data-theme="dark"] .auth-form-panel .stack-form input:not([type="checkbox"]),
+:root[data-theme="dark"] .operational-event-values pre,
+:root[data-theme="dark"] .quality-item pre { background: var(--dark-surface-inset); border-color: var(--dark-border); color: var(--dark-text); }
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder { color: #a7b8c1; opacity: 1; }
+:root[data-theme="dark"] .button.secondary,
+:root[data-theme="dark"] .source-filter-trigger,
+:root[data-theme="dark"] .source-sort-actions button,
+:root[data-theme="dark"] .source-value-actions button,
+:root[data-theme="dark"] .source-filter-close { background: var(--dark-surface-raised); border-color: var(--dark-border); color: var(--dark-text); }
+:root[data-theme="dark"] .button.secondary:hover:not(:disabled),
+:root[data-theme="dark"] .source-filter-trigger:hover,
+:root[data-theme="dark"] .source-sort-actions button:hover,
+:root[data-theme="dark"] .source-value-actions button:hover { background: #344e59; color: #fff; }
+:root[data-theme="dark"] .text-link,
+:root[data-theme="dark"] .back,
+:root[data-theme="dark"] .process h3,
+:root[data-theme="dark"] .quality-item summary,
+:root[data-theme="dark"] .operational-panel summary,
+:root[data-theme="dark"] .historical-disclosure > summary,
+:root[data-theme="dark"] .operational-help summary,
+:root[data-theme="dark"] .operational-event-history > summary,
+:root[data-theme="dark"] .request-guidance summary,
+:root[data-theme="dark"] .request-tabs button.active,
+:root[data-theme="dark"] .po-item-toggle { color: var(--dark-link); }
+:root[data-theme="dark"] .source-tab { color: var(--dark-muted); }
+:root[data-theme="dark"] .source-tab:hover,
+:root[data-theme="dark"] .source-tab.active { background: var(--dark-surface-raised); border-color: var(--dark-border); color: var(--dark-link); }
+:root[data-theme="dark"] .request-tabs button { color: var(--dark-muted); }
+:root[data-theme="dark"] .request-tabs button:hover { background: var(--dark-surface-raised); color: var(--dark-text); }
+:root[data-theme="dark"] .po-item-metrics > .is-balance { background: #1d3c37; border-color: #397064; }
+:root[data-theme="dark"] .po-item-metrics > .is-balance strong { color: #9ce0c4; }
+:root[data-theme="dark"] .po-item-metrics > .is-muted { background: #202e36; }
+:root[data-theme="dark"] .po-item-status,
+:root[data-theme="dark"] .po-item-ip-chip { background: #263f48; border: 1px solid #45636c; color: #c9edf0; }
+:root[data-theme="dark"] .po-item-status.is-canceled { background: #482f2d; border-color: #76504a; color: #ffc3b7; }
+:root[data-theme="dark"] .po-item-card[open] > .po-item-summary,
+:root[data-theme="dark"] .po-item-ip-summary { border-color: var(--dark-border); }
+:root[data-theme="dark"] .success,
+:root[data-theme="dark"] .risk.NoRisk,
+:root[data-theme="dark"] .quality-status.RESOLVED { background: #1d3c30; color: #a9e2bc; }
+:root[data-theme="dark"] .error,
+:root[data-theme="dark"] .notice.error { background: #482c30; border-color: #74464c; color: #ffc5c5; }
+:root[data-theme="dark"] .risk.Rupture { background: #482c30; color: #ffc5c5; }
+:root[data-theme="dark"] .risk.Unknown,
+:root[data-theme="dark"] .quality-status.OPEN,
+:root[data-theme="dark"] .quality-status.ESCALATED,
+:root[data-theme="dark"] .credential-notice { background: #443820; color: #ffe19a; }
+:root[data-theme="dark"] .source-gap-tag { background: #49351f; color: #ffd09a; }
+:root[data-theme="dark"] .source-ok-tag { background: #1d3c30; color: #a9e2bc; }
+:root[data-theme="dark"] .source-filter-popover { box-shadow: 0 16px 44px #0009; }
