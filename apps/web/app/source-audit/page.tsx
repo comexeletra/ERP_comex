@@ -58,7 +58,6 @@ const issueLabels: Record<string, string> = {
   INVALID_STATUS: "Status inválido",
   INVALID_COST: "Custo inválido",
   MISSING_PO: "PO ausente",
-  TEXT_WHITESPACE_NOISE: "Espaço ou caractere de controle extra",
 };
 
 function describeIssue(issue: NonNullable<SourceRow["auditFlags"]["dataIssues"]>[number]): string {
@@ -66,8 +65,7 @@ function describeIssue(issue: NonNullable<SourceRow["auditFlags"]["dataIssues"]>
   const field = issue.fieldName ? ` · coluna ${issue.fieldName}` : "";
   const evidenceValue = issue.evidence.value ?? issue.evidence.amount;
   const value = evidenceValue == null ? "" : ` · valor: ${display(evidenceValue)}`;
-  const reason = issue.evidence.reason === "control-character" ? " · caractere de controle" : "";
-  return `${label}${field}${reason}${value}`;
+  return `${label}${field}${value}`;
 }
 
 function readColumnFilters(raw: string | null): ColumnFilters {
@@ -374,6 +372,8 @@ export default function SourceAuditPage() {
     <header className="page-header">
       <p className="eyebrow">ERP Comex · Auditoria de origem</p>
       <h1>Tabela completa para auditoria</h1>
+      <p>Espaços externos, tabulações e quebras de linha são normalizados para auditoria, sem alterar os dados originais.</p>
+      <p>Variações de grafia na descrição do produto (coluna U) não são consideradas erro; use o código do produto (coluna T) para identificar o item.</p>
       <p>Consulte os registros da planilha de origem. Os valores históricos são preservados como foram informados; os indicadores mostram o que está preenchido na origem. Somente células com erro de cálculo são sinalizadas como erro.</p>
       <Link className="text-link" href="/">← Carteira de POs</Link>
     </header>

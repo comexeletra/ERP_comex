@@ -231,6 +231,51 @@ test("followup persists item/IP inputs and individual documents in an isolated r
   assert.equal((await client.query("SELECT count(*)::int AS count FROM procurement.purchase_order WHERE id=$1",
     [completePoId])).rows[0].count, 1);
 
+  const appendBody = { base: { externalLineReference: "C", productCode: "PRODUCT-C",
+    description: "Produto C", orderedQuantity: "30", unit: "PC", unitPrice: null,
+    currency: null, reason: "Completar pedido" },
+    fields: { scNumber: "SC-C", scApprovalDate: "2026-09-11" } };
+  const appended = await call("POST", `/api/v1/purchase-orders/${completePoId}/items/complete`, appendBody,
+    { "idempotency-key": randomUUID() });
+  assert.equal(appended.statusCode, 201, appended.body);
+  const appendedId = appended.json().id;
+  const beforeEditVersion = (await client.query("SELECT version::text FROM procurement.purchase_order WHERE id=$1",
+    [completePoId])).rows[0].version;
+  const editBody = { base: { ...appendBody.base, description: "Produto C atualizado", orderedQuantity: "32" },
+    fields: { scNumber: "SC-C-EDIT", scApprovalDate: "2026-09-12" } };
+  const edited = await call("PATCH", `/api/v1/purchase-orders/${completePoId}/items/${appendedId}/complete`,
+    editBody, { "if-match": `"${beforeEditVersion}"` });
+  assert.equal(edited.statusCode, 200, edited.body);
+  const savedAppend = await client.query(`SELECT description,ordered_quantity::text,sc_number,
+    sc_approval_date::text FROM procurement.purchase_order_item WHERE id=$1`, [appendedId]);
+  assert.equal(savedAppend.rows[0].description, "Produto C atualizado");
+  assert.equal(Number(savedAppend.rows[0].ordered_quantity), 32);
+  assert.equal(savedAppend.rows[0].sc_number, "SC-C-EDIT");
+  assert.equal(savedAppend.rows[0].sc_approval_date, "2026-09-12");
+  await client.query(`CREATE FUNCTION pg_temp.reject_full_item_update() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN IF NEW.sc_number='FAIL' OR NEW.product_code='FAIL-FOLLOWUP' THEN
+      RAISE EXCEPTION 'CI forced full item failure'; END IF;
+    RETURN NEW; END $$`);
+  await client.query(`CREATE TRIGGER ci_reject_full_item_update BEFORE UPDATE ON procurement.purchase_order_item
+    FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_full_item_update()`);
+  const versionBeforeEditFailure = (await client.query("SELECT version::text FROM procurement.purchase_order WHERE id=$1",
+    [completePoId])).rows[0].version;
+  const failedEdit = await call("PATCH", `/api/v1/purchase-orders/${completePoId}/items/${appendedId}/complete`,
+    { base: { ...editBody.base, description: "Não persistir" }, fields: { scNumber: "FAIL" } },
+    { "if-match": `"${versionBeforeEditFailure}"` });
+  assert.equal(failedEdit.statusCode, 500, failedEdit.body);
+  assert.equal((await client.query("SELECT description FROM procurement.purchase_order_item WHERE id=$1",
+    [appendedId])).rows[0].description, "Produto C atualizado");
+  const failedAppendKey = randomUUID();
+  const failedAppend = await call("POST", `/api/v1/purchase-orders/${completePoId}/items/complete`,
+    { base: { ...appendBody.base, externalLineReference: "D", productCode: "FAIL-FOLLOWUP" }, fields: appendBody.fields },
+    { "idempotency-key": failedAppendKey });
+  assert.equal(failedAppend.statusCode, 500, failedAppend.body);
+  assert.equal((await client.query(`SELECT count(*)::int AS count FROM procurement.purchase_order_item
+    WHERE purchase_order_id=$1 AND product_code='FAIL-FOLLOWUP'`, [completePoId])).rows[0].count, 0);
+  assert.equal((await client.query("SELECT version::text FROM procurement.purchase_order WHERE id=$1",
+    [completePoId])).rows[0].version, versionBeforeEditFailure);
+
   await client.query(`CREATE FUNCTION pg_temp.reject_second_item_insert() RETURNS trigger LANGUAGE plpgsql AS $$
     BEGIN IF NEW.line_number=2 THEN RAISE EXCEPTION 'CI forced item insert failure'; END IF;
     RETURN NEW; END $$`);

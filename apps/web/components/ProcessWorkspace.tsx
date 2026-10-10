@@ -2,13 +2,17 @@
 
 import Link from "next/link";
 import { FormEvent, Fragment, useEffect, useState } from "react";
-import { apiFetch } from "../lib/api";
+import { apiFetch, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
 import ProcessPostShipmentPanel from "./ProcessPostShipmentPanel";
 
 type Cost = { id: string; type: string; currency: string; amount: string; status: string; sourceSheetName: string; sourceRowNumber: number; sourceColumn: string };
 type Order = { id: string; number: string; importer: string; linkSource: string };
-type OperationalAllocation = { id: string; poId: string; poNumber: string; productCode: string; quantity: string; unit: string };
+type PurchaseOrderChoice = { id: string; number: string; importer: string };
+type PurchaseOrderItemChoice = { id: string; lineNumber: number; productCode: string; description: string;
+  orderedQuantity: string; remainingQuantity: string; unit: string | null; sourceStatus: string | null };
+type OperationalAllocation = { id: string; poId: string; poNumber: string; productCode: string; quantity: string;
+  unit: string; poItemRemainingQuantity?: string };
 type Process = { id: string; ipNumber: string; importer: string; logisticsStatus: string | null;
   qualityStatus: string; sourceKind: string; priority: string | null; notes: string;
   version: string; lifecycleStatus?: "OPEN" | "CLOSED"; closedAt: string | null;
@@ -17,6 +21,17 @@ type Process = { id: string; ipNumber: string; importer: string; logisticsStatus
   operationalAllocations: OperationalAllocation[] };
 type Line = { id: string; sourceSheetName: string; sourceRowNumber: number; sourceValues: Record<string, unknown>; sourceColumnHeaders: Record<string, string>; purchaseOrderId: string | null; poNumber: string | null; productCode: string | null; productDescription: string | null; quantityFromSource: string | null; legacyStatus: string | null };
 type LinePage = { page: number; pageSize: number; totalCount: number; items: Line[] };
+
+function quantityUnits(value: string): bigint | null {
+  const match = /^(\d+)(?:[.,](\d{0,8}))?$/u.exec(value.trim());
+  if (!match) return null;
+  return BigInt(match[1]) * 100_000_000n + BigInt((match[2] ?? "").padEnd(8, "0") || "0");
+}
+function formatQuantityUnits(units: bigint) {
+  const whole = (units / 100_000_000n).toString().replace(/\B(?=(\d{3})+(?!\d))/gu, ".");
+  const fraction = (units % 100_000_000n).toString().padStart(8, "0").replace(/0+$/u, "");
+  return `${whole}${fraction ? `,${fraction}` : ""}`;
+}
 
 export default function ProcessWorkspace({ id, returnPath }: { id: string; returnPath: string }) {
   const [process, setProcess] = useState<Process>();
@@ -31,6 +46,15 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
   const [roles, setRoles] = useState<string[]>([]);
   const [ipNumberDraft, setIpNumberDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
+  const [poQuery, setPoQuery] = useState("");
+  const [poOptions, setPoOptions] = useState<PurchaseOrderChoice[]>([]);
+  const [selectedPoId, setSelectedPoId] = useState("");
+  const [poItems, setPoItems] = useState<PurchaseOrderItemChoice[]>([]);
+  const [selectedPoItemId, setSelectedPoItemId] = useState("");
+  const [allocationQuantity, setAllocationQuantity] = useState("");
+  const [poSearchMessage, setPoSearchMessage] = useState("");
+  const [searchingPos, setSearchingPos] = useState(false);
+  const [linkingPo, setLinkingPo] = useState(false);
   const [saving, setSaving] = useState(false);
   const [closing, setClosing] = useState(false);
   const [reopening, setReopening] = useState(false);
@@ -40,6 +64,93 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
     if (!response.ok) throw new Error("O IP foi alterado, mas não foi possível conferir os dados salvos.");
     return response.json() as Promise<Process>;
   }
+  async function readPurchaseOrderState(poId: string) {
+    const response = await apiFetch(`/api/v1/purchase-orders/${poId}/operational`, { cache: "no-store" });
+    return readApiJson<{ items: PurchaseOrderItemChoice[]; allocations: { itemId: string; processId: string }[] }>(response);
+  }
+  async function choosePurchaseOrder(poId: string) {
+    setSelectedPoId(poId); setSelectedPoItemId(""); setAllocationQuantity("");
+    setPoItems([]); setSaveError(undefined); setPoSearchMessage("");
+    if (!poId) return;
+    setSearchingPos(true);
+    try {
+      const state = await readPurchaseOrderState(poId);
+      const activeItemIdsForThisIp = new Set(state.allocations.filter(item => item.processId === id).map(item => item.itemId));
+      const available = state.items.filter(item => (quantityUnits(item.remainingQuantity) ?? 0n) > 0n
+        && !activeItemIdsForThisIp.has(item.id)
+        && !["CANCELLED", "CANCELED"].includes(String(item.sourceStatus ?? "").toUpperCase()));
+      setPoItems(available);
+      setSelectedPoItemId(available[0]?.id ?? "");
+      setPoSearchMessage(available.length
+        ? `${available.length} item(ns) com saldo disponível nesta PO.`
+        : "Esta PO não tem itens com saldo disponível para distribuir a este IP.");
+    } catch (cause) {
+      setSaveError(cause instanceof Error ? cause.message : "Não foi possível carregar os itens e saldos da PO.");
+    } finally { setSearchingPos(false); }
+  }
+  async function searchPurchaseOrders(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!process) return;
+    setSearchingPos(true); setSaveError(undefined); setPoSearchMessage("");
+    try {
+      const query = new URLSearchParams({ importer: process.importer, number: poQuery, pageSize: "100" });
+      const response = await apiFetch(`/api/v1/purchase-orders?${query}`);
+      const result = await readApiJson<{ items: PurchaseOrderChoice[] }>(response);
+      const matches = result.items.filter(order => order.importer === process.importer);
+      setPoOptions(matches);
+      const exactMatches = matches.filter(order => order.number.trim().toLocaleLowerCase()
+        === poQuery.trim().toLocaleLowerCase());
+      if (exactMatches.length === 1) {
+        await choosePurchaseOrder(exactMatches[0].id);
+        setPoSearchMessage(`PO ${exactMatches[0].number} selecionada. Confira o item e o saldo, informe a quantidade e distribua para este IP.`);
+      } else {
+        if (!matches.some(order => order.id === selectedPoId)) {
+          setSelectedPoId(""); setSelectedPoItemId(""); setPoItems([]);
+        }
+        setPoSearchMessage(matches.length === 0
+          ? `Nenhuma PO encontrada para a importadora ${process.importer}. Confira o número e o importador.`
+          : `${matches.length} PO(s) encontrada(s). Selecione uma para carregar seus itens e saldos.`);
+      }
+    } catch (cause) {
+      setSaveError(cause instanceof Error ? cause.message : "Não foi possível buscar POs.");
+    } finally { setSearchingPos(false); }
+  }
+  async function distributeItemToProcess(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!process || !selectedPoId || !selectedPoItemId) return;
+    setLinkingPo(true); setSaveError(undefined); setPoSearchMessage("");
+    try {
+      const quantity = quantityUnits(allocationQuantity);
+      const selectedItem = poItems.find(item => item.id === selectedPoItemId);
+      const remaining = selectedItem ? quantityUnits(selectedItem.remainingQuantity) : null;
+      if (quantity === null || quantity <= 0n || remaining === null || quantity > remaining) {
+        throw new Error("Informe uma quantidade válida, maior que zero e dentro do saldo disponível da PO.");
+      }
+      const response = await apiFetch(`/api/v1/purchase-orders/${selectedPoId}/allocations`, { method: "POST",
+        headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ itemId: selectedPoItemId, processId: id, quantity: allocationQuantity,
+          notes: "", reason: automaticAuditReason }) });
+      await readApiJson<{ id: string }>(response);
+      const [savedProcess, savedPo] = await Promise.all([readSavedProcess(), readPurchaseOrderState(selectedPoId)]);
+      if (!savedProcess.purchaseOrders.some(order => order.id === selectedPoId)
+        || !savedPo.allocations.some(allocation => allocation.itemId === selectedPoItemId && allocation.processId === id)) {
+        throw new Error("A API confirmou a distribuição, mas a releitura não encontrou o vínculo e a quantidade no IP.");
+      }
+      setProcess(savedProcess); setPoItems(savedPo.items.filter(item => (quantityUnits(item.remainingQuantity) ?? 0n) > 0n
+        && !savedPo.allocations.some(allocation => allocation.itemId === item.id && allocation.processId === id)
+        && !["CANCELLED", "CANCELED"].includes(String(item.sourceStatus ?? "").toUpperCase())));
+      setAllocationQuantity("");
+      setSelectedPoItemId("");
+      setPoSearchMessage("Quantidade distribuída. O saldo atualizado da PO foi carregado; selecione outro item se necessário.");
+      setNotice("Item e quantidade distribuídos para este IP.");
+    } catch (cause) {
+      setSaveError(cause instanceof Error ? cause.message : "Não foi possível distribuir a quantidade para este IP.");
+    } finally { setLinkingPo(false); }
+  }
+  const selectedPoItem = poItems.find(item => item.id === selectedPoItemId);
+  const remainingUnits = selectedPoItem ? quantityUnits(selectedPoItem.remainingQuantity) : null;
+  const allocationUnits = quantityUnits(allocationQuantity);
+  const remainingAfterAllocation = remainingUnits !== null && allocationUnits !== null
+    && allocationUnits > 0n && allocationUnits <= remainingUnits
+    ? formatQuantityUnits(remainingUnits - allocationUnits) : null;
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError(undefined);
     Promise.all([
@@ -149,14 +260,52 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
       <section className="card"><h2>POs vinculadas</h2><p className="muted">Vínculos históricos e operacionais. O IP pode atender várias POs, e uma PO pode aparecer em vários IPs.</p>
         {process.purchaseOrders.length === 0 && <p>Nenhuma PO vinculada. Linhas sem PO podem aparecer nas observações.</p>}
         {process.purchaseOrders.map(order => <p key={order.id}><Link className="text-link" href={`/purchase-orders/${order.id}`}>PO {order.number} →</Link> · {order.importer} · {order.linkSource}</p>)}
+        {canWrite && process.lifecycleStatus === "OPEN" && <div className="operational-allocation">
+          <h3>Distribuir item de uma PO para este IP</h3>
+          <p className="muted">Escolha a PO e o item, confira o saldo e informe a quantidade que será enviada neste IP. A PO fica vinculada ao IP quando a distribuição for salva.</p>
+          {saveError && <p className="notice error" role="alert">{saveError}</p>}
+          {poSearchMessage && <p className="notice" role="status">{poSearchMessage}</p>}
+          <form className="operational-search" onSubmit={searchPurchaseOrders}>
+            <label>Buscar PO<input value={poQuery} onChange={event => setPoQuery(event.target.value)} placeholder="Número ou parte da PO" /></label>
+            <button className="button secondary" type="submit" disabled={searchingPos}>{searchingPos ? "Buscando…" : "Buscar POs"}</button>
+          </form>
+          <form className="stack-form" onSubmit={distributeItemToProcess}>
+            <label>PO existente<select required value={selectedPoId} onChange={event => void choosePurchaseOrder(event.target.value)}>
+              <option value="">Busque e selecione uma PO</option>
+              {poOptions.map(order => <option key={order.id} value={order.id}>{order.number} · {order.importer}</option>)}
+            </select></label>
+            {selectedPoId && <>
+              <label>Item da PO<select required value={selectedPoItemId} disabled={searchingPos || poItems.length === 0}
+                onChange={event => { setSelectedPoItemId(event.target.value); setAllocationQuantity(""); }}>
+                <option value="">Selecione um item com saldo</option>
+                {poItems.map(item => <option key={item.id} value={item.id}>
+                  {item.productCode} · linha {item.lineNumber} · saldo {item.remainingQuantity}{item.unit ? ` ${item.unit}` : ""}
+                </option>)}
+              </select></label>
+              {selectedPoItem && <p className="notice" role="status">
+                Saldo atual deste item na PO: <strong>{selectedPoItem.remainingQuantity}{selectedPoItem.unit ? ` ${selectedPoItem.unit}` : ""}</strong>.
+                {remainingAfterAllocation !== null && <> Saldo previsto após esta distribuição: <strong>{remainingAfterAllocation}{selectedPoItem.unit ? ` ${selectedPoItem.unit}` : ""}</strong>.</>}
+              </p>}
+              <label>Quantidade que ficará neste IP<input required inputMode="decimal" value={allocationQuantity}
+                onChange={event => setAllocationQuantity(event.target.value)} placeholder="Ex.: 40" /></label>
+              {selectedPoItem && allocationUnits !== null && remainingUnits !== null && allocationUnits > remainingUnits
+                && <p className="notice error" role="alert">A quantidade informada excede o saldo atual da PO.</p>}
+              <button className="button" disabled={!selectedPoItemId || !allocationQuantity || searchingPos || linkingPo
+                || allocationUnits === null || allocationUnits <= 0n || remainingUnits === null || allocationUnits > remainingUnits}>
+                {linkingPo ? "Distribuindo…" : "Distribuir quantidade para este IP"}
+              </button>
+            </>}
+          </form>
+        </div>}
       </section>
       <section className="card"><h2>Quantidades distribuídas para este IP</h2>
-        <p className="muted">Registros operacionais por item da PO. A quantidade de uma PO pode estar distribuída por vários IPs.</p>
+        <p className="muted">Cada linha mostra o que foi alocado a este IP e o saldo restante do item na PO, já considerando todos os IPs.</p>
         {process.operationalAllocations.length === 0 ? <p>Nenhuma quantidade distribuída operacionalmente.</p> :
-          <div className="table-scroll"><table><thead><tr><th>PO</th><th>Produto</th><th>Quantidade</th></tr></thead><tbody>
+          <div className="table-scroll"><table><thead><tr><th>PO</th><th>Produto</th><th>Quantidade neste IP</th><th>Saldo restante na PO</th></tr></thead><tbody>
             {process.operationalAllocations.map(item => <tr key={item.id}>
               <td><Link className="text-link" href={`/purchase-orders/${item.poId}`}>{item.poNumber}</Link></td>
               <td>{item.productCode}</td><td>{item.quantity} {item.unit}</td>
+              <td>{item.poItemRemainingQuantity ?? "—"} {item.unit}</td>
             </tr>)}
           </tbody></table></div>}
       </section>

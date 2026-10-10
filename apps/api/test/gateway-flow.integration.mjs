@@ -93,6 +93,18 @@ try {
   const completePersisted = await pool.query(`SELECT count(*)::int AS count FROM procurement.purchase_order_item
     WHERE purchase_order_id=$1 AND sc_approval_date=$2`, [completePo.id, "2026-08-01"]);
   assert.equal(completePersisted.rows[0].count, 2);
+  const addedBase = { externalLineReference: "E", productCode: `CI-E-${suffix}`,
+    description: "Produto E", orderedQuantity: "10", unit: "PC", unitPrice: null,
+    currency: null, reason };
+  const added = expectStatus(await call("POST", `/api/v1/purchase-orders/${completePo.id}/items/complete`,
+    { base: addedBase, fields: { scApprovalDate: "2026-08-02" } }), 201);
+  expectStatus(await call("PATCH", `/api/v1/purchase-orders/${completePo.id}/items/${added.id}/complete`,
+    { base: { ...addedBase, description: "Produto E atualizado" },
+      fields: { scApprovalDate: "2026-08-03" } }, added.purchaseOrderVersion), 200);
+  const addedPersisted = await pool.query(`SELECT description,sc_approval_date::text
+    FROM procurement.purchase_order_item WHERE id=$1`, [added.id]);
+  assert.deepEqual(addedPersisted.rows[0], {
+    description: "Produto E atualizado", sc_approval_date: "2026-08-03" });
 
   const po = expectStatus(await call("POST", "/api/v1/purchase-orders", {
     importer, number: `CI-GW-PO-${suffix}`, supplierText: "Fornecedor CI",
@@ -108,7 +120,7 @@ try {
   let operational = expectStatus(await call("GET", `/api/v1/purchase-orders/${po.id}/operational`), 200);
   const sharedDateRejected = await call("PATCH", `/api/v1/purchase-orders/${po.id}/items/${first.id}/followup`,
     { fields: { actualFactoryShipDate: "2026-08-20" }, reason }, operational.version);
-  assert.equal(sharedDateRejected.statusCode, 400);
+  assert.equal(sharedDateRejected.response.status, 400);
   expectStatus(await call("PATCH", `/api/v1/purchase-orders/${po.id}/items/${first.id}/followup`,
     { fields: { scNumber: sc.requestNumber, scApprovalDate: "2026-08-01" }, reason }, operational.version), 200);
   operational = expectStatus(await call("GET", `/api/v1/purchase-orders/${po.id}/operational`), 200);
@@ -184,7 +196,25 @@ try {
   assert.equal(stored.rows[0].first_factory_departure.toISOString().slice(0, 10), "2026-08-20");
   assert.equal(stored.rows[0].second_factory_departure.toISOString().slice(0, 10), "2026-08-28");
   assert.equal(stored.rows[0].allocation_count, 3);
-  console.log("Next.js → gateway → API → PostgreSQL flow passed (SC, complete PO, shared fields, split PO, IP dates, closure).");
+
+  const portfolio = expectStatus(await call("GET",
+    `/api/v1/purchase-orders/summary?number=CI-GW-PO-${suffix}`), 200);
+  assert.deepEqual(portfolio, {
+    purchaseOrders: 1, linkedProcesses: 2, items: 2, itemsWithIp: 2, itemsWithoutIp: 0,
+    byImporter: [{ importer, purchaseOrders: 1 }],
+  });
+  const preDashboard = expectStatus(await call("GET", "/api/v1/reports/summary?scope=pre"), 200);
+  assert.equal(Object.keys(preDashboard).join(","), "preShipment");
+  assert.ok(preDashboard.preShipment.totalRecords >= 2);
+  assert.ok(preDashboard.preShipment.operationalItems >= 4);
+  assert.ok(preDashboard.preShipment.allocatedItems >= 2);
+  const postDashboard = expectStatus(await call("GET", "/api/v1/reports/summary?scope=post"), 200);
+  assert.equal(Object.keys(postDashboard).join(","), "postShipment");
+  assert.ok(postDashboard.postShipment.totalRecords >= 2);
+  assert.ok(postDashboard.postShipment.openRecords >= 2);
+  assert.ok(postDashboard.postShipment.rowsWithArrival >= 2);
+  assert.ok(postDashboard.postShipment.rowsWithDelivery >= 1);
+  console.log("Next.js → gateway → API → PostgreSQL flow passed (SC, PO, split IPs, balances, independent dates, lifecycle, and dashboards).");
 } finally {
   await pool.end();
 }

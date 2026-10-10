@@ -210,21 +210,12 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
                 coalesce(issues.issue_count, 0) > 0 AS has_open_data_issue
          FROM migration.source_row AS source
          LEFT JOIN LATERAL (
-           SELECT count(*)::int AS issue_count, jsonb_agg(finding.item ORDER BY finding.code, finding.field_name) AS items
-           FROM (
-             SELECT issue.issue_code AS code, issue.field_name,
-                    jsonb_build_object('code', issue.issue_code, 'fieldName', issue.field_name,
-                      'severity', issue.severity, 'evidence', issue.evidence) AS item
-             FROM migration.data_issue AS issue
-             WHERE issue.source_row_id = source.id AND issue.status = 'OPEN'
-             UNION ALL
-             SELECT 'TEXT_WHITESPACE_NOISE', cell.key,
-                    jsonb_build_object('code', 'TEXT_WHITESPACE_NOISE', 'fieldName', cell.key,
-                      'severity', 'WARNING', 'evidence', jsonb_build_object('value', cell.value,
-                        'reason', CASE WHEN cell.value ~ '[[:cntrl:]]' THEN 'control-character' ELSE 'edge-whitespace' END))
-             FROM jsonb_each_text(source.raw_values) AS cell(key, value)
-             WHERE cell.value <> btrim(cell.value) OR cell.value ~ '[[:cntrl:]]'
-           ) AS finding
+           SELECT count(*)::int AS issue_count,
+                  jsonb_agg(jsonb_build_object('code', issue.issue_code, 'fieldName', issue.field_name,
+                    'severity', issue.severity, 'evidence', issue.evidence)
+                    ORDER BY issue.issue_code, issue.field_name) AS items
+           FROM migration.data_issue AS issue
+           WHERE issue.source_row_id = source.id AND issue.status = 'OPEN'
          ) AS issues ON TRUE
          WHERE btrim(source.raw_values->>'F') = ANY($1::text[])
            AND ($2::text = 'all' OR source.sheet_name = $2)
@@ -301,21 +292,12 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
                 ${calculationError} AS has_calculation_error
          FROM migration.source_row AS source
          LEFT JOIN LATERAL (
-           SELECT count(*)::int AS issue_count, jsonb_agg(finding.item ORDER BY finding.code, finding.field_name) AS items
-           FROM (
-             SELECT issue.issue_code AS code, issue.field_name,
-                    jsonb_build_object('code', issue.issue_code, 'fieldName', issue.field_name,
-                      'severity', issue.severity, 'evidence', issue.evidence) AS item
-             FROM migration.data_issue AS issue
-             WHERE issue.source_row_id = source.id AND issue.status = 'OPEN'
-             UNION ALL
-             SELECT 'TEXT_WHITESPACE_NOISE', cell.key,
-                    jsonb_build_object('code', 'TEXT_WHITESPACE_NOISE', 'fieldName', cell.key,
-                      'severity', 'WARNING', 'evidence', jsonb_build_object('value', cell.value,
-                        'reason', CASE WHEN cell.value ~ '[[:cntrl:]]' THEN 'control-character' ELSE 'edge-whitespace' END))
-             FROM jsonb_each_text(source.raw_values) AS cell(key, value)
-             WHERE cell.value <> btrim(cell.value) OR cell.value ~ '[[:cntrl:]]'
-           ) AS finding
+           SELECT count(*)::int AS issue_count,
+                  jsonb_agg(jsonb_build_object('code', issue.issue_code, 'fieldName', issue.field_name,
+                    'severity', issue.severity, 'evidence', issue.evidence)
+                    ORDER BY issue.issue_code, issue.field_name) AS items
+           FROM migration.data_issue AS issue
+           WHERE issue.source_row_id = source.id AND issue.status = 'OPEN'
          ) AS issues ON TRUE
          LEFT JOIN procurement.po_line_observation AS observation ON observation.source_row_id = source.id
          LEFT JOIN procurement.purchase_order AS po ON po.id = observation.purchase_order_id

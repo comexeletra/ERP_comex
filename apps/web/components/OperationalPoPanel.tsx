@@ -75,6 +75,12 @@ async function isLegacySharedFieldsEndpoint(response: Response): Promise<boolean
   }
 }
 
+async function missingRoute(response: Response, route: string): Promise<boolean> {
+  if (response.status !== 404) return false;
+  const body = await response.clone().json().catch(() => null) as { message?: string } | null;
+  return body?.message === `Route ${route} not found`;
+}
+
 async function loadFollowupItems(poId: string, signal?: AbortSignal): Promise<FollowupItem[]> {
   const followup = await responseData<{ items: FollowupItem[] }>(await apiFetch(
     `/api/v1/purchase-orders/${poId}/followup`, { signal, cache: "no-store" }));
@@ -105,6 +111,23 @@ async function verifySavedItemFields(poId: string, expectedByItem: Map<string, R
   if (notSaved) throw new Error("A API confirmou a alteração, mas os campos não foram encontrados na releitura dos produtos.");
 }
 
+async function verifySavedItem(poId: string, itemId: string,
+  base: { externalLineReference: string | null; productCode: string; description: string;
+    orderedQuantity: string; unit: string; unitPrice: string | null; currency: string | null },
+  fields: Record<string, string | number | null>) {
+  const saved = (await loadFollowupItems(poId)).find(item => item.id === itemId);
+  if (!saved || saved.productCode !== base.productCode.trim() ||
+    saved.description !== base.description.trim() || saved.unit !== base.unit.trim() ||
+    (saved.externalLineReference ?? null) !== (base.externalLineReference?.trim() || null) ||
+    Number(saved.orderedQuantity) !== Number(base.orderedQuantity) ||
+    (saved.unitPrice === null ? null : Number(saved.unitPrice)) !==
+      (base.unitPrice === null ? null : Number(base.unitPrice)) ||
+    (saved.currencyCode ?? null) !== base.currency ||
+    Object.entries(fields).some(([key, value]) => String(saved[key] ?? "") !== String(value ?? ""))) {
+    throw new Error("A API confirmou a alteração, mas a releitura não encontrou todos os dados do produto.");
+  }
+}
+
 export default function OperationalPoPanel({ id, onChanged }: { id: string; onChanged?: () => void }) {
   const [data, setData] = useState<OperationalPo>();
   const [roles, setRoles] = useState<string[]>([]);
@@ -119,6 +142,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   const [commonFieldsTouched, setCommonFieldsTouched] = useState<Set<string>>(new Set());
   const [ipQuery, setIpQuery] = useState("");
   const [ipOptions, setIpOptions] = useState<ProcessOption[]>([]);
+  const [ipSearchMessage, setIpSearchMessage] = useState("");
+  const [searchingIps, setSearchingIps] = useState(false);
   const [creatingIp, setCreatingIp] = useState(false);
   const [newIpNumber, setNewIpNumber] = useState("");
   const [newIpStatus, setNewIpStatus] = useState("");
@@ -229,12 +254,28 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   async function saveHeader(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!data) return;
     await save(async () => {
-      await send(`/api/v1/purchase-orders/${id}`, "PATCH",
-        { number, supplierText: supplier || null, orderDate: orderDate || null, notes,
-          purchaseRequestId: purchaseRequestId || null, reason: automaticAuditReason }, data.version);
+      const header = { number, supplierText: supplier || null, orderDate: orderDate || null, notes,
+        purchaseRequestId: purchaseRequestId || null, reason: automaticAuditReason };
       if (commonFieldsTouched.size && data.items.length) {
         const fieldsToSave = purchaseOrderCommonItemFields.filter(field => commonFieldsTouched.has(field.key));
-        await applyCommonFieldsToItems(purchaseOrderItemFieldsPayload(commonOperationalDraft, true, fieldsToSave));
+        const fields = purchaseOrderItemFieldsPayload(commonOperationalDraft, true, fieldsToSave);
+        const route = `/api/v1/purchase-orders/${id}/complete`;
+        const response = await apiFetch(route, { method: "PATCH",
+          headers: { "content-type": "application/json", "X-Record-Version": data.version },
+          body: JSON.stringify({ header, itemIds: data.items.map(item => item.id), fields }) });
+        if (await missingRoute(response, `PATCH:${route}`)) {
+          await send(`/api/v1/purchase-orders/${id}`, "PATCH", header, data.version);
+          await applyCommonFieldsToItems(fields);
+        } else {
+          const result = await responseData<{ updatedCount: number }>(response);
+          if (result.updatedCount !== data.items.length) {
+            throw new Error("A API atualizou uma quantidade inesperada de produtos. Recarregue a PO e confira os campos da SC.");
+          }
+          await verifySavedItemFields(id, new Map(data.items.map(item => [item.id, fields])));
+        }
+        setCommonFieldsTouched(new Set());
+      } else {
+        await send(`/api/v1/purchase-orders/${id}`, "PATCH", header, data.version);
         setCommonFieldsTouched(new Set());
       }
     }, commonFieldsTouched.size ? "PO e dados compartilhados atualizados." : "PO atualizada.");
@@ -251,13 +292,23 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       orderedQuantity: draft.orderedQuantity.replace(",", "."), unit: draft.unit,
       unitPrice: draft.unitPrice ? draft.unitPrice.replace(",", ".") : null,
       currency: draft.currency ? draft.currency.toUpperCase() : null, reason: automaticAuditReason };
+    const fields = purchaseOrderItemFieldsPayload(draft.operational, true, purchaseOrderSpecificItemFields);
     await save(async () => {
-      await send(`/api/v1/purchase-orders/${id}/items/${item.id}`, "PATCH", body, data.version);
-      const latest = await responseData<{ version: string }>(await apiFetch(`/api/v1/purchase-orders/${id}/operational`, { cache: "no-store" }));
-      const fields = purchaseOrderItemFieldsPayload(draft.operational, true, purchaseOrderSpecificItemFields);
-      await send(`/api/v1/purchase-orders/${id}/items/${item.id}/followup`, "PATCH",
-        { fields, reason: automaticAuditReason }, latest.version);
-      await verifySavedItemFields(id, new Map([[item.id, fields]]));
+      const route = `/api/v1/purchase-orders/${id}/items/${item.id}/complete`;
+      const result = await apiFetch(route, { method: "PATCH",
+        headers: { "content-type": "application/json", "X-Record-Version": data.version },
+        body: JSON.stringify({ base: body, fields }) });
+      if (await missingRoute(result, `PATCH:${route}`)) {
+        await send(`/api/v1/purchase-orders/${id}/items/${item.id}`, "PATCH", body, data.version);
+        try {
+          const latest = await responseData<{ version: string }>(await apiFetch(`/api/v1/purchase-orders/${id}/operational`, { cache: "no-store" }));
+          await send(`/api/v1/purchase-orders/${id}/items/${item.id}/followup`, "PATCH",
+            { fields, reason: automaticAuditReason }, latest.version);
+        } catch (cause) {
+          throw new Error(`Os dados básicos podem ter sido salvos; confira o produto antes de repetir. ${cause instanceof Error ? cause.message : "Erro inesperado."}`);
+        }
+      } else await responseData(result);
+      await verifySavedItem(id, item.id, body, fields);
     }, "Item e campos operacionais atualizados.");
   }
   function updateCommonField(key: string, value: string) {
@@ -288,34 +339,72 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     const draft = itemDraft;
     if (!draft.productCode) { setError("Selecione o produto do novo item."); return; }
     await save(async () => {
-      const created = await send(`/api/v1/purchase-orders/${id}/items`, "POST", {
-        externalLineReference: draft.externalLineReference || null, productCode: draft.productCode,
+      const base = { externalLineReference: draft.externalLineReference || null, productCode: draft.productCode,
         description: draft.description, orderedQuantity: draft.orderedQuantity.replace(",", "."),
         unit: draft.unit, unitPrice: draft.unitPrice ? draft.unitPrice.replace(",", ".") : null,
-        currency: draft.currency ? draft.currency.toUpperCase() : null, reason: automaticAuditReason,
-      });
+        currency: draft.currency ? draft.currency.toUpperCase() : null, reason: automaticAuditReason };
       const operational = {
         ...purchaseOrderItemFieldsPayload(draft.operational, false, purchaseOrderSpecificItemFields),
         ...purchaseOrderItemFieldsPayload(commonOperationalDraft, false, purchaseOrderCommonItemFields),
       };
-      if (Object.keys(operational).length > 0) {
-        const latest = await responseData<{ version: string }>(await apiFetch(`/api/v1/purchase-orders/${id}/operational`, { cache: "no-store" }));
-        await send(`/api/v1/purchase-orders/${id}/items/${created.id}/followup`, "PATCH",
-          { fields: operational, reason: automaticAuditReason }, latest.version);
+      const route = `/api/v1/purchase-orders/${id}/items/complete`;
+      const result = await apiFetch(route, { method: "POST",
+        headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ base, fields: operational }) });
+      let created: { id: string };
+      if (await missingRoute(result, `POST:${route}`)) {
+        created = await send(`/api/v1/purchase-orders/${id}/items`, "POST", base);
+        try {
+          if (Object.keys(operational).length > 0) {
+            const latest = await responseData<{ version: string }>(await apiFetch(`/api/v1/purchase-orders/${id}/operational`, { cache: "no-store" }));
+            await send(`/api/v1/purchase-orders/${id}/items/${created.id}/followup`, "PATCH",
+              { fields: operational, reason: automaticAuditReason }, latest.version);
+          }
+        } catch (cause) {
+          throw new Error(`O produto básico pode ter sido criado; confira a PO antes de repetir. ${cause instanceof Error ? cause.message : "Erro inesperado."}`);
+        }
+      } else {
+        created = await responseData<{ id: string }>(result);
       }
-      await verifySavedItemFields(id, new Map([[created.id, operational]]));
+      await verifySavedItem(id, created.id, base, operational);
       setItemDraft(blankItem());
     }, "Item cadastrado.");
   }
   async function searchIps(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!data) return;
+    event.preventDefault();
+    if (!data || searchingIps) return;
+    const searchTerm = ipQuery.trim();
+    if (!searchTerm) {
+      setIpOptions([]);
+      setProcessId("");
+      setIpSearchMessage("Informe o número ou parte do IP para buscar.");
+      return;
+    }
+    setSearchingIps(true);
     try {
-      const query = new URLSearchParams({ importer: data.importer, ipNumber: ipQuery, pageSize: "100" });
-      const response = await apiFetch(`/api/v1/processes?${query}`);
+      setError(""); setIpSearchMessage("");
+      const query = new URLSearchParams({ importer: data.importer, ipNumber: searchTerm, pageSize: "100" });
+      const response = await apiFetch(`/api/v1/processes?${query}`, { cache: "no-store" });
       const result = await responseData<{ items: ProcessOption[] }>(response);
-      setIpOptions(result.items.filter(item => item.importer === data.importer));
-      if (!result.items.some(item => item.id === processId)) setProcessId("");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
+      const normalize = (value: string) => value.trim().toLocaleLowerCase();
+      const matches = result.items.filter(item => normalize(item.importer) === normalize(data.importer));
+      setIpOptions(matches);
+      const exactNumberMatches = matches.filter(item => item.ipNumber.trim().toLocaleLowerCase()
+        === searchTerm.toLocaleLowerCase());
+      if (exactNumberMatches.length === 1) {
+        setProcessId(exactNumberMatches[0].id);
+        setIpSearchMessage(`IP ${exactNumberMatches[0].ipNumber} encontrado e selecionado. Informe a quantidade e clique em “Distribuir quantidade” para criar o vínculo.`);
+      } else {
+        if (!matches.some(item => item.id === processId)) setProcessId("");
+        setIpSearchMessage(matches.length === 0
+          ? `Nenhum IP encontrado para a importadora ${data.importer}. Confira o número e se o IP foi cadastrado para a mesma importadora da PO.`
+          : `${matches.length} IP(s) encontrado(s). Selecione um no campo IP, informe a quantidade e clique em “Distribuir quantidade” para criar o vínculo.`);
+      }
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "Erro inesperado.";
+      setError(message);
+      setIpSearchMessage(`Não foi possível buscar o IP: ${message}`);
+    } finally { setSearchingIps(false); }
   }
   async function createIp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!data) return;
@@ -482,25 +571,42 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         </form>
       </details>}
       <h3>Distribuição por IP</h3>
+      <p className="muted">O saldo restante é calculado por item na PO, somando as quantidades distribuídas a todos os IPs vinculados.</p>
       {data.allocations.length === 0 ? <p>Nenhuma quantidade distribuída operacionalmente.</p> :
-        <div className="table-scroll"><table><thead><tr><th>Item</th><th>IP</th><th>Quantidade</th><th>Saída da fábrica</th><th>Ação</th></tr></thead>
-          <tbody>{data.allocations.map(allocation => <tr key={allocation.id}>
-            <td>{data.items.find(item => item.id === allocation.itemId)?.productCode ?? "—"}</td>
-            <td><Link className="text-link" href={`/processes/${allocation.processId}`}>{allocation.ipNumber}</Link></td>
-            <td>{allocation.quantity} {data.items.find(item => item.id === allocation.itemId)?.unit ?? ""}</td>
-            <td>{allocation.factoryShipDate ?? "—"}</td>
-            <td>{canAllocate && <button className="button secondary" type="button" onClick={() => {
-              setEditingAllocation(allocation); setItemId(allocation.itemId); setProcessId(allocation.processId);
-              setAllocationQuantity(allocation.quantity); setAllocationNotes(allocation.notes);
-            }}>Editar</button>}</td></tr>)}</tbody></table></div>}
+        <div className="table-scroll"><table><thead><tr><th>Item</th><th>IP</th><th>Quantidade neste IP</th><th>Quantidade pedida</th><th>Saldo restante na PO</th><th>Saída da fábrica</th><th>Ação</th></tr></thead>
+          <tbody>{data.allocations.map(allocation => {
+            const item = data.items.find(row => row.id === allocation.itemId);
+            return <tr key={allocation.id}>
+              <td>{item?.productCode ?? "—"}</td>
+              <td><Link className="text-link" href={`/processes/${allocation.processId}`}>{allocation.ipNumber}</Link></td>
+              <td>{allocation.quantity} {item?.unit ?? ""}</td>
+              <td>{item ? formatItemQuantity(item.orderedQuantity) : "—"}{item?.unit ? ` ${item.unit}` : ""}</td>
+              <td>{item ? formatItemQuantity(item.remainingQuantity) : "—"}{item?.unit ? ` ${item.unit}` : ""}</td>
+              <td>{allocation.factoryShipDate ?? "—"}</td>
+              <td>{canAllocate && <button className="button secondary" type="button" onClick={() => {
+                setEditingAllocation(allocation); setItemId(allocation.itemId); setProcessId(allocation.processId);
+                setAllocationQuantity(allocation.quantity); setAllocationNotes(allocation.notes);
+              }}>Editar</button>}</td>
+            </tr>;
+          })}</tbody></table></div>}
       {canAllocate && data.items.length > 0 && <div className="operational-allocation">
         <h4>{editingAllocation ? `Editar distribuição para ${editingAllocation.ipNumber}` : "Distribuir item para um IP"}</h4>
         {!editingAllocation && <form className="operational-search" onSubmit={searchIps}>
-          <label>Buscar IP<input value={ipQuery} onChange={event => setIpQuery(event.target.value)} placeholder="Número ou parte do IP" /></label>
-          <button className="button secondary">Buscar IPs</button>
+          <label>Buscar IP<input value={ipQuery} onChange={event => {
+            setIpQuery(event.target.value);
+            setIpOptions([]); setProcessId(""); setIpSearchMessage("");
+          }} placeholder="Número ou parte do IP" /></label>
+          <button className="button secondary" type="submit" disabled={searchingIps || saving}>
+            {searchingIps ? "Buscando…" : "Buscar IPs"}</button>
           <button className="button secondary" type="button" onClick={() => setCreatingIp(value => !value)}>
             {creatingIp ? "Fechar cadastro de IP" : "Cadastrar IP nesta PO"}</button>
         </form>}
+        {ipSearchMessage && <p className="notice" role="status">{ipSearchMessage}</p>}
+        {!editingAllocation && ipOptions.length > 0 && <label>IP encontrado<select required value={processId}
+          onChange={event => setProcessId(event.target.value)}>
+          <option value="">Selecione um IP</option>{ipOptions.map(item =>
+            <option key={item.id} value={item.id}>{item.ipNumber}</option>)}
+        </select></label>}
         {!editingAllocation && creatingIp && <form className="stack-form inline-ip-form" onSubmit={createIp}>
           <h5>Novo IP · importadora {data.importer}</h5>
           <div className="operational-fields">
@@ -519,9 +625,6 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
           <label>Item<select required value={itemId} disabled={Boolean(editingAllocation)} onChange={event => setItemId(event.target.value)}>
             {data.items.map(item => <option key={item.id} value={item.id} disabled={item.sourceStatus?.toUpperCase() === "CANCELLED" || item.sourceStatus?.toUpperCase() === "CANCELED"}>{item.productCode} · item {item.lineNumber} · {item.sourceStatus?.toUpperCase() === "CANCELLED" || item.sourceStatus?.toUpperCase() === "CANCELED" ? "cancelado" : `saldo ${item.remainingQuantity}${item.unit ? ` ${item.unit}` : ""}`}</option>)}
           </select></label>
-          {!editingAllocation && <label>IP<select required value={processId} onChange={event => setProcessId(event.target.value)}>
-            <option value="">Busque e selecione um IP</option>{ipOptions.map(item => <option key={item.id} value={item.id}>{item.ipNumber}</option>)}
-          </select></label>}
           <label>Quantidade neste IP<input required inputMode="decimal" value={allocationQuantity}
             onChange={event => setAllocationQuantity(event.target.value)} placeholder="Ex.: 40" /></label>
           <label>Observações<textarea maxLength={2000} value={allocationNotes}

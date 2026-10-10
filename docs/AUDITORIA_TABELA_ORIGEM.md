@@ -19,3 +19,5 @@ Os indicadores são sinalizadores para auditoria, não conclusões contábeis ou
 Enquanto a planilha continuar sendo a fonte mestra, uma nova versão poderá ser enviada para incorporar novas colunas, entidades e valores. Cada reenvio deve gerar um snapshot com hash e prévia de diferenças, sem sobrescrever silenciosamente o histórico; novas colunas precisam ser descobertas e expostas pela grade.
 
 Não há migration para esta entrega. O endpoint deve continuar protegido pela autenticação/gateway já existentes e conservar a paginação antes de devolver linhas ao navegador.
+
+Espacos externos, tabulacoes e quebras de linha sao normalizados para a classificacao da auditoria e nao aparecem como inconsistencias. Os valores brutos originais continuam preservados. Variacoes de grafia na descricao do produto (coluna U) tambem nao sao erro; use o codigo do produto (coluna T) como identidade. Erros reais do Excel, divergencias de codigo e de especificacoes (por exemplo, medidas) continuam exigindo revisao.
