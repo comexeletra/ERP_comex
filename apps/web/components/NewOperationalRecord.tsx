@@ -143,13 +143,13 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
   }, [importer, kind]);
 
   useEffect(() => {
-    if (!importer || kind !== "po") { setPurchaseRequests([]); return; }
+    if (kind !== "po") { setPurchaseRequests([]); return; }
     const controller = new AbortController();
-    loadPurchaseRequests(importer, controller.signal)
+    loadPurchaseRequests("", controller.signal)
       .then(setPurchaseRequests)
       .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro ao carregar SCs."); });
     return () => controller.abort();
-  }, [importer, kind]);
+  }, [kind]);
 
   const allowed = roles.some(role => (kind === "po" ? poRoles : ipRoles).has(role));
 
@@ -160,6 +160,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
   function selectPurchaseRequest(id: string) {
     setPurchaseRequestId(id);
     const selected = purchaseRequests.find(choice => choice.id === id);
+    if (selected) setImporter(selected.importer);
     setCommonItemFields(current => ({ ...current, ...purchaseRequestOperationalFields(selected) }));
   }
 
@@ -337,12 +338,13 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
           <h2>Dados do pedido</h2>
           <p className="muted">Informe a importadora e os dados que identificam a PO no TOTVS.</p>
           <div className="operational-fields">
-            <label>Importadora<select required value={importer} onChange={event => {
+            <PurchaseRequestSelect importer={importer} value={purchaseRequestId} choices={purchaseRequests} onChange={selectPurchaseRequest} />
+            <label>Importadora<select required disabled={Boolean(purchaseRequestId)} value={importer} onChange={event => {
               setImporter(event.target.value); selectPurchaseRequest("");
             }}>
               <option value="">Selecione</option>{importers.map(value => <option key={value} value={value}>{value}</option>)}
             </select></label>
-            <PurchaseRequestSelect importer={importer} value={purchaseRequestId} choices={purchaseRequests} onChange={selectPurchaseRequest} />
+            {purchaseRequestId ? <p className="muted">Importadora preenchida pela SC vinculada. Para escolher outra, remova o vínculo da SC.</p> : null}
             <label>Número da PO no TOTVS<input required maxLength={80} value={number} onChange={event => setNumber(event.target.value)} /></label>
             <label>Fornecedor<select value={supplier} onChange={event => setSupplier(event.target.value)}>
               <option value="">Selecione</option>{suppliers.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
