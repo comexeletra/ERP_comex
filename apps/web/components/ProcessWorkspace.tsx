@@ -5,6 +5,7 @@ import { FormEvent, Fragment, useEffect, useState } from "react";
 import { apiFetch, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
 import ProcessPostShipmentPanel from "./ProcessPostShipmentPanel";
+import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 
 type Cost = { id: string; type: string; currency: string; amount: string; status: string; sourceSheetName: string; sourceRowNumber: number; sourceColumn: string };
 type Order = { id: string; number: string; importer: string; linkSource: string };
@@ -17,10 +18,12 @@ type Process = { id: string; ipNumber: string; importer: string; logisticsStatus
   qualityStatus: string; sourceKind: string; priority: string | null; notes: string;
   version: string; lifecycleStatus?: "OPEN" | "CLOSED"; closedAt: string | null;
   closedBy: string | null; closeReason: string | null;
+  processDocumentCount?: number;
   purchaseOrders: Order[]; historicalCosts: Cost[];
   operationalAllocations: OperationalAllocation[] };
 type Line = { id: string; sourceSheetName: string; sourceRowNumber: number; sourceValues: Record<string, unknown>; sourceColumnHeaders: Record<string, string>; purchaseOrderId: string | null; poNumber: string | null; productCode: string | null; productDescription: string | null; quantityFromSource: string | null; legacyStatus: string | null };
 type LinePage = { page: number; pageSize: number; totalCount: number; items: Line[] };
+type ImporterChoice = { code: string };
 
 function quantityUnits(value: string): bigint | null {
   const match = /^(\d+)(?:[.,](\d{0,8}))?$/u.exec(value.trim());
@@ -45,7 +48,12 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
   const [retry, setRetry] = useState(0);
   const [roles, setRoles] = useState<string[]>([]);
   const [ipNumberDraft, setIpNumberDraft] = useState("");
+  const [importerDraft, setImporterDraft] = useState("");
+  const [logisticsStatusDraft, setLogisticsStatusDraft] = useState("");
+  const [priorityDraft, setPriorityDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
+  const [importers, setImporters] = useState<ImporterChoice[]>([]);
+  const [operationalOptions, setOperationalOptions] = useState<OperationalOption[]>([]);
   const [poQuery, setPoQuery] = useState("");
   const [poOptions, setPoOptions] = useState<PurchaseOrderChoice[]>([]);
   const [selectedPoId, setSelectedPoId] = useState("");
@@ -152,6 +160,14 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
     && allocationUnits > 0n && allocationUnits <= remainingUnits
     ? formatQuantityUnits(remainingUnits - allocationUnits) : null;
   useEffect(() => {
+    loadOperationalOptions().then(setOperationalOptions).catch(() => undefined);
+    apiFetch("/api/v1/importers", { cache: "no-store" }).then(async response => {
+      if (!response.ok) return;
+      setImporters((await response.json() as { items: ImporterChoice[] }).items);
+    }).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError(undefined);
     Promise.all([
       apiFetch(`/api/v1/processes/${id}`, { signal: controller.signal }),
@@ -168,6 +184,9 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
           ? "" : "A API do IP está desatualizada. O ciclo e as ações de edição ficarão indisponíveis até sua atualização.");
         setProcess(processValue); setLines(lineValue); setRoles(user.roles);
         setIpNumberDraft(processValue.ipNumber);
+        setImporterDraft(processValue.importer);
+        setLogisticsStatusDraft(processValue.logisticsStatus ?? "");
+        setPriorityDraft(processValue.priority ?? "");
         setNotesDraft(processValue.notes);
       }
     }).catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Erro inesperado."); })
@@ -181,12 +200,15 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
     try {
       const response = await apiFetch(`/api/v1/processes/${id}`, { method: "PATCH",
         headers: { "content-type": "application/json", "X-Record-Version": process.version },
-        body: JSON.stringify({ ipNumber: ipNumberDraft, logisticsStatus: process.logisticsStatus, priority: process.priority,
+        body: JSON.stringify({ ipNumber: ipNumberDraft, importer: importerDraft,
+          logisticsStatus: logisticsStatusDraft || null, priority: priorityDraft || null,
           notes: notesDraft, reason: automaticAuditReason }) });
       const body = await response.json() as { detail?: string };
       if (!response.ok) throw new Error(body.detail || "Não foi possível atualizar o IP.");
       const saved = await readSavedProcess();
-      if (saved.ipNumber !== ipNumberDraft || saved.notes !== notesDraft) {
+      if (saved.ipNumber !== ipNumberDraft || saved.importer !== importerDraft
+        || saved.logisticsStatus !== (logisticsStatusDraft || null) || saved.priority !== (priorityDraft || null)
+        || saved.notes !== notesDraft) {
         throw new Error("A API confirmou a alteração, mas os dados do IP não apareceram na releitura.");
       }
       setNotice("IP atualizado."); setRetry(value => value + 1);
@@ -240,18 +262,29 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
         {saveError && <p className="notice error" role="alert">{saveError}</p>}
         {process.lifecycleStatus === "CLOSED" && <>
           <p className="notice">IP encerrado em {process.closedAt ? new Date(process.closedAt).toLocaleString("pt-BR") : "data indisponível"}.</p>
-          {canWrite && <details><summary>Reabrir IP</summary><form className="stack-form" onSubmit={reopenProcess}>
+          {canWrite && <details className="process-action"><summary className="process-action-trigger">Reabrir IP</summary><form className="stack-form" onSubmit={reopenProcess}>
             <button className="button" disabled={reopening}>{reopening ? "Reabrindo…" : "Reabrir IP"}</button>
           </form></details>}
         </>}
         {canWrite && process.lifecycleStatus === "OPEN" && <>
-          <details><summary>Editar IP</summary><form className="stack-form" onSubmit={saveProcess}>
+          <details className="process-action"><summary className="process-action-trigger">Editar IP</summary><form className="stack-form" onSubmit={saveProcess}>
+          <label>Importadora<select required disabled={process.sourceKind !== "MANUAL" || process.purchaseOrders.length > 0
+            || process.operationalAllocations.length > 0 || process.historicalCosts.length > 0
+            || (process.processDocumentCount ?? 0) > 0 || lines.totalCount > 0}
+            value={importerDraft} onChange={event => setImporterDraft(event.target.value)}>
+            {!importers.some(option => option.code === importerDraft) && <option value={importerDraft}>{importerDraft}</option>}
+            {importers.map(option => <option key={option.code} value={option.code}>{option.code}</option>)}
+          </select></label>
           <label>Número do IP<input required maxLength={80} disabled={process.sourceKind !== "MANUAL"}
             value={ipNumberDraft} onChange={event => setIpNumberDraft(event.target.value)} /></label>
+          <label>Status logístico<OperationalOptionSelect entity="logistics_status" value={logisticsStatusDraft}
+            values={operationalOptions} onChange={setLogisticsStatusDraft} /></label>
+          <label>Prioridade<OperationalOptionSelect entity="priority" value={priorityDraft}
+            values={operationalOptions} onChange={setPriorityDraft} /></label>
           <label>Observações<textarea maxLength={4000} value={notesDraft} onChange={event => setNotesDraft(event.target.value)} /></label>
           <button className="button" disabled={saving}>{saving ? "Salvando…" : "Salvar IP"}</button>
           </form></details>
-          <details><summary>Encerrar IP</summary><form className="stack-form" onSubmit={closeProcess}>
+          <details className="process-action"><summary className="process-action-trigger">Encerrar IP</summary><form className="stack-form" onSubmit={closeProcess}>
             <p>O encerramento fica a critério do analista e não depende do status logístico. Depois de encerrado, os dados e as distribuições ficam bloqueados para edição.</p>
             <button className="button" disabled={closing}>{closing ? "Encerrando…" : "Encerrar IP"}</button>
           </form></details>

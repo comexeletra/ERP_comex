@@ -93,6 +93,8 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
          'notes', process.notes, 'version', process.version::text,
          'lifecycleStatus', process.lifecycle_status, 'closedAt', process.closed_at,
          'closedBy', process.closed_by, 'closeReason', process.close_reason,
+         'processDocumentCount', (SELECT count(*)::int FROM imports.process_document AS document
+           WHERE document.process_id = process.id),
          'purchaseOrders', coalesce((SELECT jsonb_agg(jsonb_build_object(
            'id', po.id, 'number', po.external_number, 'importer', po.importer,
            'linkSource', link.source_kind

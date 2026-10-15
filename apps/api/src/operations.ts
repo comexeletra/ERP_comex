@@ -26,6 +26,9 @@ const processFields = z.object({
 const createProcess = processFields.extend({
   importer: z.string().trim().min(1).max(120),
 });
+const updateProcessFields = processFields.extend({
+  importer: z.string().trim().min(1).max(120),
+});
 export const itemFields = z.object({
   externalLineReference: nullableText(80), productCode: z.string().trim().min(1).max(120),
   description: z.string().trim().min(1).max(1000), orderedQuantity: quantity,
@@ -429,10 +432,10 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
 
   app.patch<{ Params: { id: string } }>("/api/v1/processes/:id",
     { config: permissionConfig("processes.write") }, async (request, reply) => {
-      const id = uuid.safeParse(request.params.id); const parsed = processFields.safeParse(request.body);
+      const id = uuid.safeParse(request.params.id); const parsed = updateProcessFields.safeParse(request.body);
       if (!id.success || !parsed.success) return problem(reply, 400, "INVALID_PROCESS", "Revise o IP.");
       let expected: string; let auth: ReturnType<typeof actorAndScopes>;
-      try { expected = versionFrom(request); auth = actorAndScopes(request); }
+      try { expected = versionFrom(request); auth = actorAndScopes(request); inScope(parsed.data.importer, auth.scopes); }
       catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
       return transaction(pool, reply, async client => {
         const found = await client.query<Record<string, unknown>>(
@@ -444,6 +447,25 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           throw new BusinessError(409, "PROCESS_CLOSED", "Reabra o IP antes de editar seus dados.");
         }
         const body = parsed.data;
+        if (body.importer !== found.rows[0].importer) {
+          if (found.rows[0].source_kind !== "MANUAL") {
+            throw new BusinessError(409, "HISTORICAL_IMPORTER", "A importadora do IP histÃ³rico exige reconciliaÃ§Ã£o da origem.");
+          }
+          await knownImporter(client, body.importer);
+          const references = await client.query(
+            `SELECT EXISTS (SELECT 1 FROM procurement.process_purchase_order WHERE process_id = $1)
+                 OR EXISTS (SELECT 1 FROM procurement.po_item_allocation WHERE process_id = $1)
+                 OR EXISTS (SELECT 1 FROM costs.process_cost WHERE process_id = $1)
+                 OR EXISTS (SELECT 1 FROM imports.process_document WHERE process_id = $1)
+                 OR EXISTS (SELECT 1 FROM migration.source_row
+                   WHERE sheet_name = 'Pré Embarque'
+                     AND btrim(raw_values->>'F') = $2
+                     AND upper(btrim(raw_values->>'AB')) = upper(btrim($3))) AS has_references`,
+            [id.data, found.rows[0].importer, found.rows[0].ip_number]);
+          if (references.rows[0]?.has_references) {
+            throw new BusinessError(409, "PROCESS_IMPORTER_REFERENCES", "Remova ou reconcilie os vínculos com POs, distribuições e custos antes de alterar a importadora.");
+          }
+        }
         if (found.rows[0].source_kind !== "MANUAL" && body.ipNumber !== found.rows[0].ip_number) {
           throw new BusinessError(409, "HISTORICAL_IDENTITY", "A identidade do IP histórico exige reconciliação da origem.");
         }
@@ -456,11 +478,11 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           }
         }
         const updated = await client.query<{ version: string }>(
-          `UPDATE imports.import_process SET logistics_status = $2, priority = $3,
-            notes = $4, ip_number = $5::text, normalized_ip_number = upper($5::text),
+          `UPDATE imports.import_process SET importer = $2, logistics_status = $3, priority = $4,
+            notes = $5, ip_number = $6::text, normalized_ip_number = upper($6::text),
             version = version + 1, updated_at = now()
            WHERE id = $1 RETURNING version::text`,
-          [id.data, body.logisticsStatus, body.priority, body.notes, body.ipNumber]);
+          [id.data, body.importer, body.logisticsStatus, body.priority, body.notes, body.ipNumber]);
         await record(client, "IMPORT_PROCESS", id.data, "IMPORT_PROCESS", id.data, "UPDATE",
           found.rows[0], body, auth.actor, body.reason);
         return { id: id.data, version: updated.rows[0].version };
