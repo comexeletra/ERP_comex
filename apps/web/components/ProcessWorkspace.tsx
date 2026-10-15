@@ -198,13 +198,19 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
     event.preventDefault(); if (!process) return;
     setSaving(true); setSaveError(undefined); setNotice("");
     try {
+      const importerChanged = importerDraft !== process.importer;
       const response = await apiFetch(`/api/v1/processes/${id}`, { method: "PATCH",
         headers: { "content-type": "application/json", "X-Record-Version": process.version },
-        body: JSON.stringify({ ipNumber: ipNumberDraft, importer: importerDraft,
+        body: JSON.stringify({ ipNumber: ipNumberDraft, ...(importerChanged ? { importer: importerDraft } : {}),
           logisticsStatus: logisticsStatusDraft || null, priority: priorityDraft || null,
           notes: notesDraft, reason: automaticAuditReason }) });
       const body = await response.json() as { detail?: string };
-      if (!response.ok) throw new Error(body.detail || "Não foi possível atualizar o IP.");
+      if (!response.ok) {
+        if (importerChanged && response.status === 400 && body.detail === "Revise o IP.") {
+          throw new Error("A API deste ambiente ainda não oferece alteração de importadora. Os dados não foram salvos; solicite a atualização da API de homologação.");
+        }
+        throw new Error(body.detail || "Não foi possível atualizar o IP.");
+      }
       const saved = await readSavedProcess();
       if (saved.ipNumber !== ipNumberDraft || saved.importer !== importerDraft
         || saved.logisticsStatus !== (logisticsStatusDraft || null) || saved.priority !== (priorityDraft || null)

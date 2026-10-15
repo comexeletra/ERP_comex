@@ -27,7 +27,7 @@ const createProcess = processFields.extend({
   importer: z.string().trim().min(1).max(120),
 });
 const updateProcessFields = processFields.extend({
-  importer: z.string().trim().min(1).max(120),
+  importer: z.string().trim().min(1).max(120).optional(),
 });
 export const itemFields = z.object({
   externalLineReference: nullableText(80), productCode: z.string().trim().min(1).max(120),
@@ -435,7 +435,10 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
       const id = uuid.safeParse(request.params.id); const parsed = updateProcessFields.safeParse(request.body);
       if (!id.success || !parsed.success) return problem(reply, 400, "INVALID_PROCESS", "Revise o IP.");
       let expected: string; let auth: ReturnType<typeof actorAndScopes>;
-      try { expected = versionFrom(request); auth = actorAndScopes(request); inScope(parsed.data.importer, auth.scopes); }
+      try {
+        expected = versionFrom(request); auth = actorAndScopes(request);
+        if (parsed.data.importer !== undefined) inScope(parsed.data.importer, auth.scopes);
+      }
       catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
       return transaction(pool, reply, async client => {
         const found = await client.query<Record<string, unknown>>(
@@ -446,7 +449,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         if (found.rows[0].lifecycle_status === "CLOSED") {
           throw new BusinessError(409, "PROCESS_CLOSED", "Reabra o IP antes de editar seus dados.");
         }
-        const body = parsed.data;
+        const body = { ...parsed.data, importer: parsed.data.importer ?? String(found.rows[0].importer) };
         if (body.importer !== found.rows[0].importer) {
           if (found.rows[0].source_kind !== "MANUAL") {
             throw new BusinessError(409, "HISTORICAL_IMPORTER", "A importadora do IP histÃ³rico exige reconciliaÃ§Ã£o da origem.");
