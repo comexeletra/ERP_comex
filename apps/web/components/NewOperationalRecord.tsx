@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, isMissingApiRoute, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
@@ -15,6 +15,7 @@ import {
 } from "./OperationalOptionSelect";
 import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
 import { loadPurchaseRequests, purchaseRequestOperationalFields, PurchaseRequestChoice, PurchaseRequestSelect } from "./PurchaseRequestSelect";
+import { parseTotvsPoXlsx, TotvsPoProductRow } from "../lib/totvs-po-xlsx";
 
 const poRoles = new Set(["Master", "Administrador", "Importação", "Compras"]);
 const ipRoles = new Set(["Master", "Administrador", "Importação"]);
@@ -96,6 +97,11 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
   const [options, setOptions] = useState<OperationalOption[]>([]);
   const [supportsGroup, setSupportsGroup] = useState(false);
   const [items, setItems] = useState<PoItemDraft[]>([blankPoItem()]);
+  const [totvsFileName, setTotvsFileName] = useState("");
+  const [totvsRows, setTotvsRows] = useState<TotvsPoProductRow[]>([]);
+  const [totvsFileError, setTotvsFileError] = useState("");
+  const [totvsParsing, setTotvsParsing] = useState(false);
+  const [totvsApplied, setTotvsApplied] = useState(false);
   const [commonItemFields, setCommonItemFields] = useState<OperationalFieldDraft>(blankPurchaseOrderItemFields);
   const [createdPoId, setCreatedPoId] = useState("");
   const [draftReady, setDraftReady] = useState(false);
@@ -179,6 +185,39 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
 
   function updateItem(index: number, change: Partial<PoItemDraft>) {
     setItems(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...change } : item));
+  }
+
+  async function selectTotvsProductFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+    setTotvsFileName(file.name); setTotvsRows([]); setTotvsFileError(""); setTotvsApplied(false); setTotvsParsing(true);
+    try { setTotvsRows(await parseTotvsPoXlsx(file)); }
+    catch (cause) { setTotvsFileError(cause instanceof Error ? cause.message : "Não foi possível ler a planilha."); }
+    finally { setTotvsParsing(false); }
+  }
+
+  function applyTotvsProducts(mode: "replace" | "append") {
+    const imported = totvsRows.map(row => ({
+      externalLineReference: row.externalLineReference,
+      productCode: row.productCode,
+      description: row.description,
+      orderedQuantity: row.orderedQuantity,
+      unit: row.unit,
+      unitPrice: row.unitPrice,
+      currency: row.unitPrice ? "CNY" : "",
+      operational: { ...blankPurchaseOrderItemFields(), costCenter: row.costCenter },
+    }));
+    const onlyBlankStarter = items.length === 1 && !items[0].externalLineReference && !items[0].productCode
+      && !items[0].description && !items[0].orderedQuantity && !items[0].unit && !items[0].unitPrice
+      && !items[0].currency && Object.values(items[0].operational).every(value => !value);
+    const existing = mode === "append" && !onlyBlankStarter ? items : [];
+    if (existing.length + imported.length > 500) {
+      setTotvsFileError("A PO pode ter até 500 produtos. Substitua os itens atuais ou reduza a planilha.");
+      return;
+    }
+    setItems(mode === "replace" ? imported : [...existing, ...imported]);
+    setTotvsApplied(true);
   }
 
   function selectPurchaseRequest(id: string) {
@@ -384,6 +423,35 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
           <div className="po-entry-heading">
             <div><h2>Produtos e quantidades</h2><p className="muted">Adicione uma linha para cada produto da PO.</p></div>
             <button className="button secondary" type="button" onClick={() => setItems(current => [...current, blankPoItem()])}>Adicionar produto</button>
+          </div>
+          <div className="totvs-po-import">
+            <div><h3>Importar produtos de planilha TOTVS</h3>
+              <p className="muted">Lê linha, código, descrição, unidade, quantidade, preço em CNY e centro de custo. A SC já vinculada e os dados de cabeçalho não serão alterados.</p>
+            </div>
+            <label>Arquivo Excel (.xlsx)<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              disabled={totvsParsing || saving || Boolean(createdPoId)} onChange={event => void selectTotvsProductFile(event)} /></label>
+            {totvsParsing && <p role="status">Lendo a planilha…</p>}
+            {totvsFileError && <p className="notice error" role="alert">{totvsFileError}</p>}
+            {totvsRows.length > 0 && !totvsFileError && <>
+              <p className="notice" role="status">{totvsFileName}: {totvsRows.length} produtos válidos. Preços preenchidos serão registrados em CNY.</p>
+              <details className="totvs-import-details">
+                <summary>Conferir os {totvsRows.length} produtos mapeados</summary>
+                <div className="totvs-import-table-wrap"><table className="totvs-import-table">
+                  <thead><tr><th>Linha</th><th>Produto</th><th>Descrição</th><th>Quantidade</th><th>UM</th><th>Preço CNY</th><th>Centro de custo</th></tr></thead>
+                  <tbody>{totvsRows.map((row, index) => <tr key={`${row.sourceRow}:${index}`}>
+                    <td>{row.externalLineReference || "—"}</td><td>{row.productCode}</td><td>{row.description}</td>
+                    <td>{row.orderedQuantity}</td><td>{row.unit}</td><td>{row.unitPrice || "—"}</td><td>{row.costCenter || "—"}</td>
+                  </tr>)}</tbody>
+                </table></div>
+              </details>
+              <div className="totvs-import-actions">
+                <button className="button" type="button" disabled={totvsApplied || saving || Boolean(createdPoId)}
+                  onClick={() => applyTotvsProducts("replace")}>Substituir itens atuais</button>
+                <button className="button secondary" type="button" disabled={totvsApplied || saving || Boolean(createdPoId)}
+                  onClick={() => applyTotvsProducts("append")}>Adicionar ao formulário</button>
+              </div>
+              {totvsApplied && <p className="muted" role="status">Os produtos foram preenchidos no formulário; confira os itens antes de salvar a PO.</p>}
+            </>}
           </div>
           {catalogLoading && <p role="status">Carregando produtos e fornecedores…</p>}
           {items.map((item, index) => <article className="po-entry-item" key={index}>
