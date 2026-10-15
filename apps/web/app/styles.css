@@ -883,8 +883,11 @@ td .button + .button { margin-left: 6px; }
 .allocation-step-title h4 { margin: 2px 0 0; }
 .allocation-step-title p { color: #617985; margin: 4px 0 0; }
 .allocation-po-search { display: grid; gap: 14px; max-width: 760px; }
-.allocation-search-row { align-items: end; display: grid; gap: 12px; grid-template-columns: minmax(220px, 1fr) auto; }
-.allocation-search-row .button { min-width: 132px; }
+.allocation-search-row { align-items: end; display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+.allocation-search-row label { max-width: 520px; }
+.allocation-search-row .button { display: none; }
+.allocation-po-search select:not([size="1"]) { appearance: auto; background-image: none; max-height: 188px; overflow-y: auto; padding: 5px 8px; }
+.allocation-po-search select:not([size="1"]) option { padding: 8px; }
 .allocation-distribution { border-top: 1px solid #dce6eb; margin-top: 22px; padding-top: 2px; }
 .allocation-distribution > label { display: block; max-width: 100%; }
 .allocation-balance { align-items: center; background: #edf6f5; border: 1px solid #d3e8e3; border-radius: 9px; display: flex; flex-wrap: wrap; gap: 10px 22px; justify-content: space-between; margin: 16px 0 20px; padding: 13px 16px; }

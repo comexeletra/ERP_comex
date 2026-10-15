@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, Fragment, useEffect, useState } from "react";
+import { FormEvent, Fragment, useEffect, useRef, useState } from "react";
 import { apiFetch, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
 import { matchesPurchaseOrderNumber } from "../lib/portfolio-query";
@@ -63,6 +63,8 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
   const [allocationQuantity, setAllocationQuantity] = useState("");
   const [poSearchMessage, setPoSearchMessage] = useState("");
   const [searchingPos, setSearchingPos] = useState(false);
+  const poSearchTimer = useRef<number | undefined>(undefined);
+  const poSearchRequest = useRef(0);
   const [linkingPo, setLinkingPo] = useState(false);
   const [saving, setSaving] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -77,13 +79,14 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
     const response = await apiFetch(`/api/v1/purchase-orders/${poId}/operational`, { cache: "no-store" });
     return readApiJson<{ items: PurchaseOrderItemChoice[]; allocations: { itemId: string; processId: string }[] }>(response);
   }
-  async function choosePurchaseOrder(poId: string) {
+  async function choosePurchaseOrder(poId: string, searchRequestId?: number) {
     setSelectedPoId(poId); setSelectedPoItemId(""); setAllocationQuantity("");
     setPoItems([]); setSaveError(undefined); setPoSearchMessage("");
     if (!poId) return;
     setSearchingPos(true);
     try {
       const state = await readPurchaseOrderState(poId);
+      if (searchRequestId !== undefined && searchRequestId !== poSearchRequest.current) return;
       const activeItemIdsForThisIp = new Set(state.allocations.filter(item => item.processId === id).map(item => item.itemId));
       const available = state.items.filter(item => (quantityUnits(item.remainingQuantity) ?? 0n) > 0n
         && !activeItemIdsForThisIp.has(item.id)
@@ -94,23 +97,30 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
         ? `${available.length} item(ns) com saldo disponível nesta PO.`
         : "Esta PO não tem itens com saldo disponível para distribuir a este IP.");
     } catch (cause) {
-      setSaveError(cause instanceof Error ? cause.message : "Não foi possível carregar os itens e saldos da PO.");
-    } finally { setSearchingPos(false); }
+      if (searchRequestId === undefined || searchRequestId === poSearchRequest.current) {
+        setSaveError(cause instanceof Error ? cause.message : "Não foi possível carregar os itens e saldos da PO.");
+      }
+    } finally {
+      if (searchRequestId === undefined || searchRequestId === poSearchRequest.current) setSearchingPos(false);
+    }
   }
   async function searchPurchaseOrders(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!process) return;
+    const requestId = ++poSearchRequest.current;
     setSearchingPos(true); setSaveError(undefined); setPoSearchMessage("");
     try {
       const query = new URLSearchParams({ importer: process.importer, number: poQuery, pageSize: "200" });
       const response = await apiFetch(`/api/v1/purchase-orders?${query}`);
       const result = await readApiJson<{ items: PurchaseOrderChoice[] }>(response);
+      if (requestId !== poSearchRequest.current) return;
       const matches = result.items.filter(order => order.importer === process.importer
         && matchesPurchaseOrderNumber(order.number, poQuery));
       setPoOptions(matches);
       const exactMatches = matches.filter(order => order.number.trim().toLocaleLowerCase()
         === poQuery.trim().toLocaleLowerCase());
       if (exactMatches.length === 1) {
-        await choosePurchaseOrder(exactMatches[0].id);
+        await choosePurchaseOrder(exactMatches[0].id, requestId);
+        if (requestId !== poSearchRequest.current) return;
         setPoSearchMessage(`PO ${exactMatches[0].number} selecionada. Confira o item e o saldo, informe a quantidade e distribua para este IP.`);
       } else {
         if (!matches.some(order => order.id === selectedPoId)) {
@@ -121,8 +131,8 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
           : `${matches.length} PO(s) encontrada(s). Selecione uma para carregar seus itens e saldos.`);
       }
     } catch (cause) {
-      setSaveError(cause instanceof Error ? cause.message : "Não foi possível buscar POs.");
-    } finally { setSearchingPos(false); }
+      if (requestId === poSearchRequest.current) setSaveError(cause instanceof Error ? cause.message : "Não foi possível buscar POs.");
+    } finally { if (requestId === poSearchRequest.current) setSearchingPos(false); }
   }
   async function distributeItemToProcess(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!process || !selectedPoId || !selectedPoItemId) return;
@@ -308,17 +318,29 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
             </div>
           </div>
           {saveError && <p className="notice error" role="alert">{saveError}</p>}
+          {searchingPos && <p className="allocation-feedback" role="status">Buscando PO e carregando saldo...</p>}
           {poSearchMessage && <p className="allocation-feedback" role="status">{poSearchMessage}</p>}
 
           <div className="allocation-step-title"><span>1</span><div><h4>Encontre a PO</h4><p>Pesquise pelo número e selecione uma PO da importadora {process.importer}.</p></div></div>
           <form className="allocation-po-search" onSubmit={searchPurchaseOrders}>
             <div className="allocation-search-row">
-              <label>Buscar por número<input value={poQuery} onChange={event => setPoQuery(event.target.value)} placeholder="Ex.: 030201" /></label>
-              <button className="button secondary" type="submit" disabled={searchingPos || !poQuery.trim()}>
+              <label>Buscar por número<input value={poQuery} autoComplete="off" placeholder="Ex.: 030201"
+                onChange={event => {
+                  const value = event.target.value;
+                  const form = event.currentTarget.form;
+                  poSearchRequest.current += 1;
+                  window.clearTimeout(poSearchTimer.current);
+                  setPoQuery(value); setPoOptions([]); setPoSearchMessage(""); setSaveError(undefined);
+                  setSelectedPoId(""); setSelectedPoItemId(""); setPoItems([]); setAllocationQuantity("");
+                  setSearchingPos(false);
+                  if (value.trim()) poSearchTimer.current = window.setTimeout(() => form?.requestSubmit(), 250);
+                }} /></label>
+              <button hidden className="button secondary" type="submit" disabled={searchingPos || !poQuery.trim()}>
                 {searchingPos ? "Buscando…" : "Buscar PO"}
               </button>
             </div>
-            <label>PO encontrada<select required value={selectedPoId} disabled={searchingPos || poOptions.length === 0}
+            <label>POs encontradas<select required size={poOptions.length ? Math.min(poOptions.length + 1, 5) : 1}
+              value={selectedPoId} disabled={searchingPos || poOptions.length === 0}
               onChange={event => void choosePurchaseOrder(event.target.value)}>
               <option value="">{poOptions.length ? "Selecione uma PO" : "Busque uma PO para começar"}</option>
               {poOptions.map(order => <option key={order.id} value={order.id}>{order.number} · {order.importer}</option>)}
