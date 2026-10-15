@@ -41,6 +41,7 @@ export default function PcmPage() {
   const [roles, setRoles] = useState<string[]>([]);
   const [importers, setImporters] = useState<Importer[]>([]);
   const [importer, setImporter] = useState("");
+  const [importerFilter, setImporterFilter] = useState("");
   const [items, setItems] = useState<PurchaseRequestChoice[]>([]);
   const [purchaseRequestsLoading, setPurchaseRequestsLoading] = useState(true);
   const [options, setOptions] = useState<OperationalOption[]>([]);
@@ -83,14 +84,14 @@ export default function PcmPage() {
   useEffect(() => {
     const controller = new AbortController();
     setPurchaseRequestsLoading(true);
-    const query = importer ? `?importer=${encodeURIComponent(importer)}` : "";
+    const query = importerFilter ? `?importer=${encodeURIComponent(importerFilter)}` : "";
     apiFetch(`/api/v1/purchase-requests${query}`, { signal: controller.signal, cache: "no-store" })
       .then(response => readApiJson<{ items: PurchaseRequestChoice[] }>(response))
       .then(result => { if (!controller.signal.aborted) setItems(result.items); })
       .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Não foi possível consultar as SCs."); })
       .finally(() => { if (!controller.signal.aborted) setPurchaseRequestsLoading(false); });
     return () => controller.abort();
-  }, [importer]);
+  }, [importerFilter]);
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -114,9 +115,11 @@ export default function PcmPage() {
       const saved = await readApiJson<PurchaseRequestChoice>(response);
       setScNumber(""); setScDate(""); setRequester(""); setCommercialPlanReceivedDate(""); setApprovalDate("");
       setEditingId(""); setEditingVersion(""); setEditReason("");
-      const query = new URLSearchParams({ importer: saved.importer });
+      const query = new URLSearchParams();
+      if (importerFilter) query.set("importer", importerFilter);
+      const queryString = query.toString();
       const list = await readApiJson<{ items: PurchaseRequestChoice[] }>(
-        await apiFetch(`/api/v1/purchase-requests?${query}`, { cache: "no-store" }));
+        await apiFetch(`/api/v1/purchase-requests${queryString ? `?${queryString}` : ""}`, { cache: "no-store" }));
       setItems(list.items);
       setNotice(editingId
         ? `SC ${saved.scNumber} atualizada. Os campos compartilhados ainda ligados aos valores anteriores também foram atualizados nas POs.`
@@ -186,11 +189,11 @@ export default function PcmPage() {
     </section>}
     {!loading && <section className="card">
       <h2>SCs cadastradas</h2>
-      <label className="sc-list-filter">Importadora<select disabled={Boolean(editingId)} value={importer} onChange={event => setImporter(event.target.value)}>
+      <label className="sc-list-filter">Importadora<select disabled={Boolean(editingId)} value={importerFilter} onChange={event => setImporterFilter(event.target.value)}>
         <option value="">Selecione</option>{importers.map(item => <option key={item.code} value={item.code}>{item.code}</option>)}
       </select></label>
       {purchaseRequestsLoading ? <p role="status">Carregando SCs…</p> : items.length === 0 ? <p>
-        {importer ? "Nenhuma SC cadastrada para esta importadora." : "Nenhuma SC cadastrada."}
+        {importerFilter ? "Nenhuma SC cadastrada para esta importadora." : "Nenhuma SC cadastrada."}
       </p> :
         <div className="table-scroll"><table><thead><tr>
           <th>Número da SC</th><th>Data da SC</th><th>Solicitante</th><th>Plano comercial recebido</th><th>Aprovação</th><th>POs vinculadas</th><th>Ação</th>
