@@ -32,6 +32,11 @@ function historyChanges(event: PurchaseRequestHistory) {
   });
 }
 
+function formatHistoryActor(actor: string) {
+  const separator = actor.lastIndexOf("#");
+  return (separator >= 0 ? actor.slice(separator + 1) : actor).trim() || actor;
+}
+
 export default function PcmPage() {
   const [roles, setRoles] = useState<string[]>([]);
   const [importers, setImporters] = useState<Importer[]>([]);
@@ -201,7 +206,10 @@ export default function PcmPage() {
         {!historyLoading && historyItems.map(event => <article className="sc-history-event" key={event.id}>
           <p><strong>{event.operation === "CREATE" ? "Cadastro" : "Alteração"}</strong> · {new Date(event.occurredAt).toLocaleString("pt-BR")}</p>
           <ul>{historyChanges(event).map(change => <li key={change}>{change}</li>)}</ul>
-          <p className="muted">Responsável: {event.actor} · Motivo: {event.reason}</p>
+          <dl className="sc-history-meta">
+            <div><dt>Responsável</dt><dd>{formatHistoryActor(event.actor)}</dd></div>
+            <div><dt>Motivo</dt><dd>{event.reason}</dd></div>
+          </dl>
         </article>)}
       </section>}
     </section>}
