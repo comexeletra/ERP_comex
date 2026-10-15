@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, Fragment, useEffect, useState } from "react";
 import { apiFetch, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
+import { matchesPurchaseOrderNumber } from "../lib/portfolio-query";
 import ProcessPostShipmentPanel from "./ProcessPostShipmentPanel";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 
@@ -100,10 +101,11 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
     event.preventDefault(); if (!process) return;
     setSearchingPos(true); setSaveError(undefined); setPoSearchMessage("");
     try {
-      const query = new URLSearchParams({ importer: process.importer, number: poQuery, pageSize: "100" });
+      const query = new URLSearchParams({ importer: process.importer, number: poQuery, pageSize: "200" });
       const response = await apiFetch(`/api/v1/purchase-orders?${query}`);
       const result = await readApiJson<{ items: PurchaseOrderChoice[] }>(response);
-      const matches = result.items.filter(order => order.importer === process.importer);
+      const matches = result.items.filter(order => order.importer === process.importer
+        && matchesPurchaseOrderNumber(order.number, poQuery));
       setPoOptions(matches);
       const exactMatches = matches.filter(order => order.number.trim().toLocaleLowerCase()
         === poQuery.trim().toLocaleLowerCase());

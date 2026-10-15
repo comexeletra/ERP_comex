@@ -5,6 +5,11 @@ export type PortfolioFilters = {
   ipNumber: string;
 };
 
+export function matchesPurchaseOrderNumber(number: string, search: string): boolean {
+  const query = search.trim().toUpperCase();
+  return query.length > 0 && number.toUpperCase().includes(query);
+}
+
 const filterKeys = ["number", "importer", "product", "ipNumber"] as const satisfies readonly (keyof PortfolioFilters)[];
 
 export function portfolioFilterQuery(filters: Readonly<PortfolioFilters>): URLSearchParams {

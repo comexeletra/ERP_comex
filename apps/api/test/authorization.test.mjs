@@ -248,10 +248,11 @@ test("production PO list passes all four filters with pagination inside the impo
         return { rows: [{ role: "Consulta", importer_code: "ELETRA MATRIZ" }] };
       }
       assert.match(sql, /WHERE po\.importer = ANY\(\$1::text\[\]\)/u);
+      assert.match(sql, /strpos\(po\.normalized_number, upper\(\$2\)\) > 0/u);
       assert.match(sql, /strpos\(lower\(po\.importer\), lower\(\$3\)\) > 0/u);
       assert.match(sql, /strpos\(lower\(coalesce\(obs\.description_snapshot, ''\)\), lower\(\$4\)\) > 0/u);
       assert.match(sql, /process\.importer = ANY\(\$1::text\[\]\)/u);
-      assert.deepEqual(values, [["ELETRA MATRIZ"], "18751", "eletra", "motor", "IP-20", 50, 50]);
+      assert.deepEqual(values, [["ELETRA MATRIZ"], "03", "eletra", "motor", "IP-20", 50, 50]);
       return { rows: [{ total_count: 75, items: [{ id: "po-visible" }] }] };
     },
   };
@@ -263,7 +264,7 @@ test("production PO list passes all four filters with pagination inside the impo
   });
   await registerPurchaseOrderReadRoutes(app, pool);
   t.after(() => app.close());
-  const response = await app.inject({ method: "GET", url: "/api/v1/purchase-orders?page=2&pageSize=50&number=18751&importer=eletra&product=motor&ipNumber=IP-20" });
+  const response = await app.inject({ method: "GET", url: "/api/v1/purchase-orders?page=2&pageSize=50&number=03&importer=eletra&product=motor&ipNumber=IP-20" });
   assert.equal(response.statusCode, 200);
   assert.equal(response.json().totalCount, 75);
   assert.equal(queries.length, 2);
