@@ -1,0 +1,10 @@
+{
+    "values":  [
+                   "CANCELLED",
+                   "CUSTOMS CLEARANCE",
+                   "DELIVERED",
+                   "WAITING ARRIVAL",
+                   "WAITING PRODUCTION",
+                   "WAITING SHIPMENT"
+               ]
+}
