@@ -184,7 +184,7 @@ export default function OperationalValuesPage() {
       <h2>Importar valores por JSON</h2>
       <p className="muted">Selecione um arquivo com uma lista de textos ou com a propriedade <code>values</code>. Máximo de 500 valores por importação.</p>
       <form className="stack-form" onSubmit={importJson}>
-        <label>Arquivo JSON<input ref={fileInput} type="file" accept=".json,application/json" onChange={event => void selectJson(event)} /></label>
+        <label>Arquivo JSON<input className="file-upload-input" ref={fileInput} type="file" accept=".json,application/json" onChange={event => void selectJson(event)} /></label>
         <button className="button" disabled={busy || jsonValues.length === 0}>{busy ? "Importando…" : `Importar ${jsonValues.length || "valores"}`}</button>
       </form>
       {jsonFileName && <p className="muted" role="status">{jsonFileName}: {jsonValues.length} valores prontos para importar na entidade selecionada.</p>}

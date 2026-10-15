@@ -428,7 +428,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
             <div><h3>Importar produtos de planilha TOTVS</h3>
               <p className="muted">Lê linha, código, descrição, unidade, quantidade, preço em CNY e centro de custo. A SC já vinculada e os dados de cabeçalho não serão alterados.</p>
             </div>
-            <label>Arquivo Excel (.xlsx)<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            <label>Arquivo Excel (.xlsx)<input className="file-upload-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               disabled={totvsParsing || saving || Boolean(createdPoId)} onChange={event => void selectTotvsProductFile(event)} /></label>
             {totvsParsing && <p role="status">Lendo a planilha…</p>}
             {totvsFileError && <p className="notice error" role="alert">{totvsFileError}</p>}

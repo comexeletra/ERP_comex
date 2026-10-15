@@ -406,7 +406,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .totvs-po-import h3 { margin: 0; }
 .totvs-po-import > div:first-child p { margin: 6px 0 0; }
 .totvs-po-import > label { color: #405966; display: grid; font-size: .83rem; font-weight: 700; gap: 6px; max-width: 460px; }
-.totvs-po-import > label input { background: #fff; border: 1px solid #b7c5cf; border-radius: 7px; font: inherit; max-width: 100%; padding: 9px; }
+.file-upload-input { background: #fff; border: 1px solid #cbd8de; border-radius: 9px; color: #405966; cursor: pointer; font: inherit; max-width: 100%; min-height: 44px; padding: 5px; width: 100%; }
+.file-upload-input::file-selector-button { background: #eaf3f5; border: 1px solid #c7d9de; border-radius: 6px; color: #24505c; cursor: pointer; font: inherit; font-weight: 700; margin-right: 12px; padding: 8px 12px; transition: background-color .15s ease, border-color .15s ease; }
+.file-upload-input::file-selector-button:hover { background: #dcecef; border-color: #a9c8ce; }
+.file-upload-input:disabled { cursor: not-allowed; opacity: .6; }
+.file-upload-input:disabled::file-selector-button { cursor: not-allowed; }
+:root[data-theme="dark"] .file-upload-input { background: #19262f; border-color: #465c68; color: #e4edf2; }
+:root[data-theme="dark"] .file-upload-input::file-selector-button { background: #263f48; border-color: #45636c; color: #d4e0e6; }
+:root[data-theme="dark"] .file-upload-input::file-selector-button:hover { background: #344e59; border-color: #5d7b86; }
 .totvs-import-details { min-width: 0; }
 .totvs-import-details summary { color: #24505c; cursor: pointer; font-weight: 700; }
 .totvs-import-table-wrap { border: 1px solid #dce6eb; border-radius: 8px; margin-top: 10px; max-height: 320px; overflow: auto; }
