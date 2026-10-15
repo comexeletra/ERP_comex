@@ -80,8 +80,29 @@ export default function OperationalValuesPage() {
       const response = await apiFetch("/api/v1/operational-values/bulk", { method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ entity, values: jsonValues, reason: automaticAuditReason }) });
-      const result = await response.json() as { createdCount?: number; skippedCount?: number; detail?: string };
-      if (!response.ok) throw new Error(result.detail || "Não foi possível importar os valores.");
+      let result: { createdCount?: number; skippedCount?: number; detail?: string };
+      if (response.status === 404) {
+        let createdCount = 0;
+        let skippedCount = 0;
+        for (const [index, item] of jsonValues.entries()) {
+          const itemResponse = await apiFetch("/api/v1/operational-values", { method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ entity, value: item, reason: automaticAuditReason }) });
+          const itemResult = await itemResponse.json() as { detail?: string };
+          if (itemResponse.status === 409) {
+            skippedCount += 1;
+            continue;
+          }
+          if (!itemResponse.ok) {
+            throw new Error(`${itemResult.detail || "Não foi possível importar os valores."} Importação interrompida após ${index} de ${jsonValues.length} valores.`);
+          }
+          createdCount += 1;
+        }
+        result = { createdCount, skippedCount };
+      } else {
+        result = await response.json() as { createdCount?: number; skippedCount?: number; detail?: string };
+        if (!response.ok) throw new Error(result.detail || "Não foi possível importar os valores.");
+      }
       setJsonValues([]); setJsonFileName("");
       if (fileInput.current) fileInput.current.value = "";
       await load();
