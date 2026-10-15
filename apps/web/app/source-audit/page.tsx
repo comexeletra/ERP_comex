@@ -98,7 +98,9 @@ function readLocation() {
   const requestedGap = params.get("gap");
   const sortColumn = params.get("sortColumn");
   const sortDirection = params.get("sortDirection");
+  const requestedPage = Number(params.get("page"));
   return {
+    page: Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1,
     sheet: (sheetOptions.some(option => option.value === requestedSheet) ? requestedSheet : "Pré Embarque") as Sheet,
     filters: { importer: params.get("importer") ?? "", search: params.get("search") ?? "",
       gap: (gapOptions.some(option => option.value === requestedGap) ? requestedGap : "all") as Gap },
@@ -108,8 +110,8 @@ function readLocation() {
   };
 }
 
-function makeQuery(sheet: Sheet, filters: GridFilters, columnFilters: ColumnFilters, sort: SortState) {
-  const params = new URLSearchParams({ sheet, page: "1", pageSize: "50", all: "true", gap: filters.gap });
+function makeQuery(sheet: Sheet, filters: GridFilters, columnFilters: ColumnFilters, sort: SortState, page = 1) {
+  const params = new URLSearchParams({ sheet, page: String(page), pageSize: "50", gap: filters.gap });
   if (filters.importer) params.set("importer", filters.importer);
   if (filters.search) params.set("search", filters.search);
   const activeColumnFilters = Object.fromEntries(Object.entries(columnFilters).filter(([, filter]) =>
@@ -148,6 +150,7 @@ function selectedOption(filter: ColumnFilter | undefined, value: string): boolea
 }
 
 export default function SourceAuditPage() {
+  const [page, setPage] = useState(1);
   const [sheet, setSheet] = useState<Sheet>("Pré Embarque");
   const [draft, setDraft] = useState<GridFilters>(emptyFilters);
   const [applied, setApplied] = useState<GridFilters>(emptyFilters);
@@ -175,6 +178,7 @@ export default function SourceAuditPage() {
 
   useEffect(() => {
     const state = readLocation();
+    setPage(state.page);
     setSheet(state.sheet); setDraft(state.filters); setApplied(state.filters);
     setDraftColumnFilters(state.columnFilters); setAppliedColumnFilters(state.columnFilters);
     setDraftSort(state.sort); setSort(state.sort);
@@ -188,7 +192,7 @@ export default function SourceAuditPage() {
   useEffect(() => {
     if (!ready) return;
     const controller = new AbortController();
-    const query = makeQuery(sheet, applied, appliedColumnFilters, sort);
+    const query = makeQuery(sheet, applied, appliedColumnFilters, sort, page);
     setLoading(true); setError(undefined); setResult(undefined);
     apiFetch(`/api/v1/source-rows?${query}`, { signal: controller.signal })
       .then(async response => {
@@ -201,7 +205,7 @@ export default function SourceAuditPage() {
       .catch((reason: unknown) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Erro inesperado."); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [sheet, applied, appliedColumnFilters, sort, ready, retry]);
+  }, [sheet, applied, appliedColumnFilters, sort, page, ready, retry]);
 
   useEffect(() => {
     if (!ready || !activeColumn) { setValueOptions(undefined); return; }
@@ -243,18 +247,19 @@ export default function SourceAuditPage() {
     };
   }, [activeColumn]);
 
-  function updateUrl(nextSheet: Sheet, filters: GridFilters, columns: ColumnFilters, nextSort: SortState) {
-    window.history.replaceState(null, "", `/source-audit?${makeQuery(nextSheet, filters, columns, nextSort)}`);
+  function updateUrl(nextSheet: Sheet, filters: GridFilters, columns: ColumnFilters, nextSort: SortState, nextPage = 1) {
+    window.history.replaceState(null, "", `/source-audit?${makeQuery(nextSheet, filters, columns, nextSort, nextPage)}`);
   }
   function applyFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextFilters = { importer: draft.importer, search: draft.search.trim(), gap: draft.gap };
+    setPage(1);
     setApplied(nextFilters); setAppliedColumnFilters(draftColumnFilters); setSort(draftSort);
     updateUrl(sheet, nextFilters, draftColumnFilters, draftSort);
   }
   function changeSheet(nextSheet: Sheet) {
     const nextColumns: ColumnFilters = {};
-    setSheet(nextSheet); setDraftColumnFilters(nextColumns); setAppliedColumnFilters(nextColumns);
+    setSheet(nextSheet); setPage(1); setDraftColumnFilters(nextColumns); setAppliedColumnFilters(nextColumns);
     setDraftSort(null); setSort(null);
     updateUrl(nextSheet, applied, nextColumns, null);
   }
@@ -270,6 +275,7 @@ export default function SourceAuditPage() {
     changeSheet(sheetOptions[nextIndex].value);
   }
   function clearFilters() {
+    setPage(1);
     setDraft(emptyFilters); setApplied(emptyFilters); setDraftColumnFilters({}); setAppliedColumnFilters({});
     setDraftSort(null); setSort(null);
     updateUrl(sheet, emptyFilters, {}, null);
@@ -306,9 +312,14 @@ export default function SourceAuditPage() {
   }
   function applyColumnFilter() {
     const nextSort = draftSort;
+    setPage(1);
     setAppliedColumnFilters(draftColumnFilters); setSort(nextSort);
     updateUrl(sheet, applied, draftColumnFilters, nextSort);
     setActiveColumn(undefined);
+  }
+  function changePage(nextPage: number) {
+    setPage(nextPage);
+    updateUrl(sheet, applied, appliedColumnFilters, sort, nextPage);
   }
   function clearColumnFilter(column: string) {
     setDraftColumnFilters(current => { const next = { ...current }; delete next[column]; return next; });
@@ -419,7 +430,7 @@ export default function SourceAuditPage() {
       {error && <div className="notice error" role="alert"><p>{error}</p><button className="button" onClick={() => setRetry(value => value + 1)}>Tentar novamente</button></div>}
       {!loading && !error && result && <>
         <div className="source-grid-toolbar">
-          <p><strong>{formatCount(result.totalCount)}</strong> linha(s) carregadas na planilha{result.rowsBeforeGapFilter !== result.totalCount ? ` · ${formatCount(result.rowsBeforeGapFilter)} antes dos sinais de auditoria` : ""}</p>
+          <p>Exibindo <strong>{formatCount(result.items.length ? (result.page - 1) * result.pageSize + 1 : 0)}-{formatCount((result.page - 1) * result.pageSize + result.items.length)}</strong> de <strong>{formatCount(result.totalCount)}</strong> linhas{result.rowsBeforeGapFilter !== result.totalCount ? ` · ${formatCount(result.rowsBeforeGapFilter)} antes dos sinais de auditoria` : ""}</p>
         </div>
         {result.items.length === 0 ? <p>Nenhuma linha corresponde aos filtros atuais.</p> :
           <div className={draggingGrid ? "source-grid-scroll is-dragging" : "source-grid-scroll"}
@@ -467,6 +478,13 @@ export default function SourceAuditPage() {
               </tr>)}</tbody>
             </table>
           </div>}
+        {Math.ceil(result.totalCount / result.pageSize) > 1 && <nav className="pagination" aria-label="Paginas da planilha">
+          <button className="button secondary" type="button" disabled={result.page <= 1}
+            onClick={() => changePage(result.page - 1)}>Anterior</button>
+          <span>Pagina {result.page} de {Math.ceil(result.totalCount / result.pageSize)}</span>
+          <button className="button" type="button" disabled={result.page >= Math.ceil(result.totalCount / result.pageSize)}
+            onClick={() => changePage(result.page + 1)}>Proxima</button>
+        </nav>}
       </>}
     </section>
     </div>

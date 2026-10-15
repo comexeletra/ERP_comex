@@ -4,7 +4,6 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { formatCount } from "../lib/format-count";
-import { purchaseOrdersCsv } from "../lib/po-export";
 import { portfolioFilterQuery, purchaseOrderListQuery, type PortfolioFilters } from "../lib/portfolio-query";
 
 type Filters = PortfolioFilters;
@@ -19,6 +18,8 @@ type PortfolioSummary = { purchaseOrders: number; linkedProcesses: number; items
   byImporter: Array<{ importer: string; purchaseOrders: number }> };
 type PortfolioSummaryState = { query: string; value: PortfolioSummary };
 type PortfolioSummaryFailure = { query: string; message: string };
+type ExportJob = { id: string; status: string; errorCode: string | null; createdAt: string;
+  expiresAt: string | null; downloadPath: string | null };
 
 const emptyFilters: Filters = { number: "", importer: "", product: "", ipNumber: "" };
 const pageSize = 50;
@@ -37,7 +38,9 @@ export default function PortfolioPage() {
   const [error, setError] = useState<string>();
   const [retry, setRetry] = useState(0);
   const [exporting, setExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState("");
   const [exportError, setExportError] = useState("");
+  const [recentExports, setRecentExports] = useState<ExportJob[]>([]);
   const [summaryState, setSummaryState] = useState<PortfolioSummaryState>();
   const [summaryFailure, setSummaryFailure] = useState<PortfolioSummaryFailure>();
   const [roles, setRoles] = useState<string[]>([]);
@@ -45,6 +48,9 @@ export default function PortfolioPage() {
   useEffect(() => {
     apiFetch("/auth/me").then(async response => {
       if (response.ok) setRoles((await response.json() as { roles: string[] }).roles);
+    }).catch(() => undefined);
+    apiFetch("/api/v1/exports").then(async response => {
+      if (response.ok) setRecentExports((await response.json() as { items: ExportJob[] }).items);
     }).catch(() => undefined);
   }, []);
   const summaryQuery = portfolioFilterQuery(applied).toString();
@@ -122,31 +128,44 @@ export default function PortfolioPage() {
 
   async function downloadCsv() {
     if (exporting || !result?.totalCount) return;
-    setExporting(true); setExportError("");
+    setExporting(true); setExportError(""); setExportStatus("Enviando exportação para a fila…");
     try {
-      const rows: PurchaseOrder[] = [];
-      const seen = new Set<string>();
-      const expectedCount = result.totalCount;
-      if (expectedCount > 5000) throw new Error("A exportação suporta até 5.000 POs por vez. Refine os filtros.");
-      for (let nextPage = 1; nextPage <= Math.ceil(expectedCount / 200); nextPage++) {
-        const response = await apiFetch(`/api/v1/purchase-orders?${queryFor(applied, nextPage, 200)}`);
-        if (!response.ok) throw new Error("Não foi possível consultar todas as POs para exportação.");
-        const data = await response.json() as PurchaseOrderPage;
-        if (data.totalCount !== expectedCount || data.page !== nextPage || !Array.isArray(data.items)) {
-          throw new Error("A carteira mudou durante a exportação. Tente novamente.");
-        }
-        for (const order of data.items) {
-          if (seen.has(order.id)) throw new Error("A carteira mudou durante a exportação. Tente novamente.");
-          seen.add(order.id); rows.push(order);
-        }
+      const created = await apiFetch("/api/v1/exports/purchase-orders", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          number: applied.number, importer: applied.importer,
+          product: applied.product, ipNumber: applied.ipNumber,
+        }),
+      });
+      if (!created.ok) {
+        const body = await created.json().catch(() => null) as { error?: string } | null;
+        throw new Error(body?.error ?? "Não foi possível iniciar a exportação.");
       }
-      if (rows.length !== expectedCount) throw new Error("A carteira mudou durante a exportação. Tente novamente.");
-      const blob = new Blob(["\uFEFF", purchaseOrdersCsv(rows.map(order => ({
-        id: order.id, number: order.number, importer: order.importer,
-        itemCount: order.operationalItemCount, linkedProcessCount: order.linkedProcessCount,
-        itemsWithIp: order.itemsWithIp, itemsWithoutIp: order.itemsWithoutIp,
-        unresolvedIssueCount: order.unresolvedIssueCount,
-      })))], { type: "text/csv;charset=utf-8" });
+      const { id } = await created.json() as { id: string };
+      setRecentExports(current => [{ id, status: "queued", errorCode: null,
+        createdAt: new Date().toISOString(), expiresAt: null, downloadPath: null }, ...current].slice(0, 20));
+      let complete = false;
+      while (!complete) {
+        await new Promise(resolve => window.setTimeout(resolve, 1500));
+        const statusResponse = await apiFetch(`/api/v1/exports/${id}`);
+        if (!statusResponse.ok) throw new Error("Não foi possível consultar o andamento da exportação.");
+        const status = await statusResponse.json() as { status: string; errorCode?: string | null };
+        setRecentExports(current => current.map(job => job.id === id
+          ? { ...job, status: status.status, errorCode: status.errorCode ?? null,
+            downloadPath: status.status === "completed" ? `/api/v1/exports/${id}/download` : null }
+          : job));
+        if (status.status === "failed") {
+          throw new Error(status.errorCode === "EXPORT_TOO_LARGE"
+            ? "A exportação suporta até 5.000 POs. Refine os filtros e tente novamente."
+            : "A exportação falhou. Tente novamente mais tarde.");
+        }
+        if (status.status === "completed") complete = true;
+        else setExportStatus(status.status === "running" ? "Gerando CSV em segundo plano…" : "Aguardando processamento…");
+      }
+      setExportStatus("Baixando arquivo…");
+      const file = await apiFetch(`/api/v1/exports/${id}/download`);
+      if (!file.ok) throw new Error("O arquivo expirou ou não está mais disponível. Gere uma nova exportação.");
+      const blob = await file.blob();
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -155,9 +174,12 @@ export default function PortfolioPage() {
       anchor.click();
       anchor.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      apiFetch("/api/v1/exports").then(async response => {
+        if (response.ok) setRecentExports((await response.json() as { items: ExportJob[] }).items);
+      }).catch(() => undefined);
     } catch (cause) {
       setExportError(cause instanceof Error ? cause.message : "Erro inesperado na exportação.");
-    } finally { setExporting(false); }
+    } finally { setExporting(false); setExportStatus(""); }
   }
 
   const totalPages = result ? Math.ceil(result.totalCount / pageSize) : 0;
@@ -204,7 +226,17 @@ export default function PortfolioPage() {
       {!loading && !error && result && <>
         <p>{result.totalCount} POs encontradas{result.totalCount > 0 && ` · página ${page} de ${totalPages}`}</p>
         {result.totalCount > 0 && <p><button className="button secondary" type="button" disabled={exporting}
-          onClick={() => void downloadCsv()}>{exporting ? "Preparando CSV…" : "Exportar carteira filtrada (CSV)"}</button></p>}
+          onClick={() => void downloadCsv()}>{exporting ? "Processando exportação…" : "Exportar carteira filtrada (CSV)"}</button></p>}
+        {exportStatus && <p className="muted" role="status">{exportStatus}</p>}
+        {recentExports.length > 0 && <details className="historical-disclosure"><summary>Exportações recentes</summary>
+          <ul>{recentExports.slice(0, 5).map(job => <li key={job.id}>
+            {new Date(job.createdAt).toLocaleString("pt-BR")} · {job.status === "queued" ? "na fila"
+              : job.status === "running" ? "em processamento" : job.status === "completed" ? "concluída"
+                : job.status === "failed" ? "falhou" : job.status}
+            {job.downloadPath && <> · <a className="text-link" href={job.downloadPath}>Baixar CSV</a></>}
+            {job.status === "failed" && job.errorCode === "EXPORT_TOO_LARGE" && " · limite de 5.000 POs"}
+          </li>)}</ul>
+        </details>}
         <p className="muted">O CSV contém campos e contagens da carteira visíveis no seu escopo; não inclui saldo nem valores monetários.</p>
         {exportError && <p className="notice error" role="alert">{exportError}</p>}
         {result.items.length === 0 && result.totalCount > 0 ? <p>Esta página está fora do intervalo. <button className="button" onClick={() => navigate(applied, 1)}>Ir para a primeira página</button></p> : null}

@@ -1,6 +1,30 @@
 import type { FastifyInstance, FastifyReply, preHandlerHookHandler } from "fastify";
 import type { Pool } from "pg";
 
+const masterImporterCacheTtlMs = 30_000;
+let masterImporterCache: { expiresAt: number; importers: string[] } | null = null;
+let masterImporterLoad: Promise<string[]> | null = null;
+
+async function getMasterImporterScopes(pool: Pool): Promise<string[]> {
+  if (masterImporterCache && masterImporterCache.expiresAt > Date.now()) {
+    return masterImporterCache.importers;
+  }
+  if (masterImporterLoad) return masterImporterLoad;
+
+  masterImporterLoad = pool.query<{ importer: string }>(
+    `SELECT DISTINCT importer FROM procurement.purchase_order WHERE importer IS NOT NULL
+     UNION SELECT DISTINCT importer FROM imports.import_process WHERE importer IS NOT NULL`,
+  ).then(({ rows }) => {
+    const importers = rows.map((row) => row.importer);
+    masterImporterCache = { importers, expiresAt: Date.now() + masterImporterCacheTtlMs };
+    return importers;
+  }).finally(() => {
+    masterImporterLoad = null;
+  });
+
+  return masterImporterLoad;
+}
+
 /** Permission keys for the business operations already described by the API plan. */
 export type Permission =
   | "purchase-orders.read"
@@ -96,11 +120,7 @@ export async function registerAuthorization(app: FastifyInstance, pool: Pool): P
     const roles = [...new Set(result.rows.flatMap((row) => row.role ? [row.role] : []))];
     let importerScopes = [...new Set(result.rows.flatMap((row) => row.importer_code ? [row.importer_code] : []))];
     if (roles.includes("Master")) {
-      const allImporters = await pool.query<{ importer: string }>(
-        `SELECT DISTINCT importer FROM procurement.purchase_order WHERE importer IS NOT NULL
-         UNION SELECT DISTINCT importer FROM imports.import_process WHERE importer IS NOT NULL`,
-      );
-      importerScopes = allImporters.rows.map((row) => row.importer);
+      importerScopes = await getMasterImporterScopes(pool);
     }
     const permissions = new Set<Permission>();
     for (const role of roles) {

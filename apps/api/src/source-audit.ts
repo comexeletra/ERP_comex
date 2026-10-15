@@ -19,7 +19,6 @@ const querySchema = z.object({
   sortDirection: z.enum(["asc", "desc"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50),
-  all: z.literal("true").optional(),
 }).strict();
 const columnFilterSchema = z.union([
   z.string().trim().min(1).max(200),
@@ -206,17 +205,9 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
          SELECT source.id, source.batch_id, source.sheet_name, source.row_number, source.raw_values,
                 source.error_columns,
                 (${noPo}) AS missing_po, (${noIp}) AS missing_ip, ${calculationError} AS has_calculation_error,
-                coalesce(issues.items, '[]'::jsonb) AS audit_issues,
-                coalesce(issues.issue_count, 0) > 0 AS has_open_data_issue
+                EXISTS (SELECT 1 FROM migration.data_issue AS issue
+                        WHERE issue.source_row_id = source.id AND issue.status = 'OPEN') AS has_open_data_issue
          FROM migration.source_row AS source
-         LEFT JOIN LATERAL (
-           SELECT count(*)::int AS issue_count,
-                  jsonb_agg(jsonb_build_object('code', issue.issue_code, 'fieldName', issue.field_name,
-                    'severity', issue.severity, 'evidence', issue.evidence)
-                    ORDER BY issue.issue_code, issue.field_name) AS items
-           FROM migration.data_issue AS issue
-           WHERE issue.source_row_id = source.id AND issue.status = 'OPEN'
-         ) AS issues ON TRUE
          WHERE btrim(source.raw_values->>'F') = ANY($1::text[])
            AND ($2::text = 'all' OR source.sheet_name = $2)
            AND ($3::text IS NULL OR btrim(source.raw_values->>'F') = $3)
@@ -257,7 +248,6 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
     const parsed = querySchema.safeParse(request.query);
     if (!parsed.success) return problem(reply, 400, "INVALID_QUERY", "Revise a aba, os filtros de coluna ou a paginação.");
     const { sheet, importer, search, gap, page, pageSize, sortColumn, sortDirection } = parsed.data;
-    const allRows = parsed.data.all === "true";
     const columnFilters = parseColumnFilters(parsed.data.filters, sheet, reply);
     if (!columnFilters) return;
     if ((sortColumn && !sortDirection) || (!sortColumn && sortDirection)
@@ -283,22 +273,14 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
       `WITH visible AS MATERIALIZED (
          SELECT source.id, source.batch_id, source.sheet_name, source.row_number,
                 source.raw_values, source.error_columns, btrim(source.raw_values->>'F') AS importer,
-                coalesce(issues.items, '[]'::jsonb) AS audit_issues,
-                coalesce(issues.issue_count, 0) > 0 AS has_open_data_issue,
+                EXISTS (SELECT 1 FROM migration.data_issue AS issue
+                        WHERE issue.source_row_id = source.id AND issue.status = 'OPEN') AS has_open_data_issue,
                 po.id AS purchase_order_id, po.external_number AS po_number,
                 process.id AS process_id, process.ip_number,
                 (${noPo}) AS missing_po,
                 (${noIp}) AS missing_ip,
                 ${calculationError} AS has_calculation_error
          FROM migration.source_row AS source
-         LEFT JOIN LATERAL (
-           SELECT count(*)::int AS issue_count,
-                  jsonb_agg(jsonb_build_object('code', issue.issue_code, 'fieldName', issue.field_name,
-                    'severity', issue.severity, 'evidence', issue.evidence)
-                    ORDER BY issue.issue_code, issue.field_name) AS items
-           FROM migration.data_issue AS issue
-           WHERE issue.source_row_id = source.id AND issue.status = 'OPEN'
-         ) AS issues ON TRUE
          LEFT JOIN procurement.po_line_observation AS observation ON observation.source_row_id = source.id
          LEFT JOIN procurement.purchase_order AS po ON po.id = observation.purchase_order_id
          LEFT JOIN imports.import_process AS process
@@ -323,8 +305,7 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
             OR ($6::text = 'any' AND (source.missing_ip OR source.missing_po OR source.has_calculation_error OR source.has_open_data_issue))
        ), page AS (
          SELECT * FROM gap_filtered AS source ORDER BY ${sortExpression} sheet_name, row_number, id
-         LIMIT CASE WHEN $9::boolean THEN NULL::bigint ELSE $7::bigint END
-         OFFSET CASE WHEN $9::boolean THEN 0 ELSE $8::bigint END
+         LIMIT $7::bigint OFFSET $8::bigint
        )
        SELECT (SELECT count(*)::int FROM gap_filtered) AS total_count,
               (SELECT count(*)::int FROM filtered) AS rows_before_gap_filter,
@@ -343,13 +324,19 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
                 'auditFlags', jsonb_build_object('withoutPurchaseOrder', page.missing_po,
                   'withoutValidIp', page.missing_ip,
                   'cellErrors', jsonb_array_length(page.error_columns),
-                  'dataIssues', page.audit_issues,
+                  'dataIssues', coalesce((
+                    SELECT jsonb_agg(jsonb_build_object('code', issue.issue_code, 'fieldName', issue.field_name,
+                      'severity', issue.severity, 'evidence', issue.evidence)
+                      ORDER BY issue.issue_code, issue.field_name)
+                    FROM migration.data_issue AS issue
+                    WHERE issue.source_row_id = page.id AND issue.status = 'OPEN'
+                  ), '[]'::jsonb),
                   'anyGap', page.missing_ip OR page.missing_po OR page.has_calculation_error OR page.has_open_data_issue)
               ) ORDER BY page.sheet_name, page.row_number, page.id)
                 FILTER (WHERE page.id IS NOT NULL), '[]'::jsonb) AS items
        FROM page`,
       [scopes, sheet, importer || null, JSON.stringify(columnFilters), search || null, gap,
-        pageSize, (page - 1) * pageSize, allRows]);
+        pageSize, (page - 1) * pageSize]);
 
     const columns = sheet === "Pré Embarque" ? preColumns : sheet === "Pós Embarque" ? postColumns
       : [...new Set([...preColumns, ...postColumns])].sort((left, right) => excelColumnNumber(left) - excelColumnNumber(right));
@@ -364,8 +351,8 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
     }
     const items = (result.rows[0]?.items ?? []) as Array<Record<string, unknown>>;
     return {
-      page: allRows ? 1 : page,
-      pageSize: allRows ? Number(result.rows[0]?.total_count ?? 0) : pageSize,
+      page,
+      pageSize,
       sheet, gap, totalCount: Number(result.rows[0]?.total_count ?? 0),
       rowsBeforeGapFilter: Number(result.rows[0]?.rows_before_gap_filter ?? 0),
       summary: { withoutPurchaseOrder: Number(result.rows[0]?.without_po ?? 0),

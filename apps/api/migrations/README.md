@@ -38,6 +38,13 @@ updated API and PCM/PO forms.
 `M031_group_operational_value.sql` adds `Group` as an independent selectable
 value entity in `/catalog/values`, seeded with Energy, Livoltek, Recloser and
 Water. Apply M031 before deploying the API change that accepts values for this entity.
+`M032_export_jobs.sql` adds a durable queue for purchase-order CSV exports.
+Jobs are private to the requesting user and importer scopes, expire after
+completion or terminal failure, and are claimed by the separate export worker.
+Apply M032 before deploying the API and worker that use `jobs.export_job`.
+`M033_open_data_issue_source.sql` indexes open data issues by source row for the
+historical-sheet audit query. It supports fast existence checks across the
+filtered dataset and loads issue evidence only for the current page.
 `M022_purchase_order_ip_event_history.sql` exposes filtered, read-only views of
 the immutable PO/allocation and IP/document audit events. The follow-up handler
 checks importer scope before reading them and renders the split history with
