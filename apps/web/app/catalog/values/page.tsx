@@ -15,12 +15,14 @@ const entities = [
   ["requester", "Solicitante"], ["cost_center", "Centro de custo"], ["broker", "Despachante"],
   ["forwarder", "Agente de carga"],
 ] as const;
-type Option = { entity: string; value: string };
+type Option = { id: string; entity: string; value: string };
 
 export default function OperationalValuesPage() {
   const [options, setOptions] = useState<Option[]>([]);
   const [entity, setEntity] = useState<string>(entities[0][0]);
   const [value, setValue] = useState("");
+  const [editingId, setEditingId] = useState("");
+  const [editValue, setEditValue] = useState("");
   const [jsonValues, setJsonValues] = useState<string[]>([]);
   const [jsonFileName, setJsonFileName] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
@@ -51,6 +53,34 @@ export default function OperationalValuesPage() {
       if (!response.ok) throw new Error(result.detail || "Não foi possível adicionar o valor.");
       setValue(""); await load(); setNotice("Valor adicionado ao cadastro e disponível nos seletores.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao adicionar valor."); }
+    finally { setBusy(false); }
+  }
+
+  function startEditing(option: Option) {
+    setEditingId(option.id);
+    setEditValue(option.value);
+    setError("");
+    setNotice("");
+  }
+
+  function cancelEditing() {
+    setEditingId("");
+    setEditValue("");
+  }
+
+  async function saveEdit(event: FormEvent<HTMLFormElement>, option: Option) {
+    event.preventDefault(); setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await apiFetch(`/api/v1/operational-values/${option.id}`, {
+        method: "PATCH", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expectedValue: option.value, value: editValue, reason: automaticAuditReason }),
+      });
+      const result = await response.json() as { detail?: string; value?: string; unchanged?: boolean };
+      if (!response.ok) throw new Error(result.detail || "Não foi possível editar o valor.");
+      cancelEditing();
+      await load();
+      setNotice(result.unchanged ? "O valor não foi alterado." : "Valor atualizado nos seletores.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao editar valor."); }
     finally { setBusy(false); }
   }
 
@@ -126,7 +156,21 @@ export default function OperationalValuesPage() {
         {entities.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select></label>
       <h3>Valores cadastrados · {visible.length}</h3>
-      {visible.length ? <ul className="entity-value-list">{visible.map(option => <li key={`${option.entity}:${option.value}`}>{option.value}</li>)}</ul> :
+      {visible.length ? <ul className="entity-value-list">{visible.map(option => <li key={option.id}>
+        {editingId === option.id ? <form className="entity-value-edit" onSubmit={event => void saveEdit(event, option)}>
+          <label className="sr-only" htmlFor={`operational-value-${option.id}`}>Valor atualizado</label>
+          <input id={`operational-value-${option.id}`} required maxLength={240} value={editValue}
+            onChange={event => setEditValue(event.target.value)} />
+          <button className="button entity-value-action" disabled={busy || !editValue.trim()}>
+            {busy ? "Salvando…" : "Salvar"}
+          </button>
+          <button className="button secondary entity-value-action" type="button" disabled={busy} onClick={cancelEditing}>Cancelar</button>
+        </form> : <>
+          <span>{option.value}</span>
+          <button className="button secondary entity-value-action" type="button" disabled={busy}
+            aria-label={`Editar ${option.value}`} onClick={() => startEditing(option)}>Editar</button>
+        </>}
+      </li>)}</ul> :
         <p className="muted">Ainda não há valores cadastrados para este campo.</p>}
     </section>
     {canWrite && <section className="card entity-value-form">

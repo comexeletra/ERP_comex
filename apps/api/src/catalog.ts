@@ -22,6 +22,12 @@ const operationalValueMax: Record<string, number> = {
   LOGISTICS_STATUS: 40, CUSTOMS_CHANNEL: 80, CONTAINER_TYPE: 80,
   PRIORITY: 20, UNIT_OF_MEASURE: 32, REQUESTER: 160, COST_CENTER: 80, BROKER: 160, FORWARDER: 160,
 };
+const operationalValueId = z.uuid();
+const operationalValueUpdateBody = z.object({
+  expectedValue: z.string().trim().min(1).max(240),
+  value: z.string().trim().min(1).max(240),
+  reason: z.string().trim().min(8).max(500),
+}).strict();
 const listQuery = z.object({ importer: z.string().trim().min(1).max(120).optional(),
   search: z.string().trim().max(120).optional(), page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25) }).strict();
@@ -74,8 +80,8 @@ function isUniqueError(error: unknown): boolean {
 export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): Promise<void> {
   app.get("/api/v1/operational-values", { config: permissionConfig("catalog.read") }, async (request, reply) => {
     reply.header("cache-control", "no-store");
-    const result = await pool.query<{ entity_key: string; value: string; created_by: string | null }>(
-      `SELECT entity_key, value, created_by FROM catalog.operational_value
+    const result = await pool.query<{ id: string; entity_key: string; value: string; created_by: string | null }>(
+      `SELECT id, entity_key, value, created_by FROM catalog.operational_value
        ORDER BY entity_key, normalized_value`);
     const groupColumn = await pool.query<{ enabled: boolean }>(
       `SELECT EXISTS (SELECT 1 FROM information_schema.columns
@@ -86,7 +92,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
     const userId = request.authContext?.userId;
     return { items: result.rows.filter(row => row.entity_key !== "IMPORTER" || canViewAllImporters
       || scopes.includes(row.value) || row.created_by === userId)
-      .map(row => ({ entity: row.entity_key.toLowerCase(), value: row.value })),
+      .map(row => ({ id: row.id, entity: row.entity_key.toLowerCase(), value: row.value })),
       capabilities: { purchaseOrderGroup: groupColumn.rows[0]?.enabled ?? false } };
   });
 
@@ -188,6 +194,70 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
       throw error;
     } finally { client.release(); }
   });
+
+  app.patch<{ Params: { id: string } }>("/api/v1/operational-values/:id",
+    { config: permissionConfig("catalog.write") }, async (request, reply) => {
+      const id = operationalValueId.safeParse(request.params.id);
+      const body = operationalValueUpdateBody.safeParse(request.body);
+      const actor = request.authContext;
+      if (!id.success || !body.success) {
+        return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "Informe um valor válido para edição.");
+      }
+      if (!actor) return problem(reply, 401, "AUTHENTICATION_REQUIRED", "Sessão ausente.");
+      if (!request.authorizationContext?.roles.some(role => ["Master", "Administrador", "Compras"].includes(role))) {
+        return problem(reply, 403, "PERMISSION_DENIED", "Perfil sem permissão para administrar valores das entidades.");
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const current = await client.query<{ entity_key: string; value: string }>(
+          `SELECT entity_key, value FROM catalog.operational_value WHERE id = $1 FOR UPDATE`, [id.data]);
+        const previous = current.rows[0];
+        if (!previous) {
+          await client.query("ROLLBACK");
+          return problem(reply, 404, "OPERATIONAL_VALUE_NOT_FOUND", "Valor não encontrado.");
+        }
+        if (previous.value !== body.data.expectedValue) {
+          await client.query("ROLLBACK");
+          return problem(reply, 409, "STALE_OPERATIONAL_VALUE", "Este valor foi alterado por outra pessoa. Atualize a lista e tente novamente.");
+        }
+        if (body.data.value.length > operationalValueMax[previous.entity_key]
+          || (previous.entity_key === "CURRENCY" && !/^[A-Z]{3}$/u.test(body.data.value))) {
+          await client.query("ROLLBACK");
+          return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "O valor não respeita o formato do campo escolhido.");
+        }
+        if (previous.value === body.data.value) {
+          await client.query("COMMIT");
+          return { id: id.data, entity: previous.entity_key.toLowerCase(), value: previous.value, unchanged: true };
+        }
+
+        const updated = await client.query<{ entity_key: string; value: string }>(
+          `UPDATE catalog.operational_value SET value = $2 WHERE id = $1
+           RETURNING entity_key, value`, [id.data, body.data.value]);
+        const correlationId = randomUUID();
+        await client.query(
+          `INSERT INTO audit.audit_log
+            (id,aggregate_type,aggregate_id,entity_type,entity_id,operation,field_name,old_value,new_value,actor_id,occurred_at,reason,correlation_id)
+           VALUES ($1,'OPERATIONAL_VALUE',$2,'OPERATIONAL_VALUE',$2,'UPDATE','value',$3::jsonb,$4::jsonb,$5,now(),$6,$7)`,
+          [randomUUID(), id.data,
+            JSON.stringify({ entity: previous.entity_key.toLowerCase(), value: previous.value }),
+            JSON.stringify({ entity: updated.rows[0].entity_key.toLowerCase(), value: updated.rows[0].value }),
+            `${actor.issuer}#${actor.subject}`, body.data.reason, correlationId]);
+        await client.query(
+          `INSERT INTO audit.outbox_message (event_id,event_type,aggregate_type,aggregate_id,payload,occurred_at)
+           VALUES ($1,'catalog.operational_value.updated','OPERATIONAL_VALUE',$2,$3::jsonb,now())`,
+          [correlationId, id.data, JSON.stringify({ id: id.data, entity: updated.rows[0].entity_key.toLowerCase() })]);
+        await client.query("COMMIT");
+        return { id: id.data, entity: updated.rows[0].entity_key.toLowerCase(), value: updated.rows[0].value };
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        if (isUniqueError(error)) {
+          return problem(reply, 409, "DUPLICATE_OPERATIONAL_VALUE", "Esse valor já existe para esta entidade.");
+        }
+        throw error;
+      } finally { client.release(); }
+    });
 
   for (const { path, kind, sourceColumn } of resources.filter(resource => resource.kind !== "NCM")) {
     app.get<{ Querystring: { importer?: string } }>(`/api/v1/${path}/options`,
