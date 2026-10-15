@@ -300,41 +300,58 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
         {process.purchaseOrders.length === 0 && <p>Nenhuma PO vinculada. Linhas sem PO podem aparecer nas observações.</p>}
         {process.purchaseOrders.map(order => <p key={order.id}><Link className="text-link" href={`/purchase-orders/${order.id}`}>PO {order.number} →</Link> · {order.importer} · {order.linkSource}</p>)}
         {canWrite && process.lifecycleStatus === "OPEN" && <div className="operational-allocation">
-          <h3>Distribuir item de uma PO para este IP</h3>
-          <p className="muted">Escolha a PO e o item, confira o saldo e informe a quantidade que será enviada neste IP. A PO fica vinculada ao IP quando a distribuição for salva.</p>
+          <div className="allocation-heading">
+            <div><h3>Distribuir item de uma PO</h3>
+              <p>Escolha o item, confira o saldo e defina quanto ficará neste IP. A PO será vinculada ao confirmar.</p>
+            </div>
+          </div>
           {saveError && <p className="notice error" role="alert">{saveError}</p>}
-          {poSearchMessage && <p className="notice" role="status">{poSearchMessage}</p>}
-          <form className="operational-search" onSubmit={searchPurchaseOrders}>
-            <label>Buscar PO<input value={poQuery} onChange={event => setPoQuery(event.target.value)} placeholder="Número ou parte da PO" /></label>
-            <button className="button secondary" type="submit" disabled={searchingPos}>{searchingPos ? "Buscando…" : "Buscar POs"}</button>
-          </form>
-          <form className="stack-form" onSubmit={distributeItemToProcess}>
-            <label>PO existente<select required value={selectedPoId} onChange={event => void choosePurchaseOrder(event.target.value)}>
-              <option value="">Busque e selecione uma PO</option>
+          {poSearchMessage && <p className="allocation-feedback" role="status">{poSearchMessage}</p>}
+
+          <div className="allocation-step-title"><span>1</span><div><h4>Encontre a PO</h4><p>Pesquise pelo número e selecione uma PO da importadora {process.importer}.</p></div></div>
+          <form className="allocation-po-search" onSubmit={searchPurchaseOrders}>
+            <div className="allocation-search-row">
+              <label>Buscar por número<input value={poQuery} onChange={event => setPoQuery(event.target.value)} placeholder="Ex.: 030201" /></label>
+              <button className="button secondary" type="submit" disabled={searchingPos || !poQuery.trim()}>
+                {searchingPos ? "Buscando…" : "Buscar PO"}
+              </button>
+            </div>
+            <label>PO encontrada<select required value={selectedPoId} disabled={searchingPos || poOptions.length === 0}
+              onChange={event => void choosePurchaseOrder(event.target.value)}>
+              <option value="">{poOptions.length ? "Selecione uma PO" : "Busque uma PO para começar"}</option>
               {poOptions.map(order => <option key={order.id} value={order.id}>{order.number} · {order.importer}</option>)}
             </select></label>
-            {selectedPoId && <>
-              <label>Item da PO<select required value={selectedPoItemId} disabled={searchingPos || poItems.length === 0}
-                onChange={event => { setSelectedPoItemId(event.target.value); setAllocationQuantity(""); }}>
-                <option value="">Selecione um item com saldo</option>
-                {poItems.map(item => <option key={item.id} value={item.id}>
-                  {item.productCode} · linha {item.lineNumber} · saldo {item.remainingQuantity}{item.unit ? ` ${item.unit}` : ""}
-                </option>)}
-              </select></label>
-              {selectedPoItem && <p className="notice" role="status">
-                Saldo atual deste item na PO: <strong>{selectedPoItem.remainingQuantity}{selectedPoItem.unit ? ` ${selectedPoItem.unit}` : ""}</strong>.
-                {remainingAfterAllocation !== null && <> Saldo previsto após esta distribuição: <strong>{remainingAfterAllocation}{selectedPoItem.unit ? ` ${selectedPoItem.unit}` : ""}</strong>.</>}
-              </p>}
-              <label>Quantidade que ficará neste IP<input required inputMode="decimal" value={allocationQuantity}
-                onChange={event => setAllocationQuantity(event.target.value)} placeholder="Ex.: 40" /></label>
-              {selectedPoItem && allocationUnits !== null && remainingUnits !== null && allocationUnits > remainingUnits
-                && <p className="notice error" role="alert">A quantidade informada excede o saldo atual da PO.</p>}
-              <button className="button" disabled={!selectedPoItemId || !allocationQuantity || searchingPos || linkingPo
-                || allocationUnits === null || allocationUnits <= 0n || remainingUnits === null || allocationUnits > remainingUnits}>
-                {linkingPo ? "Distribuindo…" : "Distribuir quantidade para este IP"}
-              </button>
-            </>}
           </form>
+
+          {selectedPoId && <form className="allocation-distribution" onSubmit={distributeItemToProcess}>
+            <div className="allocation-step-title"><span>2</span><div><h4>Escolha o item e a quantidade</h4>
+              <p>Somente itens com saldo disponível aparecem nesta lista.</p></div></div>
+            <label>Item da PO<select required value={selectedPoItemId} disabled={searchingPos || poItems.length === 0}
+              onChange={event => { setSelectedPoItemId(event.target.value); setAllocationQuantity(""); }}>
+              <option value="">{poItems.length ? "Selecione um item" : "Nenhum item com saldo disponível"}</option>
+              {poItems.map(item => <option key={item.id} value={item.id}>
+                {item.productCode} · linha {item.lineNumber} · saldo {formatQuantityUnits(quantityUnits(item.remainingQuantity) ?? 0n)}{item.unit ? ` ${item.unit}` : ""}
+              </option>)}
+            </select></label>
+            {selectedPoItem && <>
+              <div className="allocation-balance" aria-live="polite">
+                <div><span>Saldo disponível na PO</span><strong>{formatQuantityUnits(remainingUnits ?? 0n)}{selectedPoItem.unit ? ` ${selectedPoItem.unit}` : ""}</strong></div>
+                <p>{remainingAfterAllocation !== null
+                  ? <>Após distribuir, restarão <strong>{remainingAfterAllocation}{selectedPoItem.unit ? ` ${selectedPoItem.unit}` : ""}</strong> neste item.</>
+                  : "Informe a quantidade para ver o saldo restante."}</p>
+              </div>
+              <div className="allocation-submit-row">
+                <label>Quantidade para este IP<input required inputMode="decimal" value={allocationQuantity}
+                  onChange={event => setAllocationQuantity(event.target.value)} placeholder="Ex.: 40" /></label>
+                <button className="button" disabled={!selectedPoItemId || !allocationQuantity || searchingPos || linkingPo
+                  || allocationUnits === null || allocationUnits <= 0n || remainingUnits === null || allocationUnits > remainingUnits}>
+                  {linkingPo ? "Distribuindo…" : "Confirmar distribuição"}
+                </button>
+              </div>
+              {selectedPoItem && allocationUnits !== null && remainingUnits !== null && allocationUnits > remainingUnits
+                && <p className="notice error" role="alert">A quantidade informada excede o saldo disponível.</p>}
+            </>}
+          </form>}
         </div>}
       </section>
       <section className="card"><h2>Quantidades distribuídas para este IP</h2>
