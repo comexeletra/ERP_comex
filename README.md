@@ -64,6 +64,6 @@ reais ou backups em commits.
 
 ## Teste ponta a ponta
 
-O workflow API CI executa o sistema completo em um PostgreSQL descartável: inicia a API Fastify, o Next.js e o worker de exportação, autentica pelo login real e percorre o proxy até o banco. O cenário cobre solicitação de compra, criação de PO com itens, distribuição entre dois IPs, saldos, datas independentes, encerramento, indicadores e exportação CSV processada pela fila. Ele roda em pull requests e em pushes para `main` quando API ou frontend mudam.
+O workflow API CI executa o sistema completo em um PostgreSQL descartável: inicia a API Fastify, o Next.js e o worker de exportação, autentica pelo login real e percorre o proxy até o banco. O cenário cobre solicitação de compra, criação de PO com itens, distribuição entre dois IPs, saldos, datas independentes, encerramento, indicadores e exportação Excel (`.xlsx`) processada pela fila. Ele roda em pull requests e em pushes para `main` quando API ou frontend mudam.
 
 Para reproduzir localmente, instale as dependências, aplique as migrations em um PostgreSQL local descartável chamado `*_ci` ou `*_test` e compile a API. Defina `DATABASE_URL` para esse banco e execute `bash .github/scripts/run-system-e2e.sh`. O script valida o destino, inicia API e frontend com credenciais de teste e encerra os processos ao terminar.

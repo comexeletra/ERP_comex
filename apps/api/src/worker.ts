@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
-import { queryPurchaseOrderExport, purchaseOrderExportCsv, type PurchaseOrderExportFilters } from "./purchase-order-exports.js";
+import { queryPurchaseOrderExport, purchaseOrderExportXlsx, type PurchaseOrderExportFilters } from "./purchase-order-exports.js";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL não configurada para o worker.");
@@ -72,13 +72,13 @@ async function claimJob(): Promise<ExportJob | null> {
   return result.rows[0] ?? null;
 }
 
-async function completeJob(job: ExportJob, csv: string): Promise<void> {
+async function completeJob(job: ExportJob, workbook: Buffer): Promise<void> {
   await pool.query(
     `UPDATE jobs.export_job
-     SET status = 'completed', result_text = $3, completed_at = now(),
+     SET status = 'completed', result_binary = $3, result_text = NULL, completed_at = now(),
          expires_at = now() + interval '24 hours', lease_owner = NULL, lease_expires_at = NULL
      WHERE id = $1 AND status = 'running' AND lease_owner = $2`,
-    [job.id, workerId, csv],
+    [job.id, workerId, workbook],
   );
 }
 
@@ -104,10 +104,12 @@ async function failJob(job: ExportJob, error: unknown): Promise<void> {
 
 async function processJob(job: ExportJob): Promise<void> {
   try {
-    if (job.job_type !== "purchase-order-csv") throw new PermanentJobError("UNSUPPORTED_JOB_TYPE");
+    if (job.job_type !== "purchase-order-xlsx" && job.job_type !== "purchase-order-csv") {
+      throw new PermanentJobError("UNSUPPORTED_JOB_TYPE");
+    }
     const result = await queryPurchaseOrderExport(pool, job.importer_scopes, job.parameters);
     if (result.totalCount > 5000) throw new PermanentJobError("EXPORT_TOO_LARGE");
-    await completeJob(job, purchaseOrderExportCsv(result.rows));
+    await completeJob(job, await purchaseOrderExportXlsx(result.rows));
     console.info(JSON.stringify({ event: "export_job_completed", jobId: job.id, rowCount: result.rows.length }));
   } catch (error) {
     await failJob(job, error);

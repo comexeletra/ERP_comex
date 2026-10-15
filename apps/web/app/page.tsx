@@ -126,7 +126,7 @@ export default function PortfolioPage() {
       product: draft.product.trim(), ipNumber: draft.ipNumber.trim() }, 1);
   }
 
-  async function downloadCsv() {
+  async function downloadExcel() {
     if (exporting || !result?.totalCount) return;
     setExporting(true); setExportError(""); setExportStatus("Enviando exportação para a fila…");
     try {
@@ -160,7 +160,7 @@ export default function PortfolioPage() {
             : "A exportação falhou. Tente novamente mais tarde.");
         }
         if (status.status === "completed") complete = true;
-        else setExportStatus(status.status === "running" ? "Gerando CSV em segundo plano…" : "Aguardando processamento…");
+        else setExportStatus(status.status === "running" ? "Gerando arquivo Excel em segundo plano…" : "Aguardando processamento…");
       }
       setExportStatus("Baixando arquivo…");
       const file = await apiFetch(`/api/v1/exports/${id}/download`);
@@ -169,7 +169,7 @@ export default function PortfolioPage() {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `carteira-pos-${new Date().toISOString().slice(0, 10)}.csv`;
+      anchor.download = `carteira-pos-${new Date().toISOString().slice(0, 10)}.xlsx`;
       document.body.append(anchor);
       anchor.click();
       anchor.remove();
@@ -226,18 +226,18 @@ export default function PortfolioPage() {
       {!loading && !error && result && <>
         <p>{result.totalCount} POs encontradas{result.totalCount > 0 && ` · página ${page} de ${totalPages}`}</p>
         {result.totalCount > 0 && <p><button className="button secondary" type="button" disabled={exporting}
-          onClick={() => void downloadCsv()}>{exporting ? "Processando exportação…" : "Exportar carteira filtrada (CSV)"}</button></p>}
+          onClick={() => void downloadExcel()}>{exporting ? "Processando exportação…" : "Exportar carteira filtrada (Excel)"}</button></p>}
         {exportStatus && <p className="muted" role="status">{exportStatus}</p>}
         {recentExports.length > 0 && <details className="historical-disclosure"><summary>Exportações recentes</summary>
           <ul>{recentExports.slice(0, 5).map(job => <li key={job.id}>
             {new Date(job.createdAt).toLocaleString("pt-BR")} · {job.status === "queued" ? "na fila"
               : job.status === "running" ? "em processamento" : job.status === "completed" ? "concluída"
                 : job.status === "failed" ? "falhou" : job.status}
-            {job.downloadPath && <> · <a className="text-link" href={job.downloadPath}>Baixar CSV</a></>}
+            {job.downloadPath && <> · <a className="text-link" href={job.downloadPath}>Baixar Excel</a></>}
             {job.status === "failed" && job.errorCode === "EXPORT_TOO_LARGE" && " · limite de 5.000 POs"}
           </li>)}</ul>
         </details>}
-        <p className="muted">O CSV contém campos e contagens da carteira visíveis no seu escopo; não inclui saldo nem valores monetários.</p>
+        <p className="muted">A planilha Excel contém campos e contagens da carteira visíveis no seu escopo; não inclui saldo nem valores monetários.</p>
         {exportError && <p className="notice error" role="alert">{exportError}</p>}
         {result.items.length === 0 && result.totalCount > 0 ? <p>Esta página está fora do intervalo. <button className="button" onClick={() => navigate(applied, 1)}>Ir para a primeira página</button></p> : null}
         {result.totalCount === 0 ? <p>Nenhuma PO encontrada. Revise os filtros ou limpe a busca.</p> : null}

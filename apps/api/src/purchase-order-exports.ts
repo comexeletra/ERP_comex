@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import ExcelJS from "exceljs";
 
 export type PurchaseOrderExportFilters = {
   number?: string;
@@ -103,16 +104,25 @@ export async function queryPurchaseOrderExport(
   };
 }
 
-function csvCell(value: string | number): string {
-  const text = String(value);
-  const literal = /^[\s\u0000-\u001f]*[=+\-@]/u.test(text) ? `'${text}` : text;
-  return `"${literal.replaceAll('"', '""')}"`;
-}
-
-export function purchaseOrderExportCsv(rows: readonly PurchaseOrderExportRow[]): string {
-  const headers = ["ID", "PO TOTVS", "Importador", "Itens", "IPs vinculados",
-    "Itens com IP", "Itens sem IP", "Pendências abertas"];
-  const lines = rows.map(row => [row.id, row.number, row.importer, row.itemCount,
-    row.linkedProcessCount, row.itemsWithIp, row.itemsWithoutIp, row.unresolvedIssueCount]);
-  return `\uFEFF${[headers, ...lines].map(row => row.map(csvCell).join(",")).join("\r\n")}\r\n`;
+export async function purchaseOrderExportXlsx(rows: readonly PurchaseOrderExportRow[]): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "ERP Comex";
+  workbook.created = new Date();
+  const sheet = workbook.addWorksheet("Carteira de POs", {
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
+  sheet.columns = [
+    { header: "ID", key: "id", width: 38 },
+    { header: "PO TOTVS", key: "number", width: 22 },
+    { header: "Importador", key: "importer", width: 34 },
+    { header: "Itens", key: "itemCount", width: 12 },
+    { header: "IPs vinculados", key: "linkedProcessCount", width: 18 },
+    { header: "Itens com IP", key: "itemsWithIp", width: 16 },
+    { header: "Itens sem IP", key: "itemsWithoutIp", width: 16 },
+    { header: "Pend\u00eancias abertas", key: "unresolvedIssueCount", width: 22 },
+  ];
+  sheet.getRow(1).font = { bold: true };
+  sheet.autoFilter = { from: "A1", to: "H1" };
+  for (const row of rows) sheet.addRow(row);
+  return Buffer.from(await workbook.xlsx.writeBuffer());
 }

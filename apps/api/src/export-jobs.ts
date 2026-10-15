@@ -30,7 +30,7 @@ export async function registerExportJobRoutes(app: FastifyInstance, pool: Pool):
     }>(
       `SELECT id, status, importer_scopes, requested_as_master, error_code, created_at, expires_at
        FROM jobs.export_job
-       WHERE requested_by = $1 AND job_type = 'purchase-order-csv'
+       WHERE requested_by = $1 AND job_type = 'purchase-order-xlsx'
        ORDER BY created_at DESC LIMIT 20`,
       [request.authContext!.userId],
     );
@@ -86,7 +86,7 @@ export async function registerExportJobRoutes(app: FastifyInstance, pool: Pool):
       await client.query(
         `INSERT INTO jobs.export_job
            (id, job_type, requested_by, importer_scopes, requested_as_master, parameters)
-         VALUES ($1, 'purchase-order-csv', $2, $3::text[], $4, $5::jsonb)`,
+         VALUES ($1, 'purchase-order-xlsx', $2, $3::text[], $4, $5::jsonb)`,
         [id, userId, importerScopes, authorization?.roles.includes("Master") ?? false,
           JSON.stringify(parsed.data)],
       );
@@ -138,24 +138,24 @@ export async function registerExportJobRoutes(app: FastifyInstance, pool: Pool):
     const parsedId = jobIdSchema.safeParse(request.params.id);
     if (!parsedId.success) return reply.code(404).send({ error: "Exportação não encontrada." });
     const result = await pool.query<{ importer_scopes: string[]; requested_as_master: boolean;
-      result_text: string | null }>(
-      `SELECT importer_scopes, requested_as_master, result_text
+      result_binary: Buffer | null }>(
+      `SELECT importer_scopes, requested_as_master, result_binary
        FROM jobs.export_job
-       WHERE id = $1 AND requested_by = $2 AND job_type = 'purchase-order-csv'
+       WHERE id = $1 AND requested_by = $2 AND job_type = 'purchase-order-xlsx'
          AND status = 'completed' AND expires_at > now()`,
       [parsedId.data, request.authContext!.userId],
     );
     const job = result.rows[0];
     const authorization = request.authorizationContext;
-    if (!job || !job.result_text
+    if (!job || !job.result_binary
       || !canAccessExport(job.importer_scopes, authorization?.importerScopes ?? [],
         job.requested_as_master, authorization?.roles ?? [])) {
       return reply.code(404).send({ error: "Arquivo de exportação indisponível." });
     }
 
     reply.header("cache-control", "no-store");
-    reply.header("content-type", "text/csv; charset=utf-8");
-    reply.header("content-disposition", 'attachment; filename="carteira-pos.csv"');
-    return reply.send(job.result_text);
+    reply.header("content-type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    reply.header("content-disposition", 'attachment; filename="carteira-pos.xlsx"');
+    return reply.send(job.result_binary);
   });
 }

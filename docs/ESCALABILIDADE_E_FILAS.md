@@ -39,16 +39,16 @@
 
 ## Fila de exportações aplicada
 
-O CSV da carteira de POs agora é solicitado como tarefa persistente. A API
+O Excel da carteira de POs agora é solicitado como tarefa persistente. A API
 responde `202 Accepted`, e um worker separado consulta os dados e prepara o
 arquivo. A tela acompanha o estado e lista até cinco exportações recentes para
-que o usuário possa baixar o CSV por até 24 horas. O acesso exige a mesma conta
+que o usuário possa baixar o arquivo Excel por até 24 horas. O acesso exige a mesma conta
 e os mesmos escopos de importadora usados ao criar a tarefa.
 
 A fila admite até três tarefas ativas por usuário e 500 no total. O worker
 processa uma tarefa por vez, reivindica itens com `FOR UPDATE SKIP LOCKED`, usa
 leases de cinco minutos e tenta novamente falhas transitórias até três vezes,
-com espera crescente. Cada CSV tem limite de 5.000 POs. Arquivos expiram após
+com espera crescente. Cada arquivo Excel tem limite de 5.000 POs. Arquivos expiram após
 24 horas; falhas terminais ficam disponíveis para consulta por sete dias.
 Erros retornam códigos controlados e não persistem detalhes internos.
 

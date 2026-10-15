@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import ExcelJS from "exceljs";
 import { randomBytes, randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { hashPassword } from "../dist/password.js";
@@ -232,11 +233,16 @@ try {
   assert.equal(exportStatus.downloadPath, `/api/v1/exports/${exportJob.id}/download`);
   const download = await fetch(new URL(exportStatus.downloadPath, webOrigin), { headers: { cookie } });
   assert.equal(download.status, 200);
-  assert.match(download.headers.get("content-type") ?? "", /text\/csv/u);
-  const csv = await download.text();
-  assert.ok(csv.includes(`CI-GW-PO-${suffix}`));
-  assert.ok(csv.includes(importer));
-  console.log("End-to-end passed: Next.js proxy, authentication, PostgreSQL, SC/PO/IP flow, reports and queued CSV worker.");
+  assert.match(download.headers.get("content-type") ?? "", /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/u);
+  assert.match(download.headers.get("content-disposition") ?? "", /carteira-pos\.xlsx/u);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(Buffer.from(await download.arrayBuffer()));
+  const sheet = workbook.getWorksheet("Carteira de POs");
+  assert.ok(sheet);
+  const exportedRow = sheet.getRows(2, sheet.rowCount - 1)?.find(row => row.getCell(2).value === `CI-GW-PO-${suffix}`);
+  assert.ok(exportedRow, "The Excel workbook should contain the purchase order created in this flow.");
+  assert.equal(exportedRow.getCell(3).value, importer);
+  console.log("End-to-end passed: Next.js proxy, authentication, PostgreSQL, SC/PO/IP flow, reports and queued Excel worker.");
 } finally {
   await pool.end();
 }
