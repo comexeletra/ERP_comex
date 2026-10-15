@@ -42,6 +42,7 @@ export default function PcmPage() {
   const [importers, setImporters] = useState<Importer[]>([]);
   const [importer, setImporter] = useState("");
   const [items, setItems] = useState<PurchaseRequestChoice[]>([]);
+  const [purchaseRequestsLoading, setPurchaseRequestsLoading] = useState(true);
   const [options, setOptions] = useState<OperationalOption[]>([]);
   const [scNumber, setScNumber] = useState("");
   const [scDate, setScDate] = useState("");
@@ -80,12 +81,14 @@ export default function PcmPage() {
   }, []);
 
   useEffect(() => {
-    if (!importer) { setItems([]); return; }
     const controller = new AbortController();
-    apiFetch(`/api/v1/purchase-requests?importer=${encodeURIComponent(importer)}`, { signal: controller.signal, cache: "no-store" })
+    setPurchaseRequestsLoading(true);
+    const query = importer ? `?importer=${encodeURIComponent(importer)}` : "";
+    apiFetch(`/api/v1/purchase-requests${query}`, { signal: controller.signal, cache: "no-store" })
       .then(response => readApiJson<{ items: PurchaseRequestChoice[] }>(response))
       .then(result => { if (!controller.signal.aborted) setItems(result.items); })
-      .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Não foi possível consultar as SCs."); });
+      .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Não foi possível consultar as SCs."); })
+      .finally(() => { if (!controller.signal.aborted) setPurchaseRequestsLoading(false); });
     return () => controller.abort();
   }, [importer]);
 
@@ -183,10 +186,12 @@ export default function PcmPage() {
     </section>}
     {!loading && <section className="card">
       <h2>SCs cadastradas</h2>
-      <label>Importadora da lista<select disabled={Boolean(editingId)} value={importer} onChange={event => setImporter(event.target.value)}>
+      <label className="sc-list-filter">Importadora<select disabled={Boolean(editingId)} value={importer} onChange={event => setImporter(event.target.value)}>
         <option value="">Selecione</option>{importers.map(item => <option key={item.code} value={item.code}>{item.code}</option>)}
       </select></label>
-      {items.length === 0 ? <p>Nenhuma SC cadastrada para esta importadora.</p> :
+      {purchaseRequestsLoading ? <p role="status">Carregando SCs…</p> : items.length === 0 ? <p>
+        {importer ? "Nenhuma SC cadastrada para esta importadora." : "Nenhuma SC cadastrada."}
+      </p> :
         <div className="table-scroll"><table><thead><tr>
           <th>Número da SC</th><th>Data da SC</th><th>Solicitante</th><th>Plano comercial recebido</th><th>Aprovação</th><th>POs vinculadas</th><th>Ação</th>
         </tr></thead><tbody>{items.map(item => <tr key={item.id}>

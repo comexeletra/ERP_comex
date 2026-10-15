@@ -150,6 +150,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .table-scroll tbody tr:last-child td { border-bottom: 0; }
 .table-scroll .button { white-space: nowrap; }
 .sc-action-buttons { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; }
+.sc-list-filter { display: grid; font-weight: 700; gap: 8px; margin: 0 0 16px; max-width: 320px; }
+.sc-list-filter select { background: #fff; border: 1px solid #b7c5cf; border-radius: 7px; font: inherit; min-height: 42px; padding: 9px 10px; width: 100%; }
 .sc-history { border-top: 1px solid #dce5ea; margin-top: 18px; padding-top: 14px; }
 .sc-history-event { background: #f7fafb; border: 1px solid #dce5ea; border-radius: 10px; margin-top: 10px; padding: 12px 16px; }
 .sc-history-event p { margin: 4px 0 8px; }
