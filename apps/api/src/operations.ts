@@ -190,7 +190,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
                 item.unit_price::text AS "unitPrice", item.currency_code AS currency,
                 item.necessity_date::text AS "necessityDate", item.sc_date::text AS "scDate", item.priority, item.demand,
                 item.requester, item.sc_number AS "scNumber", item.sc_approval_date::text AS "scApprovalDate",
-                item.purpose, item.product_group AS "productGroup", item.cost_center AS "costCenter",
+                item.purpose, item.product_group AS "productGroup", to_jsonb(item)->>'item_group' AS "group", item.cost_center AS "costCenter",
                 item.draft_po AS "draftPo", item.po_approval_date::text AS "poApprovalDate",
                 item.po_sent_date::text AS "poSentDate", item.category, item.ncm, item.remarks,
                 item.commercial_plan_received_date::text AS "commercialPlanReceivedDate",

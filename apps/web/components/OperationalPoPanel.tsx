@@ -5,9 +5,9 @@ import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
 import { blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsEditor,
-  purchaseOrderCommonItemFields, purchaseOrderSpecificItemFields, purchaseOrderItemFields,
+  purchaseOrderCommonItemFields, purchaseOrderSpecificFields, purchaseOrderItemFields,
   purchaseOrderItemFieldsPayload } from "./PurchaseOrderItemFields";
-import { CatalogChoice, CatalogProductSelect, loadCatalogChoices, loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
+import { CatalogChoice, CatalogProductSelect, loadCatalogChoices, loadOperationalCatalog, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 import { loadPurchaseRequests, purchaseRequestOperationalFields, PurchaseRequestChoice, PurchaseRequestSelect } from "./PurchaseRequestSelect";
 import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
 import { formatUsDate } from "../lib/date-format";
@@ -16,7 +16,7 @@ type Item = { id: string; lineNumber: number; externalLineReference: string | nu
   productCode: string; description: string; orderedQuantity: string; unit: string | null;
   unitPrice: string | null; currency: string | null; sourceKind: string; sourceStatus: string | null;
   necessityDate: string | null; priority: string | null; demand: string | null; requester: string | null;
-  scNumber: string | null; scApprovalDate: string | null; purpose: string | null; productGroup: string | null;
+  scNumber: string | null; scApprovalDate: string | null; purpose: string | null; productGroup: string | null; group: string | null;
   costCenter: string | null; draftPo: string | null; poApprovalDate: string | null; poSentDate: string | null;
   category: string | null; ncm: string | null; remarks: string | null; commercialPlanReceivedDate: string | null;
   mrpCompletedDate: string | null; targetMrpDays: number | null; targetOrderDays: number | null;
@@ -88,15 +88,15 @@ async function loadFollowupItems(poId: string, signal?: AbortSignal): Promise<Fo
   return followup.items;
 }
 
-function combineOperationalItems(items: Item[], followupItems: FollowupItem[]): Item[] {
+function combineOperationalItems(items: Item[], followupItems: FollowupItem[], supportsGroup: boolean): Item[] {
   const byId = new Map(followupItems.map(item => [item.id, item]));
   return items.map(item => {
     const followup = byId.get(item.id);
-    if (!followup || purchaseOrderItemFields.some(field =>
-      !Object.prototype.hasOwnProperty.call(followup, field.key))) {
+    if (!followup || purchaseOrderItemFields.some(field => (field.key !== "group" || supportsGroup)
+      && !Object.prototype.hasOwnProperty.call(followup, field.key))) {
       throw new Error("A API não retornou todos os campos operacionais dos produtos.");
     }
-    const fields = Object.fromEntries(purchaseOrderItemFields.map(field => [field.key, followup[field.key]]));
+    const fields = Object.fromEntries(purchaseOrderItemFields.map(field => [field.key, followup[field.key] ?? ""]));
     return { ...item, ...fields };
   });
 }
@@ -162,7 +162,9 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   const [products, setProducts] = useState<CatalogChoice[]>([]);
   const [suppliers, setSuppliers] = useState<CatalogChoice[]>([]);
   const [options, setOptions] = useState<OperationalOption[]>([]);
+  const [supportsGroup, setSupportsGroup] = useState(false);
   const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequestChoice[]>([]);
+  const specificItemFields = purchaseOrderSpecificFields(supportsGroup);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -171,10 +173,10 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       apiFetch(`/api/v1/purchase-orders/${id}/operational`, { signal: controller.signal, cache: "no-store" }),
       loadFollowupItems(id, controller.signal),
       apiFetch("/auth/me", { signal: controller.signal }),
-      loadOperationalOptions(),
-    ]).then(async ([poResponse, followupItems, identityResponse, optionValues]) => {
+      loadOperationalCatalog(),
+    ]).then(async ([poResponse, followupItems, identityResponse, operationalCatalog]) => {
       const operationalPo = await responseData<OperationalPo>(poResponse);
-      const po = { ...operationalPo, items: combineOperationalItems(operationalPo.items, followupItems) };
+      const po = { ...operationalPo, items: combineOperationalItems(operationalPo.items, followupItems, operationalCatalog.purchaseOrderGroup) };
       const identity = await responseData<{ roles: string[] }>(identityResponse);
       const [productChoices, supplierChoices] = await Promise.all([
         loadCatalogChoices("products", po.importer), loadCatalogChoices("suppliers", po.importer),
@@ -182,7 +184,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       const requestChoices = identity.roles.some(role => poWriters.has(role))
         ? await loadPurchaseRequests(po.importer, controller.signal) : [];
       if (controller.signal.aborted) return;
-      setData(po); setRoles(identity.roles); setOptions(optionValues);
+      setData(po); setRoles(identity.roles); setOptions(operationalCatalog.items);
+      setSupportsGroup(operationalCatalog.purchaseOrderGroup);
       setProducts(productChoices); setSuppliers(supplierChoices);
       setPurchaseRequests(requestChoices); setPurchaseRequestId(po.purchaseRequestId ?? "");
       setNumber(po.number);
@@ -292,7 +295,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       orderedQuantity: draft.orderedQuantity.replace(",", "."), unit: draft.unit,
       unitPrice: draft.unitPrice ? draft.unitPrice.replace(",", ".") : null,
       currency: draft.currency ? draft.currency.toUpperCase() : null, reason: automaticAuditReason };
-    const fields = purchaseOrderItemFieldsPayload(draft.operational, true, purchaseOrderSpecificItemFields);
+    const fields = purchaseOrderItemFieldsPayload(draft.operational, true, specificItemFields);
     await save(async () => {
       const route = `/api/v1/purchase-orders/${id}/items/${item.id}/complete`;
       const result = await apiFetch(route, { method: "PATCH",
@@ -344,7 +347,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         unit: draft.unit, unitPrice: draft.unitPrice ? draft.unitPrice.replace(",", ".") : null,
         currency: draft.currency ? draft.currency.toUpperCase() : null, reason: automaticAuditReason };
       const operational = {
-        ...purchaseOrderItemFieldsPayload(draft.operational, false, purchaseOrderSpecificItemFields),
+        ...purchaseOrderItemFieldsPayload(draft.operational, false, specificItemFields),
         ...purchaseOrderItemFieldsPayload(commonOperationalDraft, false, purchaseOrderCommonItemFields),
       };
       const route = `/api/v1/purchase-orders/${id}/items/complete`;
@@ -543,7 +546,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
               <label>Moeda do preço<OperationalOptionSelect entity="currency" value={draft.currency} values={options} onChange={currency => setDraft({ currency })} /></label>
             </div>
             <h5>Planejamento e acompanhamento</h5>
-            <OperationalFieldsEditor fields={purchaseOrderSpecificItemFields} values={draft.operational} options={options}
+            <OperationalFieldsEditor fields={specificItemFields} values={draft.operational} options={options}
               setValues={operational => setDraft({ operational })} />
             <PurchaseOrderCalculatedFields quantity={draft.orderedQuantity} unitPrice={draft.unitPrice} currency={draft.currency} />
             <button className="button" disabled={saving || commonFieldsTouched.size > 0}>Salvar todos os campos deste item</button>
@@ -564,7 +567,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             <label>Preço unitário<input inputMode="decimal" value={itemDraft.unitPrice} onChange={event => setItemDraft({ ...itemDraft, unitPrice: event.target.value })} /></label>
             <label>Moeda do preço<OperationalOptionSelect entity="currency" value={itemDraft.currency} values={options} onChange={currency => setItemDraft({ ...itemDraft, currency })} /></label>
           </div>
-          <OperationalFieldsEditor fields={purchaseOrderSpecificItemFields} values={itemDraft.operational} options={options}
+            <OperationalFieldsEditor fields={specificItemFields} values={itemDraft.operational} options={options}
             setValues={operational => setItemDraft({ ...itemDraft, operational })} />
           <PurchaseOrderCalculatedFields quantity={itemDraft.orderedQuantity} unitPrice={itemDraft.unitPrice} currency={itemDraft.currency} />
           <button className="button" disabled={saving || (commonFieldsTouched.size > 0 && data.items.length > 0)}>Salvar item completo</button>

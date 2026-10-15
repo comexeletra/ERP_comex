@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, readApiJson } from "../../lib/api";
 import { automaticAuditReason } from "../../lib/audit";
 import { PurchaseRequestChoice } from "../../components/PurchaseRequestSelect";
+import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "../../components/OperationalOptionSelect";
 
 type Importer = { code: string };
 
@@ -12,6 +13,7 @@ export default function PcmPage() {
   const [importers, setImporters] = useState<Importer[]>([]);
   const [importer, setImporter] = useState("");
   const [items, setItems] = useState<PurchaseRequestChoice[]>([]);
+  const [options, setOptions] = useState<OperationalOption[]>([]);
   const [scNumber, setScNumber] = useState("");
   const [scDate, setScDate] = useState("");
   const [requester, setRequester] = useState("");
@@ -27,13 +29,15 @@ export default function PcmPage() {
     const controller = new AbortController();
     Promise.all([
       apiFetch("/auth/me", { signal: controller.signal }),
-      apiFetch("/api/v1/importers", { signal: controller.signal }),
-    ]).then(async ([identityResponse, importersResponse]) => {
+      apiFetch("/api/v1/importers", { signal: controller.signal, cache: "no-store" }),
+      loadOperationalOptions(),
+    ]).then(async ([identityResponse, importersResponse, optionValues]) => {
       const identity = await readApiJson<{ roles: string[] }>(identityResponse);
       const result = await readApiJson<{ items: Importer[] }>(importersResponse);
       if (controller.signal.aborted) return;
       setRoles(identity.roles);
       setImporters(result.items);
+      setOptions(optionValues);
       if (result.items[0]) setImporter(current => current || result.items[0].code);
     }).catch(cause => {
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Não foi possível carregar os dados do PCM.");
@@ -95,7 +99,8 @@ export default function PcmPage() {
           <label>Data da SC<input required type="date" value={scDate} onChange={event => setScDate(event.target.value)} /></label>
           <label>Data de recebimento do plano comercial<input type="date" value={commercialPlanReceivedDate}
             onChange={event => setCommercialPlanReceivedDate(event.target.value)} /></label>
-          <label>Solicitante<input required maxLength={160} value={requester} onChange={event => setRequester(event.target.value)} /></label>
+          <label>Solicitante<OperationalOptionSelect required entity="requester" value={requester} values={options}
+            onChange={setRequester} /></label>
           <label>Data de aprovação<input type="date" value={approvalDate} onChange={event => setApprovalDate(event.target.value)} /></label>
         </div>
         <button className="button" disabled={saving || !importer}>{saving ? "Salvando SC…" : "Cadastrar SC"}</button>

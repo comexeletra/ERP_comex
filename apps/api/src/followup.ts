@@ -14,7 +14,8 @@ const itemFields: Record<string, [string, FieldType, number?]> = {
   demand: ["demand", "text", 160], requester: ["requester", "text", 160],
   scNumber: ["sc_number", "text", 80], scApprovalDate: ["sc_approval_date", "date"],
   scDate: ["sc_date", "date"],
-  purpose: ["purpose", "text", 160], productGroup: ["product_group", "text", 120], costCenter: ["cost_center", "text", 80],
+  purpose: ["purpose", "text", 160], productGroup: ["product_group", "text", 120],
+  group: ["item_group", "text", 120], costCenter: ["cost_center", "text", 80],
   draftPo: ["draft_po", "text", 80], poApprovalDate: ["po_approval_date", "date"],
   poSentDate: ["po_sent_date", "date"], category: ["category", "text", 120],
   ncm: ["ncm", "text", 16], remarks: ["remarks", "text", 4000],
@@ -377,7 +378,8 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
           supplier_text AS "supplierText", order_date::text AS "orderDate"
         FROM procurement.purchase_order WHERE id=$1 AND importer=ANY($2::text[])`, [id.data, scopes]);
       if (!po.rows[0]) return problem(reply, 404, "RESOURCE_NOT_FOUND", "PO não encontrada.");
-      const items = await pool.query(`SELECT * FROM procurement.purchase_order_item WHERE purchase_order_id=$1 ORDER BY line_number`, [id.data]);
+      const items = await pool.query(`SELECT item.*, to_jsonb(item)->>'item_group' AS "group"
+        FROM procurement.purchase_order_item item WHERE item.purchase_order_id=$1 ORDER BY item.line_number`, [id.data]);
       const links = await pool.query(`SELECT a.id AS allocation_id, a.purchase_order_item_id AS item_id,
         a.quantity::text AS allocation_quantity, a.notes AS allocation_notes,
         a.factory_ship_date::text AS factory_ship_date, a.version::text AS allocation_version, p.*

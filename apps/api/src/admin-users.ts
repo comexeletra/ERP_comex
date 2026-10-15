@@ -32,7 +32,9 @@ async function masterOnly(request: FastifyRequest, reply: FastifyReply): Promise
 async function validImporters(pool: Pool, scopes: string[]): Promise<boolean> {
   const result = await pool.query<{ importer: string }>(
     `SELECT DISTINCT importer FROM procurement.purchase_order WHERE importer = ANY($1::text[])
-     UNION SELECT DISTINCT importer FROM imports.import_process WHERE importer = ANY($1::text[])`,
+     UNION SELECT DISTINCT importer FROM imports.import_process WHERE importer = ANY($1::text[])
+     UNION SELECT value AS importer FROM catalog.operational_value
+       WHERE entity_key = 'IMPORTER' AND value = ANY($1::text[])`,
     [scopes],
   );
   return result.rows.length === scopes.length;
@@ -56,6 +58,7 @@ export async function registerAdminUserRoutes(app: FastifyInstance, pool: Pool):
     const result = await pool.query<{ importer: string }>(
       `SELECT DISTINCT importer FROM procurement.purchase_order WHERE importer IS NOT NULL
        UNION SELECT DISTINCT importer FROM imports.import_process WHERE importer IS NOT NULL
+       UNION SELECT value AS importer FROM catalog.operational_value WHERE entity_key = 'IMPORTER'
        ORDER BY importer`,
     );
     return { items: result.rows.map((row) => row.importer) };

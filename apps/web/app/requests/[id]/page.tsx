@@ -6,6 +6,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 import { formatUsDateTime } from "../../../lib/date-format";
 import { canWriteRequests } from "../../../lib/request-permissions";
+import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "../../../components/OperationalOptionSelect";
 
 type RequestDetail = { id: string; requestNumber: string; importer: string; sourceKind: string;
   requesterReference: string; reason: string; notes: string; status: string; version: string;
@@ -21,6 +22,7 @@ const blankItem = (): DraftItem => ({ description: "", purposeText: "", costCent
 export default function RequestDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [request, setRequest] = useState<RequestDetail>();
+  const [options, setOptions] = useState<OperationalOption[]>([]);
   const [canWrite, setCanWrite] = useState(false);
   const [draft, setDraft] = useState<RequestDraft>();
   const [loading, setLoading] = useState(true);
@@ -39,11 +41,14 @@ export default function RequestDetailPage() {
     Promise.all([
       apiFetch("/auth/me", { signal: controller.signal }),
       apiFetch(`/api/v1/requests/${encodeURIComponent(id)}`, { signal: controller.signal }),
+      loadOperationalOptions(),
     ])
-      .then(async ([identityResponse, response]) => {
+      .then(async ([identityResponse, response, optionValues]) => {
         if (!identityResponse.ok) throw new Error("Sua sessão expirou. Entre novamente.");
         const identity = await identityResponse.json() as { roles: string[] };
-        if (!controller.signal.aborted) setCanWrite(canWriteRequests(identity.roles));
+        if (!controller.signal.aborted) {
+          setCanWrite(canWriteRequests(identity.roles)); setOptions(optionValues);
+        }
         if (response.status === 401) throw new Error("Sua sessão expirou. Entre novamente.");
         if (response.status === 403) throw new Error("Seu perfil não pode consultar esta solicitação.");
         if (response.status === 404) throw new Error("Solicitação não encontrada no seu escopo.");
@@ -147,8 +152,8 @@ export default function RequestDetailPage() {
         {draft && <form className="stack-form request-form" onSubmit={save}>
           <h2>Editar solicitação</h2>
           <p className="muted">A edição está disponível enquanto o status for Enviada. Número, importador e status não podem ser alterados aqui.</p>
-          <label>Solicitante / referência<input required maxLength={160} value={draft.requesterReference}
-            onChange={event => setDraft(current => current && ({ ...current, requesterReference: event.target.value }))} /></label>
+          <label>Solicitante / referência<OperationalOptionSelect required entity="requester" value={draft.requesterReference} values={options}
+            onChange={requesterReference => setDraft(current => current && ({ ...current, requesterReference }))} /></label>
           <label>Motivo da solicitação<textarea required minLength={8} maxLength={2000} value={draft.reason}
             onChange={event => setDraft(current => current && ({ ...current, reason: event.target.value }))} /></label>
           <label>Observações gerais<textarea maxLength={2000} value={draft.notes}
@@ -159,10 +164,10 @@ export default function RequestDetailPage() {
             <label>Descrição informada pelo solicitante<textarea required maxLength={1000} value={item.description}
               onChange={event => updateItem(index, { description: event.target.value })} /></label>
             <div className="catalog-controls">
-              <label>Finalidade informada (opcional)<input maxLength={500} value={item.purposeText}
-                onChange={event => updateItem(index, { purposeText: event.target.value })} /></label>
-              <label>Centro de custo informado (opcional)<input maxLength={160} value={item.costCenterText}
-                onChange={event => updateItem(index, { costCenterText: event.target.value })} /></label>
+              <label>Finalidade informada (opcional)<OperationalOptionSelect entity="purpose" value={item.purposeText} values={options}
+                onChange={purposeText => updateItem(index, { purposeText })} /></label>
+              <label>Centro de custo informado (opcional)<OperationalOptionSelect entity="cost_center" value={item.costCenterText} values={options}
+                onChange={costCenterText => updateItem(index, { costCenterText })} /></label>
             </div>
             {draft.items.length > 1 && <button className="button secondary" type="button" aria-label={`Remover item ${index + 1}`}
               onClick={() => setDraft(current => current && ({ ...current,

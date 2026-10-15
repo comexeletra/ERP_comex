@@ -20,7 +20,7 @@ const operationalValueMax: Record<string, number> = {
   IMPORTER: 120, INCOTERM: 20, TRANSPORT_MODE: 40, PORT_LOADING: 160, PORT_DISCHARGE: 160,
   CURRENCY: 3, CATEGORY: 120, PRODUCT_GROUP: 120, GROUP: 120, PURPOSE: 160, DEMAND: 160,
   LOGISTICS_STATUS: 40, CUSTOMS_CHANNEL: 80, CONTAINER_TYPE: 80,
-  PRIORITY: 40, UNIT_OF_MEASURE: 32, REQUESTER: 160, COST_CENTER: 80, BROKER: 160, FORWARDER: 160,
+  PRIORITY: 20, UNIT_OF_MEASURE: 32, REQUESTER: 160, COST_CENTER: 80, BROKER: 160, FORWARDER: 160,
 };
 const listQuery = z.object({ importer: z.string().trim().min(1).max(120).optional(),
   search: z.string().trim().max(120).optional(), page: z.coerce.number().int().min(1).default(1),
@@ -72,16 +72,22 @@ function isUniqueError(error: unknown): boolean {
 }
 
 export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): Promise<void> {
-  app.get("/api/v1/operational-values", { config: permissionConfig("catalog.read") }, async (request) => {
+  app.get("/api/v1/operational-values", { config: permissionConfig("catalog.read") }, async (request, reply) => {
+    reply.header("cache-control", "no-store");
     const result = await pool.query<{ entity_key: string; value: string; created_by: string | null }>(
       `SELECT entity_key, value, created_by FROM catalog.operational_value
        ORDER BY entity_key, normalized_value`);
+    const groupColumn = await pool.query<{ enabled: boolean }>(
+      `SELECT EXISTS (SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'procurement' AND table_name = 'purchase_order_item'
+         AND column_name = 'item_group') AS enabled`);
     const scopes = request.authorizationContext?.importerScopes ?? [];
     const canViewAllImporters = request.authorizationContext?.roles.some(role => ["Master", "Administrador"].includes(role)) ?? false;
     const userId = request.authContext?.userId;
     return { items: result.rows.filter(row => row.entity_key !== "IMPORTER" || canViewAllImporters
       || scopes.includes(row.value) || row.created_by === userId)
-      .map(row => ({ entity: row.entity_key.toLowerCase(), value: row.value })) };
+      .map(row => ({ entity: row.entity_key.toLowerCase(), value: row.value })),
+      capabilities: { purchaseOrderGroup: groupColumn.rows[0]?.enabled ?? false } };
   });
 
   app.post("/api/v1/operational-values", { config: permissionConfig("catalog.write") }, async (request, reply) => {
@@ -231,7 +237,8 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
       });
   }
 
-  app.get("/api/v1/importers", { config: permissionConfig("catalog.read") }, async (request) => {
+  app.get("/api/v1/importers", { config: permissionConfig("catalog.read") }, async (request, reply) => {
+    reply.header("cache-control", "no-store");
     const scopes = request.authorizationContext?.importerScopes ?? [];
     const result = await pool.query<{ importer: string; po_count: number }>(
       `SELECT available.importer,

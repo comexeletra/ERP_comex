@@ -28,6 +28,7 @@ export const purchaseOrderItemFields: OperationalField[] = [
   { key: "poSentDate", label: "Data de envio da PO", type: "date" },
   { key: "category", label: "Categoria", type: "select", entity: "category" },
   { key: "productGroup", label: "Grupo do produto", type: "select", entity: "product_group" },
+  { key: "group", label: "Group", type: "select", entity: "group" },
   { key: "ncm", label: "NCM", max: 16 },
   { key: "remarks", label: "Observações do item", max: 4000 },
   { key: "mrpCompletedDate", label: "Data de conclusão do MRP", type: "date" },
@@ -45,6 +46,10 @@ const sharedItemFieldKeys = new Set([
 ]);
 export const purchaseOrderCommonItemFields = purchaseOrderItemFields.filter(field => sharedItemFieldKeys.has(field.key));
 export const purchaseOrderSpecificItemFields = purchaseOrderItemFields.filter(field => !sharedItemFieldKeys.has(field.key));
+export function purchaseOrderSpecificFields(supportsGroup: boolean) {
+  return supportsGroup ? purchaseOrderSpecificItemFields
+    : purchaseOrderSpecificItemFields.filter(field => field.key !== "group");
+}
 
 export function blankPurchaseOrderItemFields(): OperationalFieldDraft {
   return Object.fromEntries(purchaseOrderItemFields.map(field => [field.key, ""]));

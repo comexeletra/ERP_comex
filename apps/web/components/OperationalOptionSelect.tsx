@@ -5,6 +5,14 @@ import { createPortal } from "react-dom";
 import { apiFetch } from "../lib/api";
 
 export type OperationalOption = { entity: string; value: string };
+export type OperationalCatalog = { items: OperationalOption[]; purchaseOrderGroup: boolean };
+
+export async function loadOperationalCatalog(): Promise<OperationalCatalog> {
+  const response = await apiFetch("/api/v1/operational-values", { cache: "no-store" });
+  if (!response.ok) throw new Error("Não foi possível carregar os valores operacionais.");
+  const result = await response.json() as { items: OperationalOption[]; capabilities?: { purchaseOrderGroup?: boolean } };
+  return { items: result.items, purchaseOrderGroup: result.capabilities?.purchaseOrderGroup === true };
+}
 
 export function OperationalOptionSelect({ entity, value, values, onChange, required = false }:
   { entity: string; value: string; values: OperationalOption[]; onChange: (value: string) => void; required?: boolean }) {
@@ -18,7 +26,7 @@ export function OperationalOptionSelect({ entity, value, values, onChange, requi
 }
 
 export async function loadOperationalOptions(): Promise<OperationalOption[]> {
-  const response = await apiFetch("/api/v1/operational-values");
+  const response = await apiFetch("/api/v1/operational-values", { cache: "no-store" });
   if (!response.ok) throw new Error("NÃ£o foi possÃ­vel carregar as opÃ§Ãµes dos campos.");
   return (await response.json() as { items: OperationalOption[] }).items;
 }

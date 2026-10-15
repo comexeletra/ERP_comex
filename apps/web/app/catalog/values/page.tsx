@@ -30,7 +30,9 @@ export default function OperationalValuesPage() {
   const [notice, setNotice] = useState("");
 
   const load = useCallback(async () => {
-    const [valuesResponse, identityResponse] = await Promise.all([apiFetch("/api/v1/operational-values"), apiFetch("/auth/me")]);
+    const [valuesResponse, identityResponse] = await Promise.all([
+      apiFetch("/api/v1/operational-values", { cache: "no-store" }), apiFetch("/auth/me"),
+    ]);
     const values = await valuesResponse.json() as { items?: Option[]; detail?: string };
     const identity = await identityResponse.json() as { roles?: string[] };
     if (!valuesResponse.ok || !identityResponse.ok) throw new Error(values.detail || "Não foi possível carregar os cadastros.");

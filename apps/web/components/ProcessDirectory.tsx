@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
+import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 
 type Process = { id: string; ipNumber: string; importer: string; logisticsStatus: string | null; lifecycleStatus?: "OPEN" | "CLOSED"; qualityStatus: string; purchaseOrderCount: number; historicalLineCount: number; operationalAllocationCount: number; historicalCostCount: number };
 type Page = { page: number; pageSize: number; totalCount: number; items: Process[] };
@@ -20,11 +21,13 @@ export default function ProcessDirectory() {
   const [compatibilityWarning, setCompatibilityWarning] = useState("");
   const [retry, setRetry] = useState(0);
   const [roles, setRoles] = useState<string[]>([]);
+  const [options, setOptions] = useState<OperationalOption[]>([]);
 
   useEffect(() => {
     apiFetch("/auth/me").then(async response => {
       if (response.ok) setRoles((await response.json() as { roles: string[] }).roles);
     }).catch(() => undefined);
+    loadOperationalOptions().then(setOptions).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -81,7 +84,7 @@ export default function ProcessDirectory() {
     <section className="card"><form className="portfolio-filter" onSubmit={apply}>
       <label>IP<input value={draft.ipNumber} onChange={event => setDraft({ ...draft, ipNumber: event.target.value })} placeholder="NH-017/2025" /></label>
       <label>Importador<input value={draft.importer} onChange={event => setDraft({ ...draft, importer: event.target.value })} /></label>
-      <label>Status logístico<input value={draft.logisticsStatus} onChange={event => setDraft({ ...draft, logisticsStatus: event.target.value })} /></label>
+      <label>Status logístico<OperationalOptionSelect entity="logistics_status" value={draft.logisticsStatus} values={options} onChange={logisticsStatus => setDraft({ ...draft, logisticsStatus })} /></label>
       <label>Qualidade<input value={draft.qualityStatus} onChange={event => setDraft({ ...draft, qualityStatus: event.target.value })} /></label>
       <button className="button">Filtrar</button><button type="button" className="button secondary" onClick={() => { setDraft(empty); navigate(empty, 1); }}>Limpar</button>
     </form></section>

@@ -7,10 +7,10 @@ import { apiFetch, isMissingApiRoute, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
 import {
   blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsEditor,
-  purchaseOrderCommonItemFields, purchaseOrderSpecificItemFields, purchaseOrderItemFieldsPayload,
+  purchaseOrderCommonItemFields, purchaseOrderSpecificFields, purchaseOrderItemFieldsPayload,
 } from "./PurchaseOrderItemFields";
 import {
-  CatalogChoice, CatalogProductSelect, loadCatalogChoices, loadOperationalOptions, OperationalOption,
+  CatalogChoice, CatalogProductSelect, loadCatalogChoices, loadOperationalCatalog, OperationalOption,
   OperationalOptionSelect,
 } from "./OperationalOptionSelect";
 import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
@@ -74,10 +74,12 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
   const [suppliers, setSuppliers] = useState<CatalogChoice[]>([]);
   const [products, setProducts] = useState<CatalogChoice[]>([]);
   const [options, setOptions] = useState<OperationalOption[]>([]);
+  const [supportsGroup, setSupportsGroup] = useState(false);
   const [items, setItems] = useState<PoItemDraft[]>([blankPoItem()]);
   const [commonItemFields, setCommonItemFields] = useState<OperationalFieldDraft>(blankPurchaseOrderItemFields);
   const [createdPoId, setCreatedPoId] = useState("");
   const [draftReady, setDraftReady] = useState(false);
+  const specificItemFields = purchaseOrderSpecificFields(supportsGroup);
 
   useEffect(() => {
     if (kind !== "po") { setDraftReady(true); return; }
@@ -111,13 +113,14 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
   }, [kind, draftReady, importer, number, supplier, orderDate, notes, items, commonItemFields, purchaseRequestId, createdPoId]);
 
   useEffect(() => {
-    Promise.all([apiFetch("/auth/me"), apiFetch("/api/v1/importers"), loadOperationalOptions()])
-      .then(async ([identity, list, optionValues]) => {
+    Promise.all([apiFetch("/auth/me"), apiFetch("/api/v1/importers", { cache: "no-store" }), loadOperationalCatalog()])
+      .then(async ([identity, list, operationalCatalog]) => {
         if (!identity.ok || !list.ok) throw new Error("Não foi possível consultar suas permissões e importadoras.");
         const user = await identity.json() as { roles: string[] };
         const data = await list.json() as { items: Array<{ code: string }> };
         setRoles(user.roles);
-        setOptions(optionValues);
+        setOptions(operationalCatalog.items);
+        setSupportsGroup(operationalCatalog.purchaseOrderGroup);
         setImporters(data.items.map(item => item.code));
         if (data.items[0]) setImporter(current => current || data.items[0].code);
       })
@@ -180,7 +183,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
         unitPrice: item.unitPrice ? item.unitPrice.replace(",", ".") : null,
         currency: item.currency ? item.currency.toUpperCase() : null, reason: automaticAuditReason },
       fields: {
-        ...purchaseOrderItemFieldsPayload(item.operational, false, purchaseOrderSpecificItemFields),
+        ...purchaseOrderItemFieldsPayload(item.operational, false, specificItemFields),
         ...purchaseOrderItemFieldsPayload(commonItemFields, false, purchaseOrderCommonItemFields),
       },
     }));
@@ -260,7 +263,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
         }));
 
         const fields = {
-          ...purchaseOrderItemFieldsPayload(item.operational, false, purchaseOrderSpecificItemFields),
+          ...purchaseOrderItemFieldsPayload(item.operational, false, specificItemFields),
           ...purchaseOrderItemFieldsPayload(commonItemFields, false, purchaseOrderCommonItemFields),
         };
         expectedItems.set(createdItem.id, fields);
@@ -386,7 +389,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
                 onChange={currency => updateItem(index, { currency })} /></label>
             </div>
             <h4>Planejamento e acompanhamento deste produto</h4>
-            <OperationalFieldsEditor fields={purchaseOrderSpecificItemFields} values={item.operational} options={options}
+            <OperationalFieldsEditor fields={specificItemFields} values={item.operational} options={options}
               setValues={operational => updateItem(index, { operational })} />
             <PurchaseOrderCalculatedFields quantity={item.orderedQuantity} unitPrice={item.unitPrice} currency={item.currency} />
           </article>)}

@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api";
 import { formatUsDateTime } from "../../lib/date-format";
 import { canWriteRequests } from "../../lib/request-permissions";
+import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "../../components/OperationalOptionSelect";
 
 type RequestLine = { id: string; lineNumber: number; description: string; purposeText: string | null; costCenterText: string | null };
 type ImportRequest = { id: string; requestNumber: string; importer: string; requesterReference: string;
@@ -17,6 +18,7 @@ export default function RequestsPage() {
   const [roles, setRoles] = useState<string[]>([]);
   const [importers, setImporters] = useState<Array<{ code: string }>>([]);
   const [requests, setRequests] = useState<ImportRequest[]>([]);
+  const [options, setOptions] = useState<OperationalOption[]>([]);
   const [importer, setImporter] = useState("");
   const [requesterReference, setRequesterReference] = useState("");
   const [reason, setReason] = useState("");
@@ -34,8 +36,9 @@ export default function RequestsPage() {
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const [identityResponse, importerResponse, requestResponse] = await Promise.all([
-        apiFetch("/auth/me"), apiFetch("/api/v1/importers"), apiFetch(`/api/v1/requests?page=${page}&pageSize=25`),
+      const [identityResponse, importerResponse, requestResponse, optionValues] = await Promise.all([
+        apiFetch("/auth/me"), apiFetch("/api/v1/importers", { cache: "no-store" }),
+        apiFetch(`/api/v1/requests?page=${page}&pageSize=25`), loadOperationalOptions(),
       ]);
       if (!identityResponse.ok || !importerResponse.ok || !requestResponse.ok) {
         const response = !identityResponse.ok ? identityResponse : !importerResponse.ok ? importerResponse : requestResponse;
@@ -48,6 +51,7 @@ export default function RequestsPage() {
       const importerData = await importerResponse.json() as { items: Array<{ code: string }> };
       const requestData = await requestResponse.json() as RequestPage;
       setRoles(identity.roles);
+      setOptions(optionValues);
       setImporters(importerData.items); setRequests(requestData.items); setTotalCount(requestData.totalCount);
       if (!importer && importerData.items[0]) setImporter(importerData.items[0].code);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
@@ -93,7 +97,8 @@ export default function RequestsPage() {
         <label>Importador<select required value={importer} onChange={event => setImporter(event.target.value)}>
           <option value="">Selecione</option>{importers.map(value => <option key={value.code} value={value.code}>{value.code}</option>)}
         </select></label>
-        <label>Solicitante / referência<input required maxLength={160} value={requesterReference} onChange={event => setRequesterReference(event.target.value)} placeholder="Nome ou área informada" /></label>
+        <label>Solicitante / referência<OperationalOptionSelect required entity="requester" value={requesterReference}
+          values={options} onChange={setRequesterReference} /></label>
         <label>Motivo da solicitação<textarea required minLength={8} maxLength={2000} value={reason} onChange={event => setReason(event.target.value)} /></label>
         <label>Observações gerais<textarea maxLength={2000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
         <h3>Itens solicitados</h3>
@@ -102,10 +107,10 @@ export default function RequestsPage() {
           <label>Descrição informada pelo solicitante<textarea required maxLength={1000} value={line.description}
             onChange={event => setLines(current => current.map((item, i) => i === index ? { ...item, description: event.target.value } : item))} /></label>
           <div className="catalog-controls">
-            <label>Finalidade informada (opcional)<input maxLength={500} value={line.purposeText}
-              onChange={event => setLines(current => current.map((item, i) => i === index ? { ...item, purposeText: event.target.value } : item))} /></label>
-            <label>Centro de custo informado (opcional)<input maxLength={160} value={line.costCenterText}
-              onChange={event => setLines(current => current.map((item, i) => i === index ? { ...item, costCenterText: event.target.value } : item))} /></label>
+            <label>Finalidade informada (opcional)<OperationalOptionSelect entity="purpose" value={line.purposeText}
+              values={options} onChange={purposeText => setLines(current => current.map((item, i) => i === index ? { ...item, purposeText } : item))} /></label>
+            <label>Centro de custo informado (opcional)<OperationalOptionSelect entity="cost_center" value={line.costCenterText}
+              values={options} onChange={costCenterText => setLines(current => current.map((item, i) => i === index ? { ...item, costCenterText } : item))} /></label>
           </div>
           {lines.length > 1 && <button className="button secondary" type="button" aria-label={`Remover item ${index + 1}`} onClick={() => setLines(current => current.filter((_, i) => i !== index))}>Remover item</button>}
         </fieldset>)}

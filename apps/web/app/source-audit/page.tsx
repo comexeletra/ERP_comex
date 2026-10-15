@@ -183,7 +183,7 @@ export default function SourceAuditPage() {
     setDraftColumnFilters(state.columnFilters); setAppliedColumnFilters(state.columnFilters);
     setDraftSort(state.sort); setSort(state.sort);
     setReady(true);
-    apiFetch("/api/v1/importers").then(async response => {
+    apiFetch("/api/v1/importers", { cache: "no-store" }).then(async response => {
       if (!response.ok) return;
       setImporters((await response.json() as { items: Importer[] }).items);
     }).catch(() => undefined);

@@ -53,7 +53,7 @@ export default function CatalogPage() {
   useEffect(() => {
     apiFetch("/auth/me").then(responseJson<{ roles: string[] }>)
       .then(data => setRoles(data.roles)).catch(() => undefined);
-    apiFetch("/api/v1/importers").then(responseJson<{ items: Importer[] }>)
+    apiFetch("/api/v1/importers", { cache: "no-store" }).then(responseJson<{ items: Importer[] }>)
       .then(data => { setImporters(data.items); setImporter(current => current || data.items[0]?.code || ""); })
       .catch(reason => setError(reason instanceof Error ? reason.message : "Erro ao carregar importadores."));
   }, []);
