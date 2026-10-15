@@ -121,14 +121,14 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
       if (exactMatches.length === 1) {
         await choosePurchaseOrder(exactMatches[0].id, requestId);
         if (requestId !== poSearchRequest.current) return;
-        setPoSearchMessage(`PO ${exactMatches[0].number} selecionada. Confira o item e o saldo, informe a quantidade e distribua para este IP.`);
+        setPoSearchMessage("");
       } else {
         if (!matches.some(order => order.id === selectedPoId)) {
           setSelectedPoId(""); setSelectedPoItemId(""); setPoItems([]);
         }
         setPoSearchMessage(matches.length === 0
           ? `Nenhuma PO encontrada para a importadora ${process.importer}. Confira o número e o importador.`
-          : `${matches.length} PO(s) encontrada(s). Selecione uma para carregar seus itens e saldos.`);
+          : "");
       }
     } catch (cause) {
       if (requestId === poSearchRequest.current) setSaveError(cause instanceof Error ? cause.message : "Não foi possível buscar POs.");
@@ -339,12 +339,11 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
                 {searchingPos ? "Buscando…" : "Buscar PO"}
               </button>
             </div>
-            <label>POs encontradas<select required size={poOptions.length ? Math.min(poOptions.length + 1, 5) : 1}
-              value={selectedPoId} disabled={searchingPos || poOptions.length === 0}
-              onChange={event => void choosePurchaseOrder(event.target.value)}>
-              <option value="">{poOptions.length ? "Selecione uma PO" : "Busque uma PO para começar"}</option>
-              {poOptions.map(order => <option key={order.id} value={order.id}>{order.number} · {order.importer}</option>)}
-            </select></label>
+            {poOptions.length > 0 && <label>Selecione a PO<select required value={selectedPoId}
+              disabled={searchingPos} onChange={event => void choosePurchaseOrder(event.target.value)}>
+              <option value="">Selecione uma PO</option>
+              {poOptions.map(order => <option key={order.id} value={order.id}>{order.number}</option>)}
+            </select></label>}
           </form>
 
           {selectedPoId && <form className="allocation-distribution" onSubmit={distributeItemToProcess}>
