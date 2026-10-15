@@ -1,5 +1,25 @@
 # API ERP na VPS Hostinger
 
+## Release M032-M034: exportacao Excel em fila (2026-10-15)
+
+A tela ja mostrava a exportacao Excel, mas a VPS ainda estava na API M031:
+o ledger tinha 31 migrations, a tabela da fila nao existia e o worker nao estava
+instalado. O commit `f3b1e04` aplicou as migrations M032-M034 e publicou a API e
+o servico `import-erp-export-worker`.
+
+Antes do release, o backup
+`/var/backups/import-erp/erp_po_totvs_test_20261015T012857Z.dump` foi restaurado
+em uma base descartavel. M032-M034 passaram na copia, incluindo grants da role
+da API e comparacao das contagens de processos, POs, itens e pendencias. SHA-256
+do backup: `d869ae9953db3a7fca55a23b69c1cbfb619d56195d088986fa913f877fffd8e7`.
+
+Verificacao apos a publicacao: ledger 34/34; `import-erp-api` e
+`import-erp-export-worker` enabled/active; health live 200, ready 200 autenticado
+e 401 sem token; rota protegida responde 401 sem sessao de usuario. O worker
+iniciou sem erro e a geracao foi reaberta com ExcelJS como `.xlsx`. O codigo da
+API anterior foi preservado em
+`/var/backups/import-erp/m032-api-20261015T012904Z`.
+
 ## M031 Group (2026-10-08)
 
 `release-m031.sh` verified a restorable backup, applied M031 to a disposable
