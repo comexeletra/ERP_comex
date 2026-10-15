@@ -1,28 +1,13 @@
 import type { FastifyInstance, FastifyReply, preHandlerHookHandler } from "fastify";
 import type { Pool } from "pg";
 
-const masterImporterCacheTtlMs = 30_000;
-let masterImporterCache: { expiresAt: number; importers: string[] } | null = null;
-let masterImporterLoad: Promise<string[]> | null = null;
-
 async function getMasterImporterScopes(pool: Pool): Promise<string[]> {
-  if (masterImporterCache && masterImporterCache.expiresAt > Date.now()) {
-    return masterImporterCache.importers;
-  }
-  if (masterImporterLoad) return masterImporterLoad;
-
-  masterImporterLoad = pool.query<{ importer: string }>(
+  const { rows } = await pool.query<{ importer: string }>(
     `SELECT DISTINCT importer FROM procurement.purchase_order WHERE importer IS NOT NULL
-     UNION SELECT DISTINCT importer FROM imports.import_process WHERE importer IS NOT NULL`,
-  ).then(({ rows }) => {
-    const importers = rows.map((row) => row.importer);
-    masterImporterCache = { importers, expiresAt: Date.now() + masterImporterCacheTtlMs };
-    return importers;
-  }).finally(() => {
-    masterImporterLoad = null;
-  });
-
-  return masterImporterLoad;
+     UNION SELECT DISTINCT importer FROM imports.import_process WHERE importer IS NOT NULL
+     UNION SELECT value AS importer FROM catalog.operational_value WHERE entity_key = 'IMPORTER'`,
+  );
+  return rows.map((row) => row.importer);
 }
 
 /** Permission keys for the business operations already described by the API plan. */
