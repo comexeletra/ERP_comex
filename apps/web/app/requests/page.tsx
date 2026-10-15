@@ -53,7 +53,6 @@ export default function RequestsPage() {
       setRoles(identity.roles);
       setOptions(optionValues);
       setImporters(importerData.items); setRequests(requestData.items); setTotalCount(requestData.totalCount);
-      if (!importer && importerData.items[0]) setImporter(importerData.items[0].code);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setLoading(false); }
   }, [importer, page]);

@@ -122,7 +122,6 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
         setOptions(operationalCatalog.items);
         setSupportsGroup(operationalCatalog.purchaseOrderGroup);
         setImporters(data.items.map(item => item.code));
-        if (data.items[0]) setImporter(current => current || data.items[0].code);
       })
       .catch(cause => setError(cause instanceof Error ? cause.message : "Erro inesperado."))
       .finally(() => setLoading(false));

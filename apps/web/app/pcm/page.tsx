@@ -38,7 +38,6 @@ export default function PcmPage() {
       setRoles(identity.roles);
       setImporters(result.items);
       setOptions(optionValues);
-      if (result.items[0]) setImporter(current => current || result.items[0].code);
     }).catch(cause => {
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Não foi possível carregar os dados do PCM.");
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
