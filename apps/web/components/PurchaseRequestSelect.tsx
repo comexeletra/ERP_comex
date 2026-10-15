@@ -11,6 +11,7 @@ export type PurchaseRequestChoice = {
   commercialPlanReceivedDate: string | null;
   requester: string;
   approvalDate: string | null;
+  version: string;
   purchaseOrderCount?: number;
 };
 

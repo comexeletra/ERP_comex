@@ -7,6 +7,30 @@ import { PurchaseRequestChoice } from "../../components/PurchaseRequestSelect";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "../../components/OperationalOptionSelect";
 
 type Importer = { code: string };
+type PurchaseRequestHistory = {
+  id: string;
+  operation: string;
+  oldValue: Record<string, unknown> | null;
+  newValue: Record<string, unknown> | null;
+  actor: string;
+  occurredAt: string;
+  reason: string;
+};
+
+const historyFields = [
+  ["importer", "Importadora"], ["scNumber", "Número da SC"], ["scDate", "Data da SC"],
+  ["requester", "Solicitante"], ["commercialPlanReceivedDate", "Recebimento do plano comercial"],
+  ["approvalDate", "Data de aprovação"],
+] as const;
+
+function historyChanges(event: PurchaseRequestHistory) {
+  if (!event.oldValue) return ["SC cadastrada."];
+  return historyFields.flatMap(([key, label]) => {
+    const before = event.oldValue?.[key] ?? "—";
+    const after = event.newValue?.[key] ?? "—";
+    return JSON.stringify(before) === JSON.stringify(after) ? [] : [`${label}: ${String(before)} → ${String(after)}`];
+  });
+}
 
 export default function PcmPage() {
   const [roles, setRoles] = useState<string[]>([]);
@@ -19,6 +43,12 @@ export default function PcmPage() {
   const [requester, setRequester] = useState("");
   const [commercialPlanReceivedDate, setCommercialPlanReceivedDate] = useState("");
   const [approvalDate, setApprovalDate] = useState("");
+  const [editingId, setEditingId] = useState("");
+  const [editingVersion, setEditingVersion] = useState("");
+  const [editReason, setEditReason] = useState("");
+  const [historyId, setHistoryId] = useState("");
+  const [historyItems, setHistoryItems] = useState<PurchaseRequestHistory[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -54,27 +84,63 @@ export default function PcmPage() {
     return () => controller.abort();
   }, [importer]);
 
-  async function create(event: FormEvent<HTMLFormElement>) {
+  async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true); setError(""); setNotice("");
     try {
-      const response = await apiFetch("/api/v1/purchase-requests", {
-        method: "POST",
-        headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({ importer, scNumber, scDate: scDate || null, requester,
-          commercialPlanReceivedDate: commercialPlanReceivedDate || null,
-          approvalDate: approvalDate || null, reason: automaticAuditReason }),
-      });
-      const created = await readApiJson<PurchaseRequestChoice>(response);
+      const response = editingId
+        ? await apiFetch(`/api/v1/purchase-requests/${editingId}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json", "X-Record-Version": editingVersion },
+          body: JSON.stringify({ importer, scNumber, scDate: scDate || null, requester,
+            commercialPlanReceivedDate: commercialPlanReceivedDate || null,
+            approvalDate: approvalDate || null, reason: editReason }),
+        })
+        : await apiFetch("/api/v1/purchase-requests", {
+          method: "POST",
+          headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+          body: JSON.stringify({ importer, scNumber, scDate: scDate || null, requester,
+            commercialPlanReceivedDate: commercialPlanReceivedDate || null,
+            approvalDate: approvalDate || null, reason: automaticAuditReason }),
+        });
+      const saved = await readApiJson<PurchaseRequestChoice>(response);
       setScNumber(""); setScDate(""); setRequester(""); setCommercialPlanReceivedDate(""); setApprovalDate("");
-      const query = new URLSearchParams({ importer });
+      setEditingId(""); setEditingVersion(""); setEditReason("");
+      const query = new URLSearchParams({ importer: saved.importer });
       const list = await readApiJson<{ items: PurchaseRequestChoice[] }>(
         await apiFetch(`/api/v1/purchase-requests?${query}`, { cache: "no-store" }));
       setItems(list.items);
-      setNotice(`SC ${created.scNumber} cadastrada. Ela já pode ser vinculada às POs desta importadora.`);
+      setNotice(editingId
+        ? `SC ${saved.scNumber} atualizada. Os campos compartilhados ainda ligados aos valores anteriores também foram atualizados nas POs.`
+        : `SC ${saved.scNumber} cadastrada. Ela já pode ser vinculada às POs desta importadora.`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Não foi possível cadastrar a SC.");
+      setError(cause instanceof Error ? cause.message : "Não foi possível salvar a SC.");
     } finally { setSaving(false); }
+  }
+
+  function startEditing(item: PurchaseRequestChoice) {
+    setEditingId(item.id); setEditingVersion(item.version); setImporter(item.importer);
+    setScNumber(item.scNumber); setScDate(item.scDate ?? ""); setRequester(item.requester);
+    setCommercialPlanReceivedDate(item.commercialPlanReceivedDate ?? ""); setApprovalDate(item.approvalDate ?? "");
+    setEditReason(""); setError(""); setNotice(`Editando a SC ${item.scNumber}.`);
+  }
+
+  function cancelEditing() {
+    setEditingId(""); setEditingVersion(""); setEditReason("");
+    setScNumber(""); setScDate(""); setRequester(""); setCommercialPlanReceivedDate(""); setApprovalDate("");
+    setNotice(""); setError("");
+  }
+
+  async function toggleHistory(item: PurchaseRequestChoice) {
+    if (historyId === item.id) { setHistoryId(""); setHistoryItems([]); return; }
+    setHistoryId(item.id); setHistoryItems([]); setHistoryLoading(true); setError("");
+    try {
+      const result = await readApiJson<{ items: PurchaseRequestHistory[] }>(
+        await apiFetch(`/api/v1/purchase-requests/${item.id}/history`, { cache: "no-store" }));
+      setHistoryItems(result.items);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível consultar o histórico da SC.");
+    } finally { setHistoryLoading(false); }
   }
 
   return <main className="shell">
@@ -88,8 +154,8 @@ export default function PcmPage() {
     {notice && <p className="notice" role="status">{notice}</p>}
     {!loading && !canManage && <p className="notice">Seu perfil pode consultar SCs, mas não pode cadastrá-las. Solicite o perfil PCM a um Master.</p>}
     {!loading && canManage && <section className="card">
-      <h2>Cadastrar SC</h2>
-      <form className="stack-form" onSubmit={create}>
+      <h2>{editingId ? "Editar SC" : "Cadastrar SC"}</h2>
+      <form className="stack-form" onSubmit={save}>
         <div className="operational-fields">
           <label>Importadora<select required value={importer} onChange={event => setImporter(event.target.value)}>
             <option value="">Selecione</option>{importers.map(item => <option key={item.code} value={item.code}>{item.code}</option>)}
@@ -102,21 +168,42 @@ export default function PcmPage() {
             onChange={setRequester} /></label>
           <label>Data de aprovação<input type="date" value={approvalDate} onChange={event => setApprovalDate(event.target.value)} /></label>
         </div>
-        <button className="button" disabled={saving || !importer}>{saving ? "Salvando SC…" : "Cadastrar SC"}</button>
+        {editingId && <label>Motivo da alteração<textarea required minLength={3} maxLength={1000} value={editReason}
+          onChange={event => setEditReason(event.target.value)} /></label>}
+        <div className="button-row">
+          <button className="button" disabled={saving || !importer || (Boolean(editingId) && editReason.trim().length < 3)}>{saving ? "Salvando SC…" : editingId ? "Salvar alterações" : "Cadastrar SC"}</button>
+          {editingId && <button className="button secondary" type="button" disabled={saving} onClick={cancelEditing}>Cancelar edição</button>}
+        </div>
       </form>
     </section>}
     {!loading && <section className="card">
       <h2>SCs cadastradas</h2>
-      <label>Importadora da lista<select value={importer} onChange={event => setImporter(event.target.value)}>
+      <label>Importadora da lista<select disabled={Boolean(editingId)} value={importer} onChange={event => setImporter(event.target.value)}>
         <option value="">Selecione</option>{importers.map(item => <option key={item.code} value={item.code}>{item.code}</option>)}
       </select></label>
       {items.length === 0 ? <p>Nenhuma SC cadastrada para esta importadora.</p> :
         <div className="table-scroll"><table><thead><tr>
-          <th>Número da SC</th><th>Data da SC</th><th>Solicitante</th><th>Plano comercial recebido</th><th>Aprovação</th><th>POs vinculadas</th>
+          <th>Número da SC</th><th>Data da SC</th><th>Solicitante</th><th>Plano comercial recebido</th><th>Aprovação</th><th>POs vinculadas</th><th>Ação</th>
         </tr></thead><tbody>{items.map(item => <tr key={item.id}>
           <td>{item.scNumber}</td><td>{item.scDate ?? "—"}</td><td>{item.requester}</td><td>{item.commercialPlanReceivedDate ?? "—"}</td>
           <td>{item.approvalDate ?? "Pendente"}</td><td>{item.purchaseOrderCount ?? 0}</td>
+          <td><div className="sc-action-buttons">
+            {canManage && <button className="button secondary" type="button" onClick={() => startEditing(item)}>Editar</button>}
+            <button className="button secondary" type="button" onClick={() => void toggleHistory(item)}>
+              {historyId === item.id ? "Ocultar histórico" : "Histórico"}
+            </button>
+          </div></td>
         </tr>)}</tbody></table></div>}
+      {historyId && <section className="sc-history" aria-label="Histórico da SC">
+        <h3>Histórico de alterações</h3>
+        {historyLoading && <p role="status">Carregando histórico…</p>}
+        {!historyLoading && historyItems.length === 0 && <p>Nenhum evento encontrado para esta SC.</p>}
+        {!historyLoading && historyItems.map(event => <article className="sc-history-event" key={event.id}>
+          <p><strong>{event.operation === "CREATE" ? "Cadastro" : "Alteração"}</strong> · {new Date(event.occurredAt).toLocaleString("pt-BR")}</p>
+          <ul>{historyChanges(event).map(change => <li key={change}>{change}</li>)}</ul>
+          <p className="muted">Responsável: {event.actor} · Motivo: {event.reason}</p>
+        </article>)}
+      </section>}
     </section>}
   </main>;
 }
