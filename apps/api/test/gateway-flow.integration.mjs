@@ -50,8 +50,9 @@ function expectStatus(result, status) {
 
 try {
   await pool.query(
-    "INSERT INTO catalog.operational_value (id, entity_key, value) VALUES ($1, 'IMPORTER', $2)",
-    [randomUUID(), importer],
+    `INSERT INTO procurement.purchase_order (id, importer, external_number, normalized_number)
+     VALUES ($1, $2, $3, $3)`,
+    [randomUUID(), importer, `CI-GW-SEED-${suffix}`],
   );
   const userId = randomUUID();
   await pool.query("INSERT INTO identity.erp_user(id,issuer,subject,display_name) VALUES($1,'ci:gateway',$2,'CI Gateway')",
