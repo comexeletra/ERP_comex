@@ -128,6 +128,61 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
     } finally { client.release(); }
   });
 
+  app.post("/api/v1/operational-values/bulk", { config: permissionConfig("catalog.write") }, async (request, reply) => {
+    const body = z.object({ entity: z.string().trim().toUpperCase(),
+      values: z.array(z.string().trim().min(1).max(240)).min(1).max(500),
+      reason: z.string().trim().min(8).max(500) }).strict().safeParse(request.body);
+    const actor = request.authContext;
+    if (!body.success || !operationalValueKeys.has(body.data.entity)) {
+      return problem(reply, 400, "INVALID_OPERATIONAL_VALUES", "Informe uma entidade e uma lista JSON válida com até 500 valores.");
+    }
+    const invalidValue = body.data.values.find(value => value.length > operationalValueMax[body.data.entity]
+      || (body.data.entity === "CURRENCY" && !/^[A-Z]{3}$/u.test(value)));
+    if (invalidValue) {
+      return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "Um ou mais valores não respeitam o formato do campo escolhido.");
+    }
+    if (!actor) return problem(reply, 401, "AUTHENTICATION_REQUIRED", "Sessão ausente.");
+    if (!request.authorizationContext?.roles.some(role => ["Master", "Administrador", "Compras"].includes(role))) {
+      return problem(reply, 403, "PERMISSION_DENIED", "Perfil sem permissão para administrar valores das entidades.");
+    }
+
+    const client = await pool.connect();
+    let createdCount = 0;
+    let skippedCount = 0;
+    try {
+      await client.query("BEGIN");
+      for (const value of body.data.values) {
+        const id = randomUUID();
+        const inserted = await client.query<{ id: string }>(
+          `INSERT INTO catalog.operational_value (id, entity_key, value, created_by)
+           VALUES ($1,$2,$3,$4) ON CONFLICT (entity_key, normalized_value) DO NOTHING RETURNING id`,
+          [id, body.data.entity, value, actor.userId]);
+        if (!inserted.rowCount) {
+          skippedCount += 1;
+          continue;
+        }
+
+        createdCount += 1;
+        const correlationId = randomUUID();
+        await client.query(
+          `INSERT INTO audit.audit_log
+            (id,aggregate_type,aggregate_id,entity_type,entity_id,operation,field_name,old_value,new_value,actor_id,occurred_at,reason,correlation_id)
+           VALUES ($1,'OPERATIONAL_VALUE',$2,'OPERATIONAL_VALUE',$2,'CREATE','value',NULL,$3::jsonb,$4,now(),$5,$6)`,
+          [randomUUID(), id, JSON.stringify({ entity: body.data.entity.toLowerCase(), value }),
+            `${actor.issuer}#${actor.subject}`, body.data.reason, correlationId]);
+        await client.query(
+          `INSERT INTO audit.outbox_message (event_id,event_type,aggregate_type,aggregate_id,payload,occurred_at)
+           VALUES ($1,'catalog.operational_value.created','OPERATIONAL_VALUE',$2,$3::jsonb,now())`,
+          [correlationId, id, JSON.stringify({ id, entity: body.data.entity.toLowerCase() })]);
+      }
+      await client.query("COMMIT");
+      return reply.code(201).send({ createdCount, skippedCount });
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally { client.release(); }
+  });
+
   for (const { path, kind, sourceColumn } of resources.filter(resource => resource.kind !== "NCM")) {
     app.get<{ Querystring: { importer?: string } }>(`/api/v1/${path}/options`,
       { config: permissionConfig("catalog.read") }, async (request, reply) => {
