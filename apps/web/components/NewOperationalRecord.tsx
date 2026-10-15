@@ -50,6 +50,26 @@ function blankPoItem(): PoItemDraft {
     unit: "", unitPrice: "", currency: "", operational: blankPurchaseOrderItemFields() };
 }
 
+function hasDraftValue(value: unknown): boolean {
+  if (typeof value === "string") return Boolean(value.trim());
+  if (Array.isArray(value)) return value.some(hasDraftValue);
+  if (typeof value === "object" && value !== null) return Object.values(value).some(hasDraftValue);
+  return value !== null && value !== undefined && value !== false;
+}
+
+function isLegacyImporterOnlyDraft(draft: Partial<PoDraft>): boolean {
+  return Boolean(draft.importer?.trim())
+    && !hasDraftValue(draft.number)
+    && !hasDraftValue(draft.supplier)
+    && !hasDraftValue(draft.orderDate)
+    && !hasDraftValue(draft.notes)
+    && !hasDraftValue(draft.purchaseRequestId)
+    && !hasDraftValue(draft.createdPoId)
+    && !hasDraftValue(draft.commonItemFields)
+    && Array.isArray(draft.items)
+    && !hasDraftValue(draft.items);
+}
+
 async function readResponse<T>(response: Response): Promise<T> {
   return readApiJson<T>(response);
 }
@@ -88,7 +108,9 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
       if (raw) {
         const draft = JSON.parse(raw) as Partial<PoDraft>;
         if (Array.isArray(draft.items) && draft.items.length > 0) {
-          setImporter(typeof draft.importer === "string" ? draft.importer : "");
+          // Older builds saved the first available importer as if the user had selected it.
+          // Clear that stale value only when the rest of the PO draft is still empty.
+          setImporter(isLegacyImporterOnlyDraft(draft) ? "" : typeof draft.importer === "string" ? draft.importer : "");
           setPurchaseRequestId(typeof draft.purchaseRequestId === "string" ? draft.purchaseRequestId : "");
           setNumber(typeof draft.number === "string" ? draft.number : "");
           setSupplier(typeof draft.supplier === "string" ? draft.supplier : "");
