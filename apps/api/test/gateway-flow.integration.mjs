@@ -16,6 +16,7 @@ if (!new Set(["127.0.0.1", "localhost", "[::1]" ]).has(database.hostname)
 
 const pool = new Pool({ connectionString: databaseUrl, max: 1 });
 const suffix = randomUUID().slice(0, 8);
+const importer = `CI COMEX ${suffix}`;
 const reason = "Conferência integrada local";
 const password = randomBytes(24).toString("base64url");
 const email = `ci-${suffix}@example.invalid`;
@@ -48,9 +49,10 @@ function expectStatus(result, status) {
 }
 
 try {
-  const importerRow = await pool.query("SELECT importer FROM procurement.purchase_order ORDER BY id LIMIT 1");
-  assert.ok(importerRow.rows[0], "Seed at least one importer in the disposable database.");
-  const importer = importerRow.rows[0].importer;
+  await pool.query(
+    "INSERT INTO catalog.operational_value (id, entity_key, value) VALUES ($1, 'IMPORTER', $2)",
+    [randomUUID(), importer],
+  );
   const userId = randomUUID();
   await pool.query("INSERT INTO identity.erp_user(id,issuer,subject,display_name) VALUES($1,'ci:gateway',$2,'CI Gateway')",
     [userId, suffix]);
@@ -214,7 +216,26 @@ try {
   assert.ok(postDashboard.postShipment.openRecords >= 2);
   assert.ok(postDashboard.postShipment.rowsWithArrival >= 2);
   assert.ok(postDashboard.postShipment.rowsWithDelivery >= 1);
-  console.log("Next.js → gateway → API → PostgreSQL flow passed (SC, PO, split IPs, balances, independent dates, lifecycle, and dashboards).");
+  const exportJob = expectStatus(await call("POST", "/api/v1/exports/purchase-orders", {
+    number: `CI-GW-PO-${suffix}`,
+  }), 202);
+  assert.ok(exportJob.id);
+  let exportStatus;
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    exportStatus = expectStatus(await call("GET", `/api/v1/exports/${exportJob.id}`), 200);
+    if (exportStatus.status === "completed") break;
+    assert.notEqual(exportStatus.status, "failed", JSON.stringify(exportStatus));
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  assert.equal(exportStatus.status, "completed", "The export worker did not complete the queued job.");
+  assert.equal(exportStatus.downloadPath, `/api/v1/exports/${exportJob.id}/download`);
+  const download = await fetch(new URL(exportStatus.downloadPath, webOrigin), { headers: { cookie } });
+  assert.equal(download.status, 200);
+  assert.match(download.headers.get("content-type") ?? "", /text\/csv/u);
+  const csv = await download.text();
+  assert.ok(csv.includes(`CI-GW-PO-${suffix}`));
+  assert.ok(csv.includes(importer));
+  console.log("End-to-end passed: Next.js proxy, authentication, PostgreSQL, SC/PO/IP flow, reports and queued CSV worker.");
 } finally {
   await pool.end();
 }
