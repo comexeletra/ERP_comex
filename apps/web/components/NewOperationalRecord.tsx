@@ -361,14 +361,13 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
         <section className="card po-entry-section">
           <h2>Dados do pedido</h2>
           <p className="muted">Informe a importadora e os dados que identificam a PO no TOTVS.</p>
-          <div className="operational-fields">
+          <div className="operational-fields po-header-fields">
             <PurchaseRequestSelect importer={importer} value={purchaseRequestId} choices={purchaseRequests} onChange={selectPurchaseRequest} />
             <label>Importadora<select required disabled={Boolean(purchaseRequestId)} value={importer} onChange={event => {
               setImporter(event.target.value); selectPurchaseRequest("");
             }}>
               <option value="">Selecione</option>{importers.map(value => <option key={value} value={value}>{value}</option>)}
-            </select></label>
-            {purchaseRequestId ? <p className="muted">Importadora preenchida pela SC vinculada. Para escolher outra, remova o vínculo da SC.</p> : null}
+            </select>{purchaseRequestId ? <small className="po-field-hint">Definida pela SC vinculada.</small> : null}</label>
             <label>Número da PO no TOTVS<input required maxLength={80} value={number} onChange={event => setNumber(event.target.value)} /></label>
             <label>Fornecedor<select value={supplier} onChange={event => setSupplier(event.target.value)}>
               <option value="">Selecione</option>{suppliers.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}

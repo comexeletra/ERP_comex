@@ -381,6 +381,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .operational-summary dt { color: #617985; font-size: .76rem; font-weight: 700; }
 .operational-summary dd { margin: 5px 0 0; overflow-wrap: anywhere; }
 .operational-fields { display: grid; gap: 12px; grid-template-columns: repeat(8, minmax(0, 1fr)); min-width: 0; max-width: 100%; }
+.po-header-fields { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.po-header-fields > label { align-content: start; display: grid; gap: 6px; }
+.po-header-fields .po-field-hint { color: #617985; font-size: .75rem; font-weight: 400; line-height: 1.25; }
 .operational-fields > label { min-width: 0; max-width: 100%; }
 .operational-fields input, .operational-fields select, .operational-fields textarea { min-width: 0; max-width: 100%; width: 100%; }
 .operational-fields select { overflow: hidden; text-overflow: ellipsis; }
@@ -551,9 +554,9 @@ td .button + .button { margin-left: 6px; }
   .catalog-links .button { flex: 1 1 100%; }
   .catalog-candidates { padding: 16px; }
 }
-@media (max-width: 1100px) { .operational-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 1100px) { .operational-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); }.po-header-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .operational-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 480px) { .operational-fields { grid-template-columns: 1fr; } }
+@media (max-width: 480px) { .operational-fields, .po-header-fields { grid-template-columns: 1fr; } }
 
 .po-item-card { background: #fff; border-color: #dbe5ea; overflow: hidden; padding: 0; transition: border-color .15s ease, box-shadow .15s ease; }
 .po-item-card:hover { border-color: #b8cbd3; box-shadow: 0 5px 16px #1738470c; }
