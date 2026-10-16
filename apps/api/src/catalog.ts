@@ -3,6 +3,12 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
+import {
+  fetchOfficialNcmCatalog,
+  officialNcmAttributesHash,
+  type OfficialNcm,
+  type OfficialNcmCatalog,
+} from "./siscomex-ncm.js";
 
 type Kind = "SUPPLIER" | "PRODUCT" | "NCM";
 const resources: ReadonlyArray<{ path: string; kind: Kind; sourceColumn: string }> = [
@@ -80,7 +86,24 @@ const productPatchBody = patchBody.extend({ name: z.string().trim().min(1).max(2
 const ncmPatchBody = patchBody.extend({ name: z.string().trim().min(1).max(2000).optional() });
 type Entry = { id: string; importer: string | null; kind: Kind; code: string; name: string;
   status: "ACTIVE" | "INACTIVE"; provenance: string; evidence: string;
-  valid_from: string | null; valid_to: string | null; version: string; created_at: Date; updated_at: Date };
+  valid_from: string | null; valid_to: string | null; version: string; created_at: Date; updated_at: Date;
+  mandatory_import_attributes?: OfficialNcm["mandatoryImportAttributes"];
+  source_updated_at?: string | null; attributes_source_version?: string | null; synced_at?: Date | null };
+
+const officialNcmCacheLifetimeMs = 6 * 60 * 60 * 1000;
+let officialNcmCache: { catalog: OfficialNcmCatalog; expiresAt: number } | null = null;
+let officialNcmLoad: Promise<OfficialNcmCatalog> | null = null;
+
+async function cachedOfficialNcmCatalog(): Promise<OfficialNcmCatalog> {
+  if (officialNcmCache && officialNcmCache.expiresAt > Date.now()) return officialNcmCache.catalog;
+  if (!officialNcmLoad) {
+    officialNcmLoad = fetchOfficialNcmCatalog().then(catalog => {
+      officialNcmCache = { catalog, expiresAt: Date.now() + officialNcmCacheLifetimeMs };
+      return catalog;
+    }).finally(() => { officialNcmLoad = null; });
+  }
+  return officialNcmLoad;
+}
 
 function problem(reply: FastifyReply, status: number, code: string, detail: string) {
   return reply.code(status).send({ type: "about:blank", title: detail, status, detail,
@@ -91,7 +114,10 @@ function present(row: Entry) {
     kind: row.kind, code: row.code, name: row.name,
     status: row.status, provenance: row.provenance, evidence: row.evidence,
     validFrom: row.valid_from, validTo: row.valid_to, version: String(row.version),
-    createdAt: row.created_at, updatedAt: row.updated_at };
+    createdAt: row.created_at, updatedAt: row.updated_at,
+    ...(row.mandatory_import_attributes !== undefined ? { mandatoryImportAttributes: row.mandatory_import_attributes,
+      sourceUpdatedAt: row.source_updated_at ?? null, attributesSourceVersion: row.attributes_source_version ?? null,
+      officialDataSyncedAt: row.synced_at ?? null } : {}) };
 }
 function hasScope(scopes: readonly string[], importer: string): boolean {
   return scopes.includes(importer);
@@ -114,7 +140,9 @@ function isUniqueError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
 }
 
-export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): Promise<void> {
+export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
+  options: { officialNcmProvider?: () => Promise<OfficialNcmCatalog> } = {}): Promise<void> {
+  const getOfficialNcms = options.officialNcmProvider ?? cachedOfficialNcmCatalog;
   app.get("/api/v1/operational-values", { config: permissionConfig("catalog.read") }, async (request, reply) => {
     reply.header("cache-control", "no-store");
     const result = await pool.query<{ id: string; entity_key: string; code: string | null; value: string; created_by: string | null }>(
@@ -450,13 +478,21 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
   for (const { path, kind, sourceColumn } of resources) {
     const base = `/api/v1/${path}`;
     const scopeMode = kind === "NCM" ? "global" : "importer";
+    const officialNcmJoin = kind === "NCM"
+      ? `LEFT JOIN catalog.ncm_siscomex_data AS official ON official.ncm_entry_id = entry.id`
+      : "";
+    const officialNcmFields = kind === "NCM"
+      ? `, official.mandatory_import_attributes, official.source_updated_at::text AS source_updated_at,
+           official.attributes_source_version, official.synced_at`
+      : "";
     app.get(base, { config: permissionConfig("catalog.read", scopeMode) }, async (request, reply) => {
       const parsed = (kind === "NCM" ? globalListQuery : listQuery).safeParse(request.query);
       if (!parsed.success) return problem(reply, 400, "INVALID_QUERY", "Filtros inválidos.");
       const { search, page, pageSize } = parsed.data;
       const result = await pool.query<{ total_count: number; items: Entry[] }>(
         `WITH visible AS MATERIALIZED (
-           SELECT entry.* FROM catalog.entry AS entry
+           SELECT entry.*${officialNcmFields} FROM catalog.entry AS entry
+           ${officialNcmJoin}
            WHERE entry.kind = $1 AND entry.importer IS NULL
              AND ($2::text IS NULL OR strpos(lower(entry.code), lower($2)) > 0
                   OR strpos(lower(entry.name), lower($2)) > 0)
@@ -514,12 +550,256 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
           eligibleFormat: kind !== "NCM" || /^[0-9]{8}$/u.test(row.raw_code.replace(/\D/gu, "")) })) };
     });
 
+    if (kind === "NCM") {
+      app.get(`${base}/official-search`, { config: permissionConfig("catalog.read", "global") }, async (request, reply) => {
+        const parsed = z.object({ search: z.string().trim().min(2).max(120),
+          page: z.coerce.number().int().min(1).default(1),
+          pageSize: z.coerce.number().int().min(1).max(50).default(25) }).strict().safeParse(request.query);
+        if (!parsed.success) return problem(reply, 400, "INVALID_QUERY", "Informe pelo menos dois caracteres para pesquisar NCMs oficiais.");
+        let official: OfficialNcmCatalog;
+        try { official = await getOfficialNcms(); }
+        catch { return problem(reply, 502, "SISCOMEX_UNAVAILABLE", "Não foi possível consultar o catálogo oficial do Siscomex."); }
+        const search = parsed.data.search.toLocaleLowerCase("pt-BR");
+        const codeSearch = parsed.data.search.replace(/\D/gu, "");
+        const matches = official.items.filter(item => item.name.toLocaleLowerCase("pt-BR").includes(search)
+          || (codeSearch.length > 0 && item.code.includes(codeSearch)));
+        matches.sort((left, right) => {
+          const leftExact = left.code === codeSearch ? 0 : 1;
+          const rightExact = right.code === codeSearch ? 0 : 1;
+          return leftExact - rightExact || left.code.localeCompare(right.code);
+        });
+        const { page, pageSize } = parsed.data;
+        const pageItems = matches.slice((page - 1) * pageSize, page * pageSize);
+        const registered = pageItems.length
+          ? await pool.query<{ normalized_code: string }>(
+            `SELECT normalized_code FROM catalog.entry
+             WHERE kind = 'NCM' AND importer IS NULL AND normalized_code = ANY($1::text[])`,
+            [pageItems.map(item => item.code)])
+          : { rows: [] };
+        const registeredCodes = new Set(registered.rows.map(row => row.normalized_code));
+        reply.header("cache-control", "no-store");
+        return { page, pageSize, totalCount: matches.length, sourceUpdatedAt: official.sourceUpdatedAt,
+          attributesSourceVersion: official.attributesVersion,
+          items: pageItems.map(item => ({ ...item, alreadyRegistered: registeredCodes.has(item.code) })) };
+      });
+
+      app.post(`${base}/refresh-official`, { config: permissionConfig("catalog.write", "global") }, async (request, reply) => {
+        const body = z.object({}).strict().safeParse(request.body ?? {});
+        const auth = request.authorizationContext;
+        const actor = request.authContext;
+        if (!body.success) return problem(reply, 400, "INVALID_REQUEST", "A atualização oficial não recebe parâmetros.");
+        if (!auth || !actor) return problem(reply, 401, "AUTHENTICATION_REQUIRED", "Sessão ausente.");
+        if (!canWriteKind(auth.roles, "NCM")) return problem(reply, 403, "PERMISSION_DENIED", "Perfil sem permissão para atualizar o catálogo NCM.");
+
+        let official: OfficialNcmCatalog;
+        try { official = await getOfficialNcms(); }
+        catch { return problem(reply, 502, "SISCOMEX_UNAVAILABLE", "Não foi possível consultar o catálogo oficial do Siscomex."); }
+
+        const client = await pool.connect();
+        let matchedCount = 0;
+        let updatedCount = 0;
+        let attributesUpdatedCount = 0;
+        const correlationId = randomUUID();
+        const reason = "Atualização dos NCMs já cadastrados pela fonte oficial do Siscomex.";
+        try {
+          await client.query("BEGIN");
+          await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", ["catalog:siscomex:ncm:refresh"]);
+          const result = await client.query<Entry & { normalized_code: string; attributes_sha256: string | null }>(
+            `SELECT entry.*, entry.normalized_code, entry.valid_from::text AS valid_from,
+                    entry.valid_to::text AS valid_to, official.mandatory_import_attributes,
+                    official.source_updated_at::text AS source_updated_at, official.attributes_source_version,
+                    official.attributes_sha256, official.synced_at
+             FROM catalog.entry AS entry
+             LEFT JOIN catalog.ncm_siscomex_data AS official ON official.ncm_entry_id = entry.id
+             WHERE entry.kind = 'NCM' AND entry.importer IS NULL
+             ORDER BY entry.normalized_code FOR UPDATE OF entry`);
+
+          for (const before of result.rows) {
+            const source = official.items.find(item => item.code === before.normalized_code);
+            if (!source) continue;
+            matchedCount += 1;
+            const evidence = "Tabela oficial NCM da Receita Federal / Portal Único Siscomex (Classif).";
+            const changed = {
+              name: source.name, status: "ACTIVE" as const, evidence,
+              valid_from: source.validFrom, valid_to: source.validTo,
+              provenance: "OFFICIAL_SISCOMEX",
+            };
+            const old = {
+              name: before.name, status: before.status, evidence: before.evidence,
+              valid_from: before.valid_from, valid_to: before.valid_to,
+              provenance: before.provenance,
+            };
+            const differences = Object.entries(changed).filter(([field, value]) => value !== old[field as keyof typeof old]);
+            if (differences.length) {
+              const updated = await client.query<Entry>(
+                `UPDATE catalog.entry SET name=$2,status=$3,evidence=$4,valid_from=$5,valid_to=$6,
+                   provenance=$7,version=version+1,updated_by=$8,updated_at=now()
+                 WHERE id=$1 RETURNING *`,
+                [before.id, changed.name, changed.status, changed.evidence, changed.valid_from, changed.valid_to,
+                  changed.provenance, actor.userId]);
+              updatedCount += 1;
+              for (const [field, value] of differences) {
+                await client.query(
+                  `INSERT INTO audit.audit_log
+                    (id,aggregate_type,aggregate_id,entity_type,entity_id,operation,field_name,old_value,new_value,actor_id,occurred_at,reason,correlation_id)
+                   VALUES ($1,'CATALOG_ENTRY',$2,'CATALOG_ENTRY',$2,'UPDATE',$3,$4::jsonb,$5::jsonb,$6,now(),$7,$8)`,
+                  [randomUUID(), before.id, field, JSON.stringify(old[field as keyof typeof old]), JSON.stringify(value),
+                    `${actor.issuer}#${actor.subject}`, reason, correlationId]);
+              }
+              await client.query(
+                `INSERT INTO audit.outbox_message (event_id,event_type,aggregate_type,aggregate_id,payload,occurred_at)
+                 VALUES ($1,'catalog.entry.updated','CATALOG_ENTRY',$2,$3::jsonb,now())`,
+                [randomUUID(), before.id, JSON.stringify({ id: before.id, importer: null, kind: "NCM",
+                  version: String(updated.rows[0].version), changedFields: differences.map(([field]) => field) })]);
+            }
+
+            const attributesHash = officialNcmAttributesHash(source.mandatoryImportAttributes);
+            if (before.attributes_sha256?.trim() !== attributesHash) {
+              attributesUpdatedCount += 1;
+              await client.query(
+                `INSERT INTO audit.audit_log
+                  (id,aggregate_type,aggregate_id,entity_type,entity_id,operation,field_name,old_value,new_value,actor_id,occurred_at,reason,correlation_id)
+                 VALUES ($1,'CATALOG_ENTRY',$2,'CATALOG_ENTRY',$2,$3,'mandatoryImportAttributes',$4::jsonb,$5::jsonb,$6,now(),$7,$8)`,
+                [randomUUID(), before.id, before.attributes_sha256 ? "UPDATE" : "CREATE",
+                  before.mandatory_import_attributes ? JSON.stringify(before.mandatory_import_attributes) : null,
+                  JSON.stringify(source.mandatoryImportAttributes), `${actor.issuer}#${actor.subject}`, reason, correlationId]);
+            }
+            await client.query(
+              `INSERT INTO catalog.ncm_siscomex_data
+                (ncm_entry_id,source_updated_at,attributes_source_version,mandatory_import_attributes,attributes_sha256,synced_at)
+               VALUES ($1,$2,$3,$4::jsonb,$5,now())
+               ON CONFLICT (ncm_entry_id) DO UPDATE SET source_updated_at=EXCLUDED.source_updated_at,
+                 attributes_source_version=EXCLUDED.attributes_source_version,
+                 mandatory_import_attributes=EXCLUDED.mandatory_import_attributes,
+                 attributes_sha256=EXCLUDED.attributes_sha256,synced_at=now()`,
+              [before.id, official.sourceUpdatedAt, official.attributesVersion,
+                JSON.stringify(source.mandatoryImportAttributes), attributesHash]);
+          }
+          await client.query(
+            `INSERT INTO audit.outbox_message (event_id,event_type,aggregate_type,aggregate_id,payload,occurred_at)
+             VALUES ($1,'catalog.ncm.siscomex.refreshed','NCM_SYNC',$1,$2::jsonb,now())`,
+            [correlationId, JSON.stringify({ matchedCount, updatedCount, attributesUpdatedCount,
+              sourceUpdatedAt: official.sourceUpdatedAt, attributesSourceVersion: official.attributesVersion })]);
+          await client.query("COMMIT");
+          return { matchedCount, updatedCount, attributesUpdatedCount,
+            preservedUnmatchedCount: result.rows.length - matchedCount,
+            sourceUpdatedAt: official.sourceUpdatedAt, attributesSourceVersion: official.attributesVersion };
+        } catch (error) {
+          await client.query("ROLLBACK").catch(() => undefined);
+          throw error;
+        } finally { client.release(); }
+      });
+
+      app.post(`${base}/import-official`, { config: permissionConfig("catalog.write", "global") }, async (request, reply) => {
+        const parsed = z.object({ code: z.string().regex(/^[0-9]{8}$/u) }).strict().safeParse(request.body);
+        const key = request.headers["idempotency-key"];
+        const auth = request.authorizationContext;
+        const actor = request.authContext;
+        if (!parsed.success || !validKey(key)) {
+          return problem(reply, 400, "INVALID_OFFICIAL_NCM", "Selecione um NCM oficial e informe uma chave de idempotência válida.");
+        }
+        if (!auth || !actor) return problem(reply, 401, "AUTHENTICATION_REQUIRED", "Sessão ausente.");
+        if (!canWriteKind(auth.roles, "NCM")) return problem(reply, 403, "PERMISSION_DENIED", "Perfil sem permissão para cadastrar NCMs.");
+
+        let official: OfficialNcmCatalog;
+        try { official = await getOfficialNcms(); }
+        catch { return problem(reply, 502, "SISCOMEX_UNAVAILABLE", "Não foi possível consultar o catálogo oficial do Siscomex."); }
+        const source = official.items.find(item => item.code === parsed.data.code);
+        if (!source) return problem(reply, 404, "OFFICIAL_NCM_NOT_FOUND", "Esse NCM não está na tabela vigente do Siscomex.");
+
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+            [`catalog:${actor.userId}:${key}`]);
+          const payloadHash = createHash("sha256").update(JSON.stringify({ kind: "NCM", code: source.code })).digest("hex");
+          const receipt = await client.query<{ payload_sha256: string; entry_id: string }>(
+            "SELECT payload_sha256, entry_id FROM catalog.command_receipt WHERE actor_user_id=$1 AND idempotency_key=$2",
+            [actor.userId, key]);
+          if (receipt.rows[0]) {
+            const existing = await client.query<Entry>(
+              `SELECT entry.*, official.mandatory_import_attributes,
+                      official.source_updated_at::text AS source_updated_at,
+                      official.attributes_source_version, official.synced_at
+               FROM catalog.entry AS entry LEFT JOIN catalog.ncm_siscomex_data AS official ON official.ncm_entry_id=entry.id
+               WHERE entry.id=$1 AND entry.kind='NCM' AND entry.importer IS NULL`, [receipt.rows[0].entry_id]);
+            await client.query("COMMIT");
+            if (receipt.rows[0].payload_sha256.trim() !== payloadHash) {
+              return problem(reply, 409, "IDEMPOTENCY_KEY_REUSED", "Chave já usada com outro NCM.");
+            }
+            if (!existing.rows[0]) return problem(reply, 409, "IDEMPOTENCY_KEY_REUSED", "Chave já usada em outro cadastro.");
+            return reply.code(200).send(present(existing.rows[0]));
+          }
+          const duplicate = await client.query<{ id: string }>(
+            `SELECT id FROM catalog.entry WHERE kind='NCM' AND importer IS NULL AND normalized_code=$1`, [source.code]);
+          if (duplicate.rows[0]) {
+            await client.query("ROLLBACK");
+            return problem(reply, 409, "NCM_ALREADY_REGISTERED", "Esse NCM já está cadastrado na entidade.");
+          }
+          const id = randomUUID();
+          const evidence = "Tabela oficial NCM da Receita Federal / Portal Único Siscomex (Classif).";
+          const inserted = await client.query<Entry>(
+            `INSERT INTO catalog.entry
+              (id,importer,kind,code,name,status,provenance,evidence,valid_from,valid_to,created_by,updated_by)
+             VALUES ($1,NULL,'NCM',$2,$3,'ACTIVE','OFFICIAL_SISCOMEX',$4,$5,$6,$7,$7)
+             ON CONFLICT (normalized_code) WHERE kind='NCM' AND importer IS NULL DO NOTHING RETURNING *`,
+            [id, source.code, source.name, evidence, source.validFrom, source.validTo, actor.userId]);
+          if (!inserted.rowCount) {
+            await client.query("ROLLBACK");
+            return problem(reply, 409, "NCM_ALREADY_REGISTERED", "Esse NCM já está cadastrado na entidade.");
+          }
+          const attributesHash = officialNcmAttributesHash(source.mandatoryImportAttributes);
+          await client.query(
+            `INSERT INTO catalog.ncm_siscomex_data
+              (ncm_entry_id,source_updated_at,attributes_source_version,mandatory_import_attributes,attributes_sha256,synced_at)
+             VALUES ($1,$2,$3,$4::jsonb,$5,now())`,
+            [id, official.sourceUpdatedAt, official.attributesVersion,
+              JSON.stringify(source.mandatoryImportAttributes), attributesHash]);
+          await client.query(
+            `INSERT INTO catalog.command_receipt (actor_user_id,idempotency_key,payload_sha256,entry_id)
+             VALUES ($1,$2,$3,$4)`, [actor.userId, key, payloadHash, id]);
+          const correlationId = randomUUID();
+          const reason = "Inclusão no catálogo a partir do catálogo oficial Siscomex.";
+          await client.query(
+            `INSERT INTO audit.audit_log
+              (id,aggregate_type,aggregate_id,entity_type,entity_id,operation,field_name,old_value,new_value,actor_id,occurred_at,reason,correlation_id)
+             VALUES ($1,'CATALOG_ENTRY',$2,'CATALOG_ENTRY',$2,'CREATE',NULL,NULL,$3::jsonb,$4,now(),$5,$6)`,
+            [randomUUID(), id, JSON.stringify(present(inserted.rows[0])), `${actor.issuer}#${actor.subject}`, reason, correlationId]);
+          await client.query(
+            `INSERT INTO audit.audit_log
+              (id,aggregate_type,aggregate_id,entity_type,entity_id,operation,field_name,old_value,new_value,actor_id,occurred_at,reason,correlation_id)
+             VALUES ($1,'CATALOG_ENTRY',$2,'CATALOG_ENTRY',$2,'CREATE','mandatoryImportAttributes',NULL,$3::jsonb,$4,now(),$5,$6)`,
+            [randomUUID(), id, JSON.stringify(source.mandatoryImportAttributes), `${actor.issuer}#${actor.subject}`, reason, correlationId]);
+          await client.query(
+            `INSERT INTO audit.outbox_message (event_id,event_type,aggregate_type,aggregate_id,payload,occurred_at)
+             VALUES ($1,'catalog.entry.created','CATALOG_ENTRY',$2,$3::jsonb,now())`,
+            [randomUUID(), id, JSON.stringify({ id, importer: null, kind: "NCM", version: 1 })]);
+          await client.query("COMMIT");
+          reply.header("ETag", '"1"');
+          return reply.code(201).send({ ...present(inserted.rows[0]),
+            mandatoryImportAttributes: source.mandatoryImportAttributes,
+            sourceUpdatedAt: official.sourceUpdatedAt, attributesSourceVersion: official.attributesVersion });
+        } catch (error) {
+          await client.query("ROLLBACK").catch(() => undefined);
+          if (isUniqueError(error)) return problem(reply, 409, "NCM_ALREADY_REGISTERED", "Esse NCM já está cadastrado na entidade.");
+          throw error;
+        } finally { client.release(); }
+      });
+    }
+
     app.get<{ Params: { id: string } }>(`${base}/:id`, { config: permissionConfig("catalog.read", scopeMode) }, async (request, reply) => {
       const id = z.uuid().safeParse(request.params.id);
       if (!id.success) return problem(reply, 400, "INVALID_ID", "Identificador inválido.");
       const result = await pool.query<Entry>(
-         `SELECT entry.* FROM catalog.entry AS entry
-          WHERE entry.id = $1 AND entry.kind = $2 AND entry.importer IS NULL LIMIT 1`,
+        kind === "NCM"
+          ? `SELECT entry.*, official.mandatory_import_attributes,
+                    official.source_updated_at::text AS source_updated_at,
+                    official.attributes_source_version, official.synced_at
+             FROM catalog.entry AS entry
+             LEFT JOIN catalog.ncm_siscomex_data AS official ON official.ncm_entry_id = entry.id
+             WHERE entry.id = $1 AND entry.kind = $2 AND entry.importer IS NULL LIMIT 1`
+          : `SELECT entry.* FROM catalog.entry AS entry
+             WHERE entry.id = $1 AND entry.kind = $2 AND entry.importer IS NULL LIMIT 1`,
         [id.data, kind]);
       if (!result.rows[0]) return problem(reply, 404, "RESOURCE_NOT_FOUND", "Cadastro não encontrado.");
       reply.header("ETag", `"${result.rows[0].version}"`);
@@ -713,15 +993,16 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
         if (!validDates(kind, validFrom, validTo, status)) {
           await client.query("ROLLBACK"); return problem(reply, 400, "INVALID_VALIDITY", "Vigência inválida.");
         }
-        const changed = { name, status, evidence, valid_from: validFrom, valid_to: validTo };
+        const changed = { name, status, evidence, valid_from: validFrom, valid_to: validTo,
+          provenance: kind === "NCM" ? "MANUAL_REVIEW" : before.provenance };
         const old = { name: before.name, status: before.status, evidence: before.evidence,
-          valid_from: before.valid_from, valid_to: before.valid_to };
+          valid_from: before.valid_from, valid_to: before.valid_to, provenance: before.provenance };
         const differences = Object.entries(changed).filter(([field, value]) => value !== old[field as keyof typeof old]);
         if (differences.length === 0) { await client.query("ROLLBACK"); return problem(reply, 400, "NO_CHANGES", "Nenhuma alteração informada."); }
         const updated = await client.query<Entry>(
-          `UPDATE catalog.entry SET name=$2,status=$3,evidence=$4,valid_from=$5,valid_to=$6,
-             version=version+1,updated_by=$7,updated_at=now() WHERE id=$1 RETURNING *`,
-          [id.data, name, status, evidence, validFrom, validTo, actor.userId]);
+          `UPDATE catalog.entry SET name=$2,status=$3,evidence=$4,valid_from=$5,valid_to=$6,provenance=$7,
+             version=version+1,updated_by=$8,updated_at=now() WHERE id=$1 RETURNING *`,
+          [id.data, name, status, evidence, validFrom, validTo, changed.provenance, actor.userId]);
         const correlationId = randomUUID();
         for (const [field, value] of differences) {
           await client.query(

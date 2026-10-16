@@ -20,9 +20,57 @@ const entities = [
 type Option = { id: string; entity: string; code?: string | null; value: string };
 type Supplier = { id: string; code: string; name: string; status: string };
 type Product = { id: string; importer: string | null; code: string; name: string; status: string; version: string };
+type OfficialNcmAttributeDefinition = {
+  code: string; name: string; displayName: string; fillType: string | null; multivalued: boolean;
+  startsOn: string | null; endsOn: string | null; objectives: string[]; organs: string[];
+  conditionalAttributes: Array<{ required: boolean; condition: string | null; attribute: OfficialNcmAttributeDefinition }>;
+};
+type OfficialNcmAttribute = OfficialNcmAttributeDefinition & { required: true };
 type Ncm = { id: string; code: string; name: string; status: "ACTIVE" | "INACTIVE";
-  evidence: string; validFrom: string | null; validTo: string | null; version: string };
+  evidence: string; validFrom: string | null; validTo: string | null; version: string;
+  mandatoryImportAttributes?: OfficialNcmAttribute[]; sourceUpdatedAt?: string | null;
+  attributesSourceVersion?: string | null; officialDataSyncedAt?: string | null };
+type OfficialNcmSearchResult = Omit<Ncm, "id" | "status" | "evidence" | "version"> & { alreadyRegistered: boolean };
 const emptyNcmDraft: NcmDraft = { code: "", description: "", status: "ACTIVE", evidence: "", validFrom: "", validTo: "" };
+
+function formatNcmDate(value: string | null) {
+  if (!value) return null;
+  const date = /^(\d{4})-(\d{2})-(\d{2})/u.exec(value);
+  return date ? `${date[3]}/${date[2]}/${date[1]}` : value;
+}
+
+function NcmValidityDates({ validFrom, validTo }: { validFrom: string | null; validTo: string | null }) {
+  const start = formatNcmDate(validFrom);
+  const end = formatNcmDate(validTo);
+  return <small className="ncm-validity-dates">
+    Início da vigência: {start ?? "não informado"} · Fim da vigência: {end ?? "não informado pela fonte oficial"}
+  </small>;
+}
+
+function NcmConditionalAttributes({ attributes }: { attributes: OfficialNcmAttributeDefinition["conditionalAttributes"] }) {
+  if (!attributes.length) return null;
+  return <ul className="ncm-conditional-attributes">
+    {attributes.map(item => <li key={`${item.attribute.code}-${item.condition}`}>
+      <strong>{item.attribute.displayName}</strong> <code>{item.attribute.code}</code>
+      <span>{item.condition ? `Obrigatório quando ${item.condition}` : "Obrigatório sob condição Siscomex"}</span>
+      <NcmConditionalAttributes attributes={item.attribute.conditionalAttributes} />
+    </li>)}
+  </ul>;
+}
+
+function NcmMandatoryAttributes({ attributes }: { attributes: OfficialNcmAttribute[] }) {
+  return <details className="ncm-mandatory-attributes">
+    <summary>Atributos obrigatórios na importação · {attributes.length}</summary>
+    {attributes.length ? <ul className="ncm-attribute-list">
+      {attributes.map(attribute => <li key={attribute.code}>
+        <strong>{attribute.displayName}</strong> <code>{attribute.code}</code>
+        <span>{[attribute.fillType, ...attribute.objectives].filter(Boolean).join(" · ")}</span>
+        {attribute.organs.length > 0 && <span>Órgão(s): {attribute.organs.join(", ")}</span>}
+        <NcmConditionalAttributes attributes={attribute.conditionalAttributes} />
+      </li>)}
+    </ul> : <p className="muted">A fonte oficial não indica atributos obrigatórios para esta NCM.</p>}
+  </details>;
+}
 
 export default function OperationalValuesPage() {
   const [options, setOptions] = useState<Option[]>([]);
@@ -48,6 +96,12 @@ export default function OperationalValuesPage() {
   const [ncmPage, setNcmPage] = useState(1);
   const [ncmSearch, setNcmSearch] = useState("");
   const [ncmRefresh, setNcmRefresh] = useState(0);
+  const [officialNcmSearchTerm, setOfficialNcmSearchTerm] = useState("");
+  const [officialNcmSearch, setOfficialNcmSearch] = useState("");
+  const [officialNcmResults, setOfficialNcmResults] = useState<OfficialNcmSearchResult[]>([]);
+  const [officialNcmTotalCount, setOfficialNcmTotalCount] = useState(0);
+  const [officialNcmPage, setOfficialNcmPage] = useState(1);
+  const [officialNcmSearchLoading, setOfficialNcmSearchLoading] = useState(false);
   const [editingNcmId, setEditingNcmId] = useState("");
   const [ncmDraft, setNcmDraft] = useState<NcmDraft>(emptyNcmDraft);
   const [entity, setEntity] = useState<string>(entities[0][0]);
@@ -177,6 +231,58 @@ export default function OperationalValuesPage() {
       setNcmPage(1); setNcmSearch(""); setNcmRefresh(current => current + 1);
       setNotice("NCM cadastrado no catálogo fiscal global.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao cadastrar NCM."); }
+    finally { setBusy(false); }
+  }
+
+  async function searchOfficialNcms(page = 1, term = officialNcmSearchTerm) {
+    const search = term.trim();
+    if (search.length < 2) {
+      setOfficialNcmSearch(search);
+      setOfficialNcmResults([]);
+      setOfficialNcmTotalCount(0);
+      setOfficialNcmPage(1);
+      return;
+    }
+    setOfficialNcmSearchLoading(true); setError("");
+    try {
+      const query = new URLSearchParams({ search, page: String(page), pageSize: "25" });
+      const response = await apiFetch(`/api/v1/ncms/official-search?${query}`, { cache: "no-store" });
+      const result = await response.json() as { items?: OfficialNcmSearchResult[]; totalCount?: number; detail?: string };
+      if (!response.ok) throw new Error(result.detail || "Não foi possível pesquisar no catálogo Siscomex.");
+      setOfficialNcmSearch(search);
+      setOfficialNcmResults(result.items ?? []);
+      setOfficialNcmTotalCount(result.totalCount ?? 0);
+      setOfficialNcmPage(page);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao consultar o Siscomex."); }
+    finally { setOfficialNcmSearchLoading(false); }
+  }
+
+  async function addOfficialNcm(code: string) {
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await apiFetch("/api/v1/ncms/import-official", { method: "POST",
+        headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ code }) });
+      const result = await response.json() as { detail?: string };
+      if (!response.ok) throw new Error(result.detail || "Não foi possível adicionar o NCM.");
+      setNcmPage(1); setNcmRefresh(current => current + 1);
+      setNotice(`NCM ${code} adicionado à entidade com a descrição e os atributos oficiais.`);
+      await searchOfficialNcms(officialNcmPage, officialNcmSearch);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao adicionar o NCM."); }
+    finally { setBusy(false); }
+  }
+
+  async function refreshRegisteredNcms() {
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await apiFetch("/api/v1/ncms/refresh-official", { method: "POST",
+        headers: { "content-type": "application/json" }, body: "{}" });
+      const result = await response.json() as { matchedCount?: number; updatedCount?: number;
+        attributesUpdatedCount?: number; preservedUnmatchedCount?: number; detail?: string };
+      if (!response.ok) throw new Error(result.detail || "Não foi possível atualizar os NCMs cadastrados.");
+      setNcmRefresh(current => current + 1);
+      setNotice(`${result.matchedCount ?? 0} NCMs cadastrados conferidos; ${result.updatedCount ?? 0} descrições atualizadas e ${result.attributesUpdatedCount ?? 0} conjuntos de atributos atualizados. ${result.preservedUnmatchedCount ?? 0} registros sem correspondência vigente foram mantidos.`);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao atualizar os NCMs."); }
     finally { setBusy(false); }
   }
 
@@ -482,6 +588,9 @@ export default function OperationalValuesPage() {
         {entities.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select></label>
       <p className="muted">NCMs são um catálogo fiscal global, sem vínculo com importadora.</p>
+      <p className="muted">DescriÃ§Ãµes e atributos obrigatÃ³rios sÃ£o consultados na tabela oficial do Siscomex. A busca permite adicionar somente NCMs usados pela entidade.</p>
+      {canWriteNcm && <button className="button secondary ncm-refresh-button" type="button" disabled={busy}
+        onClick={() => void refreshRegisteredNcms()}>{busy ? "Atualizando..." : "Atualizar NCMs jÃ¡ cadastrados"}</button>}
       <h3>NCMs cadastrados &middot; {ncmTotalCount}</h3>
       <label className="product-catalog-search">Pesquisar por código ou descrição
         <input maxLength={120} value={ncmSearch} onChange={event => { setNcmSearch(event.target.value); setNcmPage(1); }} />
@@ -511,13 +620,16 @@ export default function OperationalValuesPage() {
             </div>
           </form> : <>
             <div className="product-catalog-description"><strong className="product-catalog-code">{ncm.code}</strong>
-              <span>{ncm.name}</span></div>
+              <span>{ncm.name}</span>
+              <NcmValidityDates validFrom={ncm.validFrom} validTo={ncm.validTo} />
+            </div>
             <div className="product-catalog-actions"><span className={`product-catalog-status ${ncm.status === "ACTIVE" ? "active" : "inactive"}`}>
               {ncm.status === "ACTIVE" ? "Ativo" : "Inativo"}
             </span>
               {canWriteNcm && <button className="button secondary entity-value-action" type="button" disabled={busy}
                 aria-label={`Editar NCM ${ncm.code}`} onClick={() => startEditingNcm(ncm)}>Editar</button>}
             </div>
+            <NcmMandatoryAttributes attributes={ncm.mandatoryImportAttributes ?? []} />
           </>}
         </li>)}
       </ul> : <p className="muted">{ncmSearch.trim() ? "Nenhum NCM corresponde à pesquisa." : "Ainda não há NCMs cadastrados."}</p>}
@@ -526,6 +638,44 @@ export default function OperationalValuesPage() {
         <span>Página {ncmPage} de {Math.ceil(ncmTotalCount / 25)}</span>
         <button className="button" disabled={ncmPage * 25 >= ncmTotalCount} onClick={() => setNcmPage(page => page + 1)}>Próxima</button>
       </nav>}
+      <section className="ncm-official-search" aria-labelledby="ncm-official-search-title">
+        <h3 id="ncm-official-search-title">Pesquisar NCMs oficiais</h3>
+        <p className="muted">Pesquise pela descriÃ§Ã£o ou pelo cÃ³digo e adicione somente os NCMs usados pela entidade.</p>
+        <form className="ncm-official-search-form" onSubmit={event => { event.preventDefault(); void searchOfficialNcms(1); }}>
+          <label>DescriÃ§Ã£o ou cÃ³digo NCM
+            <input maxLength={120} minLength={2} value={officialNcmSearchTerm}
+              onChange={event => setOfficialNcmSearchTerm(event.target.value)} placeholder="Ex.: resistor ou 01012100" />
+          </label>
+          <button className="button" disabled={officialNcmSearchLoading || officialNcmSearchTerm.trim().length < 2}>
+            {officialNcmSearchLoading ? "Pesquisando..." : "Pesquisar no Siscomex"}
+          </button>
+        </form>
+        {officialNcmSearchLoading && <p role="status">Consultando a tabela oficial do Siscomex...</p>}
+        {!officialNcmSearchLoading && officialNcmSearch && <>
+          <p className="muted">{officialNcmTotalCount} resultados oficiais para “{officialNcmSearch}”.</p>
+          {officialNcmResults.length ? <ul className="product-catalog-list ncm-official-search-list">
+            {officialNcmResults.map(item => <li className="product-catalog-item" key={item.code}>
+              <div className="product-catalog-description"><strong className="product-catalog-code">{item.code}</strong>
+                <span>{item.name}</span>
+                <NcmValidityDates validFrom={item.validFrom} validTo={item.validTo} />
+              </div>
+              <div className="product-catalog-actions">
+                {item.alreadyRegistered
+                  ? <span className="product-catalog-status active">JÃ¡ cadastrado</span>
+                  : canWriteNcm && <button className="button entity-value-action" type="button" disabled={busy}
+                    onClick={() => void addOfficialNcm(item.code)}>Adicionar Ã  entidade</button>}
+              </div>
+              <NcmMandatoryAttributes attributes={item.mandatoryImportAttributes ?? []} />
+            </li>)}
+          </ul> : <p className="muted">Nenhuma NCM vigente corresponde Ã  pesquisa.</p>}
+          {officialNcmTotalCount > 25 && <nav className="pagination" aria-label="PÃ¡ginas da busca oficial de NCMs">
+            <button className="button secondary" disabled={officialNcmPage <= 1} onClick={() => void searchOfficialNcms(officialNcmPage - 1, officialNcmSearch)}>Anterior</button>
+            <span>PÃ¡gina {officialNcmPage} de {Math.ceil(officialNcmTotalCount / 25)}</span>
+            <button className="button" disabled={officialNcmPage * 25 >= officialNcmTotalCount}
+              onClick={() => void searchOfficialNcms(officialNcmPage + 1, officialNcmSearch)}>PrÃ³xima</button>
+          </nav>}
+        </>}
+      </section>
       {canWriteNcm && <form className="stack-form" onSubmit={event => void addNcm(event)}>
         <h3>Adicionar NCM</h3>
         <label>Código NCM<input required maxLength={8} pattern="[0-9]{8}" inputMode="numeric" value={ncmDraft.code}
