@@ -26,6 +26,16 @@ const processFields = z.object({
 const createProcess = processFields.extend({
   importer: z.string().trim().min(1).max(120),
 });
+const invoiceImport = z.object({
+  process: createProcess,
+  invoice: z.object({
+    fileName: z.string().trim().min(1).max(255), number: z.string().trim().min(1).max(120),
+    issueDate: z.iso.date().nullable(), amount: nonnegative, currency: z.string().regex(/^[A-Z]{3}$/u),
+    metadata: z.record(z.string(), z.unknown()),
+  }).strict(),
+  allocations: z.array(z.object({ itemId: z.uuid(), quantity, notes: z.string().trim().max(2000).default("") }).strict())
+    .min(1).max(1000),
+}).strict();
 const updateProcessFields = processFields.extend({
   importer: z.string().trim().min(1).max(120).optional(),
 });
@@ -166,6 +176,99 @@ export function checkVersion(row: Record<string, unknown>, expected: string) {
 }
 
 export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool): Promise<void> {
+  app.post("/api/v1/processes/import-invoice", { config: permissionConfig("processes.write") },
+    async (request, reply) => {
+      const parsed = invoiceImport.safeParse(request.body);
+      if (!parsed.success) return problem(reply, 400, "INVALID_INVOICE_IMPORT", "Revise os dados da invoice e as associações de PO.");
+      let key: string; let auth: ReturnType<typeof actorAndScopes>;
+      try {
+        key = keyFrom(request); auth = actorAndScopes(request); inScope(parsed.data.process.importer, auth.scopes);
+      } catch (error) {
+        if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message);
+        throw error;
+      }
+      const body = parsed.data;
+      return transaction(pool, reply, async client => {
+        const command = await receipt(client, auth.actor.userId, key, "IP_INVOICE_IMPORT", body);
+        if (command.existingId) return { id: command.existingId, replayed: true };
+        await knownImporter(client, body.process.importer);
+        const invoiceAssignments = z.array(z.object({ itemId: z.uuid(), poNumber: z.string().trim().min(1).max(80),
+          quantity, productCode: z.string().trim().min(1).max(120), sourceRow: z.number().int().positive() }).strict())
+          .min(1).max(2000).safeParse(body.invoice.metadata.assignments);
+        if (!invoiceAssignments.success) throw new BusinessError(400, "INVALID_INVOICE_ASSIGNMENTS", "A invoice precisa identificar a PO e o produto de cada associação.");
+        const aggregated = new Map<string, number>();
+        for (const allocation of body.allocations) {
+          aggregated.set(allocation.itemId, (aggregated.get(allocation.itemId) ?? 0) + Number(allocation.quantity));
+        }
+        const assignedTotals = new Map<string, number>();
+        for (const assignment of invoiceAssignments.data) {
+          assignedTotals.set(assignment.itemId, (assignedTotals.get(assignment.itemId) ?? 0) + Number(assignment.quantity));
+        }
+        if (assignedTotals.size !== aggregated.size || [...aggregated].some(([itemId, total]) =>
+          Math.abs(total - (assignedTotals.get(itemId) ?? Number.NaN)) > 0.00000001)) {
+          throw new BusinessError(400, "INVOICE_ALLOCATION_MISMATCH", "As quantidades distribuídas não conferem com as associações da invoice.");
+        }
+        const matchedItems = await client.query<{ id: string; purchase_order_id: string; number: string; importer: string; quantity: string; product_code: string }>(
+          `SELECT item.id, item.purchase_order_id, po.external_number AS number, po.importer,
+                  item.ordered_quantity::text AS quantity, item.product_code
+           FROM procurement.purchase_order_item item JOIN procurement.purchase_order po ON po.id = item.purchase_order_id
+           WHERE item.id = ANY($1::uuid[]) ORDER BY item.id FOR UPDATE OF item, po`, [[...aggregated.keys()]],
+        );
+        if (matchedItems.rowCount !== aggregated.size || matchedItems.rows.some(item => item.importer !== body.process.importer)) {
+          throw new BusinessError(409, "PO_ITEM_MISMATCH", "Uma ou mais linhas selecionadas não pertencem à importadora do IP.");
+        }
+        const byItemId = new Map(matchedItems.rows.map(item => [item.id, item]));
+        const normalizePo = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "");
+        for (const assignment of invoiceAssignments.data) {
+          const item = byItemId.get(assignment.itemId);
+          if (!item || item.product_code !== assignment.productCode || normalizePo(item.number) !== normalizePo(assignment.poNumber)) {
+            throw new BusinessError(409, "PO_ITEM_MISMATCH", "O item selecionado não corresponde à PO e ao produto indicados na invoice.");
+          }
+        }
+        const processId = randomUUID();
+        await client.query(
+          `INSERT INTO imports.import_process
+           (id,importer,ip_number,normalized_ip_number,logistics_status,priority,notes,source_kind,version,
+            incoterm,port_loading,port_discharge)
+           VALUES ($1,$2,$3,upper($3),$4,$5,$6,'CHINA_INVOICE',1,$7,$8,$9)`,
+          [processId, body.process.importer, body.process.ipNumber, body.process.logisticsStatus,
+            body.process.priority, body.process.notes, typeof body.invoice.metadata.incoterm === "string" ? body.invoice.metadata.incoterm : null,
+            typeof body.invoice.metadata.originText === "string" ? body.invoice.metadata.originText : null,
+            typeof body.invoice.metadata.destinationText === "string" ? body.invoice.metadata.destinationText : null],
+        );
+        await record(client, "IMPORT_PROCESS", processId, "IMPORT_PROCESS", processId, "CREATE", null,
+          { ...body.process, source: "CHINA_INVOICE", invoiceNumber: body.invoice.number }, auth.actor, body.process.reason);
+        for (const item of matchedItems.rows) {
+          const allocationId = randomUUID();
+          const allocationQuantity = aggregated.get(item.id)!;
+          await client.query(
+            `INSERT INTO procurement.process_purchase_order (purchase_order_id,process_id,source_kind)
+             VALUES ($1,$2,'CHINA_INVOICE') ON CONFLICT DO NOTHING`, [item.purchase_order_id, processId],
+          );
+          await client.query(
+            `INSERT INTO procurement.po_item_allocation (id,purchase_order_item_id,process_id,quantity,notes)
+             VALUES ($1,$2,$3,$4,$5)`, [allocationId, item.id, processId, allocationQuantity,
+              body.allocations.filter(allocation => allocation.itemId === item.id).map(allocation => allocation.notes).filter(Boolean).join("\n")],
+          );
+          await record(client, "IMPORT_PROCESS", processId, "PO_ITEM_ALLOCATION", allocationId, "CREATE", null,
+            { itemId: item.id, poNumber: item.number, quantity: allocationQuantity }, auth.actor, body.process.reason);
+        }
+        const documentId = randomUUID();
+        await client.query(
+          `INSERT INTO imports.process_document
+           (id,process_id,kind,number,issue_date,amount,currency_code,notes)
+           VALUES ($1,$2,'INVOICE',$3,$4,$5,$6,$7)`,
+          [documentId, processId, body.invoice.number, body.invoice.issueDate, body.invoice.amount,
+            body.invoice.currency, JSON.stringify({ fileName: body.invoice.fileName, ...body.invoice.metadata })],
+        );
+        await record(client, "IMPORT_PROCESS", processId, "PROCESS_DOCUMENT", documentId, "CREATE", null,
+          { kind: "INVOICE", number: body.invoice.number, issueDate: body.invoice.issueDate,
+            amount: body.invoice.amount, currency: body.invoice.currency, fileName: body.invoice.fileName }, auth.actor, body.process.reason);
+        await saveReceipt(client, auth.actor.userId, key, command.hash, "IP_INVOICE_IMPORT", processId);
+        return { id: processId, documentId, allocations: aggregated.size, ipNumber: body.process.ipNumber };
+      }, 201);
+    });
+
   app.get<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/operational",
     { config: permissionConfig("purchase-orders.read") }, async (request, reply) => {
       const id = uuid.safeParse(request.params.id);

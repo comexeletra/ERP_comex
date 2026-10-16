@@ -17,6 +17,7 @@ import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
 import { loadPurchaseRequests, purchaseRequestOperationalFields, PurchaseRequestChoice, PurchaseRequestSelect } from "./PurchaseRequestSelect";
 import { parseTotvsPoXlsx, TotvsPoProductRow } from "../lib/totvs-po-xlsx";
 import { formatNumber } from "../lib/format-number";
+import { ChinaInvoiceDraft, parseChinaInvoiceXlsx } from "../lib/china-invoice-xlsx";
 
 const poRoles = new Set(["Master", "Administrador", "Importação", "Compras"]);
 const ipRoles = new Set(["Master", "Administrador", "Importação"]);
@@ -45,6 +46,11 @@ type PoDraft = {
 
 const poDraftKey = "new-operational-record:po:v1";
 const poCommandKey = "new-operational-record:po-command:v1";
+
+type InvoiceItemCandidate = { id: string; lineNumber: number; productCode: string; description: string;
+  unit: string; remainingQuantity: string };
+type InvoiceMatch = { key: string; sourceRow: number; poNumber: string; quantity: string;
+  productCode: string; description: string; itemId: string; candidates: InvoiceItemCandidate[] };
 
 function blankPoItem(): PoItemDraft {
   return { externalLineReference: "", productCode: "", description: "", orderedQuantity: "",
@@ -102,6 +108,10 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
   const [totvsApplied, setTotvsApplied] = useState(false);
   const [commonItemFields, setCommonItemFields] = useState<OperationalFieldDraft>(blankPurchaseOrderItemFields);
   const [createdPoId, setCreatedPoId] = useState("");
+  const [invoiceDraft, setInvoiceDraft] = useState<ChinaInvoiceDraft | null>(null);
+  const [invoiceMatches, setInvoiceMatches] = useState<InvoiceMatch[]>([]);
+  const [invoiceError, setInvoiceError] = useState("");
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
   const specificItemFields = purchaseOrderSpecificFields(supportsGroup);
 
@@ -192,6 +202,76 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
     try { setTotvsRows(await parseTotvsPoXlsx(file)); }
     catch (cause) { setTotvsFileError(cause instanceof Error ? cause.message : "Não foi possível ler a planilha."); }
     finally { setTotvsParsing(false); }
+  }
+
+  async function selectChinaInvoice(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0]; event.currentTarget.value = "";
+    if (!file) return;
+    if (!importer) { setInvoiceError("Selecione a importadora do IP antes de carregar a invoice."); return; }
+    setInvoiceError(""); setInvoiceDraft(null); setInvoiceMatches([]); setInvoiceLoading(true);
+    try {
+      const draft = await parseChinaInvoiceXlsx(file);
+      setInvoiceDraft(draft);
+      const lineIssues = draft.lines.flatMap(line => line.issues.map(issue => `Linha ${line.sourceRow}: ${issue}`));
+      if (lineIssues.length) { setInvoiceError(lineIssues.join(" ")); return; }
+      const normalized = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "");
+      const assignments = draft.lines.flatMap(line => line.poAssignments.map((assignment, index) => ({
+        key: `${line.sourceRow}:${index}`, sourceRow: line.sourceRow, poNumber: assignment.poNumber,
+        quantity: assignment.quantity, productCode: line.productCode, description: line.description,
+      })));
+      const poByNumber = new Map<string, Promise<InvoiceItemCandidate[]>>();
+      for (const assignment of assignments) {
+        const key = normalized(assignment.poNumber);
+        if (!poByNumber.has(key)) poByNumber.set(key, (async () => {
+          const query = new URLSearchParams({ number: assignment.poNumber, importer, page: "1", pageSize: "200" });
+          const response = await apiFetch(`/api/v1/purchase-orders?${query}`, { cache: "no-store" });
+          const list = await readResponse<{ items: Array<{ id: string; number: string }> }>(response);
+          const records = await Promise.all(list.items.filter(po => normalized(po.number) === key).map(async po => {
+            const detail = await readResponse<{ items: InvoiceItemCandidate[] }>(await apiFetch(`/api/v1/purchase-orders/${po.id}/operational`, { cache: "no-store" }));
+            return detail.items;
+          }));
+          return records.flat().filter(item => Number(item.remainingQuantity) > 0);
+        })());
+      }
+      const matches = await Promise.all(assignments.map(async assignment => {
+        const candidates = (await poByNumber.get(normalized(assignment.poNumber))!).filter(item => item.productCode === assignment.productCode);
+        const qty = Number(assignment.quantity);
+        const exact = candidates.filter(item => Number(item.remainingQuantity) >= qty);
+        return { ...assignment, candidates, itemId: exact.length === 1 ? exact[0].id : "" };
+      }));
+      setInvoiceMatches(matches);
+      if (matches.some(match => match.candidates.length === 0)) setInvoiceError("Há linhas sem correspondência de PO e código de produto. Confira o cadastro da PO antes de salvar.");
+      else if (matches.some(match => !match.itemId)) setInvoiceError("Revise as linhas com mais de uma opção ou saldo insuficiente e selecione o item correto.");
+    } catch (cause) { setInvoiceError(cause instanceof Error ? cause.message : "Não foi possível processar a invoice."); }
+    finally { setInvoiceLoading(false); }
+  }
+
+  async function revalidateInvoiceMatches() {
+    setInvoiceLoading(true); setInvoiceError("");
+    try {
+      const normalized = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "");
+      const byPo = new Map<string, Promise<InvoiceItemCandidate[]>>();
+      for (const match of invoiceMatches) {
+        const key = normalized(match.poNumber);
+        if (!byPo.has(key)) byPo.set(key, (async () => {
+          const query = new URLSearchParams({ number: match.poNumber, importer, page: "1", pageSize: "200" });
+          const list = await readResponse<{ items: Array<{ id: string; number: string }> }>(await apiFetch(`/api/v1/purchase-orders?${query}`, { cache: "no-store" }));
+          const records = await Promise.all(list.items.filter(po => normalized(po.number) === key).map(async po => readResponse<{ items: InvoiceItemCandidate[] }>(
+            await apiFetch(`/api/v1/purchase-orders/${po.id}/operational`, { cache: "no-store" }))));
+          return records.flatMap(record => record.items).filter(item => Number(item.remainingQuantity) > 0);
+        })());
+      }
+      const refreshed = await Promise.all(invoiceMatches.map(async match => {
+        const candidates = (await byPo.get(normalized(match.poNumber))!).filter(item => item.productCode === match.productCode);
+        const current = candidates.find(item => item.id === match.itemId && Number(item.remainingQuantity) >= Number(match.quantity));
+        const enough = candidates.filter(item => Number(item.remainingQuantity) >= Number(match.quantity));
+        return { ...match, candidates, itemId: current?.id ?? (enough.length === 1 ? enough[0].id : "") };
+      }));
+      setInvoiceMatches(refreshed);
+      if (refreshed.some(match => !match.candidates.length)) setInvoiceError("Ainda há linhas sem correspondência para a PO e o código informados.");
+      else if (refreshed.some(match => !match.itemId)) setInvoiceError("Selecione o item correto da PO em cada linha pendente.");
+    } catch (cause) { setInvoiceError(cause instanceof Error ? cause.message : "Não foi possível conferir novamente as associações."); }
+    finally { setInvoiceLoading(false); }
   }
 
   function applyTotvsProducts(mode: "replace" | "append") {
@@ -365,6 +445,42 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
         await createPurchaseOrder();
         return;
       }
+      if (invoiceDraft) {
+        if (invoiceMatches.length === 0 || invoiceMatches.some(match => !match.itemId))
+          throw new Error("Revise e selecione o item de PO para todas as linhas da invoice.");
+        const payload = {
+          process: { importer, ipNumber: number, logisticsStatus: status || null,
+            priority: priority || null, notes, reason: automaticAuditReason },
+          invoice: { fileName: invoiceDraft.fileName, number: invoiceDraft.invoiceNumber,
+            issueDate: /^\d{4}-\d{2}-\d{2}$/u.test(invoiceDraft.invoiceDate) ? invoiceDraft.invoiceDate : null,
+            amount: invoiceDraft.totalAmount, currency: "CNY", metadata: {
+              invoiceDateText: invoiceDraft.invoiceDate, ipNumberFromInvoice: invoiceDraft.ipNumber,
+              importerText: invoiceDraft.importerText, exporterText: invoiceDraft.exporterText,
+              headerPoNumber: invoiceDraft.headerPoNumber, originText: invoiceDraft.originText,
+              destinationText: invoiceDraft.destinationText, incoterm: invoiceDraft.incoterm,
+              countryOfOrigin: invoiceDraft.countryOfOrigin, countryOfAcquisition: invoiceDraft.countryOfAcquisition,
+              countryOfPrecedence: invoiceDraft.countryOfPrecedence, paymentTerms: invoiceDraft.paymentTerms,
+              totalQuantity: invoiceDraft.totalQuantity, totalNetWeightKg: invoiceDraft.totalNetWeightKg,
+              totalGrossWeightKg: invoiceDraft.totalGrossWeightKg,
+              lines: invoiceDraft.lines.map(line => ({ sourceRow: line.sourceRow, lineNumber: line.lineNumber,
+                ncm: line.ncm, productCode: line.productCode, description: line.description,
+                manufacturer: line.manufacturer, manufacturerAddress: line.manufacturerAddress,
+                manufacturerCountry: line.manufacturerCountry, quantity: line.quantity, unit: line.unit,
+                unitPrice: line.unitPrice, netWeightKg: line.netWeightKg, grossWeightKg: line.grossWeightKg,
+                amount: line.amount, poCell: line.poCell })),
+              assignments: invoiceMatches.map(({ sourceRow, poNumber, quantity, productCode, itemId }) =>
+                ({ sourceRow, poNumber, quantity, productCode, itemId })),
+            } },
+          allocations: invoiceMatches.map(match => ({ itemId: match.itemId, quantity: match.quantity,
+            notes: `Invoice ${invoiceDraft.invoiceNumber || invoiceDraft.fileName}, linha ${match.sourceRow}` })),
+        };
+        const result = await readResponse<{ id: string }>(await apiFetch("/api/v1/processes/import-invoice", {
+          method: "POST", headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+          body: JSON.stringify(payload),
+        }));
+        router.push(`/processes/${result.id}`);
+        return;
+      }
       const response = await apiFetch("/api/v1/processes", {
         method: "POST",
         headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
@@ -488,6 +604,53 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
           </button>
         </section>
       </> : <section className="card ip-entry-section">
+        <div className="totvs-po-import">
+          <h2>Importar invoice da China</h2>
+          <p className="muted">Use a aba INV. O sistema confere as POs da importadora, relaciona os itens pelo código e distribui as quantidades antes de criar o IP.</p>
+          <label>Invoice (.xlsx)<input className="file-upload-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            disabled={invoiceLoading || saving} onChange={event => void selectChinaInvoice(event)} /></label>
+          {invoiceLoading && <p role="status">Lendo INV e conferindo as POs cadastradas, sem limitar pela idade do pedido…</p>}
+          {invoiceDraft && <>
+            <p className="notice" role="status">{invoiceDraft.fileName}: {invoiceDraft.lines.length} linhas, {invoiceMatches.length} associações, {formatNumber(invoiceDraft.totalQuantity)} unidades, {formatNumber(invoiceDraft.totalAmount)} CNY.</p>
+            <div className="operational-fields">
+              <label>Número da invoice<input required maxLength={120} value={invoiceDraft.invoiceNumber}
+                onChange={event => setInvoiceDraft(current => current ? { ...current, invoiceNumber: event.target.value } : current)} /></label>
+              <label>Data da invoice<input required type="date" value={/^\d{4}-\d{2}-\d{2}$/u.test(invoiceDraft.invoiceDate) ? invoiceDraft.invoiceDate : ""}
+                onChange={event => setInvoiceDraft(current => current ? { ...current, invoiceDate: event.target.value } : current)} /></label>
+              <label>Total da invoice (CNY)<input required inputMode="decimal" value={invoiceDraft.totalAmount}
+                onChange={event => setInvoiceDraft(current => current ? { ...current, totalAmount: event.target.value.replace(",", ".") } : current)} /></label>
+            </div>
+            <p className="muted">Corrija PO, código ou quantidade nos campos da prévia e use “Revalidar associações” para carregar as linhas e saldos da PO atualizada.</p>
+            {invoiceDraft.warnings.map(warning => <p className="notice" key={warning}>{warning}</p>)}
+            <div className="totvs-import-actions"><button className="button secondary" type="button" disabled={invoiceLoading || !invoiceMatches.length}
+              onClick={() => void revalidateInvoiceMatches()}>Revalidar associações</button></div>
+            <div className="totvs-import-table-wrap"><table className="totvs-import-table">
+              <thead><tr><th>Linha</th><th>PO</th><th>Produto</th><th>Quantidade</th><th>Item operacional</th></tr></thead>
+              <tbody>{invoiceMatches.map(match => <tr key={match.key}>
+                <td>{match.sourceRow}</td><td><input aria-label={`PO da linha ${match.sourceRow}`} value={match.poNumber}
+                  onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key ? { ...item, poNumber: event.target.value, itemId: "" } : item))} /></td>
+                <td><input aria-label={`Código do produto da linha ${match.sourceRow}`} value={match.productCode}
+                  onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key ? { ...item, productCode: event.target.value, itemId: "" } : item))} />
+                  <small>{match.description}</small></td>
+                <td><input aria-label={`Quantidade da linha ${match.sourceRow}`} inputMode="decimal" value={match.quantity}
+                  onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key ? { ...item, quantity: event.target.value.replace(",", "."), itemId: "" } : item))} /></td>
+                <td><select required value={match.itemId} onChange={event => setInvoiceMatches(current => {
+                  const next = current.map(item => item.key === match.key ? { ...item, itemId: event.target.value } : item);
+                  if (next.every(item => item.itemId)) setInvoiceError("");
+                  return next;
+                })}>
+                  <option value="">Selecione o item da PO</option>{match.candidates.map(candidate => <option key={candidate.id} value={candidate.id}>
+                    Linha {candidate.lineNumber}: {candidate.productCode} · saldo {formatNumber(candidate.remainingQuantity)} {candidate.unit}
+                  </option>)}
+                </select></td>
+              </tr>)}</tbody>
+            </table></div>
+            <button className="button secondary" type="button" disabled={saving} onClick={() => {
+              setInvoiceDraft(null); setInvoiceMatches([]); setInvoiceError("");
+            }}>Remover invoice e continuar manualmente</button>
+          </>}
+          {invoiceError && <p className="notice error" role="alert">{invoiceError}</p>}
+        </div>
         <div className="ip-entry-grid">
         <label>Importadora<select required value={importer} onChange={event => setImporter(event.target.value)}>
           <option value="">Selecione</option>{importers.map(value => <option key={value} value={value}>{value}</option>)}
@@ -498,7 +661,8 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
           onChange={setPriority} /></label>
         <label>Observações<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
         </div>
-        <button className="button" disabled={saving || !importer}>{saving ? "Salvando…" : "Salvar IP"}</button>
+        <button className="button" disabled={saving || !importer || Boolean(invoiceDraft && (invoiceError || invoiceMatches.some(match => !match.itemId)))}>
+          {saving ? "Salvando…" : invoiceDraft ? "Criar IP, distribuir POs e registrar invoice" : "Salvar IP"}</button>
       </section>}
     </form>}
   </main>;
