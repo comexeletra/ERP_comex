@@ -6,7 +6,7 @@ import { apiFetch } from "../../lib/api";
 import { automaticAuditReason } from "../../lib/audit";
 import { formatUsDate, formatUsDateTime, parseUsDate } from "../../lib/date-format";
 
-type Resource = "suppliers" | "products" | "ncms";
+type Resource = "products" | "ncms";
 type Importer = { code: string; historicalPoCount: number; status: string };
 type Candidate = { importer: string; rawCode: string; observationCount: number;
   sampleSourceRowId: string; sampleSheetName: string; sampleRowNumber: number; eligibleFormat: boolean };
@@ -16,7 +16,7 @@ type AuditEvent = { id: string; operation: string; fieldName: string | null; old
   newValue: unknown; actor: string; occurredAt: string; reason: string | null };
 type AuditPage = { page: number; pageSize: number; totalCount: number; items: AuditEvent[] };
 type Page<T> = { page: number; totalCount: number; items: T[] };
-const labels: Record<Resource, string> = { suppliers: "Fornecedores", products: "Produtos", ncms: "NCM" };
+const labels: Record<Resource, string> = { products: "Produtos", ncms: "NCM" };
 
 async function responseJson<T>(response: Response): Promise<T> {
   if (response.status === 401) throw new Error("Sua sessão expirou. Entre novamente.");
@@ -28,7 +28,7 @@ async function responseJson<T>(response: Response): Promise<T> {
 }
 
 export default function CatalogPage() {
-  const [resource, setResource] = useState<Resource>("suppliers");
+  const [resource, setResource] = useState<Resource>("products");
   const [importers, setImporters] = useState<Importer[]>([]);
   const [importer, setImporter] = useState("");
   const [search, setSearch] = useState("");
@@ -89,7 +89,7 @@ export default function CatalogPage() {
     try {
       const response = await apiFetch(`/api/v1/${resource}`, { method: "POST",
         headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({ ...(resource === "suppliers" ? {} : { importer }), code: draft.code, name: draft.name, evidence: draft.evidence,
+        body: JSON.stringify({ importer, code: draft.code, name: draft.name, evidence: draft.evidence,
           reason: automaticAuditReason, validFrom }) });
       await responseJson<Entry>(response);
       setDraft({ code: "", name: "", evidence: "", validFrom: "" });
@@ -139,7 +139,7 @@ export default function CatalogPage() {
     <section className="card" aria-labelledby="registration-options-title">
       <h2 id="registration-options-title">Novo cadastro</h2>
       <nav className="catalog-links" aria-label="Tipos de cadastro">
-        <Link className="button secondary" href={canWrite ? "#catalog-create" : "#catalog-controls"}>Fornecedores, produtos e NCM</Link>
+        <Link className="button secondary" href={canWrite ? "#catalog-create" : "#catalog-controls"}>Produtos e NCM</Link>
         <Link className="button secondary" href="/catalog/values">Valores das entidades</Link>
         {canRegisterPo && <Link className="button secondary" href="/purchase-orders/new">Cadastrar PO do TOTVS</Link>}
         {canRegisterIp && <Link className="button secondary" href="/processes/new?from=catalog">Cadastrar IP</Link>}
@@ -148,7 +148,7 @@ export default function CatalogPage() {
     <section className="card catalog-controls" id="catalog-controls">
       <div role="group" aria-label="Tipo de cadastro">{(Object.keys(labels) as Resource[]).map(key =>
         <button type="button" key={key} className={`button ${resource === key ? "" : "secondary"}`} onClick={() => chooseResource(key)}>{labels[key]}</button>)}</div>
-      <label>{resource === "suppliers" ? "Importadora para filtrar candidatos históricos" : "Importador"}<select value={importer} onChange={event => { historyRequest.current += 1; setHistoryLoading(false); setImporter(event.target.value); setPage(1); setHistoryEntry(undefined); setHistory(undefined); }}>
+      <label>Importador<select value={importer} onChange={event => { historyRequest.current += 1; setHistoryLoading(false); setImporter(event.target.value); setPage(1); setHistoryEntry(undefined); setHistory(undefined); }}>
         {importers.map(value => <option key={value.code} value={value.code}>{value.code} · {value.historicalPoCount} POs históricas</option>)}
       </select></label>
       <label>Pesquisar código ou nome<input value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} /></label>
