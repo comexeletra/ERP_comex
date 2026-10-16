@@ -582,7 +582,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const body = { ...parsed.data, importer: parsed.data.importer ?? String(found.rows[0].importer) };
         if (body.importer !== found.rows[0].importer) {
           if (found.rows[0].source_kind !== "MANUAL") {
-            throw new BusinessError(409, "HISTORICAL_IMPORTER", "A importadora do IP histÃ³rico exige reconciliaÃ§Ã£o da origem.");
+            throw new BusinessError(409, "HISTORICAL_IMPORTER", "A importadora do IP histórico exige reconciliação da origem.");
           }
           await knownImporter(client, body.importer);
           const references = await client.query(

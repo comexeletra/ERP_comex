@@ -130,13 +130,13 @@ export default function OperationalValuesPage() {
       apiFetch("/api/v1/importers", { cache: "no-store", signal: controller.signal })
         .then(async response => {
           const data = await response.json() as { items?: Importer[]; detail?: string };
-          if (!response.ok) throw new Error(data.detail || "NÃ£o foi possÃ­vel carregar as importadoras.");
+          if (!response.ok) throw new Error(data.detail || "Não foi possível carregar as importadoras.");
           return data.items ?? [];
         }),
       apiFetch(`/api/v1/products?${query}`, { cache: "no-store", signal: controller.signal })
         .then(async response => {
           const data = await response.json() as { items?: Product[]; detail?: string };
-          if (!response.ok) throw new Error(data.detail || "NÃ£o foi possÃ­vel carregar os produtos.");
+          if (!response.ok) throw new Error(data.detail || "Não foi possível carregar os produtos.");
           return data.items ?? [];
         }),
     ]).then(([availableImporters, entries]) => {
@@ -178,10 +178,10 @@ export default function OperationalValuesPage() {
         body: JSON.stringify({ importer: productImporter, code: productDraft.code,
           name: productDraft.description, evidence: productDraft.evidence, reason: automaticAuditReason }) });
       const result = await response.json() as { detail?: string };
-      if (!response.ok) throw new Error(result.detail || "NÃ£o foi possÃ­vel cadastrar o produto.");
+      if (!response.ok) throw new Error(result.detail || "Não foi possível cadastrar o produto.");
       setProductDraft({ code: "", description: "", evidence: "" });
       setProductRefresh(current => current + 1);
-      setNotice("Produto cadastrado com cÃ³digo e descriÃ§Ã£o.");
+      setNotice("Produto cadastrado com código e descrição.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao cadastrar produto."); }
     finally { setBusy(false); }
   }
@@ -190,14 +190,14 @@ export default function OperationalValuesPage() {
     const file = event.target.files?.[0];
     setCsvRows([]); setCsvFileName(""); setCsvError(""); setError(""); setNotice("");
     if (!file) return;
-    if (file.size > 2_000_000) { setCsvError("O arquivo CSV deve ter no mÃ¡ximo 2 MB."); return; }
+    if (file.size > 2_000_000) { setCsvError("O arquivo CSV deve ter no máximo 2 MB."); return; }
     try {
       const rows = parseCsv(await file.text());
-      if (rows.length < 2) throw new Error("Inclua o cabeÃ§alho e ao menos uma linha de dados.");
-      if (rows.length > 501) throw new Error("Cada importaÃ§Ã£o aceita atÃ© 500 linhas de dados.");
+      if (rows.length < 2) throw new Error("Inclua o cabeçalho e ao menos uma linha de dados.");
+      if (rows.length > 501) throw new Error("Cada importação aceita até 500 linhas de dados.");
       setCsvRows(rows); setCsvFileName(file.name);
     } catch (cause) {
-      setCsvError(cause instanceof Error ? cause.message : "NÃ£o foi possÃ­vel ler o CSV.");
+      setCsvError(cause instanceof Error ? cause.message : "Não foi possível ler o CSV.");
     }
   }
 
@@ -212,7 +212,7 @@ export default function OperationalValuesPage() {
       const valueColumn = column("value", "valor", normalizeCsvHeader(entities.find(([key]) => key === entity)?.[1] ?? ""));
       const nameColumn = column("name", "nome", "description", "descricao", "supplier", "fornecedor");
       const requiredColumn = (index: number, label: string) => {
-        if (index < 0) throw new Error(`Coluna obrigatÃ³ria nÃ£o encontrada: ${label}.`);
+        if (index < 0) throw new Error(`Coluna obrigatória não encontrada: ${label}.`);
         return index;
       };
       let records: Array<{ code?: string; name?: string; value?: string }>;
@@ -224,14 +224,14 @@ export default function OperationalValuesPage() {
           value: `linha ${index + 2}`,
         }));
         const invalid = records.find(record => !record.code || !record.name);
-        if (invalid) throw new Error(`CÃ³digo ou descriÃ§Ã£o vazios na ${invalid.value}.`);
+        if (invalid) throw new Error(`Código ou descrição vazios na ${invalid.value}.`);
         if (entity === "product" && !productImporter) throw new Error("Selecione uma importadora para cadastrar os produtos.");
       } else if (entity === "group") {
         const codeIndex = requiredColumn(codeColumn, "codigo");
         const valueIndex = requiredColumn(valueColumn, "valor");
         records = csvRows.slice(1).map((row, index) => ({ code: row[codeIndex]?.trim(), name: row[valueIndex]?.trim(), value: `linha ${index + 2}` }));
         const invalid = records.find(record => !record.code || !record.name);
-        if (invalid) throw new Error(`CÃ³digo ou valor vazios na ${invalid.value}.`);
+        if (invalid) throw new Error(`Código ou valor vazios na ${invalid.value}.`);
       } else {
         const valueIndex = requiredColumn(valueColumn >= 0 ? valueColumn : column("name", "nome"), "valor");
         records = csvRows.slice(1).map((row, index) => ({ name: row[valueIndex]?.trim(), value: `linha ${index + 2}` }));
@@ -246,7 +246,7 @@ export default function OperationalValuesPage() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ entity, values: records.map(record => record.name), reason: automaticAuditReason }) });
         const result = await response.json() as { createdCount?: number; skippedCount?: number; detail?: string };
-        if (!response.ok) throw new Error(result.detail || "NÃ£o foi possÃ­vel importar os valores do CSV.");
+        if (!response.ok) throw new Error(result.detail || "Não foi possível importar os valores do CSV.");
         createdCount = result.createdCount ?? 0; skippedCount = result.skippedCount ?? 0;
       } else {
         const failures: string[] = [];
@@ -289,7 +289,7 @@ export default function OperationalValuesPage() {
       else await load();
       setCsvRows([]); setCsvFileName("");
       if (csvFileInput.current) csvFileInput.current.value = "";
-      setNotice(`ImportaÃ§Ã£o concluÃ­da: ${createdCount} adicionados; ${skippedCount} jÃ¡ existiam e foram ignorados.`);
+      setNotice(`Importação concluída: ${createdCount} adicionados; ${skippedCount} já existiam e foram ignorados.`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao importar CSV."); }
     finally { setBusy(false); }
   }
@@ -423,30 +423,30 @@ export default function OperationalValuesPage() {
   </section>;
   if (entity === "product") return <main className="shell">
     <header className="page-header"><p className="eyebrow">ERP Comex</p><h1>Valores das entidades</h1>
-      <p>Gerencie as opÃ§Ãµes usadas nos campos do sistema.</p>
+      <p>Gerencie as opções usadas nos campos do sistema.</p>
       <Link className="text-link" href="/catalog">Todos os cadastros</Link></header>
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
     <section className="card entity-values-card">
-      <h2>Campo e opÃ§Ãµes</h2>
+      <h2>Campo e opções</h2>
       <label>Campo<select value={entity} onChange={event => chooseEntity(event.target.value)}>
         {entities.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select></label>
-      <p className="muted">Cada produto Ã© cadastrado com seu cÃ³digo e sua descriÃ§Ã£o.</p>
+      <p className="muted">Cada produto é cadastrado com seu código e sua descrição.</p>
       <label>Importadora<select value={productImporter} onChange={event => setProductImporter(event.target.value)}>
         {productImporters.map(value => <option key={value.code} value={value.code}>{value.code}</option>)}
       </select></label>
-      <h3>Produtos cadastrados Â· {products.length}</h3>
-      {productsLoading ? <p role="status">Carregando produtosâ€¦</p> : products.length ? <ul className="entity-value-list">
-        {products.map(product => <li key={product.id}><span><strong>{product.code}</strong> Â· {product.name}</span>
+      <h3>Produtos cadastrados · {products.length}</h3>
+      {productsLoading ? <p role="status">Carregando produtos…</p> : products.length ? <ul className="entity-value-list">
+        {products.map(product => <li key={product.id}><span><strong>{product.code}</strong> · {product.name}</span>
           <span className="muted">{product.status === "ACTIVE" ? "Ativo" : "Inativo"}</span></li>)}
-      </ul> : <p className="muted">Ainda nÃ£o hÃ¡ produtos cadastrados para esta importadora.</p>}
+      </ul> : <p className="muted">Ainda não há produtos cadastrados para esta importadora.</p>}
       {canWrite && <form className="stack-form" onSubmit={event => void addProduct(event)}>
         <h3>Adicionar produto</h3>
-        <label>CÃ³digo do produto<input required maxLength={120} value={productDraft.code} onChange={event => setProductDraft(current => ({ ...current, code: event.target.value }))} /></label>
-        <label>DescriÃ§Ã£o do produto<input required maxLength={240} value={productDraft.description} onChange={event => setProductDraft(current => ({ ...current, description: event.target.value }))} /></label>
-        <label>EvidÃªncia da revisÃ£o<textarea required minLength={8} maxLength={2000} value={productDraft.evidence} onChange={event => setProductDraft(current => ({ ...current, evidence: event.target.value }))} placeholder="Documento, nÃºmero, data e onde conferir" /></label>
-        <button className="button" disabled={busy || !productImporter}>{busy ? "Salvandoâ€¦" : "Adicionar produto"}</button>
+        <label>Código do produto<input required maxLength={120} value={productDraft.code} onChange={event => setProductDraft(current => ({ ...current, code: event.target.value }))} /></label>
+        <label>Descrição do produto<input required maxLength={240} value={productDraft.description} onChange={event => setProductDraft(current => ({ ...current, description: event.target.value }))} /></label>
+        <label>Evidência da revisão<textarea required minLength={8} maxLength={2000} value={productDraft.evidence} onChange={event => setProductDraft(current => ({ ...current, evidence: event.target.value }))} placeholder="Documento, número, data e onde conferir" /></label>
+        <button className="button" disabled={busy || !productImporter}>{busy ? "Salvando…" : "Adicionar produto"}</button>
       </form>}
     </section>
     {csvImportSection}

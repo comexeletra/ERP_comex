@@ -108,18 +108,18 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
       reason: z.string().trim().min(8).max(500) }).strict().safeParse(request.body);
     const actor = request.authContext;
     if (!body.success || !operationalValueKeys.has(body.data.entity)) {
-      return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "Selecione uma entidade e informe um valor vÃ¡lido.");
+      return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "Selecione uma entidade e informe um valor válido.");
     }
     if (body.data.value.length > operationalValueMax[body.data.entity]
       || !operationalValueHasValidFormat(body.data.entity, body.data.value)) {
-      return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "O valor nÃ£o respeita o formato do campo escolhido.");
+      return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "O valor não respeita o formato do campo escolhido.");
     }
     if ((body.data.entity === "GROUP") !== (body.data.code !== undefined)) {
-      return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "Informe cÃ³digo e valor para Group; as demais entidades recebem somente valor.");
+      return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "Informe código e valor para Group; as demais entidades recebem somente valor.");
     }
-    if (!actor) return problem(reply, 401, "AUTHENTICATION_REQUIRED", "SessÃ£o ausente.");
+    if (!actor) return problem(reply, 401, "AUTHENTICATION_REQUIRED", "Sessão ausente.");
     if (!request.authorizationContext?.roles.some(role => ["Master", "Administrador", "Compras"].includes(role))) {
-      return problem(reply, 403, "PERMISSION_DENIED", "Perfil sem permissÃ£o para administrar valores das entidades.");
+      return problem(reply, 403, "PERMISSION_DENIED", "Perfil sem permissão para administrar valores das entidades.");
     }
     const client = await pool.connect();
     try {
@@ -145,7 +145,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
         entity: inserted.rows[0].entity_key.toLowerCase(), code: inserted.rows[0].code, value: inserted.rows[0].value });
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
-      if (isUniqueError(error)) return problem(reply, 409, "DUPLICATE_OPERATIONAL_VALUE", "Esse valor jÃ¡ existe para a entidade.");
+      if (isUniqueError(error)) return problem(reply, 409, "DUPLICATE_OPERATIONAL_VALUE", "Esse valor já existe para a entidade.");
       throw error;
     } finally { client.release(); }
   });
@@ -159,7 +159,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
       return problem(reply, 400, "INVALID_OPERATIONAL_VALUES", "Informe uma entidade e uma lista JSON válida com até 500 valores.");
     }
     if (body.data.entity === "GROUP") {
-      return problem(reply, 400, "INVALID_OPERATIONAL_VALUES", "Importe Group com cÃ³digo e valor por registro CSV.");
+      return problem(reply, 400, "INVALID_OPERATIONAL_VALUES", "Importe Group com código e valor por registro CSV.");
     }
     const invalidValue = body.data.values.find(value => value.length > operationalValueMax[body.data.entity]
       || !operationalValueHasValidFormat(body.data.entity, value));
@@ -238,12 +238,12 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
         if ((previous.entity_key === "GROUP" && (body.data.expectedCode ?? null) !== previous.code)
           || (previous.entity_key !== "GROUP" && (body.data.code !== undefined || body.data.expectedCode !== undefined))) {
           await client.query("ROLLBACK");
-          return problem(reply, 409, "STALE_OPERATIONAL_VALUE", "O cÃ³digo foi alterado ou nÃ£o corresponde ao cadastro atual.");
+          return problem(reply, 409, "STALE_OPERATIONAL_VALUE", "O código foi alterado ou não corresponde ao cadastro atual.");
         }
         const code = body.data.code ?? previous.code;
         if (previous.entity_key === "GROUP" && !code) {
           await client.query("ROLLBACK");
-          return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "Group exige cÃ³digo e valor.");
+          return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "Group exige código e valor.");
         }
         if (body.data.value.length > operationalValueMax[previous.entity_key]
           || !operationalValueHasValidFormat(previous.entity_key, body.data.value)) {

@@ -27,7 +27,7 @@ export function OperationalOptionSelect({ entity, value, values, onChange, requi
 
 export async function loadOperationalOptions(): Promise<OperationalOption[]> {
   const response = await apiFetch("/api/v1/operational-values", { cache: "no-store" });
-  if (!response.ok) throw new Error("NÃ£o foi possÃ­vel carregar as opÃ§Ãµes dos campos.");
+  if (!response.ok) throw new Error("Não foi possível carregar as opções dos campos.");
   return (await response.json() as { items: OperationalOption[] }).items;
 }
 
@@ -109,7 +109,7 @@ export function CatalogProductSelect({ value, fallbackName, products, onChange, 
 export async function loadCatalogChoices(kind: "products" | "suppliers", importer: string): Promise<CatalogChoice[]> {
   const query = new URLSearchParams({ importer });
   const response = await apiFetch(`/api/v1/${kind}/options?${query}`);
-  if (!response.ok) throw new Error("NÃ£o foi possÃ­vel carregar o catÃ¡logo de produtos/fornecedores.");
+  if (!response.ok) throw new Error("Não foi possível carregar o catálogo de produtos/fornecedores.");
   const result = await response.json() as { items: CatalogChoice[] };
   return result.items.filter(item => item.status === "ACTIVE" || item.status === "HISTORICAL_CANDIDATE");
 }

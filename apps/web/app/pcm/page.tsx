@@ -102,7 +102,7 @@ export default function PcmPage() {
     if (importer) loadCatalogChoices("suppliers", importer).then(values => {
       if (!controller.signal.aborted) setSuppliers(values);
     }).catch(cause => {
-      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "NÃ£o foi possÃ­vel carregar os fornecedores.");
+      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Não foi possível carregar os fornecedores.");
     });
     return () => controller.abort();
   }, [importer]);

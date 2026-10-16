@@ -539,7 +539,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .request-guidance p { line-height: 1.5; max-width: 720px; }
 @media (max-width: 620px) { .request-tabs button { flex: 1; padding-left: 8px; padding-right: 8px; }.historical-disclosure > summary { padding-left: 15px; padding-right: 15px; }.historical-disclosure > :not(summary) { margin-left: 15px; margin-right: 15px; } }
 
-/* Cadastro: controles e formulÃ¡rios */
+/* Cadastro: controles e formulários */
 :root { --field-border: #c8d5dd; --field-ring: #0e7482; --ink-strong: #173847; --surface-soft: #f5f8fa; }
 input:not([type="checkbox"]):not([type="radio"]), select, textarea {
   background-color: #fff; border: 1px solid var(--field-border); border-radius: 9px; color: #213b49;
