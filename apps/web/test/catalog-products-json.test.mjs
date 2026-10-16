@@ -21,5 +21,6 @@ test("accepts the products wrapper and enforces record limits and required field
 
 test("rejects codes and descriptions that exceed the catalog field limits", () => {
   assert.throws(() => parseProductCatalogJson(JSON.stringify([{ code: "P".repeat(121), description: "Produto" }])), /120 caracteres/u);
-  assert.throws(() => parseProductCatalogJson(JSON.stringify([{ code: "P-1", description: "D".repeat(241) }])), /240/u);
+  assert.equal(parseProductCatalogJson(JSON.stringify([{ code: "P-1", description: "D".repeat(878) }]))[0].description.length, 878);
+  assert.throws(() => parseProductCatalogJson(JSON.stringify([{ code: "P-1", description: "D".repeat(2001) }])), /2000/u);
 });

@@ -28,6 +28,18 @@ async function createApp() {
           if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK"
             || sql.includes("pg_advisory_xact_lock")) return { rows: [], rowCount: 0 };
           if (sql.includes("SELECT payload_sha256, entry_id FROM catalog.command_receipt")) return { rows: [], rowCount: 0 };
+          if (sql.includes("SELECT * FROM catalog.entry WHERE id = $1 AND kind = $2")) {
+            return { rows: [{ id: values[0], importer: null, kind: "PRODUCT", code: "EDIT-1",
+              name: "Produto original", status: "ACTIVE", evidence: "Cadastro global via teste.",
+              provenance: "MANUAL_REVIEW", valid_from: null, valid_to: null, version: "1",
+              created_at: new Date(), updated_at: new Date() }], rowCount: 1 };
+          }
+          if (sql.includes("UPDATE catalog.entry SET name=$2")) {
+            return { rows: [{ id: values[0], importer: null, kind: "PRODUCT", code: "EDIT-1",
+              name: values[1], status: values[2], evidence: values[3], provenance: "MANUAL_REVIEW",
+              valid_from: values[4], valid_to: values[5], version: "2",
+              created_at: new Date(), updated_at: new Date() }], rowCount: 1 };
+          }
           if (sql.includes("INSERT INTO catalog.entry\n")) {
             const bulk = sql.includes("ON CONFLICT");
             const code = bulk ? values[1] : values[3];
@@ -90,6 +102,19 @@ test("creates products globally from only code and description", async t => {
   assert.equal(duplicate.statusCode, 409);
 });
 
+test("creates products with source descriptions longer than the old limit", async t => {
+  const { app } = await createApp();
+  t.after(() => app.close());
+  const description = "D".repeat(878);
+
+  const response = await app.inject({ method: "POST", url: "/api/v1/products",
+    headers: { "x-test-subject": "buyer", "idempotency-key": "long-product" },
+    payload: { code: "LONG-CREATE", name: description } });
+
+  assert.equal(response.statusCode, 201, response.body);
+  assert.equal(response.json().name.length, 878);
+});
+
 test("lists the global product catalog without requiring an importer filter", async t => {
   const { app } = await createApp();
   t.after(() => app.close());
@@ -117,6 +142,31 @@ test("imports product JSON in one request and skips repeated codes", async t => 
   assert.equal(response.statusCode, 201, response.body);
   assert.deepEqual(response.json(), { createdCount: 2, skippedCount: 1 });
   assert.ok(writes.every(write => write.importer === null && write.bulk));
+});
+
+test("accepts long source descriptions in the product JSON import", async t => {
+  const { app, writes } = await createApp();
+  t.after(() => app.close());
+  const description = "D".repeat(878);
+
+  const response = await app.inject({ method: "POST", url: "/api/v1/products/bulk",
+    headers: { "x-test-subject": "buyer" }, payload: { items: [{ code: "LONG-1", description }] } });
+
+  assert.equal(response.statusCode, 201, response.body);
+  assert.equal(writes.length, 1);
+});
+
+test("updates product descriptions longer than the old limit", async t => {
+  const { app } = await createApp();
+  t.after(() => app.close());
+  const description = "D".repeat(878);
+
+  const response = await app.inject({ method: "PATCH", url: "/api/v1/products/00000000-0000-4000-8000-000000000001",
+    headers: { "x-test-subject": "buyer", "x-record-version": "1" },
+    payload: { name: description, reason: "Ajustar descricao do produto" } });
+
+  assert.equal(response.statusCode, 200, response.body);
+  assert.equal(response.json().name.length, 878);
 });
 
 test("rejects malformed product JSON payloads before writing", async t => {

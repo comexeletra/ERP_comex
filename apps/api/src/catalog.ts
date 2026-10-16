@@ -52,7 +52,7 @@ const createBody = z.object({ importer: z.string().trim().min(1).max(120).option
   validFrom: z.iso.date().nullable().optional(), validTo: z.iso.date().nullable().optional() }).strict();
 const productCreateBody = z.object({
   code: z.string().min(1).max(120).refine(value => value.trim().length > 0),
-  name: z.string().trim().min(1).max(240),
+  name: z.string().trim().min(1).max(2000),
   // Accept legacy callers during the rollout, but product ownership is global.
   importer: z.string().trim().min(1).max(120).optional(),
   evidence: z.string().trim().min(8).max(2000).optional(),
@@ -63,7 +63,7 @@ const productCreateBody = z.object({
 const productBulkBody = z.object({
   items: z.array(z.object({
     code: z.string().min(1).max(120).refine(value => value.trim().length > 0),
-    description: z.string().trim().min(1).max(240),
+    description: z.string().trim().min(1).max(2000),
   }).strict()).min(1).max(500),
 }).strict();
 const patchBody = z.object({ name: z.string().trim().min(1).max(240).optional(),
@@ -71,6 +71,7 @@ const patchBody = z.object({ name: z.string().trim().min(1).max(240).optional(),
   evidence: z.string().trim().min(8).max(2000).optional(),
   validFrom: z.iso.date().nullable().optional(), validTo: z.iso.date().nullable().optional(),
   reason: z.string().trim().min(8).max(500) }).strict();
+const productPatchBody = patchBody.extend({ name: z.string().trim().min(1).max(2000).optional() });
 type Entry = { id: string; importer: string | null; kind: Kind; code: string; name: string;
   status: "ACTIVE" | "INACTIVE"; provenance: string; evidence: string;
   valid_from: string | null; valid_to: string | null; version: string; created_at: Date; updated_at: Date };
@@ -676,7 +677,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
 
     app.patch<{ Params: { id: string } }>(`${base}/:id`, { config: permissionConfig("catalog.write") }, async (request, reply) => {
       const id = z.uuid().safeParse(request.params.id);
-      const parsed = patchBody.safeParse(request.body);
+      const parsed = (kind === "PRODUCT" ? productPatchBody : patchBody).safeParse(request.body);
       const rawExpected = request.headers["x-record-version"] ?? request.headers["if-match"];
       const expected = typeof rawExpected === "string" && /^[1-9][0-9]*$/u.test(rawExpected)
         ? `"${rawExpected}"` : rawExpected;

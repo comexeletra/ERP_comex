@@ -200,7 +200,7 @@ export default function CatalogPage() {
       <p className="muted">Informe os dados do novo cadastro.</p>
       <form className="stack-form" onSubmit={event => void create(event)}>
         <label>{resource === "products" ? "C\u00f3digo do produto" : "C\u00f3digo ou nome da origem"}<input required maxLength={120} value={draft.code} onChange={event => setDraft(value => ({ ...value, code: event.target.value }))} /></label>
-        <label>{resource === "products" ? "Descri\u00e7\u00e3o do produto" : "Nome operacional"}<input required maxLength={240} value={draft.name} onChange={event => setDraft(value => ({ ...value, name: event.target.value }))} /></label>
+        <label>{resource === "products" ? "Descri\u00e7\u00e3o do produto" : "Nome operacional"}<input required maxLength={resource === "products" ? 2000 : 240} value={draft.name} onChange={event => setDraft(value => ({ ...value, name: event.target.value }))} /></label>
         {resource === "ncms" && <label>Início da vigência (MM/DD/YYYY)<input required type="text" inputMode="numeric" maxLength={10} pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}" placeholder="MM/DD/YYYY" value={draft.validFrom} onChange={event => setDraft(value => ({ ...value, validFrom: event.target.value }))} /></label>}
         {resource === "ncms" && <label>Evid\u00eancia da revis\u00e3o<textarea required minLength={8} maxLength={2000} value={draft.evidence} onChange={event => setDraft(value => ({ ...value, evidence: event.target.value }))} placeholder="Documento, n\u00famero, data e onde conferir" /></label>}
         <button className="button" disabled={saving || (resource === "ncms" && !importer)} type="submit">{saving ? "Salvando…" : "Registrar cadastro"}</button>
@@ -208,7 +208,7 @@ export default function CatalogPage() {
     </section>}
     {editing && <section className="card"><h2>Editar {editing.code}</h2><p className="muted">Versão {editing.version}. Inativação preserva o histórico e o código original.</p>
       <form className="stack-form" onSubmit={event => void saveEdit(event)}>
-        <label>Nome<input required value={editDraft.name} onChange={event => setEditDraft(value => ({ ...value, name: event.target.value }))} /></label>
+        <label>Nome<input required maxLength={resource === "products" ? 2000 : 240} value={editDraft.name} onChange={event => setEditDraft(value => ({ ...value, name: event.target.value }))} /></label>
         <label>Situação<select value={editDraft.status} onChange={event => setEditDraft(value => ({ ...value, status: event.target.value }))}><option value="ACTIVE">Ativo</option><option value="INACTIVE">Inativo</option></select></label>
         {resource === "ncms" && <label>Evid\u00eancia<textarea required minLength={8} value={editDraft.evidence} onChange={event => setEditDraft(value => ({ ...value, evidence: event.target.value }))} /></label>}
         <div><button className="button" disabled={saving} type="submit">Salvar alteração</button><button className="button secondary" type="button" onClick={() => setEditing(undefined)}>Cancelar</button></div>

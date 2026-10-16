@@ -305,7 +305,7 @@ export default function OperationalValuesPage() {
       {canWrite && <form className="stack-form" onSubmit={event => void addProduct(event)}>
         <h3>Adicionar produto</h3>
         <label>Código do produto<input required maxLength={120} value={productDraft.code} onChange={event => setProductDraft(current => ({ ...current, code: event.target.value }))} /></label>
-        <label>Descrição do produto<input required maxLength={240} value={productDraft.description} onChange={event => setProductDraft(current => ({ ...current, description: event.target.value }))} /></label>
+        <label>Descrição do produto<input required maxLength={2000} value={productDraft.description} onChange={event => setProductDraft(current => ({ ...current, description: event.target.value }))} /></label>
         <button className="button" disabled={busy}>{busy ? "Salvando…" : "Adicionar produto"}</button>
       </form>}
       {canWrite && <section className="entity-value-form">
