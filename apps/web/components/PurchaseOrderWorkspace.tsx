@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
+import { formatNumber } from "../lib/format-number";
 import OperationalPoPanel from "./OperationalPoPanel";
 import FollowupPanel from "./FollowupPanel";
 
@@ -22,15 +23,6 @@ type Overview = {
   itemCount: number;
   processes: Process[];
 };
-
-function formatDecimal(value: string | null) {
-  if (value == null) return "—";
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value);
-  if (!match) return value;
-  const whole = match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  const fraction = match[3]?.replace(/0+$/, "");
-  return `${match[1]}${whole}${fraction ? `,${fraction}` : ""}`;
-}
 
 export default function PurchaseOrderWorkspace({ id, returnPath }: { id: string; returnPath: string }) {
   const [data, setData] = useState<Overview>();
@@ -98,7 +90,7 @@ export default function PurchaseOrderWorkspace({ id, returnPath }: { id: string;
         {data.processes.map(process => <article className="process" key={process.id}><h3>{process.ipNumber} <span>{process.logisticsStatus ?? "Status logístico não informado"}</span></h3>
           <p className="muted">Qualidade do IP: {process.qualityStatus}. Vínculo: {process.linkSource}. POs visíveis vinculadas a este IP: {process.linkedPurchaseOrderCount}.</p>
           <Link className="text-link" href={`/processes/${process.id}`}>Abrir detalhe do IP →</Link>
-          {process.costs.length > 0 && <details className="historical-costs"><summary>Custos históricos ({process.costs.length})</summary><ul>{process.costs.map((cost, index) => <li key={`${cost.type}-${cost.currency}-${index}`}>{cost.type}: {formatDecimal(cost.amount)} {cost.currency} · {cost.status}</li>)}</ul></details>}
+          {process.costs.length > 0 && <details className="historical-costs"><summary>Custos históricos ({process.costs.length})</summary><ul>{process.costs.map((cost, index) => <li key={`${cost.type}-${cost.currency}-${index}`}>{cost.type}: {formatNumber(cost.amount)} {cost.currency} · {cost.status}</li>)}</ul></details>}
         </article>)}
       </details>
     </main>

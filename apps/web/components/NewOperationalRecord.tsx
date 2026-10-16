@@ -16,6 +16,7 @@ import {
 import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
 import { loadPurchaseRequests, purchaseRequestOperationalFields, PurchaseRequestChoice, PurchaseRequestSelect } from "./PurchaseRequestSelect";
 import { parseTotvsPoXlsx, TotvsPoProductRow } from "../lib/totvs-po-xlsx";
+import { formatNumber } from "../lib/format-number";
 
 const poRoles = new Set(["Master", "Administrador", "Importação", "Compras"]);
 const ipRoles = new Set(["Master", "Administrador", "Importação"]);
@@ -440,7 +441,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
                   <thead><tr><th>Linha</th><th>Produto</th><th>Descrição</th><th>Quantidade</th><th>UM</th><th>Preço CNY</th><th>Centro de custo</th></tr></thead>
                   <tbody>{totvsRows.map((row, index) => <tr key={`${row.sourceRow}:${index}`}>
                     <td>{row.externalLineReference || "—"}</td><td>{row.productCode}</td><td>{row.description}</td>
-                    <td>{row.orderedQuantity}</td><td>{row.unit}</td><td>{row.unitPrice || "—"}</td><td>{row.costCenter || "—"}</td>
+                    <td>{formatNumber(row.orderedQuantity)}</td><td>{row.unit}</td><td>{row.unitPrice ? formatNumber(row.unitPrice) : "—"}</td><td>{row.costCenter || "—"}</td>
                   </tr>)}</tbody>
                 </table></div>
               </details>

@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
+import { formatNumber } from "../lib/format-number";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 import { purchaseOrderItemFields } from "./PurchaseOrderItemFields";
 import { calculatedTotal } from "./PurchaseOrderCalculatedFields";
@@ -103,6 +104,9 @@ const calcLabels: [string, string][] = [
   ["totalDelayDays", "Desvio total (dias)"], ["bottleneck", "Etapa com maior desvio"],
   ["arrivalYearMonth", "Mês da chegada"],
 ];
+const numericCalculatedFields = new Set(["totalPrice", "transitDays", "leadTimeDays", "poApprovalDays", "poAfterScDays",
+  "poDeviationDays", "factoryLeadDays", "actualTransitDays", "clearanceDays", "invoiceQuantity", "invoiceUnitPrice",
+  "totalTargetDays", "totalActualDays", "totalDelayDays", "commercialDeviationDays"]);
 const eventEntityLabels: Record<string, string> = {
   PURCHASE_ORDER: "Dados da PO", PURCHASE_ORDER_ITEM: "Item da PO", PO_ITEM_ALLOCATION: "Distribuição PO–IP",
   IMPORT_PROCESS: "Dados logísticos do IP", PROCESS_DOCUMENT: "Documento do IP",
@@ -226,9 +230,9 @@ export default function FollowupPanel({ id }: { id: string }) {
           return <tr key={shipment?.allocationId ?? item.id}>
             <td><strong>{data.number}</strong><small>{data.supplierText || "Fornecedor não informado"}</small></td>
             <td><strong>{item.productCode}</strong><small>{value(item.description)}</small></td>
-            <td>{value(item.orderedQuantity)} {value(item.unit) === "—" ? "" : value(item.unit)}</td>
+            <td>{formatNumber(item.orderedQuantity)} {value(item.unit) === "—" ? "" : value(item.unit)}</td>
             <td>{shipment ? <strong>{shipment.process.ipNumber}</strong> : <span className="po-ip-pending">Sem IP</span>}</td>
-            <td>{shipment ? `${shipment.allocationQuantity} ${item.unit ?? ""}` : "—"}</td>
+            <td>{shipment ? `${formatNumber(shipment.allocationQuantity)} ${item.unit ?? ""}` : "—"}</td>
             <td>{shipment ? value(shipment.calculated.status) : /^(CANCELLED|CANCELED)$/i.test(String(item.sourceStatus ?? "")) ? "Cancelado" : "A distribuir"}</td>
             <td>{shipment ? value(shipment.calculated.eta) : "—"}</td>
             <td>{shipment ? value(shipment.process.deliveryDate) : "—"}</td>
@@ -236,19 +240,19 @@ export default function FollowupPanel({ id }: { id: string }) {
               <h4>Pré embarque · PO {data.number}</h4>
               <dl className="followup-grid">
                 {([["Importadora", data.importer], ["Fornecedor", data.supplierText], ["Data da PO", data.orderDate],
-                  ["Produto", item.productCode], ["Descrição", item.description], ["Quantidade pedida", item.orderedQuantity],
-                  ["Preço unitário", item.unitPrice], ["Valor total", item.unitPrice ? calculatedTotal(item.orderedQuantity, item.unitPrice) : null],
+                  ["Produto", item.productCode], ["Descrição", item.description], ["Quantidade pedida", formatNumber(item.orderedQuantity)],
+                  ["Preço unitário", item.unitPrice ? formatNumber(item.unitPrice) : null], ["Valor total", item.unitPrice ? calculatedTotal(item.orderedQuantity, item.unitPrice) : null],
                   ["Moeda", item.currencyCode]] as [string, unknown][]).map(([label, fieldValue]) =>
                   <div key={label}><dt>{label}</dt><dd>{value(fieldValue)}</dd></div>)}
-                {purchaseOrderItemFields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{value(item[field.key])}</dd></div>)}
+                {purchaseOrderItemFields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{field.type === "number" || field.type === "money" ? formatNumber(item[field.key]) : value(item[field.key])}</dd></div>)}
               </dl>
               {shipment ? <>
                 <h4>Pós embarque · IP {shipment.process.ipNumber}</h4>
                 <dl className="followup-grid">
-                  <div><dt>Quantidade neste IP</dt><dd>{shipment.allocationQuantity} {item.unit ?? ""}</dd></div>
+                  <div><dt>Quantidade neste IP</dt><dd>{formatNumber(shipment.allocationQuantity)} {item.unit ?? ""}</dd></div>
                   <div><dt>Saída da fábrica</dt><dd>{value(shipment.factoryShipDate)}</dd></div>
                   <div><dt>Alerta</dt><dd>{value(shipment.calculated.alert)}</dd></div>
-                  {processFields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{value(shipment.process[field.key])}</dd></div>)}
+                  {processFields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{field.type === "number" || field.type === "money" ? formatNumber(shipment.process[field.key]) : value(shipment.process[field.key])}</dd></div>)}
                 </dl>
                 {shipment.legacyFactoryShipDate && <p className="notice">Data antiga de saída da fábrica ({value(shipment.legacyFactoryShipDate)}) sem IP associado. Informe a data deste vínculo se necessário.</p>}
                 {canWriteProcess && typeof shipment.allocationVersion === "string" && <form className="shipment-date-form" onSubmit={event => saveFactoryShipDate(event, shipment)}>
@@ -258,12 +262,12 @@ export default function FollowupPanel({ id }: { id: string }) {
                 </form>}
                 <h4>Documentos do IP</h4>
                 {documents.length ? <ul>{documents.map(document => <li key={document.id}>{document.kind} {document.number} · {value(document.issueDate)}
-                  {document.kind === "INVOICE" ? ` · ${value(document.quantity)} un. · ${value(document.amount)} ${document.currencyCode ?? ""}` : ""}
+                  {document.kind === "INVOICE" ? ` · ${formatNumber(document.quantity)} un. · ${formatNumber(document.amount)} ${document.currencyCode ?? ""}` : ""}
                   {document.kind === "NF" ? ` · homologação ${value(document.homologationDate)}` : ""}</li>)}</ul> : <p>Nenhum documento registrado.</p>}
                 <details><summary>Indicadores calculados</summary><dl className="followup-grid">{calcLabels.map(([key, label]) =>
-                  <div key={key}><dt>{label}</dt><dd>{value(shipment.calculated[key])}</dd></div>)}</dl>
+                  <div key={key}><dt>{label}</dt><dd>{numericCalculatedFields.has(key) ? formatNumber(shipment.calculated[key]) : value(shipment.calculated[key])}</dd></div>)}</dl>
                   {shipment.calculated.stages && <dl className="followup-grid">{Object.entries(shipment.calculated.stages as Record<string, { targetDays: number | null; actualDays: number | null; delayDays: number | null }>).map(([name, stage]) =>
-                    <div key={name}><dt>{name.toUpperCase()}</dt><dd>Meta {value(stage.targetDays)} · Real {value(stage.actualDays)} · Desvio {value(stage.delayDays)} dias</dd></div>)}</dl>}
+                    <div key={name}><dt>{name.toUpperCase()}</dt><dd>Meta {formatNumber(stage.targetDays)} · Real {formatNumber(stage.actualDays)} · Desvio {formatNumber(stage.delayDays)} dias</dd></div>)}</dl>}
                 </details>
               </> : <p>Distribua uma quantidade deste item para um IP na seção acima.</p>}
             </details></td>
@@ -273,7 +277,7 @@ export default function FollowupPanel({ id }: { id: string }) {
       <p className="muted">Preencha cada IP uma vez. As alterações serão exibidas em todas as linhas de PO ligadas a ele.</p>
       {processes.map(entry => {
         const p = entry.process;
-        const totals = entry.invoiceTotals.amounts.map(total => `${total.amount} ${total.currency}`).join(" · ") || "—";
+        const totals = entry.invoiceTotals.amounts.map(total => `${formatNumber(total.amount)} ${total.currency}`).join(" · ") || "—";
         const documentDraft = docDrafts[p.id] ?? blankDoc();
         const editable = canWriteProcess && p.lifecycleStatus !== "CLOSED";
         return <article className="followup-document" key={p.id}>
@@ -285,12 +289,12 @@ export default function FollowupPanel({ id }: { id: string }) {
                 setValues={values => setProcessDrafts(current => ({ ...current, [p.id]: values }))} options={options} />
               <button className="button" disabled={busy}>Salvar IP</button>
             </form> : <dl className="followup-grid">{processFields.map(field =>
-              <div key={field.key}><dt>{field.label}</dt><dd>{value(p[field.key])}</dd></div>)}</dl>}
+              <div key={field.key}><dt>{field.label}</dt><dd>{field.type === "number" || field.type === "money" ? formatNumber(p[field.key]) : value(p[field.key])}</dd></div>)}</dl>}
             <h4>Invoices, BLs e NFs</h4>
             {entry.documents.length === 0 && <p>Nenhum documento registrado.</p>}
             {entry.documents.map(document => <div className="followup-document" key={document.id}>
               <strong>{document.kind} {document.number}</strong> · {value(document.issueDate)}
-              {document.kind === "INVOICE" && <> · {value(document.quantity)} un. · {value(document.amount)} {document.currencyCode ?? ""}</>}
+              {document.kind === "INVOICE" && <> · {formatNumber(document.quantity)} un. · {formatNumber(document.amount)} {document.currencyCode ?? ""}</>}
               {document.kind === "NF" && <> · homologação {value(document.homologationDate)}</>}
               {editable && <button className="button secondary" type="button" onClick={() => {
                 setEditingDoc(current => ({ ...current, [p.id]: document.id }));

@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch, hasIpLifecycleSupport, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
+import { formatNumber } from "../lib/format-number";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 
 type Value = string | number | boolean | null;
@@ -57,6 +58,9 @@ const fields: Field[] = [
 const blankDoc = (): DocDraft => ({ kind: "INVOICE", purchaseOrderItemId: "", number: "", issueDate: "",
   homologationDate: "", quantity: "", unitPrice: "", amount: "", currencyCode: "", notes: "" });
 function format(value: Value | undefined) { return value == null || value === "" ? "—" : typeof value === "boolean" ? value ? "Sim" : "Não" : String(value); }
+function formatField(field: Field, value: Value | undefined) {
+  return field.type === "number" || field.type === "money" ? formatNumber(value) : format(value);
+}
 function toDraft(row: Row) { return Object.fromEntries(fields.map(field => [field.key, row[field.key] == null ? "" : String(row[field.key])])) as Record<string, string>; }
 function makePayload(values: Record<string, string>) {
   return Object.fromEntries(fields.map(field => {
@@ -131,7 +135,7 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
       currencyCode: value.kind === "INVOICE" ? value.currencyCode.toUpperCase() || null : null,
       notes: value.notes, reason: automaticAuditReason };
   }
-  const currencyTotals = data?.invoiceTotals.amounts.map(item => `${item.amount} ${item.currency}`).join(" · ") || "—";
+  const currencyTotals = data?.invoiceTotals.amounts.map(item => `${formatNumber(item.amount)} ${item.currency}`).join(" · ") || "—";
   return <section className="card operational-panel" aria-label="Pós Embarque do IP">
     <h2>Pós Embarque · operação do IP</h2>
     <p className="muted">Um registro por IP. Aqui ficam os dados da operação e os documentos do IP, reunindo todas as POs relacionadas.</p>
@@ -147,7 +151,7 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
       {legacyProcess.operationalAllocations.length === 0 ? <p>Nenhuma quantidade distribuída operacionalmente. Para vincular uma PO, abra a PO e distribua a quantidade do item para este IP.</p> :
         <div className="table-scroll"><table><thead><tr><th>PO</th><th>Produto</th><th>Quantidade</th></tr></thead><tbody>
           {legacyProcess.operationalAllocations.map(item => <tr key={item.id}><td><Link className="text-link" href={`/purchase-orders/${item.poId}`}>{item.poNumber}</Link></td>
-            <td>{item.productCode}</td><td>{item.quantity} {item.unit}</td></tr>)}
+            <td>{item.productCode}</td><td>{formatNumber(item.quantity)} {item.unit}</td></tr>)}
         </tbody></table></div>}
     </>}
     {!loading && data && <>
@@ -171,13 +175,13 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
           </label>)}</div>
           <button className="button" disabled={busy}>{busy ? "Salvando…" : "Salvar dados do IP"}</button>
         </form>
-      </> : <dl className="followup-grid">{fields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{format(data.process[field.key])}</dd></div>)}</dl>}
+      </> : <dl className="followup-grid">{fields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{formatField(field, data.process[field.key])}</dd></div>)}</dl>}
       <h3>POs, itens e quantidades nesta operação</h3>
       {data.allocations.length === 0 ? <p>Nenhum item operacional distribuído para este IP.</p> :
         <div className="table-scroll"><table><thead><tr><th>PO</th><th>Item</th><th>Pedido</th><th>Neste IP</th><th>Saída da fábrica</th><th>Status calculado</th><th>Alerta</th></tr></thead><tbody>
           {data.allocations.map(allocation => <tr key={allocation.id}><td><Link className="text-link" href={`/purchase-orders/${allocation.purchaseOrder.id}`}>{allocation.purchaseOrder.number}</Link></td>
             <td>{allocation.item.productCode} · {allocation.item.description}</td>
-            <td>{String(allocation.item.orderedQuantity)} {allocation.item.unit}</td><td>{allocation.allocationQuantity} {allocation.item.unit}</td>
+            <td>{formatNumber(allocation.item.orderedQuantity)} {allocation.item.unit}</td><td>{formatNumber(allocation.allocationQuantity)} {allocation.item.unit}</td>
             <td>{allocation.factoryShipDate ?? "—"}</td>
             <td>{format(allocation.calculated.status)}</td><td>{format(allocation.calculated.alert)}</td></tr>)}
         </tbody></table></div>}
@@ -186,7 +190,7 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
       {data.documents.map(document => <div className="followup-document" key={document.id}>
         <strong>{document.kind} {document.number}</strong> · {document.issueDate ?? "sem data"} · {document.purchaseOrderItemId
           ? data.allocations.find(item => item.item.id === document.purchaseOrderItemId)?.item.productCode ?? "Item relacionado a PO" : "IP geral"}
-        {document.kind === "INVOICE" && <> · {document.quantity ?? "—"} × {document.unitPrice ?? "—"} · {document.amount ?? "valor calculado"} {document.currencyCode ?? ""}</>}
+        {document.kind === "INVOICE" && <> · {formatNumber(document.quantity)} × {formatNumber(document.unitPrice)} · {formatNumber(document.amount, "valor calculado")} {document.currencyCode ?? ""}</>}
         {document.kind === "NF" && <> · Homologação {document.homologationDate ?? "—"}</>}
         {canWrite && <div className="operational-actions"><button type="button" className="button secondary" onClick={() => {
           setEditingDoc(document.id); setDocDraft({ kind: document.kind, purchaseOrderItemId: document.purchaseOrderItemId ?? "",

@@ -11,6 +11,7 @@ import { CatalogChoice, CatalogProductSelect, loadCatalogChoices, loadOperationa
 import { loadPurchaseRequests, purchaseRequestOperationalFields, PurchaseRequestChoice, PurchaseRequestSelect } from "./PurchaseRequestSelect";
 import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
 import { formatUsDate } from "../lib/date-format";
+import { formatNumber } from "../lib/format-number";
 
 type Item = { id: string; lineNumber: number; externalLineReference: string | null;
   productCode: string; description: string; orderedQuantity: string; unit: string | null;
@@ -50,17 +51,11 @@ async function responseData<T>(response: Response): Promise<T> {
   return readApiJson<T>(response);
 }
 function formatItemQuantity(value: string) {
-  const quantity = Number(value);
-  return Number.isFinite(quantity)
-    ? new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 8 }).format(quantity)
-    : value;
+  return formatNumber(value);
 }
 function formatItemPrice(value: string | null, currency: string | null) {
   if (value == null) return "Não informado";
-  const price = Number(value);
-  const formatted = Number.isFinite(price)
-    ? new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(price)
-    : value;
+  const formatted = formatNumber(value);
   return currency ? `${formatted} ${currency}` : formatted;
 }
 
@@ -550,7 +545,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
               setValues={operational => setDraft({ operational })} />
             <PurchaseOrderCalculatedFields quantity={draft.orderedQuantity} unitPrice={draft.unitPrice} currency={draft.currency} />
             <button className="button" disabled={saving || commonFieldsTouched.size > 0}>Salvar todos os campos deste item</button>
-          </form> : <p>{item.orderedQuantity}{item.unit ? ` ${item.unit}` : ""} · {item.description}</p>}
+          </form> : <p>{formatItemQuantity(item.orderedQuantity)}{item.unit ? ` ${item.unit}` : ""} · {item.description}</p>}
         </details>;
       })}
       {canWritePo && <details><summary>Adicionar item à PO</summary>
@@ -582,7 +577,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             return <tr key={allocation.id}>
               <td>{item?.productCode ?? "—"}</td>
               <td><Link className="text-link" href={`/processes/${allocation.processId}`}>{allocation.ipNumber}</Link></td>
-              <td>{allocation.quantity} {item?.unit ?? ""}</td>
+              <td>{formatItemQuantity(allocation.quantity)} {item?.unit ?? ""}</td>
               <td>{item ? formatItemQuantity(item.orderedQuantity) : "—"}{item?.unit ? ` ${item.unit}` : ""}</td>
               <td>{item ? formatItemQuantity(item.remainingQuantity) : "—"}{item?.unit ? ` ${item.unit}` : ""}</td>
               <td>{allocation.factoryShipDate ?? "—"}</td>
@@ -626,7 +621,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         </form>}
         <form className="stack-form" onSubmit={saveAllocation}>
           <label>Item<select required value={itemId} disabled={Boolean(editingAllocation)} onChange={event => setItemId(event.target.value)}>
-            {data.items.map(item => <option key={item.id} value={item.id} disabled={item.sourceStatus?.toUpperCase() === "CANCELLED" || item.sourceStatus?.toUpperCase() === "CANCELED"}>{item.productCode} · item {item.lineNumber} · {item.sourceStatus?.toUpperCase() === "CANCELLED" || item.sourceStatus?.toUpperCase() === "CANCELED" ? "cancelado" : `saldo ${item.remainingQuantity}${item.unit ? ` ${item.unit}` : ""}`}</option>)}
+            {data.items.map(item => <option key={item.id} value={item.id} disabled={item.sourceStatus?.toUpperCase() === "CANCELLED" || item.sourceStatus?.toUpperCase() === "CANCELED"}>{item.productCode} · item {item.lineNumber} · {item.sourceStatus?.toUpperCase() === "CANCELLED" || item.sourceStatus?.toUpperCase() === "CANCELED" ? "cancelado" : `saldo ${formatItemQuantity(item.remainingQuantity)}${item.unit ? ` ${item.unit}` : ""}`}</option>)}
           </select></label>
           <label>Quantidade neste IP<input required inputMode="decimal" value={allocationQuantity}
             onChange={event => setAllocationQuantity(event.target.value)} placeholder="Ex.: 40" /></label>
