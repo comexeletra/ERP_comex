@@ -10,6 +10,12 @@
 - Não faça push direto para `main` nem altere a produção durante a validação. Depois que o usuário aprovar os testes, promova as mudanças de `homologacao` para `main` por um Pull Request revisável.
 - Após a promoção, atualize `homologacao` com as mudanças de `main` antes do próximo ciclo. Se houver divergência ou conflito, examine e resolva conscientemente; não force o histórico.
 
+## Testes em cada implementação
+
+- Para cada implementação ou correção, crie ou atualize testes automatizados que cubram o comportamento alterado e execute-os antes de considerar o trabalho concluído. Inclua verificações de contrato entre web e API quando uma tela chamar uma rota nova ou alterada.
+- Para mudanças da API publicada separadamente na VPS, valide também que a API de homologação recebeu a versão nova e que a rota alterada responde como esperado. Um Preview da Vercel bem-sucedido não confirma que o serviço da API na VPS foi atualizado.
+- Faça testes de banco somente em ambiente isolado ou HML, com dados de teste e rollback/limpeza controlados. Nunca use dados de produção para testes.
+
 ## Ambiente e segredos
 
 - Mantenha testes de homologação no ambiente e banco isolados de produção.
