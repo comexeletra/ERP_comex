@@ -9,7 +9,9 @@ import {
   officialNcmAttributesHash,
   type OfficialNcm,
   type OfficialNcmCatalog,
+  type OfficialNcmCatalogProvider,
 } from "./siscomex-ncm.js";
+import { refreshRegisteredNcms, refreshScheduledNcms, startDailyNcmRefresh } from "./ncm-sync.js";
 
 type Kind = "SUPPLIER" | "PRODUCT" | "NCM";
 const resources: ReadonlyArray<{ path: string; kind: Kind; sourceColumn: string }> = [
@@ -142,8 +144,14 @@ function isUniqueError(error: unknown): boolean {
 }
 
 export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
-  options: { officialNcmProvider?: () => Promise<OfficialNcmCatalog> } = {}): Promise<void> {
+  options: { officialNcmProvider?: OfficialNcmCatalogProvider;
+    ncmAutoRefreshTime?: string; logger?: Pick<FastifyInstance["log"], "info" | "error"> } = {}): Promise<void> {
   const getOfficialNcms = options.officialNcmProvider ?? cachedOfficialNcmCatalog;
+  if (options.ncmAutoRefreshTime) {
+    const stopSchedule = startDailyNcmRefresh(options.ncmAutoRefreshTime,
+      () => refreshScheduledNcms(getOfficialNcms, pool), options.logger ?? app.log);
+    app.addHook("onClose", async () => stopSchedule());
+  }
   app.get("/api/v1/operational-values", { config: permissionConfig("catalog.read") }, async (request, reply) => {
     reply.header("cache-control", "no-store");
     const result = await pool.query<{ id: string; entity_key: string; code: string | null; value: string; created_by: string | null }>(
@@ -588,107 +596,20 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
         const body = z.object({}).strict().safeParse(request.body ?? {});
         const auth = request.authorizationContext;
         const actor = request.authContext;
-        if (!body.success) return problem(reply, 400, "INVALID_REQUEST", "A atualização oficial não recebe parâmetros.");
-        if (!auth || !actor) return problem(reply, 401, "AUTHENTICATION_REQUIRED", "Sessão ausente.");
-        if (!canWriteKind(auth.roles, "NCM")) return problem(reply, 403, "PERMISSION_DENIED", "Perfil sem permissão para atualizar o catálogo NCM.");
-
+        if (!body.success) return problem(reply, 400, "INVALID_REQUEST", "A atualiza\\u00e7\\u00e3o oficial n\\u00e3o recebe par\\u00e2metros.");
+        if (!auth || !actor) return problem(reply, 401, "AUTHENTICATION_REQUIRED", "Sess\\u00e3o ausente.");
+        if (!canWriteKind(auth.roles, "NCM")) return problem(reply, 403, "PERMISSION_DENIED", "Perfil sem permiss\\u00e3o para atualizar o cat\\u00e1logo NCM.");
         let official: OfficialNcmCatalog;
         try { official = await getOfficialNcms(); }
         catch (error) { return siscomexUnavailable(reply, error); }
-
-        const client = await pool.connect();
-        let matchedCount = 0;
-        let updatedCount = 0;
-        let attributesUpdatedCount = 0;
-        const correlationId = randomUUID();
-        const reason = "Atualização dos NCMs já cadastrados pela fonte oficial do Siscomex.";
         try {
-          await client.query("BEGIN");
-          await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", ["catalog:siscomex:ncm:refresh"]);
-          const result = await client.query<Entry & { normalized_code: string; attributes_sha256: string | null }>(
-            `SELECT entry.*, entry.normalized_code, entry.valid_from::text AS valid_from,
-                    entry.valid_to::text AS valid_to, official.mandatory_import_attributes,
-                    official.source_updated_at::text AS source_updated_at, official.attributes_source_version,
-                    official.attributes_sha256, official.synced_at
-             FROM catalog.entry AS entry
-             LEFT JOIN catalog.ncm_siscomex_data AS official ON official.ncm_entry_id = entry.id
-             WHERE entry.kind = 'NCM' AND entry.importer IS NULL
-             ORDER BY entry.normalized_code FOR UPDATE OF entry`);
-
-          for (const before of result.rows) {
-            const source = official.items.find(item => item.code === before.normalized_code);
-            if (!source) continue;
-            matchedCount += 1;
-            const evidence = "Tabela oficial NCM da Receita Federal / Portal Único Siscomex (Classif).";
-            const changed = {
-              name: source.name, status: "ACTIVE" as const, evidence,
-              valid_from: source.validFrom, valid_to: source.validTo,
-              provenance: "OFFICIAL_SISCOMEX",
-            };
-            const old = {
-              name: before.name, status: before.status, evidence: before.evidence,
-              valid_from: before.valid_from, valid_to: before.valid_to,
-              provenance: before.provenance,
-            };
-            const differences = Object.entries(changed).filter(([field, value]) => value !== old[field as keyof typeof old]);
-            if (differences.length) {
-              const updated = await client.query<Entry>(
-                `UPDATE catalog.entry SET name=$2,status=$3,evidence=$4,valid_from=$5,valid_to=$6,
-                   provenance=$7,version=version+1,updated_by=$8,updated_at=now()
-                 WHERE id=$1 RETURNING *`,
-                [before.id, changed.name, changed.status, changed.evidence, changed.valid_from, changed.valid_to,
-                  changed.provenance, actor.userId]);
-              updatedCount += 1;
-              for (const [field, value] of differences) {
-                await client.query(
-                  `INSERT INTO audit.audit_log
-                    (id,aggregate_type,aggregate_id,entity_type,entity_id,operation,field_name,old_value,new_value,actor_id,occurred_at,reason,correlation_id)
-                   VALUES ($1,'CATALOG_ENTRY',$2,'CATALOG_ENTRY',$2,'UPDATE',$3,$4::jsonb,$5::jsonb,$6,now(),$7,$8)`,
-                  [randomUUID(), before.id, field, JSON.stringify(old[field as keyof typeof old]), JSON.stringify(value),
-                    `${actor.issuer}#${actor.subject}`, reason, correlationId]);
-              }
-              await client.query(
-                `INSERT INTO audit.outbox_message (event_id,event_type,aggregate_type,aggregate_id,payload,occurred_at)
-                 VALUES ($1,'catalog.entry.updated','CATALOG_ENTRY',$2,$3::jsonb,now())`,
-                [randomUUID(), before.id, JSON.stringify({ id: before.id, importer: null, kind: "NCM",
-                  version: String(updated.rows[0].version), changedFields: differences.map(([field]) => field) })]);
-            }
-
-            const attributesHash = officialNcmAttributesHash(source.mandatoryImportAttributes);
-            if (before.attributes_sha256?.trim() !== attributesHash) {
-              attributesUpdatedCount += 1;
-              await client.query(
-                `INSERT INTO audit.audit_log
-                  (id,aggregate_type,aggregate_id,entity_type,entity_id,operation,field_name,old_value,new_value,actor_id,occurred_at,reason,correlation_id)
-                 VALUES ($1,'CATALOG_ENTRY',$2,'CATALOG_ENTRY',$2,$3,'mandatoryImportAttributes',$4::jsonb,$5::jsonb,$6,now(),$7,$8)`,
-                [randomUUID(), before.id, before.attributes_sha256 ? "UPDATE" : "CREATE",
-                  before.mandatory_import_attributes ? JSON.stringify(before.mandatory_import_attributes) : null,
-                  JSON.stringify(source.mandatoryImportAttributes), `${actor.issuer}#${actor.subject}`, reason, correlationId]);
-            }
-            await client.query(
-              `INSERT INTO catalog.ncm_siscomex_data
-                (ncm_entry_id,source_updated_at,attributes_source_version,mandatory_import_attributes,attributes_sha256,synced_at)
-               VALUES ($1,$2,$3,$4::jsonb,$5,now())
-               ON CONFLICT (ncm_entry_id) DO UPDATE SET source_updated_at=EXCLUDED.source_updated_at,
-                 attributes_source_version=EXCLUDED.attributes_source_version,
-                 mandatory_import_attributes=EXCLUDED.mandatory_import_attributes,
-                 attributes_sha256=EXCLUDED.attributes_sha256,synced_at=now()`,
-              [before.id, official.sourceUpdatedAt, official.attributesVersion,
-                JSON.stringify(source.mandatoryImportAttributes), attributesHash]);
-          }
-          await client.query(
-            `INSERT INTO audit.outbox_message (event_id,event_type,aggregate_type,aggregate_id,payload,occurred_at)
-             VALUES ($1,'catalog.ncm.siscomex.refreshed','NCM_SYNC',$1,$2::jsonb,now())`,
-            [correlationId, JSON.stringify({ matchedCount, updatedCount, attributesUpdatedCount,
-              sourceUpdatedAt: official.sourceUpdatedAt, attributesSourceVersion: official.attributesVersion })]);
-          await client.query("COMMIT");
-          return { matchedCount, updatedCount, attributesUpdatedCount,
-            preservedUnmatchedCount: result.rows.length - matchedCount,
-            sourceUpdatedAt: official.sourceUpdatedAt, attributesSourceVersion: official.attributesVersion };
+          return await refreshRegisteredNcms(pool, official,
+            { issuer: actor.issuer, subject: actor.subject, userId: actor.userId },
+            "Atualiza\u00e7\u00e3o manual dos NCMs cadastrados pela fonte oficial do Siscomex.");
         } catch (error) {
-          await client.query("ROLLBACK").catch(() => undefined);
-          throw error;
-        } finally { client.release(); }
+          request.log.error({ error }, "Falha ao atualizar NCMs oficiais");
+          return problem(reply, 500, "NCM_REFRESH_FAILED", "N\u00e3o foi poss\u00edvel concluir a atualiza\u00e7\u00e3o dos NCMs.");
+        }
       });
 
       app.post(`${base}/import-official`, { config: permissionConfig("catalog.write", "global") }, async (request, reply) => {

@@ -147,10 +147,12 @@ class SiscomexResponseError extends Error {
   }
 }
 
+export type OfficialNcmCatalogProvider = (options?: { forceRefresh?: boolean }) => Promise<OfficialNcmCatalog>;
+
 export function createOfficialNcmCatalogProvider(
   fetchCatalog: () => Promise<OfficialNcmCatalog>,
   options: { cacheLifetimeMs?: number; initialRetryDelayMs?: number; maxRetryDelayMs?: number; now?: () => number } = {},
-): () => Promise<OfficialNcmCatalog> {
+): OfficialNcmCatalogProvider {
   const cacheLifetimeMs = options.cacheLifetimeMs ?? 6 * 60 * 60 * 1000;
   const initialRetryDelayMs = options.initialRetryDelayMs ?? 60 * 60 * 1000;
   const maxRetryDelayMs = options.maxRetryDelayMs ?? 6 * 60 * 60 * 1000;
@@ -160,9 +162,9 @@ export function createOfficialNcmCatalogProvider(
   let blockedUntil = 0;
   let failureCount = 0;
 
-  return async () => {
+  return async (requestOptions = {}) => {
     const currentTime = now();
-    if (cached && cached.expiresAt > currentTime) return cached.catalog;
+    if (!requestOptions.forceRefresh && cached && cached.expiresAt > currentTime) return cached.catalog;
     if (blockedUntil > currentTime) {
       throw new SiscomexResponseError(429, blockedUntil);
     }

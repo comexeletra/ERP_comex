@@ -174,4 +174,6 @@ test("official NCM provider applies fallback cooldown and caches successful cata
   assert.equal(await getCatalog(), catalog);
   assert.equal(await getCatalog(), catalog);
   assert.equal(fetchCount, 2);
+  assert.equal(await getCatalog({ forceRefresh: true }), catalog);
+  assert.equal(fetchCount, 3);
 });
