@@ -69,7 +69,14 @@ function normalizeNcmCode(value: unknown): string | null {
 
 function parseBrazilianDate(value: unknown, label: string): string {
   if (typeof value !== "string") throw new Error(`Data inválida na tabela NCM (${label}).`);
-  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/u.exec(value.trim());
+  const text = value.trim();
+  const isoMatch = /^(\d{4}-\d{2}-\d{2})(?:T.*)?$/u.exec(text);
+  if (isoMatch) {
+    const [year, month, day] = isoMatch[1].split("-");
+    const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+    if (date.toISOString().slice(0, 10) === isoMatch[1]) return isoMatch[1];
+  }
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/u.exec(text);
   if (!match) throw new Error(`Data inválida na tabela NCM (${label}).`);
   const [, day, month, year] = match;
   const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
@@ -82,7 +89,7 @@ function parseBrazilianDate(value: unknown, label: string): string {
 function parseHeaderDate(value: unknown): string | null {
   if (typeof value !== "string" || !value.trim()) return null;
   const text = value.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/u.test(text)) return text;
+  if (/^\d{4}-\d{2}-\d{2}(?:T.*)?$/u.test(text)) return parseBrazilianDate(text, "ultima atualizacao");
   return parseBrazilianDate(text, "última atualização");
 }
 
@@ -142,27 +149,33 @@ export function parseSiscomexNcmTable(payload: unknown, minimumNcmCount = MIN_OF
   sourceUpdatedAt: string | null;
   items: Array<Omit<OfficialNcm, "mandatoryImportAttributes">>;
 } {
-  const root = asObject(payload, "tabela de nomenclaturas");
-  const nomenclaturas = asArray(root.Nomenclaturas, "lista de nomenclaturas");
+  const root = Array.isArray(payload) ? {} : asObject(payload, "tabela de nomenclaturas");
+  const listedNomenclatures = Array.isArray(payload) ? payload
+    : root.Nomenclaturas ?? root.nomenclaturas ?? root.listaNomenclaturas ?? root.ncm ?? root.items
+      ?? Object.values(root).find(Array.isArray);
+  const nomenclaturas = asArray(listedNomenclatures, "lista de nomenclaturas");
   const items = new Map<string, Omit<OfficialNcm, "mandatoryImportAttributes">>();
   for (const value of nomenclaturas) {
     const row = asObject(value, "nomenclatura");
-    const code = normalizeNcmCode(row.Codigo);
+    const code = normalizeNcmCode(row.Codigo ?? row.codigo);
     if (!code) continue;
-    const name = asText(row.Descricao);
+    const name = asText(row.Descricao ?? row.descricao);
     if (!name || name.length > 2_000) throw new Error(`A descrição oficial do NCM ${code} é inválida.`);
     if (items.has(code)) throw new Error(`A tabela oficial contém NCM duplicado: ${code}.`);
     items.set(code, {
       code,
       name,
-      validFrom: parseBrazilianDate(row.Data_Inicio, `${code} início`),
-      validTo: parseBrazilianDate(row.Data_Fim, `${code} fim`),
+      validFrom: parseBrazilianDate(row.Data_Inicio ?? row.dataInicio ?? row.data_inicio, `${code} inicio`),
+      validTo: row.Data_Fim === null || row.dataFim === null || row.data_fim === null
+        || (row.Data_Fim === undefined && row.dataFim === undefined && row.data_fim === undefined)
+        ? null : parseBrazilianDate(row.Data_Fim ?? row.dataFim ?? row.data_fim, `${code} fim`),
     });
   }
   if (items.size < minimumNcmCount) {
     throw new Error("A tabela oficial de NCM parece incompleta; a atualização foi cancelada.");
   }
-  return { sourceUpdatedAt: parseHeaderDate(root.Data_Ultima_Atualizacao_NCM), items: [...items.values()] };
+  return { sourceUpdatedAt: parseHeaderDate(root.Data_Ultima_Atualizacao_NCM ?? root.dataUltimaAlteracao
+    ?? root.dataUltimaAtualizacaoNcm ?? root.dataUltimaAtualizacao), items: [...items.values()] };
 }
 
 function parseZipJson(zipBytes: Uint8Array): unknown {

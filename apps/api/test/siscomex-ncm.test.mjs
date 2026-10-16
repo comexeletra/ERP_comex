@@ -92,3 +92,23 @@ test("NCM table rejects a partial source and duplicate eight-digit codes", () =>
     { Codigo: "01012100", Descricao: "Duplicado", Data_Inicio: "01/04/2022", Data_Fim: "31/12/9999" },
   ] }, 1), /duplicado/u);
 });
+
+test("NCM table accepts the documented Siscomex JSON fields and validity dates", () => {
+  const parsed = parseSiscomexNcmTable({
+    dataUltimaAlteracao: "2026-10-15T00:00:00-03:00",
+    nomenclaturas: [{
+      codigo: "0101.21.00",
+      descricao: "Reprodutores de raça pura",
+      dataInicio: "2022-04-01",
+      dataFim: "9999-12-31",
+    }],
+  }, 1);
+
+  assert.equal(parsed.sourceUpdatedAt, "2026-10-15");
+  assert.deepEqual(parsed.items, [{
+    code: "01012100",
+    name: "Reprodutores de raça pura",
+    validFrom: "2022-04-01",
+    validTo: "9999-12-31",
+  }]);
+});
