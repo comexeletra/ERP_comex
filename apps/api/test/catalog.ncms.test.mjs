@@ -14,6 +14,7 @@ async function createApp() {
     created_at: new Date(), updated_at: new Date(),
   };
   const writes = [];
+  const outboxMessages = [];
   const pool = {
     async query(sql, values = []) {
       if (sql.includes("FROM identity.erp_user AS u")) {
@@ -61,7 +62,11 @@ async function createApp() {
             return { rows: [entry], rowCount: 1 };
           }
           if (sql.includes("INSERT INTO catalog.entry_alias") || sql.includes("INSERT INTO catalog.command_receipt")
-            || sql.includes("INSERT INTO audit.audit_log") || sql.includes("INSERT INTO audit.outbox_message")) {
+            || sql.includes("INSERT INTO audit.audit_log")) {
+            return { rows: [], rowCount: 1 };
+          }
+          if (sql.includes("INSERT INTO audit.outbox_message")) {
+            outboxMessages.push(JSON.parse(values[2]));
             return { rows: [], rowCount: 1 };
           }
           throw new Error(`Unexpected client query: ${sql}`);
@@ -79,7 +84,7 @@ async function createApp() {
     }
   });
   await registerCatalogRoutes(app, pool);
-  return { app, entry, writes };
+  return { app, entry, writes, outboxMessages };
 }
 
 test("Fiscal users without importer scopes can list and edit the global NCM catalog", async t => {
@@ -90,14 +95,14 @@ test("Fiscal users without importer scopes can list and edit the global NCM cata
 
   const list = await app.inject({ method: "GET", url: "/api/v1/ncms?page=1&pageSize=25", headers });
   assert.equal(list.statusCode, 200, list.body);
-  assert.equal(list.json().items[0].importer, null);
+  assert.equal("importer" in list.json().items[0], false);
 
   const edit = await app.inject({ method: "PATCH", url: `/api/v1/ncms/${entry.id}`,
     headers: { ...headers, "x-record-version": "1" },
     payload: { name: longDescription, reason: "Atualizar descrição oficial" } });
   assert.equal(edit.statusCode, 200, edit.body);
   assert.equal(edit.json().name, longDescription);
-  assert.equal(edit.json().importer, null);
+  assert.equal("importer" in edit.json(), false);
 
   const unknownPeriod = await app.inject({ method: "PATCH", url: `/api/v1/ncms/${entry.id}`,
     headers: { ...headers, "x-record-version": "2" },
@@ -116,7 +121,7 @@ test("global NCM routes reject importer filters", async t => {
 });
 
 test("creates standalone NCM records and rejects importer ownership", async t => {
-  const { app, writes } = await createApp();
+  const { app, writes, outboxMessages } = await createApp();
   t.after(() => app.close());
   const headers = { "x-test-subject": "fiscal", "idempotency-key": "global-ncm-one" };
   const payload = { code: "12345678", name: `Classificação fiscal ${"NCM ".repeat(70)}`.trim(),
@@ -126,8 +131,9 @@ test("creates standalone NCM records and rejects importer ownership", async t =>
   const created = await app.inject({ method: "POST", url: "/api/v1/ncms", headers, payload });
   assert.equal(created.statusCode, 201, created.body);
   assert.equal(created.json().name, payload.name);
-  assert.equal(created.json().importer, null);
+  assert.equal("importer" in created.json(), false);
   assert.equal(writes[0].values[1], null);
+  assert.equal("importer" in outboxMessages[0], false);
 
   const withImporter = await app.inject({ method: "POST", url: "/api/v1/ncms",
     headers: { ...headers, "idempotency-key": "global-ncm-two" }, payload: { ...payload, importer: "ELETRA CWB" } });

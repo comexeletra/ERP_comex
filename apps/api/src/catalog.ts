@@ -87,7 +87,8 @@ function problem(reply: FastifyReply, status: number, code: string, detail: stri
     instance: reply.request.url.split("?", 1)[0], traceId: reply.request.id, code });
 }
 function present(row: Entry) {
-  return { id: row.id, importer: row.importer, kind: row.kind, code: row.code, name: row.name,
+  return { id: row.id, ...(row.kind === "NCM" ? {} : { importer: row.importer }),
+    kind: row.kind, code: row.code, name: row.name,
     status: row.status, provenance: row.provenance, evidence: row.evidence,
     validFrom: row.valid_from, validTo: row.valid_to, version: String(row.version),
     createdAt: row.created_at, updatedAt: row.updated_at };
@@ -667,7 +668,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
         await client.query(
           `INSERT INTO audit.outbox_message (event_id,event_type,aggregate_type,aggregate_id,payload,occurred_at)
            VALUES ($1,'catalog.entry.created','CATALOG_ENTRY',$2,$3::jsonb,now())`,
-          [randomUUID(), id, JSON.stringify({ id, importer: null, kind, version: 1 })]);
+          [randomUUID(), id, JSON.stringify({ id, ...(kind === "NCM" ? {} : { importer: null }), kind, version: 1 })]);
         await client.query("COMMIT");
         reply.header("ETag", '"1"');
         return reply.code(201).send(present(inserted.rows[0]));
