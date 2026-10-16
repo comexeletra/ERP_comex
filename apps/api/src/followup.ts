@@ -359,14 +359,28 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
           factoryShipDate: row.factory_ship_date, legacyFactoryShipDate: row.actual_factory_ship_date,
           purchaseOrder: { id: row.po_id, number: row.po_number, importer: row.importer }, item, calculated };
       });
-      const events = await pool.query(`SELECT id, entity_type AS "entityType", entity_id AS "entityId",
+      const [processEvents, allocationEvents] = await Promise.all([pool.query(`SELECT id, entity_type AS "entityType", entity_id AS "entityId",
           operation, old_value AS "oldValue", new_value AS "newValue", actor_id AS "actorId",
           occurred_at AS "occurredAt", reason
         FROM audit.import_process_operational_history
-        WHERE aggregate_id=$1 ORDER BY occurred_at DESC, id DESC`, [id.data]);
+        WHERE aggregate_id=$1 ORDER BY occurred_at DESC, id DESC`, [id.data]),
+      pool.query(`SELECT event.id, event.entity_type AS "entityType", event.entity_id AS "entityId",
+          event.operation, event.old_value AS "oldValue", event.new_value AS "newValue",
+          event.actor_id AS "actorId", event.occurred_at AS "occurredAt", event.reason,
+          po.external_number AS "purchaseOrderNumber", item.product_code AS "productCode",
+          item.description AS "productDescription", item.line_number AS "lineNumber", item.unit
+        FROM audit.purchase_order_operational_history event
+        JOIN procurement.po_item_allocation allocation
+          ON event.entity_type='PO_ITEM_ALLOCATION' AND allocation.id=event.entity_id
+        JOIN procurement.purchase_order_item item ON item.id=allocation.purchase_order_item_id
+        JOIN procurement.purchase_order po ON po.id=item.purchase_order_id
+        WHERE allocation.process_id=$1 AND po.importer=ANY($2::text[])
+        ORDER BY event.occurred_at DESC, event.id DESC`, [id.data, scopes])]);
+      const events = [...processEvents.rows, ...allocationEvents.rows].sort((left, right) =>
+        new Date(right.occurredAt as string | Date).getTime() - new Date(left.occurredAt as string | Date).getTime());
       reply.header("ETag", `"${process.version}"`);
       return { process, purchaseOrders: purchaseOrders.rows, allocations: allocationItems,
-        documents: docs, invoiceTotals: invoiceTotals(docs), events: events.rows };
+        documents: docs, invoiceTotals: invoiceTotals(docs), events };
     });
 
   app.get<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/followup",

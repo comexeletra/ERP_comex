@@ -167,6 +167,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .ip-history-event > p:first-child { color: #526a77; }
 .ip-history-event > p:first-child strong { color: #183847; }
 .ip-history-entity { font-size: .88rem; font-weight: 700; }
+.ip-history-product-description { color: #657d89; font-size: .86rem; }
 .ip-history-event ul { margin: 6px 0; padding-left: 22px; }
 .ip-history-meta { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 12px 0 0; }
 .ip-history-meta > div { min-width: min(100%, 220px); }
@@ -350,6 +351,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 :root[data-theme="dark"] .ip-history-event > p:first-child strong,
 :root[data-theme="dark"] .ip-history-meta dd { color: #d4e0e6; }
 :root[data-theme="dark"] .ip-history-meta dt { color: #9db1bb; }
+:root[data-theme="dark"] .ip-history-product-description { color: #9db1bb; }
 :root[data-theme="dark"] .source-audit-tabs,
 :root[data-theme="dark"] .source-grid th,
 :root[data-theme="dark"] .source-grid td,

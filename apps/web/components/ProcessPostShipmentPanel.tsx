@@ -18,7 +18,8 @@ type Allocation = { id: string; allocationQuantity: string; purchaseOrder: { id:
   item: Row & { id: string; lineNumber: number; productCode: string; description: string; unit: string };
   calculated: Record<string, Value> };
 type Event = { id: string; entityType: string; entityId: string; operation: string; oldValue: Record<string, Value> | null;
-  newValue: Record<string, Value> | null; occurredAt: string; reason: string | null; actorId: string };
+  newValue: Record<string, Value> | null; occurredAt: string; reason: string | null; actorId: string;
+  purchaseOrderNumber?: string; productCode?: string; productDescription?: string; lineNumber?: number; unit?: string | null };
 type Data = { process: Row & { id: string; ipNumber: string; version: string; lifecycleStatus: "OPEN" | "CLOSED" };
   purchaseOrders: { id: string; number: string; importer: string; linkSource: string }[];
   allocations: Allocation[]; documents: Document[];
@@ -73,6 +74,10 @@ const documentHistoryLabels: Record<string, string> = {
   homologationDate: "Data de homologação", quantity: "Quantidade", unitPrice: "Preço unitário",
   amount: "Valor informado", currencyCode: "Moeda", notes: "Observações", status: "Status",
 };
+const allocationHistoryLabels: Record<string, string> = {
+  itemId: "Item da PO", quantity: "Quantidade distribuída", notes: "Observações", factoryShipDate: "Saída da fábrica",
+  status: "Status da distribuição",
+};
 const historyOperationLabels: Record<string, string> = {
   CREATE: "Cadastro", UPDATE: "Alteração", FOLLOWUP_UPDATE: "Atualização do acompanhamento",
   CANCEL: "Cancelamento", CLOSE: "Encerramento", REOPEN: "Reabertura",
@@ -91,6 +96,16 @@ function formatHistoryValue(key: string, value: Value | undefined) {
   return typeof value === "boolean" ? value ? "Sim" : "Não" : String(value);
 }
 function historyChanges(event: Event) {
+  if (event.entityType === "PO_ITEM_ALLOCATION" && !event.oldValue) {
+    const quantity = event.newValue?.quantity;
+    return [quantity == null ? "Distribuição cadastrada." :
+      `Quantidade distribuída: ${formatHistoryValue("quantity", quantity)}${event.unit ? ` ${event.unit}` : ""}.`];
+  }
+  if (event.entityType === "PO_ITEM_ALLOCATION" && event.operation === "CANCEL") {
+    const quantity = event.oldValue?.quantity;
+    return [quantity == null ? "Distribuição cancelada." :
+      `Distribuição cancelada: ${formatHistoryValue("quantity", quantity)}${event.unit ? ` ${event.unit}` : ""}.`];
+  }
   if (!event.oldValue) {
     if (event.entityType === "PROCESS_DOCUMENT") {
       const kind = event.newValue?.kind;
@@ -100,7 +115,8 @@ function historyChanges(event: Event) {
     return ["IP cadastrado."];
   }
 
-  const labels = event.entityType === "PROCESS_DOCUMENT" ? documentHistoryLabels : processHistoryLabels;
+  const labels = event.entityType === "PROCESS_DOCUMENT" ? documentHistoryLabels
+    : event.entityType === "PO_ITEM_ALLOCATION" ? allocationHistoryLabels : processHistoryLabels;
   const beforeValues = new Map(Object.entries(event.oldValue).map(([key, value]) => [camelCaseKey(key), value]));
   const changes = Object.entries(event.newValue ?? {}).flatMap(([rawKey, after]) => {
     const key = camelCaseKey(rawKey);
@@ -113,6 +129,9 @@ function historyChanges(event: Event) {
   return changes.length ? changes : ["Evento registrado sem campos alterados."];
 }
 function historyEntityLabel(event: Event) {
+  if (event.entityType === "PO_ITEM_ALLOCATION") {
+    return `PO ${event.purchaseOrderNumber ?? "—"} · ${event.productCode ?? "Produto"}${event.lineNumber ? ` · item ${event.lineNumber}` : ""}`;
+  }
   if (event.entityType !== "PROCESS_DOCUMENT") return "Dados do IP";
   const kind = event.newValue?.kind ?? event.oldValue?.kind;
   const number = event.newValue?.number ?? event.oldValue?.number;
@@ -299,6 +318,7 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
           <article className="ip-history-event" key={event.id}>
             <p><strong>{historyOperationLabels[event.operation] ?? event.operation}</strong> · {new Date(event.occurredAt).toLocaleString("pt-BR")}</p>
             <p className="ip-history-entity">{historyEntityLabel(event)}</p>
+            {event.productDescription && <p className="ip-history-product-description">{event.productDescription}</p>}
             <ul>{historyChanges(event).map(change => <li key={change}>{change}</li>)}</ul>
             <dl className="ip-history-meta">
               <div><dt>Responsável</dt><dd>{formatHistoryActor(event.actorId)}</dd></div>
