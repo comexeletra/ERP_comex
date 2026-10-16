@@ -163,10 +163,11 @@ test("updates product descriptions longer than the old limit", async t => {
 
   const response = await app.inject({ method: "PATCH", url: "/api/v1/products/00000000-0000-4000-8000-000000000001",
     headers: { "x-test-subject": "buyer", "x-record-version": "1" },
-    payload: { name: description, reason: "Ajustar descricao do produto" } });
+    payload: { name: description, status: "INACTIVE", reason: "Ajustar descricao do produto" } });
 
   assert.equal(response.statusCode, 200, response.body);
   assert.equal(response.json().name.length, 878);
+  assert.equal(response.json().status, "INACTIVE");
 });
 
 test("rejects malformed product JSON payloads before writing", async t => {

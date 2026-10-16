@@ -28,6 +28,11 @@ export default function OperationalValuesPage() {
   const [supplierRefresh, setSupplierRefresh] = useState(0);
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(false);
+  const [productTotalCount, setProductTotalCount] = useState(0);
+  const [productPage, setProductPage] = useState(1);
+  const [productSearch, setProductSearch] = useState("");
+  const [editingProductId, setEditingProductId] = useState("");
+  const [editProductDraft, setEditProductDraft] = useState({ description: "", status: "ACTIVE" });
   const [productDraft, setProductDraft] = useState({ code: "", description: "" });
   const [productJson, setProductJson] = useState<ProductCatalogImport[]>([]);
   const [productJsonFileName, setProductJsonFileName] = useState("");
@@ -80,19 +85,51 @@ export default function OperationalValuesPage() {
     if (entity !== "product") { setProducts([]); return; }
     const controller = new AbortController();
     setProductsLoading(true);
-    const query = new URLSearchParams({ page: "1", pageSize: "100" });
+    const query = new URLSearchParams({ page: String(productPage), pageSize: "25" });
+    if (productSearch.trim()) query.set("search", productSearch.trim());
     apiFetch("/api/v1/products?" + query, { cache: "no-store", signal: controller.signal })
       .then(async response => {
-        const data = await response.json() as { items?: Product[]; detail?: string };
+        const data = await response.json() as { items?: Product[]; totalCount?: number; detail?: string };
         if (!response.ok) throw new Error(data.detail || "N\u00e3o foi poss\u00edvel carregar os produtos.");
-        return data.items ?? [];
-      }).then(entries => {
-        if (!controller.signal.aborted) setProducts(entries);
+        return { items: data.items ?? [], totalCount: data.totalCount ?? 0 };
+      }).then(data => {
+        if (!controller.signal.aborted) {
+          setProducts(data.items);
+          setProductTotalCount(data.totalCount);
+        }
       }).catch(cause => {
         if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro ao carregar produtos.");
       }).finally(() => { if (!controller.signal.aborted) setProductsLoading(false); });
     return () => controller.abort();
-  }, [entity, productRefresh]);
+  }, [entity, productPage, productRefresh, productSearch]);
+
+  function startEditingProduct(product: Product) {
+    setEditingProductId(product.id);
+    setEditProductDraft({ description: product.name, status: product.status });
+    setError("");
+    setNotice("");
+  }
+
+  function cancelEditingProduct() {
+    setEditingProductId("");
+    setEditProductDraft({ description: "", status: "ACTIVE" });
+  }
+
+  async function saveProductEdit(event: FormEvent<HTMLFormElement>, product: Product) {
+    event.preventDefault(); setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await apiFetch(`/api/v1/products/${product.id}`, { method: "PATCH",
+        headers: { "content-type": "application/json", "X-Record-Version": product.version },
+        body: JSON.stringify({ name: editProductDraft.description, status: editProductDraft.status,
+          reason: automaticAuditReason }) });
+      const result = await response.json() as { detail?: string };
+      if (!response.ok) throw new Error(result.detail || "N\u00e3o foi poss\u00edvel atualizar o produto.");
+      cancelEditingProduct();
+      setProductRefresh(current => current + 1);
+      setNotice("Produto atualizado com auditoria.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao atualizar produto."); }
+    finally { setBusy(false); }
+  }
 
   async function addSupplier(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError(""); setNotice("");
@@ -162,6 +199,7 @@ export default function OperationalValuesPage() {
   function chooseEntity(next: string) {
     setEntity(next);
     setError(""); setNotice(""); setEditingId("");
+    setEditingProductId(""); setProductPage(1); setProductSearch("");
   }
 
   async function add(event: FormEvent<HTMLFormElement>) {
@@ -297,11 +335,41 @@ export default function OperationalValuesPage() {
         {entities.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select></label>
       <p className="muted">Cada produto é cadastrado com seu código e sua descrição.</p>
-      <h3>Produtos cadastrados · {products.length}</h3>
-      {productsLoading ? <p role="status">Carregando produtos…</p> : products.length ? <ul className="entity-value-list">
-        {products.map(product => <li key={product.id}><span><strong>{product.code}</strong> · {product.name}</span>
-          <span className="muted">{product.status === "ACTIVE" ? "Ativo" : "Inativo"}</span></li>)}
-      </ul> : <p className="muted">Ainda n&#227;o h&#225; produtos cadastrados.</p>}
+      <h3>Produtos cadastrados &middot; {productTotalCount}</h3>
+      <label className="product-catalog-search">Pesquisar por c&oacute;digo ou descri&ccedil;&atilde;o
+        <input maxLength={120} value={productSearch} onChange={event => { setProductSearch(event.target.value); setProductPage(1); }} />
+      </label>
+      {productsLoading ? <p role="status">Carregando produtos...</p> : products.length ? <ul className="product-catalog-list">
+        {products.map(product => <li className="product-catalog-item" key={product.id}>
+          {editingProductId === product.id ? <form className="product-catalog-edit" onSubmit={event => void saveProductEdit(event, product)}>
+            <p className="product-catalog-code"><strong>C&oacute;digo do produto</strong><span>{product.code}</span></p>
+            <label>Descri&ccedil;&atilde;o do produto<textarea required maxLength={2000} rows={4} value={editProductDraft.description}
+              onChange={event => setEditProductDraft(current => ({ ...current, description: event.target.value }))} /></label>
+            <label>Situa&ccedil;&atilde;o<select value={editProductDraft.status}
+              onChange={event => setEditProductDraft(current => ({ ...current, status: event.target.value }))}>
+              <option value="ACTIVE">Ativo</option><option value="INACTIVE">Inativo</option>
+            </select></label>
+            <div className="product-catalog-actions">
+              <button className="button" disabled={busy || !editProductDraft.description.trim()}>{busy ? "Salvando..." : "Salvar"}</button>
+              <button className="button secondary" type="button" disabled={busy} onClick={cancelEditingProduct}>Cancelar</button>
+            </div>
+          </form> : <>
+            <div className="product-catalog-description"><strong className="product-catalog-code">{product.code}</strong>
+              <span>{product.name}</span></div>
+            <div className="product-catalog-actions"><span className={`product-catalog-status ${product.status === "ACTIVE" ? "active" : "inactive"}`}>
+              {product.status === "ACTIVE" ? "Ativo" : "Inativo"}
+            </span>
+              {canWrite && <button className="button secondary entity-value-action" type="button" disabled={busy}
+                aria-label={`Editar produto ${product.code}`} onClick={() => startEditingProduct(product)}>Editar</button>}
+            </div>
+          </>}
+        </li>)}
+      </ul> : <p className="muted">{productSearch.trim() ? "Nenhum produto corresponde \u00e0 pesquisa." : "Ainda n\u00e3o h\u00e1 produtos cadastrados."}</p>}
+      {!productsLoading && productTotalCount > 25 && <nav className="pagination" aria-label="P&aacute;ginas dos produtos">
+        <button className="button secondary" disabled={productPage <= 1} onClick={() => setProductPage(page => page - 1)}>Anterior</button>
+        <span>P&aacute;gina {productPage} de {Math.ceil(productTotalCount / 25)}</span>
+        <button className="button" disabled={productPage * 25 >= productTotalCount} onClick={() => setProductPage(page => page + 1)}>Pr&oacute;xima</button>
+      </nav>}
       {canWrite && <form className="stack-form" onSubmit={event => void addProduct(event)}>
         <h3>Adicionar produto</h3>
         <label>Código do produto<input required maxLength={120} value={productDraft.code} onChange={event => setProductDraft(current => ({ ...current, code: event.target.value }))} /></label>
