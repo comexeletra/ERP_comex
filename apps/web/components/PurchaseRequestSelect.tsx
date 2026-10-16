@@ -26,12 +26,11 @@ export async function loadPurchaseRequests(importer: string, signal?: AbortSigna
 
 export function PurchaseRequestSelect({ importer, value, choices, onChange, disabled = false }:
   { importer: string; value: string; choices: PurchaseRequestChoice[]; onChange: (value: string) => void; disabled?: boolean }) {
-  const showImporter = !importer || choices.some(choice => choice.importer !== importer);
   return <div className="pcm-sc-selector">
-    <label>SC vinculada<select disabled={disabled} value={value} onChange={event => onChange(event.target.value)}>
-      <option value="">Sem SC vinculada</option>
+    <label>SC<select disabled={disabled} value={value} onChange={event => onChange(event.target.value)}>
+      <option value="">Sem SC</option>
       {choices.map(choice => <option key={choice.id} value={choice.id}>
-        {showImporter ? `${choice.importer} · ` : ""}{choice.scNumber} · {choice.requester}
+        {choice.scNumber}
       </option>)}
     </select></label>
     {choices.length === 0 && importer ?

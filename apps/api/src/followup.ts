@@ -137,14 +137,15 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
         if (!known.rowCount) throw new BusinessError(404, "UNKNOWN_IMPORTER", "Importadora ainda não cadastrada.");
         const poId = randomUUID(); const header = body.header;
         await validatePurchaseRequest(client, header.purchaseRequestId, header.importer);
-        await client.query(`INSERT INTO procurement.purchase_order
+        const createdPo = await client.query<{ orderDate: string }>(`INSERT INTO procurement.purchase_order
           (id,importer,external_number,normalized_number,identity_status,source_kind,version,
            supplier_text,order_date,notes,purchase_request_id)
-          VALUES ($1,$2,$3::text,upper($3::text),'MANUAL_UNVERIFIED','MANUAL_TOTVS_REFERENCE',1,$4,$5,$6,$7)`,
-          [poId, header.importer, header.number, header.supplierText, header.orderDate, header.notes,
-            header.purchaseRequestId ?? null]);
+          VALUES ($1,$2,$3::text,upper($3::text),'MANUAL_UNVERIFIED','MANUAL_TOTVS_REFERENCE',1,$4,
+            (now() AT TIME ZONE 'America/Sao_Paulo')::date,$5,$6)
+          RETURNING order_date::text AS "orderDate"`,
+          [poId, header.importer, header.number, header.supplierText, header.notes, header.purchaseRequestId ?? null]);
         await record(client, "PURCHASE_ORDER", poId, "PURCHASE_ORDER", poId, "CREATE",
-          null, header, auth.actor, header.reason);
+          null, { ...header, orderDate: createdPo.rows[0].orderDate }, auth.actor, header.reason);
         const itemIds: string[] = [];
         for (const [index, item] of body.items.entries()) {
           const itemId = randomUUID(); itemIds.push(itemId);
@@ -274,13 +275,13 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
         const header = parsed.data.header;
         await validatePurchaseRequest(client, header.purchaseRequestId, String(po.importer));
         const updated = await client.query<{ version: string }>(`UPDATE procurement.purchase_order
-          SET external_number=$2,normalized_number=upper($2::text),supplier_text=$3,order_date=$4,
-            notes=$5,purchase_request_id=CASE WHEN $6::boolean THEN $7::uuid ELSE purchase_request_id END,
+          SET external_number=$2,normalized_number=upper($2::text),supplier_text=$3,
+            notes=$4,purchase_request_id=CASE WHEN $5::boolean THEN $6::uuid ELSE purchase_request_id END,
             version=version+1,updated_at=now() WHERE id=$1 RETURNING version::text`,
-          [poId.data, header.number, header.supplierText, header.orderDate, header.notes,
+          [poId.data, header.number, header.supplierText, header.notes,
             header.purchaseRequestId !== undefined, header.purchaseRequestId ?? null]);
         await record(client, "PURCHASE_ORDER", poId.data, "PURCHASE_ORDER", poId.data, "UPDATE",
-          po, header, auth.actor, header.reason);
+          po, { ...header, orderDate: po.order_date ?? null }, auth.actor, header.reason);
         const keys = Object.keys(fields);
         if (keys.length) {
           const sql = keys.map((field, index) => `${itemFields[field][0]}=$${index + 2}`).join(",");
@@ -389,7 +390,9 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
       if (!id.success) return problem(reply, 400, "INVALID_ID", "PO inválida.");
       const scopes = request.authorizationContext?.importerScopes ?? [];
         const po = await pool.query(`SELECT id, importer, external_number AS number, version::text,
-          supplier_text AS "supplierText", order_date::text AS "orderDate"
+          supplier_text AS "supplierText",
+          coalesce(order_date, CASE WHEN source_kind = 'MANUAL_TOTVS_REFERENCE'
+            THEN (created_at AT TIME ZONE 'America/Sao_Paulo')::date END)::text AS "orderDate"
         FROM procurement.purchase_order WHERE id=$1 AND importer=ANY($2::text[])`, [id.data, scopes]);
       if (!po.rows[0]) return problem(reply, 404, "RESOURCE_NOT_FOUND", "PO não encontrada.");
       const items = await pool.query(`SELECT item.*, to_jsonb(item)->>'item_group' AS "group"

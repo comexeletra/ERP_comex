@@ -173,7 +173,9 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
       const scopes = request.authorizationContext?.importerScopes ?? [];
       const po = await pool.query<Record<string, unknown>>(
         `SELECT po.id, po.importer, po.external_number AS number, po.supplier_text AS "supplierText",
-                po.order_date::text AS "orderDate", po.notes, po.source_kind AS "sourceKind", po.version::text,
+                coalesce(po.order_date, CASE WHEN po.source_kind = 'MANUAL_TOTVS_REFERENCE'
+                  THEN (po.created_at AT TIME ZONE 'America/Sao_Paulo')::date END)::text AS "orderDate",
+                po.notes, po.source_kind AS "sourceKind", po.version::text,
                 po.purchase_request_id AS "purchaseRequestId",
                 CASE WHEN sc.id IS NULL THEN NULL ELSE jsonb_build_object(
                   'id', sc.id, 'scNumber', sc.sc_number,
@@ -243,11 +245,13 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           `INSERT INTO procurement.purchase_order
            (id,importer,external_number,normalized_number,identity_status,source_kind,version,
             supplier_text,order_date,notes,purchase_request_id)
-           VALUES ($1,$2,$3::text,upper($3::text),'MANUAL_UNVERIFIED','MANUAL_TOTVS_REFERENCE',1,$4,$5,$6,$7)
-           RETURNING id, importer, external_number AS number, version::text`,
-          [id, body.importer, body.number, body.supplierText, body.orderDate, body.notes, body.purchaseRequestId ?? null]);
+           VALUES ($1,$2,$3::text,upper($3::text),'MANUAL_UNVERIFIED','MANUAL_TOTVS_REFERENCE',1,$4,
+             (now() AT TIME ZONE 'America/Sao_Paulo')::date,$5,$6)
+           RETURNING id, importer, external_number AS number, order_date::text AS "orderDate", version::text`,
+          [id, body.importer, body.number, body.supplierText, body.notes, body.purchaseRequestId ?? null]);
         await saveReceipt(client, auth.actor.userId, key, claim.hash, "PO", id);
-        await record(client, "PURCHASE_ORDER", id, "PURCHASE_ORDER", id, "CREATE", null, body, auth.actor, body.reason);
+        await record(client, "PURCHASE_ORDER", id, "PURCHASE_ORDER", id, "CREATE", null,
+          { ...body, orderDate: result.rows[0].orderDate }, auth.actor, body.reason);
         return result.rows[0];
       }, 201);
     });
@@ -270,15 +274,15 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           await validatePurchaseRequest(client, parsed.data.purchaseRequestId, String(before.importer));
         }
         const result = await client.query<Record<string, unknown>>(
-          `UPDATE procurement.purchase_order SET supplier_text = $2, order_date = $3,
-            notes = $4, external_number = $5::text, normalized_number = upper($5::text),
-            purchase_request_id = CASE WHEN $6::boolean THEN $7::uuid ELSE purchase_request_id END,
+          `UPDATE procurement.purchase_order SET supplier_text = $2,
+            notes = $3, external_number = $4::text, normalized_number = upper($4::text),
+            purchase_request_id = CASE WHEN $5::boolean THEN $6::uuid ELSE purchase_request_id END,
             version = version + 1, updated_at = now()
            WHERE id = $1 RETURNING id, version::text`,
-          [id.data, parsed.data.supplierText, parsed.data.orderDate, parsed.data.notes, parsed.data.number,
+          [id.data, parsed.data.supplierText, parsed.data.notes, parsed.data.number,
             parsed.data.purchaseRequestId !== undefined, parsed.data.purchaseRequestId ?? null]);
         await record(client, "PURCHASE_ORDER", id.data, "PURCHASE_ORDER", id.data, "UPDATE",
-          before, parsed.data, auth.actor, parsed.data.reason);
+          before, { ...parsed.data, orderDate: before.order_date ?? null }, auth.actor, parsed.data.reason);
         return result.rows[0];
       });
     });

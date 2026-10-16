@@ -462,7 +462,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             <option value="">Selecione</option>{!suppliers.some(item => item.code === supplier) && supplier && <option value={supplier}>{supplier} (valor atual)</option>}
             {suppliers.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
           </select></label>
-          <label>Data da PO<input type="date" value={orderDate} onChange={event => setOrderDate(event.target.value)} /></label>
+          <label>Data da PO<input type="date" value={orderDate} readOnly aria-readonly="true" /></label>
           <PurchaseRequestSelect importer={data.importer} value={purchaseRequestId} choices={purchaseRequests}
             onChange={selectPurchaseRequest} />
           <label>Observações<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>

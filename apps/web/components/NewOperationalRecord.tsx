@@ -36,7 +36,6 @@ type PoDraft = {
   importer: string;
   number: string;
   supplier: string;
-  orderDate: string;
   notes: string;
   items: PoItemDraft[];
   commonItemFields: OperationalFieldDraft;
@@ -63,7 +62,6 @@ function isLegacyImporterOnlyDraft(draft: Partial<PoDraft>): boolean {
   return Boolean(draft.importer?.trim())
     && !hasDraftValue(draft.number)
     && !hasDraftValue(draft.supplier)
-    && !hasDraftValue(draft.orderDate)
     && !hasDraftValue(draft.notes)
     && !hasDraftValue(draft.purchaseRequestId)
     && !hasDraftValue(draft.createdPoId)
@@ -85,7 +83,6 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
   const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequestChoice[]>([]);
   const [number, setNumber] = useState("");
   const [supplier, setSupplier] = useState("");
-  const [orderDate, setOrderDate] = useState("");
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
   const [notes, setNotes] = useState("");
@@ -121,7 +118,6 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
           setPurchaseRequestId(typeof draft.purchaseRequestId === "string" ? draft.purchaseRequestId : "");
           setNumber(typeof draft.number === "string" ? draft.number : "");
           setSupplier(typeof draft.supplier === "string" ? draft.supplier : "");
-          setOrderDate(typeof draft.orderDate === "string" ? draft.orderDate : "");
           setNotes(typeof draft.notes === "string" ? draft.notes : "");
           setItems(draft.items);
           setCommonItemFields(draft.commonItemFields ?? blankPurchaseOrderItemFields);
@@ -137,9 +133,9 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
 
   useEffect(() => {
     if (kind !== "po" || !draftReady) return;
-    const draft: PoDraft = { importer, number, supplier, orderDate, notes, items, commonItemFields, purchaseRequestId, createdPoId };
+    const draft: PoDraft = { importer, number, supplier, notes, items, commonItemFields, purchaseRequestId, createdPoId };
     sessionStorage.setItem(poDraftKey, JSON.stringify(draft));
-  }, [kind, draftReady, importer, number, supplier, orderDate, notes, items, commonItemFields, purchaseRequestId, createdPoId]);
+  }, [kind, draftReady, importer, number, supplier, notes, items, commonItemFields, purchaseRequestId, createdPoId]);
 
   useEffect(() => {
     Promise.all([apiFetch("/auth/me"), apiFetch("/api/v1/importers", { cache: "no-store" }), loadOperationalCatalog()])
@@ -249,7 +245,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
       },
     }));
     const completePayload = JSON.stringify({ header: { importer, number, purchaseRequestId: purchaseRequestId || null, supplierText: supplier || null,
-      orderDate: orderDate || null, notes, reason: automaticAuditReason }, items: completeItems });
+      orderDate: null, notes, reason: automaticAuditReason }, items: completeItems });
     let previousCommand: { payload: string; key: string } | null = null;
     try { previousCommand = JSON.parse(sessionStorage.getItem(poCommandKey) ?? "null"); } catch { /* Recria a chave. */ }
     const commandKey = previousCommand?.payload === completePayload && previousCommand.key
@@ -275,7 +271,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
       if (!Array.isArray(created.itemIds) || created.itemIds.length !== completeItems.length ||
           !Array.isArray(followup.items) || followup.number !== number.trim() ||
           followup.importer !== importer.trim() || savedHeader.supplierText !== (supplier.trim() || null) ||
-          savedHeader.orderDate !== (orderDate || null) || savedHeader.notes !== notes.trim() ||
+          !savedHeader.orderDate || savedHeader.notes !== notes.trim() ||
           savedHeader.purchaseRequestId !== (purchaseRequestId || null) ||
           completeItems.some((item, index) => {
             const saved = followup.items.find(row => row.id === created.itemIds[index]);
@@ -302,7 +298,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
       method: "POST",
       headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
       body: JSON.stringify({ importer, number, supplierText: supplier || null,
-        orderDate: orderDate || null, notes, purchaseRequestId: purchaseRequestId || null, reason: automaticAuditReason }),
+        orderDate: null, notes, purchaseRequestId: purchaseRequestId || null, reason: automaticAuditReason }),
     }));
     setCreatedPoId(header.id);
 
@@ -412,7 +408,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
             <label>Fornecedor<select value={supplier} onChange={event => setSupplier(event.target.value)}>
               <option value="">Selecione</option>{suppliers.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
             </select></label>
-            <label>Data da PO<input type="date" value={orderDate} onChange={event => setOrderDate(event.target.value)} /></label>
+            <label>Data da PO<input type="text" value="Automática ao salvar" readOnly aria-readonly="true" /></label>
           </div>
           <label>Observações do pedido<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
           <h3>Dados compartilhados por todos os produtos</h3>
