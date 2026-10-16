@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 import { automaticAuditReason } from "../../../lib/audit";
-import { createNcmCatalogUrl } from "../../../lib/catalog-ncms";
+import { createNcmCatalogUrl, createNcmPayload, updateNcmPayload, type NcmDraft } from "../../../lib/catalog-ncms";
 import { parseProductCatalogJson, type ProductCatalogImport } from "../../../lib/catalog-products-json";
 
 const entities = [
@@ -20,7 +20,9 @@ const entities = [
 type Option = { id: string; entity: string; code?: string | null; value: string };
 type Supplier = { id: string; code: string; name: string; status: string };
 type Product = { id: string; importer: string | null; code: string; name: string; status: string; version: string };
-type Ncm = { id: string; code: string; name: string; status: "ACTIVE" | "INACTIVE" };
+type Ncm = { id: string; code: string; name: string; status: "ACTIVE" | "INACTIVE";
+  evidence: string; validFrom: string | null; validTo: string | null; version: string };
+const emptyNcmDraft: NcmDraft = { code: "", description: "", status: "ACTIVE", evidence: "", validFrom: "", validTo: "" };
 
 export default function OperationalValuesPage() {
   const [options, setOptions] = useState<Option[]>([]);
@@ -45,6 +47,9 @@ export default function OperationalValuesPage() {
   const [ncmTotalCount, setNcmTotalCount] = useState(0);
   const [ncmPage, setNcmPage] = useState(1);
   const [ncmSearch, setNcmSearch] = useState("");
+  const [ncmRefresh, setNcmRefresh] = useState(0);
+  const [editingNcmId, setEditingNcmId] = useState("");
+  const [ncmDraft, setNcmDraft] = useState<NcmDraft>(emptyNcmDraft);
   const [entity, setEntity] = useState<string>(entities[0][0]);
   const [value, setValue] = useState("");
   const [valueCode, setValueCode] = useState("");
@@ -56,6 +61,7 @@ export default function OperationalValuesPage() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [canWrite, setCanWrite] = useState(false);
+  const [canWriteNcm, setCanWriteNcm] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -68,6 +74,7 @@ export default function OperationalValuesPage() {
     if (!valuesResponse.ok || !identityResponse.ok) throw new Error(values.detail || "Não foi possível carregar os cadastros.");
     setOptions(values.items ?? []);
     setCanWrite((identity.roles ?? []).some(role => ["Master", "Administrador", "Compras"].includes(role)));
+    setCanWriteNcm((identity.roles ?? []).some(role => ["Master", "Administrador", "Fiscal"].includes(role)));
   }, []);
 
   useEffect(() => { void load().catch(cause => setError(cause instanceof Error ? cause.message : "Erro ao carregar.")); }, [load]);
@@ -128,7 +135,50 @@ export default function OperationalValuesPage() {
         if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro ao carregar NCMs.");
       }).finally(() => { if (!controller.signal.aborted) setNcmLoading(false); });
     return () => controller.abort();
-  }, [entity, ncmPage, ncmSearch]);
+  }, [entity, ncmPage, ncmRefresh, ncmSearch]);
+
+  function startEditingNcm(ncm: Ncm) {
+    setEditingNcmId(ncm.id);
+    setNcmDraft({ code: ncm.code, description: ncm.name, status: ncm.status, evidence: ncm.evidence,
+      validFrom: ncm.validFrom ?? "", validTo: ncm.validTo ?? "" });
+    setError("");
+    setNotice("");
+  }
+
+  function cancelEditingNcm() {
+    setEditingNcmId("");
+    setNcmDraft(emptyNcmDraft);
+  }
+
+  async function saveNcmEdit(event: FormEvent<HTMLFormElement>, ncm: Ncm) {
+    event.preventDefault(); setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await apiFetch(`/api/v1/ncms/${ncm.id}`, { method: "PATCH",
+        headers: { "content-type": "application/json", "X-Record-Version": ncm.version },
+        body: JSON.stringify(updateNcmPayload(ncmDraft, automaticAuditReason)) });
+      const result = await response.json() as { detail?: string };
+      if (!response.ok) throw new Error(result.detail || "Não foi possível atualizar o NCM.");
+      cancelEditingNcm();
+      setNcmRefresh(current => current + 1);
+      setNotice("NCM atualizado com auditoria.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao atualizar NCM."); }
+    finally { setBusy(false); }
+  }
+
+  async function addNcm(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await apiFetch("/api/v1/ncms", { method: "POST",
+        headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify(createNcmPayload(ncmDraft, automaticAuditReason)) });
+      const result = await response.json() as { detail?: string };
+      if (!response.ok) throw new Error(result.detail || "Não foi possível cadastrar o NCM.");
+      setNcmDraft(emptyNcmDraft);
+      setNcmPage(1); setNcmSearch(""); setNcmRefresh(current => current + 1);
+      setNotice("NCM cadastrado no catálogo fiscal global.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao cadastrar NCM."); }
+    finally { setBusy(false); }
+  }
 
   function startEditingProduct(product: Product) {
     setEditingProductId(product.id);
@@ -228,6 +278,7 @@ export default function OperationalValuesPage() {
     setError(""); setNotice(""); setEditingId("");
     setEditingProductId(""); setProductPage(1); setProductSearch("");
     setNcmPage(1); setNcmSearch("");
+    setEditingNcmId(""); setNcmDraft(emptyNcmDraft);
   }
 
   async function add(event: FormEvent<HTMLFormElement>) {
@@ -424,23 +475,50 @@ export default function OperationalValuesPage() {
       <p>Gerencie as opções usadas nos campos do sistema.</p>
       <Link className="text-link" href="/catalog">Todos os cadastros</Link></header>
     {error && <p className="notice error" role="alert">{error}</p>}
+    {notice && <p className="notice success" role="status">{notice}</p>}
     <section className="card entity-values-card">
       <h2>Campo e opções</h2>
       <label>Campo<select value={entity} onChange={event => chooseEntity(event.target.value)}>
         {entities.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select></label>
-      <p className="muted">NCMs são um catálogo fiscal global, sem vínculo com importadora. A lista mostra códigos, descrições e situação.</p>
+      <p className="muted">NCMs são um catálogo fiscal global, sem vínculo com importadora.</p>
       <h3>NCMs cadastrados &middot; {ncmTotalCount}</h3>
       <label className="product-catalog-search">Pesquisar por código ou descrição
         <input maxLength={120} value={ncmSearch} onChange={event => { setNcmSearch(event.target.value); setNcmPage(1); }} />
       </label>
       {ncmLoading ? <p role="status">Carregando NCMs...</p> : ncms.length ? <ul className="product-catalog-list">
         {ncms.map(ncm => <li className="product-catalog-item" key={ncm.id}>
-          <div className="product-catalog-description"><strong className="product-catalog-code">{ncm.code}</strong>
-            <span>{ncm.name}</span></div>
-          <div className="product-catalog-actions"><span className={`product-catalog-status ${ncm.status === "ACTIVE" ? "active" : "inactive"}`}>
-            {ncm.status === "ACTIVE" ? "Ativo" : "Inativo"}
-          </span></div>
+          {editingNcmId === ncm.id ? <form className="product-catalog-edit" onSubmit={event => void saveNcmEdit(event, ncm)}>
+            <p className="product-catalog-code"><strong>Código NCM</strong><span>{ncm.code}</span></p>
+            <label>Descrição NCM<textarea required maxLength={2000} rows={3} value={ncmDraft.description}
+              onChange={event => setNcmDraft(current => ({ ...current, description: event.target.value }))} /></label>
+            <label>Situação<select value={ncmDraft.status}
+              onChange={event => setNcmDraft(current => ({ ...current, status: event.target.value as NcmDraft["status"] }))}>
+              <option value="ACTIVE">Ativo</option><option value="INACTIVE">Inativo</option>
+            </select></label>
+            <div className="catalog-validity-fields">
+              <label>Início da vigência<input type="date" required={ncmDraft.status === "ACTIVE"} value={ncmDraft.validFrom}
+                onChange={event => setNcmDraft(current => ({ ...current, validFrom: event.target.value }))} /></label>
+              <label>Fim da vigência<input type="date" min={ncmDraft.validFrom || undefined} value={ncmDraft.validTo}
+                onChange={event => setNcmDraft(current => ({ ...current, validTo: event.target.value }))} /></label>
+            </div>
+            <label>Evidência da revisão<textarea required minLength={8} maxLength={2000} rows={3} value={ncmDraft.evidence}
+              onChange={event => setNcmDraft(current => ({ ...current, evidence: event.target.value }))}
+              placeholder="Documento, número, data e onde conferir" /></label>
+            <div className="product-catalog-actions">
+              <button className="button" disabled={busy || !ncmDraft.description.trim() || ncmDraft.evidence.trim().length < 8}>{busy ? "Salvando..." : "Salvar"}</button>
+              <button className="button secondary" type="button" disabled={busy} onClick={cancelEditingNcm}>Cancelar</button>
+            </div>
+          </form> : <>
+            <div className="product-catalog-description"><strong className="product-catalog-code">{ncm.code}</strong>
+              <span>{ncm.name}</span></div>
+            <div className="product-catalog-actions"><span className={`product-catalog-status ${ncm.status === "ACTIVE" ? "active" : "inactive"}`}>
+              {ncm.status === "ACTIVE" ? "Ativo" : "Inativo"}
+            </span>
+              {canWriteNcm && <button className="button secondary entity-value-action" type="button" disabled={busy}
+                aria-label={`Editar NCM ${ncm.code}`} onClick={() => startEditingNcm(ncm)}>Editar</button>}
+            </div>
+          </>}
         </li>)}
       </ul> : <p className="muted">{ncmSearch.trim() ? "Nenhum NCM corresponde à pesquisa." : "Ainda não há NCMs cadastrados."}</p>}
       {!ncmLoading && ncmTotalCount > 25 && <nav className="pagination" aria-label="Páginas dos NCMs">
@@ -448,7 +526,19 @@ export default function OperationalValuesPage() {
         <span>Página {ncmPage} de {Math.ceil(ncmTotalCount / 25)}</span>
         <button className="button" disabled={ncmPage * 25 >= ncmTotalCount} onClick={() => setNcmPage(page => page + 1)}>Próxima</button>
       </nav>}
-      <Link className="button secondary" href="/catalog">Gerenciar e editar NCMs</Link>
+      {canWriteNcm && <form className="stack-form" onSubmit={event => void addNcm(event)}>
+        <h3>Adicionar NCM</h3>
+        <label>Código NCM<input required maxLength={8} pattern="[0-9]{8}" inputMode="numeric" value={ncmDraft.code}
+          onChange={event => setNcmDraft(current => ({ ...current, code: event.target.value }))} /></label>
+        <label>Descrição NCM<textarea required maxLength={2000} rows={3} value={ncmDraft.description}
+          onChange={event => setNcmDraft(current => ({ ...current, description: event.target.value }))} /></label>
+        <label>Início da vigência<input required type="date" value={ncmDraft.validFrom}
+          onChange={event => setNcmDraft(current => ({ ...current, validFrom: event.target.value }))} /></label>
+        <label>Evidência da revisão<textarea required minLength={8} maxLength={2000} rows={3} value={ncmDraft.evidence}
+          onChange={event => setNcmDraft(current => ({ ...current, evidence: event.target.value }))}
+          placeholder="Documento, número, data e onde conferir" /></label>
+        <button className="button" disabled={busy}>{busy ? "Salvando..." : "Adicionar NCM"}</button>
+      </form>}
     </section>
   </main>;
   if (entity === "supplier") return <main className="shell">

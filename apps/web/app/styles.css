@@ -509,10 +509,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .product-catalog-edit > label { max-width: none; }
 .product-catalog-edit textarea { min-width: 0; width: 100%; }
 .product-catalog-edit .product-catalog-code { display: grid; gap: 4px; margin: 0; }
+.catalog-validity-fields { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.catalog-validity-fields > label { display: grid; gap: 6px; }
 @media (max-width: 600px) {
   .product-catalog-item { grid-template-columns: minmax(0, 1fr); }
   .product-catalog-description { grid-column: 1 / -1; }
   .product-catalog-actions { justify-content: flex-start; }
+  .catalog-validity-fields { grid-template-columns: minmax(0, 1fr); }
 }
 .portfolio-header { margin-bottom: 24px; max-width: 1160px; }
 .portfolio-header > p:not(.eyebrow) { max-width: 760px; }
