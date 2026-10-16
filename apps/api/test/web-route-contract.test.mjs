@@ -63,6 +63,7 @@ const webRoutes = [
     ["GET", `/api/v1/${resource}/candidates`], ["GET", `/api/v1/${resource}/:id`],
     ["GET", `/api/v1/${resource}/:id/history`],
     ["POST", `/api/v1/${resource}`], ["PATCH", `/api/v1/${resource}/:id`],
+    ...(resource === "products" ? [["POST", "/api/v1/products/bulk"]] : []),
   ]),
 ];
 

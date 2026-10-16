@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 import { automaticAuditReason } from "../../../lib/audit";
+import { parseProductCatalogJson, type ProductCatalogImport } from "../../../lib/catalog-products-json";
 
 const entities = [
   ["importer", "Importadora"], ["incoterm", "Incoterm"], ["transport_mode", "Modal"], ["port_loading", "POL / porto de origem"],
@@ -17,8 +18,7 @@ const entities = [
 ] as const;
 type Option = { id: string; entity: string; code?: string | null; value: string };
 type Supplier = { id: string; code: string; name: string; status: string };
-type Product = { id: string; importer: string; code: string; name: string; status: string; version: string };
-type Importer = { code: string; historicalPoCount: number };
+type Product = { id: string; importer: string | null; code: string; name: string; status: string; version: string };
 
 export default function OperationalValuesPage() {
   const [options, setOptions] = useState<Option[]>([]);
@@ -28,9 +28,10 @@ export default function OperationalValuesPage() {
   const [supplierRefresh, setSupplierRefresh] = useState(0);
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(false);
-  const [productImporters, setProductImporters] = useState<Importer[]>([]);
-  const [productImporter, setProductImporter] = useState("");
-  const [productDraft, setProductDraft] = useState({ code: "", description: "", evidence: "" });
+  const [productDraft, setProductDraft] = useState({ code: "", description: "" });
+  const [productJson, setProductJson] = useState<ProductCatalogImport[]>([]);
+  const [productJsonFileName, setProductJsonFileName] = useState("");
+  const productFileInput = useRef<HTMLInputElement>(null);
   const [productRefresh, setProductRefresh] = useState(0);
   const [entity, setEntity] = useState<string>(entities[0][0]);
   const [value, setValue] = useState("");
@@ -80,30 +81,18 @@ export default function OperationalValuesPage() {
     const controller = new AbortController();
     setProductsLoading(true);
     const query = new URLSearchParams({ page: "1", pageSize: "100" });
-    if (productImporter) query.set("importer", productImporter);
-    Promise.all([
-      apiFetch("/api/v1/importers", { cache: "no-store", signal: controller.signal })
-        .then(async response => {
-          const data = await response.json() as { items?: Importer[]; detail?: string };
-          if (!response.ok) throw new Error(data.detail || "Não foi possível carregar as importadoras.");
-          return data.items ?? [];
-        }),
-      apiFetch(`/api/v1/products?${query}`, { cache: "no-store", signal: controller.signal })
-        .then(async response => {
-          const data = await response.json() as { items?: Product[]; detail?: string };
-          if (!response.ok) throw new Error(data.detail || "Não foi possível carregar os produtos.");
-          return data.items ?? [];
-        }),
-    ]).then(([availableImporters, entries]) => {
-      if (controller.signal.aborted) return;
-      setProductImporters(availableImporters);
-      setProducts(entries);
-      if (!productImporter && availableImporters[0]) setProductImporter(availableImporters[0].code);
-    }).catch(cause => {
-      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro ao carregar produtos.");
-    }).finally(() => { if (!controller.signal.aborted) setProductsLoading(false); });
+    apiFetch("/api/v1/products?" + query, { cache: "no-store", signal: controller.signal })
+      .then(async response => {
+        const data = await response.json() as { items?: Product[]; detail?: string };
+        if (!response.ok) throw new Error(data.detail || "N\u00e3o foi poss\u00edvel carregar os produtos.");
+        return data.items ?? [];
+      }).then(entries => {
+        if (!controller.signal.aborted) setProducts(entries);
+      }).catch(cause => {
+        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro ao carregar produtos.");
+      }).finally(() => { if (!controller.signal.aborted) setProductsLoading(false); });
     return () => controller.abort();
-  }, [entity, productImporter, productRefresh]);
+  }, [entity, productRefresh]);
 
   async function addSupplier(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError(""); setNotice("");
@@ -130,14 +119,43 @@ export default function OperationalValuesPage() {
     try {
       const response = await apiFetch("/api/v1/products", { method: "POST",
         headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({ importer: productImporter, code: productDraft.code,
-          name: productDraft.description, evidence: productDraft.evidence, reason: automaticAuditReason }) });
+        body: JSON.stringify({ code: productDraft.code, name: productDraft.description }) });
       const result = await response.json() as { detail?: string };
-      if (!response.ok) throw new Error(result.detail || "Não foi possível cadastrar o produto.");
-      setProductDraft({ code: "", description: "", evidence: "" });
+      if (!response.ok) throw new Error(result.detail || "N\u00e3o foi poss\u00edvel cadastrar o produto.");
+      setProductDraft({ code: "", description: "" });
       setProductRefresh(current => current + 1);
-      setNotice("Produto cadastrado com código e descrição.");
+      setNotice("Produto cadastrado com c\u00f3digo e descri\u00e7\u00e3o.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao cadastrar produto."); }
+    finally { setBusy(false); }
+  }
+
+  async function selectProductJson(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    setProductJson([]); setProductJsonFileName(""); setError(""); setNotice("");
+    if (!file) return;
+    if (file.size > 750_000) { setError("O arquivo deve ter no m\u00e1ximo 750 KB."); return; }
+    try {
+      setProductJson(parseProductCatalogJson(await file.text()));
+      setProductJsonFileName(file.name);
+    } catch (cause) {
+      setError(cause instanceof SyntaxError ? "O arquivo n\u00e3o cont\u00e9m um JSON v\u00e1lido."
+        : cause instanceof Error ? cause.message : "N\u00e3o foi poss\u00edvel ler o arquivo.");
+    }
+  }
+
+  async function importProductsJson(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await apiFetch("/api/v1/products/bulk", { method: "POST",
+        headers: { "content-type": "application/json" }, body: JSON.stringify({ items: productJson }) });
+      const result = await response.json() as { createdCount?: number; skippedCount?: number; detail?: string };
+      if (!response.ok) throw new Error(result.detail || "N\u00e3o foi poss\u00edvel importar os produtos.");
+      setProductJson([]); setProductJsonFileName("");
+      if (productFileInput.current) productFileInput.current.value = "";
+      setProductRefresh(current => current + 1);
+      setNotice("Importacao concluida: " + (result.createdCount ?? 0) + " adicionados; "
+        + (result.skippedCount ?? 0) + " codigos ja existentes foram ignorados.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao importar produtos."); }
     finally { setBusy(false); }
   }
 
@@ -279,21 +297,30 @@ export default function OperationalValuesPage() {
         {entities.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select></label>
       <p className="muted">Cada produto é cadastrado com seu código e sua descrição.</p>
-      <label>Importadora<select value={productImporter} onChange={event => setProductImporter(event.target.value)}>
-        {productImporters.map(value => <option key={value.code} value={value.code}>{value.code}</option>)}
-      </select></label>
       <h3>Produtos cadastrados · {products.length}</h3>
       {productsLoading ? <p role="status">Carregando produtos…</p> : products.length ? <ul className="entity-value-list">
         {products.map(product => <li key={product.id}><span><strong>{product.code}</strong> · {product.name}</span>
           <span className="muted">{product.status === "ACTIVE" ? "Ativo" : "Inativo"}</span></li>)}
-      </ul> : <p className="muted">Ainda não há produtos cadastrados para esta importadora.</p>}
+      </ul> : <p className="muted">Ainda n&#227;o h&#225; produtos cadastrados.</p>}
       {canWrite && <form className="stack-form" onSubmit={event => void addProduct(event)}>
         <h3>Adicionar produto</h3>
         <label>Código do produto<input required maxLength={120} value={productDraft.code} onChange={event => setProductDraft(current => ({ ...current, code: event.target.value }))} /></label>
         <label>Descrição do produto<input required maxLength={240} value={productDraft.description} onChange={event => setProductDraft(current => ({ ...current, description: event.target.value }))} /></label>
-        <label>Evidência da revisão<textarea required minLength={8} maxLength={2000} value={productDraft.evidence} onChange={event => setProductDraft(current => ({ ...current, evidence: event.target.value }))} placeholder="Documento, número, data e onde conferir" /></label>
-        <button className="button" disabled={busy || !productImporter}>{busy ? "Salvando…" : "Adicionar produto"}</button>
+        <button className="button" disabled={busy}>{busy ? "Salvando…" : "Adicionar produto"}</button>
       </form>}
+      {canWrite && <section className="entity-value-form">
+        <h3>Importar produtos por JSON</h3>
+        <p className="muted">Use uma lista com c&#243;digo e descri&#231;&#227;o. M&#225;ximo de 500 produtos por arquivo.</p>
+        <form className="stack-form" onSubmit={event => void importProductsJson(event)}>
+          <label>Arquivo JSON<input className="file-upload-input" ref={productFileInput} type="file" accept=".json,application/json" onChange={event => void selectProductJson(event)} /></label>
+          <button className="button" disabled={busy || productJson.length === 0}>{busy ? "Importando..." : "Importar " + (productJson.length || "produtos")}</button>
+        </form>
+        {productJsonFileName && <p className="muted" role="status">{productJsonFileName}: {productJson.length} produtos prontos para importar.</p>}
+        {!!productJson.length && <details><summary>Conferir produtos</summary><ul className="entity-value-list">
+          {productJson.map((item, index) => <li key={item.code + "-" + index}><span><strong>{item.code}</strong> - {item.description}</span></li>)}
+        </ul></details>}
+        <details><summary>Ver exemplo de JSON</summary><pre>{'[\n  { "code": "PROD-001", "description": "Descricao do produto" },\n  { "code": "PROD-002", "description": "Outro produto" }\n]'}</pre></details>
+      </section>}
     </section>
   </main>;
   if (entity === "supplier") return <main className="shell">

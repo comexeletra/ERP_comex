@@ -61,8 +61,10 @@ try {
   assert.ok(candidates.json().items.every(item => item.importer === importerA && item.status === "HISTORICAL_CANDIDATE"));
   const hiddenCandidates = await request("GET", `/api/v1/suppliers/candidates?importer=${encodeURIComponent(importerB)}`, "buyer");
   assert.equal(hiddenCandidates.json().totalCount, 0);
-  const hiddenCreate = await request("POST", "/api/v1/products", "buyer", { ...body, importer: importerB }, { "idempotency-key": "hidden" });
-  assert.equal(hiddenCreate.statusCode, 404);
+  const withoutImporter = await request("POST", "/api/v1/products", "buyer", { ...body,
+    importer: importerB, code: `CAT-GLOBAL-${Date.now()}` }, { "idempotency-key": "global-product" });
+  assert.equal(withoutImporter.statusCode, 201, withoutImporter.body);
+  assert.equal(withoutImporter.json().importer, null);
   const key = `catalog-test-${Date.now()}`;
   const created = await request("POST", "/api/v1/products", "buyer", body, { "idempotency-key": key });
   assert.equal(created.statusCode, 201, created.body);
