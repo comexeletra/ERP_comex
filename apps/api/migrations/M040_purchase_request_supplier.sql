@@ -43,26 +43,6 @@ CREATE TRIGGER purchase_order_supplier_from_sc
   BEFORE INSERT OR UPDATE OF purchase_request_id ON procurement.purchase_order
   FOR EACH ROW EXECUTE FUNCTION procurement.sync_purchase_order_supplier_from_sc();
 
-CREATE OR REPLACE FUNCTION procurement.protect_allocated_sc_supplier()
-RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-  IF NEW.supplier_text IS DISTINCT FROM OLD.supplier_text AND EXISTS (
-    SELECT 1
-    FROM procurement.purchase_order po
-    JOIN procurement.purchase_order_item item ON item.purchase_order_id = po.id
-    JOIN procurement.po_item_allocation allocation ON allocation.purchase_order_item_id = item.id
-      AND allocation.status = 'ACTIVE'
-    WHERE po.purchase_request_id = OLD.id
-  ) THEN
-    RAISE EXCEPTION 'SC supplier cannot change while linked PO quantities are allocated to IPs' USING ERRCODE = '23514';
-  END IF;
-  RETURN NEW;
-END;
-$$;
-CREATE TRIGGER purchase_request_supplier_in_use
-  BEFORE UPDATE OF supplier_text ON procurement.purchase_request
-  FOR EACH ROW EXECUTE FUNCTION procurement.protect_allocated_sc_supplier();
-
 CREATE OR REPLACE FUNCTION procurement.protect_allocated_po_supplier()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
@@ -73,7 +53,7 @@ BEGIN
       AND allocation.status = 'ACTIVE'
     JOIN imports.import_process process ON process.id = allocation.process_id
     WHERE item.purchase_order_id = OLD.id
-      AND (NEW.supplier_text IS NULL OR process.supplier_text IS NULL OR NOT (
+      AND (NEW.supplier_text IS NULL OR NOT (
         upper(btrim(process.supplier_text)) = upper(btrim(NEW.supplier_text)) OR EXISTS (
           SELECT 1 FROM catalog.entry supplier
           WHERE supplier.importer = NEW.importer AND supplier.kind = 'SUPPLIER'

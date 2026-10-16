@@ -215,6 +215,36 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
           await record(client, "PURCHASE_ORDER", String(po.id), "PURCHASE_ORDER", String(po.id), "UPDATE",
             { supplierText: po.supplier_text }, { supplierText: body.supplierText }, actor.actor, body.reason);
         }
+        const completedIpSuppliers = await client.query<{ id: string }>(
+          `UPDATE imports.import_process process
+           SET supplier_text = $2, version = version + 1, updated_at = now()
+           WHERE process.supplier_text IS NULL
+             AND EXISTS (
+               SELECT 1 FROM procurement.po_item_allocation allocation
+               JOIN procurement.purchase_order_item item ON item.id = allocation.purchase_order_item_id
+               JOIN procurement.purchase_order po ON po.id = item.purchase_order_id
+               WHERE allocation.process_id = process.id AND allocation.status = 'ACTIVE'
+                 AND po.purchase_request_id = $1
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM procurement.po_item_allocation allocation
+               JOIN procurement.purchase_order_item item ON item.id = allocation.purchase_order_item_id
+               JOIN procurement.purchase_order po ON po.id = item.purchase_order_id
+               WHERE allocation.process_id = process.id AND allocation.status = 'ACTIVE'
+                 AND NOT (
+                   upper(btrim(po.supplier_text)) = upper(btrim($2::varchar)) OR EXISTS (
+                     SELECT 1 FROM catalog.entry supplier
+                     WHERE supplier.importer = process.importer AND supplier.kind = 'SUPPLIER'
+                       AND upper(btrim(supplier.code)) = upper(btrim(po.supplier_text))
+                       AND upper(btrim(supplier.name)) = upper(btrim($2::varchar))
+                   )
+                 )
+             )
+           RETURNING id`, [id.data, body.supplierText]);
+        for (const process of completedIpSuppliers.rows) {
+          await record(client, "IMPORT_PROCESS", process.id, "IMPORT_PROCESS", process.id, "UPDATE",
+            { supplierText: null }, { supplierText: body.supplierText }, actor.actor, body.reason);
+        }
         const syncedItems = await client.query<{ purchase_order_id: string }>(
           `UPDATE procurement.purchase_order_item AS item
            SET sc_number = CASE WHEN item.sc_number IS NOT DISTINCT FROM $2::varchar THEN $7::varchar ELSE item.sc_number END,
