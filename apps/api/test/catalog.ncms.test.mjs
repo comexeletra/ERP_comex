@@ -86,6 +86,7 @@ test("Fiscal users without importer scopes can list and edit the global NCM cata
   const { app, entry } = await createApp();
   t.after(() => app.close());
   const headers = { "x-test-subject": "fiscal" };
+  const longDescription = `Descrição oficial ${"NCM ".repeat(70)}`.trim();
 
   const list = await app.inject({ method: "GET", url: "/api/v1/ncms?page=1&pageSize=25", headers });
   assert.equal(list.statusCode, 200, list.body);
@@ -93,9 +94,9 @@ test("Fiscal users without importer scopes can list and edit the global NCM cata
 
   const edit = await app.inject({ method: "PATCH", url: `/api/v1/ncms/${entry.id}`,
     headers: { ...headers, "x-record-version": "1" },
-    payload: { name: "Correntes de transmissão", reason: "Atualizar descrição oficial" } });
+    payload: { name: longDescription, reason: "Atualizar descrição oficial" } });
   assert.equal(edit.statusCode, 200, edit.body);
-  assert.equal(edit.json().name, "Correntes de transmissão");
+  assert.equal(edit.json().name, longDescription);
   assert.equal(edit.json().importer, null);
 
   const unknownPeriod = await app.inject({ method: "PATCH", url: `/api/v1/ncms/${entry.id}`,
@@ -118,11 +119,13 @@ test("creates standalone NCM records and rejects importer ownership", async t =>
   const { app, writes } = await createApp();
   t.after(() => app.close());
   const headers = { "x-test-subject": "fiscal", "idempotency-key": "global-ncm-one" };
-  const payload = { code: "12345678", name: "Classificação fiscal", evidence: "Receita Federal Classif; ato 123.",
+  const payload = { code: "12345678", name: `Classificação fiscal ${"NCM ".repeat(70)}`.trim(),
+    evidence: "Receita Federal Classif; ato 123.",
     reason: "Carga inicial do catálogo NCM", validFrom: "2024-01-01" };
 
   const created = await app.inject({ method: "POST", url: "/api/v1/ncms", headers, payload });
   assert.equal(created.statusCode, 201, created.body);
+  assert.equal(created.json().name, payload.name);
   assert.equal(created.json().importer, null);
   assert.equal(writes[0].values[1], null);
 
