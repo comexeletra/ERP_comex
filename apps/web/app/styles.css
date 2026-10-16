@@ -160,6 +160,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .sc-history-meta > div { min-width: min(100%, 220px); }
 .sc-history-meta dt { color: #657d89; font-size: .72rem; font-weight: 700; letter-spacing: .04em; margin-bottom: 3px; text-transform: uppercase; }
 .sc-history-meta dd { color: #29414d; margin: 0; overflow-wrap: anywhere; }
+.ip-history { border-top: 1px solid #dce5ea; margin-top: 22px; padding-top: 14px; }
+.ip-history > h3 { margin: 0 0 12px; }
+.ip-history-event { background: #f7fafb; border: 1px solid #dce5ea; border-radius: 10px; margin-top: 10px; padding: 12px 16px; }
+.ip-history-event > p { margin: 4px 0 8px; }
+.ip-history-event > p:first-child { color: #526a77; }
+.ip-history-event > p:first-child strong { color: #183847; }
+.ip-history-entity { font-size: .88rem; font-weight: 700; }
+.ip-history-event ul { margin: 6px 0; padding-left: 22px; }
+.ip-history-meta { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 12px 0 0; }
+.ip-history-meta > div { min-width: min(100%, 220px); }
+.ip-history-meta dt { color: #657d89; font-size: .72rem; font-weight: 700; letter-spacing: .04em; margin-bottom: 3px; text-transform: uppercase; }
+.ip-history-meta dd { color: #29414d; margin: 0; overflow-wrap: anywhere; }
 .pagination { color: #526a77; font-size: .88rem; font-variant-numeric: tabular-nums; }
 .button { border-radius: 8px; font-weight: 700; transition: background-color .15s ease, box-shadow .15s ease, transform .15s ease; }
 .button:hover:not(:disabled) { background: #075969; box-shadow: 0 3px 9px #0a60701f; transform: translateY(-1px); }
@@ -332,6 +344,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 :root[data-theme="dark"] .sc-history-event { background: #17262e; }
 :root[data-theme="dark"] .sc-history-meta dt { color: #9db1bb; }
 :root[data-theme="dark"] .sc-history-meta dd { color: #d4e0e6; }
+:root[data-theme="dark"] .ip-history { border-color: #354953; }
+:root[data-theme="dark"] .ip-history-event { background: #17262e; border-color: #354953; }
+:root[data-theme="dark"] .ip-history-event > p:first-child { color: #9db1bb; }
+:root[data-theme="dark"] .ip-history-event > p:first-child strong,
+:root[data-theme="dark"] .ip-history-meta dd { color: #d4e0e6; }
+:root[data-theme="dark"] .ip-history-meta dt { color: #9db1bb; }
 :root[data-theme="dark"] .source-audit-tabs,
 :root[data-theme="dark"] .source-grid th,
 :root[data-theme="dark"] .source-grid td,

@@ -17,7 +17,8 @@ type Allocation = { id: string; allocationQuantity: string; purchaseOrder: { id:
   factoryShipDate: string | null;
   item: Row & { id: string; lineNumber: number; productCode: string; description: string; unit: string };
   calculated: Record<string, Value> };
-type Event = { id: string; operation: string; occurredAt: string; reason: string | null; actorId: string };
+type Event = { id: string; entityType: string; entityId: string; operation: string; oldValue: Record<string, Value> | null;
+  newValue: Record<string, Value> | null; occurredAt: string; reason: string | null; actorId: string };
 type Data = { process: Row & { id: string; ipNumber: string; version: string; lifecycleStatus: "OPEN" | "CLOSED" };
   purchaseOrders: { id: string; number: string; importer: string; linkSource: string }[];
   allocations: Allocation[]; documents: Document[];
@@ -60,6 +61,62 @@ const blankDoc = (): DocDraft => ({ kind: "INVOICE", purchaseOrderItemId: "", nu
 function format(value: Value | undefined) { return value == null || value === "" ? "—" : typeof value === "boolean" ? value ? "Sim" : "Não" : String(value); }
 function formatField(field: Field, value: Value | undefined) {
   return field.type === "number" || field.type === "money" ? formatNumber(value) : format(value);
+}
+const processHistoryLabels: Record<string, string> = {
+  importer: "Importadora", ipNumber: "Número do IP", logisticsStatus: "Status logístico", priority: "Prioridade",
+  notes: "Observações", lifecycleStatus: "Ciclo do IP", closedAt: "Encerrado em", closedBy: "Encerrado por",
+  closeReason: "Motivo do encerramento", sourceKind: "Origem",
+  ...Object.fromEntries(fields.map(field => [field.key, field.label])),
+};
+const documentHistoryLabels: Record<string, string> = {
+  kind: "Tipo", number: "Número", purchaseOrderItemId: "Item relacionado", issueDate: "Data de emissão",
+  homologationDate: "Data de homologação", quantity: "Quantidade", unitPrice: "Preço unitário",
+  amount: "Valor informado", currencyCode: "Moeda", notes: "Observações", status: "Status",
+};
+const historyOperationLabels: Record<string, string> = {
+  CREATE: "Cadastro", UPDATE: "Alteração", FOLLOWUP_UPDATE: "Atualização do acompanhamento",
+  CANCEL: "Cancelamento", CLOSE: "Encerramento", REOPEN: "Reabertura",
+};
+function camelCaseKey(key: string) { return key.replace(/_([a-z])/gu, (_, letter: string) => letter.toUpperCase()); }
+function formatHistoryActor(actor: string) {
+  const separator = actor.lastIndexOf("#");
+  return (separator >= 0 ? actor.slice(separator + 1) : actor).trim() || actor;
+}
+function formatHistoryValue(key: string, value: Value | undefined) {
+  if (value == null || value === "") return "—";
+  const field = fields.find(candidate => candidate.key === key);
+  if (field?.type === "number" || field?.type === "money" || key === "quantity" || key === "unitPrice" || key === "amount") {
+    return formatNumber(value);
+  }
+  return typeof value === "boolean" ? value ? "Sim" : "Não" : String(value);
+}
+function historyChanges(event: Event) {
+  if (!event.oldValue) {
+    if (event.entityType === "PROCESS_DOCUMENT") {
+      const kind = event.newValue?.kind;
+      const number = event.newValue?.number;
+      return [`Documento${kind ? ` ${String(kind)}` : ""}${number ? ` ${String(number)}` : ""} cadastrado.`];
+    }
+    return ["IP cadastrado."];
+  }
+
+  const labels = event.entityType === "PROCESS_DOCUMENT" ? documentHistoryLabels : processHistoryLabels;
+  const beforeValues = new Map(Object.entries(event.oldValue).map(([key, value]) => [camelCaseKey(key), value]));
+  const changes = Object.entries(event.newValue ?? {}).flatMap(([rawKey, after]) => {
+    const key = camelCaseKey(rawKey);
+    if (["reason", "version", "updatedAt", "createdAt"].includes(key)) return [];
+    const before = beforeValues.get(key);
+    if (JSON.stringify(before ?? null) === JSON.stringify(after ?? null)) return [];
+    const label = labels[key] ?? key.replace(/([A-Z])/gu, " $1").replace(/^./u, letter => letter.toUpperCase());
+    return [`${label}: ${formatHistoryValue(key, before)} → ${formatHistoryValue(key, after)}`];
+  });
+  return changes.length ? changes : ["Evento registrado sem campos alterados."];
+}
+function historyEntityLabel(event: Event) {
+  if (event.entityType !== "PROCESS_DOCUMENT") return "Dados do IP";
+  const kind = event.newValue?.kind ?? event.oldValue?.kind;
+  const number = event.newValue?.number ?? event.oldValue?.number;
+  return `Documento${kind ? ` ${String(kind)}` : ""}${number ? ` · ${String(number)}` : ""}`;
 }
 function toDraft(row: Row) { return Object.fromEntries(fields.map(field => [field.key, row[field.key] == null ? "" : String(row[field.key])])) as Record<string, string>; }
 function makePayload(values: Record<string, string>) {
@@ -236,9 +293,19 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
         </div><label>Observações<textarea maxLength={4000} value={docDraft.notes} onChange={event => setDocDraft({ ...docDraft, notes: event.target.value })} /></label></>}
         <button className="button" disabled={busy || Boolean(editingDoc)}>{busy ? "Salvando…" : "Adicionar documento"}</button>
       </form>}
-      <h3>Histórico do IP</h3>
-      {data.events.length === 0 ? <p>Nenhum evento operacional registrado.</p> : <ol>{data.events.map(event =>
-        <li key={event.id}>{new Date(event.occurredAt).toLocaleString("pt-BR")} · {event.operation}{event.reason && event.reason !== automaticAuditReason ? ` · ${event.reason}` : ""}</li>)}</ol>}
+      <section className="ip-history" aria-label="Histórico do IP">
+        <h3>Histórico do IP</h3>
+        {data.events.length === 0 ? <p>Nenhum evento operacional registrado.</p> : data.events.map(event =>
+          <article className="ip-history-event" key={event.id}>
+            <p><strong>{historyOperationLabels[event.operation] ?? event.operation}</strong> · {new Date(event.occurredAt).toLocaleString("pt-BR")}</p>
+            <p className="ip-history-entity">{historyEntityLabel(event)}</p>
+            <ul>{historyChanges(event).map(change => <li key={change}>{change}</li>)}</ul>
+            <dl className="ip-history-meta">
+              <div><dt>Responsável</dt><dd>{formatHistoryActor(event.actorId)}</dd></div>
+              {event.reason && event.reason !== automaticAuditReason && <div><dt>Motivo</dt><dd>{event.reason}</dd></div>}
+            </dl>
+          </article>)}
+      </section>
     </>}
   </section>;
 }
