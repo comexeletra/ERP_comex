@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 import { automaticAuditReason } from "../../../lib/audit";
+import { createNcmCatalogUrl } from "../../../lib/catalog-ncms";
 import { parseProductCatalogJson, type ProductCatalogImport } from "../../../lib/catalog-products-json";
 
 const entities = [
@@ -19,6 +20,7 @@ const entities = [
 type Option = { id: string; entity: string; code?: string | null; value: string };
 type Supplier = { id: string; code: string; name: string; status: string };
 type Product = { id: string; importer: string | null; code: string; name: string; status: string; version: string };
+type Ncm = { id: string; code: string; name: string; status: "ACTIVE" | "INACTIVE" };
 
 export default function OperationalValuesPage() {
   const [options, setOptions] = useState<Option[]>([]);
@@ -38,6 +40,11 @@ export default function OperationalValuesPage() {
   const [productJsonFileName, setProductJsonFileName] = useState("");
   const productFileInput = useRef<HTMLInputElement>(null);
   const [productRefresh, setProductRefresh] = useState(0);
+  const [ncms, setNcms] = useState<Ncm[]>([]);
+  const [ncmLoading, setNcmLoading] = useState(false);
+  const [ncmTotalCount, setNcmTotalCount] = useState(0);
+  const [ncmPage, setNcmPage] = useState(1);
+  const [ncmSearch, setNcmSearch] = useState("");
   const [entity, setEntity] = useState<string>(entities[0][0]);
   const [value, setValue] = useState("");
   const [valueCode, setValueCode] = useState("");
@@ -102,6 +109,26 @@ export default function OperationalValuesPage() {
       }).finally(() => { if (!controller.signal.aborted) setProductsLoading(false); });
     return () => controller.abort();
   }, [entity, productPage, productRefresh, productSearch]);
+
+  useEffect(() => {
+    if (entity !== "ncm") { setNcms([]); setNcmTotalCount(0); return; }
+    const controller = new AbortController();
+    setNcmLoading(true);
+    apiFetch(createNcmCatalogUrl(ncmPage, ncmSearch), { cache: "no-store", signal: controller.signal })
+      .then(async response => {
+        const data = await response.json() as { items?: Ncm[]; totalCount?: number; detail?: string };
+        if (!response.ok) throw new Error(data.detail || "Não foi possível carregar os NCMs.");
+        return { items: data.items ?? [], totalCount: data.totalCount ?? 0 };
+      }).then(data => {
+        if (!controller.signal.aborted) {
+          setNcms(data.items);
+          setNcmTotalCount(data.totalCount);
+        }
+      }).catch(cause => {
+        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro ao carregar NCMs.");
+      }).finally(() => { if (!controller.signal.aborted) setNcmLoading(false); });
+    return () => controller.abort();
+  }, [entity, ncmPage, ncmSearch]);
 
   function startEditingProduct(product: Product) {
     setEditingProductId(product.id);
@@ -200,6 +227,7 @@ export default function OperationalValuesPage() {
     setEntity(next);
     setError(""); setNotice(""); setEditingId("");
     setEditingProductId(""); setProductPage(1); setProductSearch("");
+    setNcmPage(1); setNcmSearch("");
   }
 
   async function add(event: FormEvent<HTMLFormElement>) {
@@ -389,6 +417,38 @@ export default function OperationalValuesPage() {
         </ul></details>}
         <details><summary>Ver exemplo de JSON</summary><pre>{'[\n  { "code": "PROD-001", "description": "Descricao do produto" },\n  { "code": "PROD-002", "description": "Outro produto" }\n]'}</pre></details>
       </section>}
+    </section>
+  </main>;
+  if (entity === "ncm") return <main className="shell">
+    <header className="page-header"><p className="eyebrow">ERP Comex</p><h1>Valores das entidades</h1>
+      <p>Gerencie as opções usadas nos campos do sistema.</p>
+      <Link className="text-link" href="/catalog">Todos os cadastros</Link></header>
+    {error && <p className="notice error" role="alert">{error}</p>}
+    <section className="card entity-values-card">
+      <h2>Campo e opções</h2>
+      <label>Campo<select value={entity} onChange={event => chooseEntity(event.target.value)}>
+        {entities.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+      </select></label>
+      <p className="muted">NCMs são um catálogo fiscal global, sem vínculo com importadora. A lista mostra códigos, descrições e situação.</p>
+      <h3>NCMs cadastrados &middot; {ncmTotalCount}</h3>
+      <label className="product-catalog-search">Pesquisar por código ou descrição
+        <input maxLength={120} value={ncmSearch} onChange={event => { setNcmSearch(event.target.value); setNcmPage(1); }} />
+      </label>
+      {ncmLoading ? <p role="status">Carregando NCMs...</p> : ncms.length ? <ul className="product-catalog-list">
+        {ncms.map(ncm => <li className="product-catalog-item" key={ncm.id}>
+          <div className="product-catalog-description"><strong className="product-catalog-code">{ncm.code}</strong>
+            <span>{ncm.name}</span></div>
+          <div className="product-catalog-actions"><span className={`product-catalog-status ${ncm.status === "ACTIVE" ? "active" : "inactive"}`}>
+            {ncm.status === "ACTIVE" ? "Ativo" : "Inativo"}
+          </span></div>
+        </li>)}
+      </ul> : <p className="muted">{ncmSearch.trim() ? "Nenhum NCM corresponde à pesquisa." : "Ainda não há NCMs cadastrados."}</p>}
+      {!ncmLoading && ncmTotalCount > 25 && <nav className="pagination" aria-label="Páginas dos NCMs">
+        <button className="button secondary" disabled={ncmPage <= 1} onClick={() => setNcmPage(page => page - 1)}>Anterior</button>
+        <span>Página {ncmPage} de {Math.ceil(ncmTotalCount / 25)}</span>
+        <button className="button" disabled={ncmPage * 25 >= ncmTotalCount} onClick={() => setNcmPage(page => page + 1)}>Próxima</button>
+      </nav>}
+      <Link className="button secondary" href="/catalog">Gerenciar e editar NCMs</Link>
     </section>
   </main>;
   if (entity === "supplier") return <main className="shell">
