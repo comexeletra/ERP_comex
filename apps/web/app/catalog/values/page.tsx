@@ -17,12 +17,20 @@ const entities = [
 ] as const;
 type Option = { id: string; entity: string; value: string };
 type Supplier = { id: string; code: string; name: string; status: string };
+type Product = { id: string; importer: string; code: string; name: string; status: string; version: string };
+type Importer = { code: string; historicalPoCount: number };
 
 export default function OperationalValuesPage() {
   const [options, setOptions] = useState<Option[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [suppliersLoading, setSuppliersLoading] = useState(false);
   const [supplierDraft, setSupplierDraft] = useState({ code: "", name: "", evidence: "" });
+  const [products, setProducts] = useState<Product[]>([]);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [productImporters, setProductImporters] = useState<Importer[]>([]);
+  const [productImporter, setProductImporter] = useState("");
+  const [productDraft, setProductDraft] = useState({ code: "", description: "", evidence: "" });
+  const [productRefresh, setProductRefresh] = useState(0);
   const [entity, setEntity] = useState<string>(entities[0][0]);
   const [value, setValue] = useState("");
   const [editingId, setEditingId] = useState("");
@@ -64,6 +72,36 @@ export default function OperationalValuesPage() {
     return () => controller.abort();
   }, [entity]);
 
+  useEffect(() => {
+    if (entity !== "product") { setProducts([]); return; }
+    const controller = new AbortController();
+    setProductsLoading(true);
+    const query = new URLSearchParams({ page: "1", pageSize: "100" });
+    if (productImporter) query.set("importer", productImporter);
+    Promise.all([
+      apiFetch("/api/v1/importers", { cache: "no-store", signal: controller.signal })
+        .then(async response => {
+          const data = await response.json() as { items?: Importer[]; detail?: string };
+          if (!response.ok) throw new Error(data.detail || "NÃ£o foi possÃ­vel carregar as importadoras.");
+          return data.items ?? [];
+        }),
+      apiFetch(`/api/v1/products?${query}`, { cache: "no-store", signal: controller.signal })
+        .then(async response => {
+          const data = await response.json() as { items?: Product[]; detail?: string };
+          if (!response.ok) throw new Error(data.detail || "NÃ£o foi possÃ­vel carregar os produtos.");
+          return data.items ?? [];
+        }),
+    ]).then(([availableImporters, entries]) => {
+      if (controller.signal.aborted) return;
+      setProductImporters(availableImporters);
+      setProducts(entries);
+      if (!productImporter && availableImporters[0]) setProductImporter(availableImporters[0].code);
+    }).catch(cause => {
+      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro ao carregar produtos.");
+    }).finally(() => { if (!controller.signal.aborted) setProductsLoading(false); });
+    return () => controller.abort();
+  }, [entity, productImporter, productRefresh]);
+
   async function addSupplier(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError(""); setNotice("");
     try {
@@ -81,6 +119,22 @@ export default function OperationalValuesPage() {
       setSuppliers(list.items ?? []);
       setNotice("Fornecedor cadastrado e disponível para associação às POs e aos IPs.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao cadastrar fornecedor."); }
+    finally { setBusy(false); }
+  }
+
+  async function addProduct(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await apiFetch("/api/v1/products", { method: "POST",
+        headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ importer: productImporter, code: productDraft.code,
+          name: productDraft.description, evidence: productDraft.evidence, reason: automaticAuditReason }) });
+      const result = await response.json() as { detail?: string };
+      if (!response.ok) throw new Error(result.detail || "NÃ£o foi possÃ­vel cadastrar o produto.");
+      setProductDraft({ code: "", description: "", evidence: "" });
+      setProductRefresh(current => current + 1);
+      setNotice("Produto cadastrado com cÃ³digo e descriÃ§Ã£o.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao cadastrar produto."); }
     finally { setBusy(false); }
   }
 
@@ -184,6 +238,35 @@ export default function OperationalValuesPage() {
   }
 
   const visible = options.filter(option => option.entity === entity).sort((a, b) => a.value.localeCompare(b.value));
+  if (entity === "product") return <main className="shell">
+    <header className="page-header"><p className="eyebrow">ERP Comex</p><h1>Valores das entidades</h1>
+      <p>Gerencie as opÃ§Ãµes usadas nos campos do sistema.</p>
+      <Link className="text-link" href="/catalog">Todos os cadastros</Link></header>
+    {error && <p className="notice error" role="alert">{error}</p>}
+    {notice && <p className="notice success" role="status">{notice}</p>}
+    <section className="card entity-values-card">
+      <h2>Campo e opÃ§Ãµes</h2>
+      <label>Campo<select value={entity} onChange={event => setEntity(event.target.value)}>
+        {entities.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+      </select></label>
+      <p className="muted">Cada produto Ã© cadastrado com seu cÃ³digo e sua descriÃ§Ã£o.</p>
+      <label>Importadora<select value={productImporter} onChange={event => setProductImporter(event.target.value)}>
+        {productImporters.map(value => <option key={value.code} value={value.code}>{value.code}</option>)}
+      </select></label>
+      <h3>Produtos cadastrados Â· {products.length}</h3>
+      {productsLoading ? <p role="status">Carregando produtosâ€¦</p> : products.length ? <ul className="entity-value-list">
+        {products.map(product => <li key={product.id}><span><strong>{product.code}</strong> Â· {product.name}</span>
+          <span className="muted">{product.status === "ACTIVE" ? "Ativo" : "Inativo"}</span></li>)}
+      </ul> : <p className="muted">Ainda nÃ£o hÃ¡ produtos cadastrados para esta importadora.</p>}
+      {canWrite && <form className="stack-form" onSubmit={event => void addProduct(event)}>
+        <h3>Adicionar produto</h3>
+        <label>CÃ³digo do produto<input required maxLength={120} value={productDraft.code} onChange={event => setProductDraft(current => ({ ...current, code: event.target.value }))} /></label>
+        <label>DescriÃ§Ã£o do produto<input required maxLength={240} value={productDraft.description} onChange={event => setProductDraft(current => ({ ...current, description: event.target.value }))} /></label>
+        <label>EvidÃªncia da revisÃ£o<textarea required minLength={8} maxLength={2000} value={productDraft.evidence} onChange={event => setProductDraft(current => ({ ...current, evidence: event.target.value }))} placeholder="Documento, nÃºmero, data e onde conferir" /></label>
+        <button className="button" disabled={busy || !productImporter}>{busy ? "Salvandoâ€¦" : "Adicionar produto"}</button>
+      </form>}
+    </section>
+  </main>;
   if (entity === "supplier") return <main className="shell">
     <header className="page-header"><p className="eyebrow">ERP Comex</p><h1>Valores das entidades</h1>
       <p>Gerencie as opções usadas nos campos do sistema.</p>
