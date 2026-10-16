@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseSiscomexCatalog, parseSiscomexNcmTable } from "../src/siscomex-ncm.ts";
+import {
+  createOfficialNcmCatalogProvider,
+  parseSiscomexCatalog,
+  parseSiscomexNcmTable,
+  parseSiscomexRetryAt,
+} from "../src/siscomex-ncm.ts";
 
 function zipJson(value) {
   const name = Buffer.from("attributes.json", "utf8");
@@ -111,4 +116,62 @@ test("NCM table accepts the documented Siscomex JSON fields and validity dates",
     validFrom: "2022-04-01",
     validTo: "9999-12-31",
   }]);
+});
+
+test("Siscomex retry time is interpreted in Brasília time", () => {
+  const now = Date.parse("2026-10-16T20:02:00.000Z");
+  assert.equal(
+    parseSiscomexRetryAt("Disponível novamente após as 17:59:59 (horário de Brasília).", now),
+    Date.parse("2026-10-16T20:59:59.000Z"),
+  );
+});
+
+test("official NCM provider coalesces requests and suppresses retries during Siscomex cooldown", async () => {
+  let now = Date.parse("2026-10-16T20:02:00.000Z");
+  let fetchCount = 0;
+  const retryAt = parseSiscomexRetryAt("Disponível novamente após as 17:59:59.", now);
+  const fetchCatalog = async () => {
+    fetchCount += 1;
+    await Promise.resolve();
+    const error = new Error("Siscomex indisponível");
+    error.retryAt = retryAt;
+    throw error;
+  };
+  const getCatalog = createOfficialNcmCatalogProvider(fetchCatalog, {
+    now: () => now,
+    initialRetryDelayMs: 5 * 60 * 1000,
+  });
+
+  const first = getCatalog();
+  const concurrent = getCatalog();
+  await assert.rejects(first, /Siscomex indisponível/u);
+  await assert.rejects(concurrent, /Siscomex indisponível/u);
+  assert.equal(fetchCount, 1);
+
+  await assert.rejects(getCatalog(), /aguardando a janela de retentativa/u);
+  assert.equal(fetchCount, 1);
+
+  now = retryAt + 1;
+  await assert.rejects(getCatalog(), /Siscomex indisponível/u);
+  assert.equal(fetchCount, 2);
+});
+
+test("official NCM provider applies fallback cooldown and caches successful catalogs", async () => {
+  let now = 1_000;
+  let fetchCount = 0;
+  const catalog = { items: [], sourceUpdatedAt: null, attributesVersion: null };
+  const getCatalog = createOfficialNcmCatalogProvider(async () => {
+    fetchCount += 1;
+    if (fetchCount === 1) throw new Error("network error");
+    return catalog;
+  }, { now: () => now, initialRetryDelayMs: 100, maxRetryDelayMs: 500, cacheLifetimeMs: 1_000 });
+
+  await assert.rejects(getCatalog(), /network error/u);
+  await assert.rejects(getCatalog(), /aguardando a janela de retentativa/u);
+  assert.equal(fetchCount, 1);
+
+  now = 1_101;
+  assert.equal(await getCatalog(), catalog);
+  assert.equal(await getCatalog(), catalog);
+  assert.equal(fetchCount, 2);
 });

@@ -4,6 +4,7 @@ import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
 import {
+  createOfficialNcmCatalogProvider,
   fetchOfficialNcmCatalog,
   officialNcmAttributesHash,
   type OfficialNcm,
@@ -90,20 +91,7 @@ type Entry = { id: string; importer: string | null; kind: Kind; code: string; na
   mandatory_import_attributes?: OfficialNcm["mandatoryImportAttributes"];
   source_updated_at?: string | null; attributes_source_version?: string | null; synced_at?: Date | null };
 
-const officialNcmCacheLifetimeMs = 6 * 60 * 60 * 1000;
-let officialNcmCache: { catalog: OfficialNcmCatalog; expiresAt: number } | null = null;
-let officialNcmLoad: Promise<OfficialNcmCatalog> | null = null;
-
-async function cachedOfficialNcmCatalog(): Promise<OfficialNcmCatalog> {
-  if (officialNcmCache && officialNcmCache.expiresAt > Date.now()) return officialNcmCache.catalog;
-  if (!officialNcmLoad) {
-    officialNcmLoad = fetchOfficialNcmCatalog().then(catalog => {
-      officialNcmCache = { catalog, expiresAt: Date.now() + officialNcmCacheLifetimeMs };
-      return catalog;
-    }).finally(() => { officialNcmLoad = null; });
-  }
-  return officialNcmLoad;
-}
+const cachedOfficialNcmCatalog = createOfficialNcmCatalogProvider(fetchOfficialNcmCatalog);
 
 function problem(reply: FastifyReply, status: number, code: string, detail: string) {
   return reply.code(status).send({ type: "about:blank", title: detail, status, detail,

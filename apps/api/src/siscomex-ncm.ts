@@ -6,6 +6,11 @@ export const SISCOMEX_NCM_URL =
 export const SISCOMEX_NCM_ATTRIBUTES_URL =
   "https://portalunico.siscomex.gov.br/cadatributos/api/atributo-ncm/download/json";
 
+const SISCOMEX_TIME_ZONE = "America/Sao_Paulo";
+const siscomexClock = new Intl.DateTimeFormat("en-US", {
+  timeZone: SISCOMEX_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+});
 const MAX_COMPRESSED_BYTES = 8 * 1024 * 1024;
 const MAX_JSON_BYTES = 32 * 1024 * 1024;
 const MIN_OFFICIAL_NCM_COUNT = 9_000;
@@ -91,6 +96,94 @@ function parseHeaderDate(value: unknown): string | null {
   const text = value.trim();
   if (/^\d{4}-\d{2}-\d{2}(?:T.*)?$/u.test(text)) return parseBrazilianDate(text, "ultima atualizacao");
   return parseBrazilianDate(text, "última atualização");
+}
+
+function zonedParts(timestamp: number): Record<string, number> {
+  return Object.fromEntries(siscomexClock.formatToParts(new Date(timestamp))
+    .filter(part => part.type !== "literal")
+    .map(part => [part.type, Number(part.value)]));
+}
+
+function localSiscomexTimeToUtc(year: number, month: number, day: number, hour: number, minute: number, second: number): number {
+  const target = Date.UTC(year, month - 1, day, hour, minute, second);
+  let candidate = target;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const local = zonedParts(candidate);
+    const represented = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second);
+    const difference = target - represented;
+    candidate += difference;
+    if (difference === 0) break;
+  }
+  return candidate;
+}
+
+export function parseSiscomexRetryAt(message: string, now = Date.now()): number | null {
+  const match = /ap[oó]s\s+(?:(?:as|às)\s+)?(\d{2}):(\d{2}):(\d{2})/iu.exec(message);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const second = Number(match[3]);
+  if (hour > 23 || minute > 59 || second > 59) return null;
+  const current = zonedParts(now);
+  let retryAt = localSiscomexTimeToUtc(current.year, current.month, current.day,
+    hour, minute, second);
+  if (retryAt <= now) {
+    const nextDay = new Date(Date.UTC(current.year, current.month - 1, current.day + 1));
+    retryAt = localSiscomexTimeToUtc(nextDay.getUTCFullYear(), nextDay.getUTCMonth() + 1,
+      nextDay.getUTCDate(), hour, minute, second);
+  }
+  return retryAt;
+}
+
+class SiscomexResponseError extends Error {
+  readonly statusCode: number;
+  readonly retryAt: number | null;
+
+  constructor(statusCode: number, retryAt: number | null) {
+    super("O Siscomex não respondeu com as tabelas oficiais de NCM e atributos.");
+    this.name = "SiscomexResponseError";
+    this.statusCode = statusCode;
+    this.retryAt = retryAt;
+  }
+}
+
+export function createOfficialNcmCatalogProvider(
+  fetchCatalog: () => Promise<OfficialNcmCatalog>,
+  options: { cacheLifetimeMs?: number; initialRetryDelayMs?: number; maxRetryDelayMs?: number; now?: () => number } = {},
+): () => Promise<OfficialNcmCatalog> {
+  const cacheLifetimeMs = options.cacheLifetimeMs ?? 6 * 60 * 60 * 1000;
+  const initialRetryDelayMs = options.initialRetryDelayMs ?? 60 * 60 * 1000;
+  const maxRetryDelayMs = options.maxRetryDelayMs ?? 6 * 60 * 60 * 1000;
+  const now = options.now ?? Date.now;
+  let cached: { catalog: OfficialNcmCatalog; expiresAt: number } | null = null;
+  let loading: Promise<OfficialNcmCatalog> | null = null;
+  let blockedUntil = 0;
+  let failureCount = 0;
+
+  return async () => {
+    const currentTime = now();
+    if (cached && cached.expiresAt > currentTime) return cached.catalog;
+    if (blockedUntil > currentTime) {
+      throw new Error("A consulta oficial de NCM está aguardando a janela de retentativa do Siscomex.");
+    }
+    if (!loading) {
+      loading = fetchCatalog().then(catalog => {
+        cached = { catalog, expiresAt: now() + cacheLifetimeMs };
+        blockedUntil = 0;
+        failureCount = 0;
+        return catalog;
+      }).catch(error => {
+        failureCount += 1;
+        const exponent = Math.min(failureCount - 1, 10);
+        const fallbackDelay = Math.min(maxRetryDelayMs, initialRetryDelayMs * (2 ** exponent));
+        const reportedRetryAt = error && typeof error === "object" && "retryAt" in error
+          && typeof error.retryAt === "number" && Number.isFinite(error.retryAt) ? error.retryAt : 0;
+        blockedUntil = Math.max(reportedRetryAt, now() + fallbackDelay);
+        throw error;
+      }).finally(() => { loading = null; });
+    }
+    return loading;
+  };
 }
 
 function mapAttributeDefinition(value: unknown, depth = 0): Omit<OfficialNcmAttribute, "required"> {
@@ -288,7 +381,17 @@ export async function fetchOfficialNcmCatalog(fetcher: typeof fetch = fetch): Pr
     fetcher(SISCOMEX_NCM_ATTRIBUTES_URL, { signal: AbortSignal.timeout(60_000) }),
   ]);
   if (!ncmResponse.ok || !attributeResponse.ok) {
-    throw new Error("O Siscomex não respondeu com as tabelas oficiais de NCM e atributos.");
+    const failedResponses = [ncmResponse, attributeResponse].filter(response => !response.ok);
+    const retryTimes = await Promise.all(failedResponses.map(async response => {
+      try {
+        const body = await response.json() as { message?: unknown };
+        return typeof body.message === "string" ? parseSiscomexRetryAt(body.message) : null;
+      } catch {
+        return null;
+      }
+    }));
+    const retryAt = retryTimes.reduce<number | null>((latest, time) => time === null ? latest : Math.max(latest ?? 0, time), null);
+    throw new SiscomexResponseError(failedResponses[0]?.status ?? 502, retryAt);
   }
   const [ncmBytes, attributeBytes] = await Promise.all([ncmResponse.arrayBuffer(), attributeResponse.arrayBuffer()]);
   if (ncmBytes.byteLength > MAX_JSON_BYTES || attributeBytes.byteLength > MAX_COMPRESSED_BYTES) {
