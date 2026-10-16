@@ -16,13 +16,10 @@ const entities = [
   ["forwarder", "Agente de carga"], ["supplier", "Fornecedor"],
 ] as const;
 type Option = { id: string; entity: string; value: string };
-type Importer = { code: string; historicalPoCount: number };
-type Supplier = { id: string; importer: string; code: string; name: string; status: string };
+type Supplier = { id: string; code: string; name: string; status: string };
 
 export default function OperationalValuesPage() {
   const [options, setOptions] = useState<Option[]>([]);
-  const [importers, setImporters] = useState<Importer[]>([]);
-  const [supplierImporter, setSupplierImporter] = useState("");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [suppliersLoading, setSuppliersLoading] = useState(false);
   const [supplierDraft, setSupplierDraft] = useState({ code: "", name: "", evidence: "" });
@@ -39,27 +36,23 @@ export default function OperationalValuesPage() {
   const [notice, setNotice] = useState("");
 
   const load = useCallback(async () => {
-    const [valuesResponse, identityResponse, importersResponse] = await Promise.all([
+    const [valuesResponse, identityResponse] = await Promise.all([
       apiFetch("/api/v1/operational-values", { cache: "no-store" }), apiFetch("/auth/me"),
-      apiFetch("/api/v1/importers", { cache: "no-store" }),
     ]);
     const values = await valuesResponse.json() as { items?: Option[]; detail?: string };
     const identity = await identityResponse.json() as { roles?: string[] };
-    const importerData = await importersResponse.json() as { items?: Importer[]; detail?: string };
-    if (!valuesResponse.ok || !identityResponse.ok || !importersResponse.ok) throw new Error(values.detail || importerData.detail || "Não foi possível carregar os cadastros.");
+    if (!valuesResponse.ok || !identityResponse.ok) throw new Error(values.detail || "Não foi possível carregar os cadastros.");
     setOptions(values.items ?? []);
-    setImporters(importerData.items ?? []);
-    setSupplierImporter(current => current || importerData.items?.[0]?.code || "");
     setCanWrite((identity.roles ?? []).some(role => ["Master", "Administrador", "Compras"].includes(role)));
   }, []);
 
   useEffect(() => { void load().catch(cause => setError(cause instanceof Error ? cause.message : "Erro ao carregar.")); }, [load]);
 
   useEffect(() => {
-    if (entity !== "supplier" || !supplierImporter) { setSuppliers([]); return; }
+    if (entity !== "supplier") { setSuppliers([]); return; }
     const controller = new AbortController();
     setSuppliersLoading(true);
-    const query = new URLSearchParams({ importer: supplierImporter, page: "1", pageSize: "100" });
+    const query = new URLSearchParams({ page: "1", pageSize: "100" });
     apiFetch(`/api/v1/suppliers?${query}`, { cache: "no-store", signal: controller.signal })
       .then(async response => {
         const data = await response.json() as { items?: Supplier[]; detail?: string };
@@ -69,19 +62,19 @@ export default function OperationalValuesPage() {
       .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro ao carregar fornecedores."); })
       .finally(() => { if (!controller.signal.aborted) setSuppliersLoading(false); });
     return () => controller.abort();
-  }, [entity, supplierImporter]);
+  }, [entity]);
 
   async function addSupplier(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError(""); setNotice("");
     try {
       const response = await apiFetch("/api/v1/suppliers", { method: "POST",
         headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({ importer: supplierImporter, code: supplierDraft.code,
+        body: JSON.stringify({ code: supplierDraft.code,
           name: supplierDraft.name, evidence: supplierDraft.evidence, reason: automaticAuditReason }) });
       const result = await response.json() as { detail?: string };
       if (!response.ok) throw new Error(result.detail || "Não foi possível cadastrar o fornecedor.");
       setSupplierDraft({ code: "", name: "", evidence: "" });
-      const query = new URLSearchParams({ importer: supplierImporter, page: "1", pageSize: "100" });
+      const query = new URLSearchParams({ page: "1", pageSize: "100" });
       const listResponse = await apiFetch(`/api/v1/suppliers?${query}`, { cache: "no-store" });
       const list = await listResponse.json() as { items?: Supplier[]; detail?: string };
       if (!listResponse.ok) throw new Error(list.detail || "Fornecedor salvo, mas não foi possível atualizar a lista.");
@@ -202,11 +195,7 @@ export default function OperationalValuesPage() {
       <label>Campo<select value={entity} onChange={event => setEntity(event.target.value)}>
         {entities.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select></label>
-      <p className="muted">Fornecedores pertencem a uma importadora e são cadastrados com código e nome. Esse mesmo cadastro é usado nas POs e nos IPs.</p>
-      <label>Importadora<select required value={supplierImporter} onChange={event => setSupplierImporter(event.target.value)}>
-        <option value="" disabled>Selecione</option>
-        {importers.map(item => <option key={item.code} value={item.code}>{item.code}</option>)}
-      </select></label>
+      <p className="muted">Fornecedores são entidades globais, compartilhadas entre importadoras. O mesmo cadastro é usado nas POs e nos IPs.</p>
       <h3>Fornecedores cadastrados · {suppliers.length}</h3>
       {suppliersLoading ? <p role="status">Carregando fornecedores…</p> : suppliers.length ? <ul className="entity-value-list">
         {suppliers.map(supplier => <li key={supplier.id}><span>{supplier.code} · {supplier.name}</span><span className="muted">{supplier.status === "ACTIVE" ? "Ativo" : "Inativo"}</span></li>)}
@@ -216,7 +205,7 @@ export default function OperationalValuesPage() {
         <label>Código do fornecedor<input required maxLength={120} value={supplierDraft.code} onChange={event => setSupplierDraft(current => ({ ...current, code: event.target.value }))} /></label>
         <label>Nome do fornecedor<input required maxLength={240} value={supplierDraft.name} onChange={event => setSupplierDraft(current => ({ ...current, name: event.target.value }))} /></label>
         <label>Evidência da revisão<textarea required minLength={8} maxLength={2000} value={supplierDraft.evidence} onChange={event => setSupplierDraft(current => ({ ...current, evidence: event.target.value }))} placeholder="Documento, número, data e onde conferir" /></label>
-        <button className="button" disabled={busy || !supplierImporter}>{busy ? "Salvando…" : "Adicionar fornecedor"}</button>
+        <button className="button" disabled={busy}>{busy ? "Salvando…" : "Adicionar fornecedor"}</button>
       </form>}
       <Link className="button secondary" href="/catalog">Gerenciar e editar fornecedores</Link>
     </section>

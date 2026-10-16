@@ -244,7 +244,7 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
                  AND NOT (
                    upper(btrim(po.supplier_text)) = upper(btrim($2::varchar)) OR EXISTS (
                      SELECT 1 FROM catalog.entry supplier
-                     WHERE supplier.importer = process.importer AND supplier.kind = 'SUPPLIER'
+                     WHERE supplier.importer IS NULL AND supplier.kind = 'SUPPLIER'
                        AND upper(btrim(supplier.code)) = upper(btrim(po.supplier_text))
                        AND upper(btrim(supplier.name)) = upper(btrim($2::varchar))
                    )

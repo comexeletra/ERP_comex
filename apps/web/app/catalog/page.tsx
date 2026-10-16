@@ -10,7 +10,7 @@ type Resource = "suppliers" | "products" | "ncms";
 type Importer = { code: string; historicalPoCount: number; status: string };
 type Candidate = { importer: string; rawCode: string; observationCount: number;
   sampleSourceRowId: string; sampleSheetName: string; sampleRowNumber: number; eligibleFormat: boolean };
-type Entry = { id: string; importer: string; code: string; name: string; status: string;
+type Entry = { id: string; importer: string | null; code: string; name: string; status: string;
   evidence: string; validFrom: string | null; validTo: string | null; version: string; provenance: string };
 type AuditEvent = { id: string; operation: string; fieldName: string | null; oldValue: unknown;
   newValue: unknown; actor: string; occurredAt: string; reason: string | null };
@@ -89,7 +89,7 @@ export default function CatalogPage() {
     try {
       const response = await apiFetch(`/api/v1/${resource}`, { method: "POST",
         headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({ importer, code: draft.code, name: draft.name, evidence: draft.evidence,
+        body: JSON.stringify({ ...(resource === "suppliers" ? {} : { importer }), code: draft.code, name: draft.name, evidence: draft.evidence,
           reason: automaticAuditReason, validFrom }) });
       await responseJson<Entry>(response);
       setDraft({ code: "", name: "", evidence: "", validFrom: "" });
@@ -148,7 +148,7 @@ export default function CatalogPage() {
     <section className="card catalog-controls" id="catalog-controls">
       <div role="group" aria-label="Tipo de cadastro">{(Object.keys(labels) as Resource[]).map(key =>
         <button type="button" key={key} className={`button ${resource === key ? "" : "secondary"}`} onClick={() => chooseResource(key)}>{labels[key]}</button>)}</div>
-      <label>Importador<select value={importer} onChange={event => { historyRequest.current += 1; setHistoryLoading(false); setImporter(event.target.value); setPage(1); setHistoryEntry(undefined); setHistory(undefined); }}>
+      <label>{resource === "suppliers" ? "Importadora para filtrar candidatos históricos" : "Importador"}<select value={importer} onChange={event => { historyRequest.current += 1; setHistoryLoading(false); setImporter(event.target.value); setPage(1); setHistoryEntry(undefined); setHistory(undefined); }}>
         {importers.map(value => <option key={value.code} value={value.code}>{value.code} · {value.historicalPoCount} POs históricas</option>)}
       </select></label>
       <label>Pesquisar código ou nome<input value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} /></label>

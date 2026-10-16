@@ -33,7 +33,7 @@ const listQuery = z.object({ importer: z.string().trim().min(1).max(120).optiona
   pageSize: z.coerce.number().int().min(1).max(100).default(25) }).strict();
 const historyQuery = z.object({ page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25) }).strict();
-const createBody = z.object({ importer: z.string().trim().min(1).max(120),
+const createBody = z.object({ importer: z.string().trim().min(1).max(120).optional(),
   code: z.string().min(1).max(120).refine(value => value.trim().length > 0),
   name: z.string().trim().min(1).max(240), evidence: z.string().trim().min(8).max(2000),
   reason: z.string().trim().min(8).max(500),
@@ -43,7 +43,7 @@ const patchBody = z.object({ name: z.string().trim().min(1).max(240).optional(),
   evidence: z.string().trim().min(8).max(2000).optional(),
   validFrom: z.iso.date().nullable().optional(), validTo: z.iso.date().nullable().optional(),
   reason: z.string().trim().min(8).max(500) }).strict();
-type Entry = { id: string; importer: string; kind: Kind; code: string; name: string;
+type Entry = { id: string; importer: string | null; kind: Kind; code: string; name: string;
   status: "ACTIVE" | "INACTIVE"; provenance: string; evidence: string;
   valid_from: string | null; valid_to: string | null; version: string; created_at: Date; updated_at: Date };
 
@@ -295,7 +295,8 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
              FROM historical
            ), curated AS (
              SELECT code,name,status FROM catalog.entry
-             WHERE importer = $3 AND kind = $4 AND status = 'ACTIVE'
+             WHERE kind = $4 AND status = 'ACTIVE'
+               AND (($4 = 'SUPPLIER' AND importer IS NULL) OR ($4 <> 'SUPPLIER' AND importer = $3))
            ), candidates AS (
              SELECT ranked.code,ranked.name,'HISTORICAL_CANDIDATE'::text AS status FROM ranked
              WHERE ranked.rank=1 AND NOT EXISTS (
@@ -333,8 +334,10 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
       const result = await pool.query<{ total_count: number; items: Entry[] }>(
         `WITH visible AS MATERIALIZED (
            SELECT entry.* FROM catalog.entry AS entry
-           WHERE entry.kind = $1 AND entry.importer = ANY($2::text[])
-             AND ($3::text IS NULL OR entry.importer = $3)
+           WHERE entry.kind = $1
+             AND (($1 = 'SUPPLIER' AND entry.importer IS NULL)
+               OR ($1 <> 'SUPPLIER' AND entry.importer = ANY($2::text[])
+                 AND ($3::text IS NULL OR entry.importer = $3)))
              AND ($4::text IS NULL OR strpos(lower(entry.code), lower($4)) > 0
                   OR strpos(lower(entry.name), lower($4)) > 0)
          ), page AS (SELECT * FROM visible ORDER BY normalized_code, id LIMIT $5 OFFSET $6)
@@ -390,8 +393,9 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
       const id = z.uuid().safeParse(request.params.id);
       if (!id.success) return problem(reply, 400, "INVALID_ID", "Identificador inválido.");
       const result = await pool.query<Entry>(
-        `SELECT entry.* FROM catalog.entry AS entry WHERE entry.id = $1 AND entry.kind = $2
-         AND entry.importer = ANY($3::text[]) LIMIT 1`,
+         `SELECT entry.* FROM catalog.entry AS entry WHERE entry.id = $1 AND entry.kind = $2
+         AND (($2 = 'SUPPLIER' AND entry.importer IS NULL)
+           OR ($2 <> 'SUPPLIER' AND entry.importer = ANY($3::text[]))) LIMIT 1`,
         [id.data, kind, request.authorizationContext?.importerScopes ?? []]);
       if (!result.rows[0]) return problem(reply, 404, "RESOURCE_NOT_FOUND", "Cadastro não encontrado.");
       reply.header("ETag", `"${result.rows[0].version}"`);
@@ -403,8 +407,9 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
       const parsed = historyQuery.safeParse(request.query);
       if (!id.success || !parsed.success) return problem(reply, 400, "INVALID_QUERY", "Identificador ou paginação inválidos.");
       const visible = await pool.query<{ id: string }>(
-        `SELECT id FROM catalog.entry WHERE id = $1 AND kind = $2
-         AND importer = ANY($3::text[]) LIMIT 1`,
+         `SELECT id FROM catalog.entry WHERE id = $1 AND kind = $2
+         AND (($2 = 'SUPPLIER' AND importer IS NULL)
+           OR ($2 <> 'SUPPLIER' AND importer = ANY($3::text[]))) LIMIT 1`,
         [id.data, kind, request.authorizationContext?.importerScopes ?? []]);
       if (!visible.rowCount) return problem(reply, 404, "RESOURCE_NOT_FOUND", "Cadastro não encontrado.");
       const { page, pageSize } = parsed.data;
@@ -435,7 +440,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
       const body = parsed.data;
       if (!auth || !actor) return problem(reply, 401, "AUTHENTICATION_REQUIRED", "Sessão ausente.");
       if (!canWriteKind(auth.roles, kind)) return problem(reply, 403, "PERMISSION_DENIED", "Perfil sem permissão para este cadastro.");
-      if (!hasScope(auth.importerScopes, body.importer)) return problem(reply, 404, "RESOURCE_NOT_FOUND", "Importador não encontrado no seu escopo.");
+      if (kind !== "SUPPLIER" && (!body.importer || !hasScope(auth.importerScopes, body.importer))) return problem(reply, 404, "RESOURCE_NOT_FOUND", "Importador fora do escopo.");
       const code = body.code.trim();
       if ((kind === "NCM" && !/^[0-9]{8}$/u.test(code)) || !validDates(kind, dateValue(body.validFrom), dateValue(body.validTo))) {
         return problem(reply, 400, "INVALID_CATALOG_ENTRY", "Código ou vigência inválidos.");
@@ -450,7 +455,9 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
           [actor.userId, key]);
         if (existing.rows[0]) {
           const visible = await client.query<Entry>(
-            `SELECT * FROM catalog.entry WHERE id = $1 AND kind = $2 AND importer = ANY($3::text[])`,
+            `SELECT * FROM catalog.entry WHERE id = $1 AND kind = $2
+             AND (($2 = 'SUPPLIER' AND importer IS NULL)
+               OR ($2 <> 'SUPPLIER' AND importer = ANY($3::text[])))`,
             [existing.rows[0].entry_id, kind, auth.importerScopes]);
           await client.query("COMMIT");
           if (!visible.rows[0]) return problem(reply, 409, "IDEMPOTENCY_KEY_REUSED", "Chave já usada em outro cadastro.");
@@ -458,7 +465,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
           reply.header("ETag", `"${visible.rows[0].version}"`);
           return reply.code(200).send(present(visible.rows[0]));
         }
-        const importerExists = await client.query("SELECT 1 FROM procurement.purchase_order WHERE importer = $1 LIMIT 1", [body.importer]);
+        const importerExists = kind === "SUPPLIER" ? { rowCount: 1 } : await client.query("SELECT 1 FROM procurement.purchase_order WHERE importer = $1 LIMIT 1", [body.importer]);
         if (!importerExists.rowCount) {
           await client.query("ROLLBACK");
           return problem(reply, 404, "RESOURCE_NOT_FOUND", "Importador sem origem conhecida.");
@@ -468,7 +475,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
           `INSERT INTO catalog.entry
             (id, importer, kind, code, name, evidence, valid_from, valid_to, created_by, updated_by)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9) RETURNING *`,
-          [id, body.importer, kind, code, body.name, body.evidence,
+          [id, kind === "SUPPLIER" ? null : body.importer, kind, code, body.name, body.evidence,
             dateValue(body.validFrom), dateValue(body.validTo), actor.userId]);
         await client.query(
           `INSERT INTO catalog.entry_alias (id, entry_id, raw_code, source_kind, created_by)
@@ -485,7 +492,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
         await client.query(
           `INSERT INTO audit.outbox_message (event_id,event_type,aggregate_type,aggregate_id,payload,occurred_at)
            VALUES ($1,'catalog.entry.created','CATALOG_ENTRY',$2,$3::jsonb,now())`,
-          [randomUUID(), id, JSON.stringify({ id, importer: body.importer, kind, version: 1 })]);
+          [randomUUID(), id, JSON.stringify({ id, importer: kind === "SUPPLIER" ? null : body.importer, kind, version: 1 })]);
         await client.query("COMMIT");
         reply.header("ETag", '"1"');
         return reply.code(201).send(present(inserted.rows[0]));
@@ -516,7 +523,9 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
         await client.query("BEGIN");
         const found = await client.query<Entry>(
           `SELECT * FROM catalog.entry WHERE id = $1 AND kind = $2
-           AND importer = ANY($3::text[]) FOR UPDATE`, [id.data, kind, auth.importerScopes]);
+           AND (($2 = 'SUPPLIER' AND importer IS NULL)
+             OR ($2 <> 'SUPPLIER' AND importer = ANY($3::text[]))) FOR UPDATE`,
+          [id.data, kind, auth.importerScopes]);
         const before = found.rows[0];
         if (!before) { await client.query("ROLLBACK"); return problem(reply, 404, "RESOURCE_NOT_FOUND", "Cadastro não encontrado."); }
         if (`"${before.version}"` !== expected) { await client.query("ROLLBACK"); return problem(reply, 409, "VERSION_CONFLICT", "Cadastro alterado. Recarregue antes de salvar."); }
