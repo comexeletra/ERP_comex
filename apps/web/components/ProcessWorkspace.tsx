@@ -339,11 +339,14 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
                 {searchingPos ? "Buscando…" : "Buscar PO"}
               </button>
             </div>
-            {poOptions.length > 0 && <label>Selecione a PO<select required value={selectedPoId}
-              disabled={searchingPos} onChange={event => void choosePurchaseOrder(event.target.value)}>
-              <option value="">Selecione uma PO</option>
-              {poOptions.map(order => <option key={order.id} value={order.id}>{order.number}</option>)}
-            </select></label>}
+            {poOptions.length > 0 && <div className="allocation-po-choices">
+              <h5>Selecione a PO</h5>
+              <ul>{poOptions.map(order => <li key={order.id}>
+                <button type="button" aria-pressed={selectedPoId === order.id}
+                  className={selectedPoId === order.id ? "is-selected" : ""}
+                  disabled={searchingPos} onClick={() => void choosePurchaseOrder(order.id)}>{order.number}</button>
+              </li>)}</ul>
+            </div>}
           </form>
 
           {selectedPoId && <form className="allocation-distribution" onSubmit={distributeItemToProcess}>
