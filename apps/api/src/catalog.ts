@@ -14,14 +14,19 @@ const operationalValueKeys = new Set([
   "IMPORTER", "INCOTERM", "TRANSPORT_MODE", "PORT_LOADING", "PORT_DISCHARGE", "CURRENCY",
   "CATEGORY", "PRODUCT_GROUP", "GROUP", "PURPOSE", "DEMAND", "LOGISTICS_STATUS",
   "CUSTOMS_CHANNEL", "CONTAINER_TYPE", "PRIORITY", "UNIT_OF_MEASURE", "REQUESTER",
-  "COST_CENTER", "BROKER", "FORWARDER",
+  "COST_CENTER", "BROKER", "FORWARDER", "PRODUCT", "NCM",
 ]);
 const operationalValueMax: Record<string, number> = {
   IMPORTER: 120, INCOTERM: 20, TRANSPORT_MODE: 40, PORT_LOADING: 160, PORT_DISCHARGE: 160,
   CURRENCY: 3, CATEGORY: 120, PRODUCT_GROUP: 120, GROUP: 120, PURPOSE: 160, DEMAND: 160,
   LOGISTICS_STATUS: 40, CUSTOMS_CHANNEL: 80, CONTAINER_TYPE: 80,
   PRIORITY: 20, UNIT_OF_MEASURE: 32, REQUESTER: 160, COST_CENTER: 80, BROKER: 160, FORWARDER: 160,
+  PRODUCT: 240, NCM: 8,
 };
+function operationalValueHasValidFormat(entity: string, value: string): boolean {
+  return (entity !== "CURRENCY" || /^[A-Z]{3}$/u.test(value))
+    && (entity !== "NCM" || /^\d{8}$/u.test(value));
+}
 const operationalValueId = z.uuid();
 const operationalValueUpdateBody = z.object({
   expectedValue: z.string().trim().min(1).max(240),
@@ -104,7 +109,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
       return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "Selecione uma entidade e informe um valor vÃ¡lido.");
     }
     if (body.data.value.length > operationalValueMax[body.data.entity]
-      || (body.data.entity === "CURRENCY" && !/^[A-Z]{3}$/u.test(body.data.value))) {
+      || !operationalValueHasValidFormat(body.data.entity, body.data.value)) {
       return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "O valor nÃ£o respeita o formato do campo escolhido.");
     }
     if (!actor) return problem(reply, 401, "AUTHENTICATION_REQUIRED", "SessÃ£o ausente.");
@@ -149,7 +154,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
       return problem(reply, 400, "INVALID_OPERATIONAL_VALUES", "Informe uma entidade e uma lista JSON válida com até 500 valores.");
     }
     const invalidValue = body.data.values.find(value => value.length > operationalValueMax[body.data.entity]
-      || (body.data.entity === "CURRENCY" && !/^[A-Z]{3}$/u.test(value)));
+      || !operationalValueHasValidFormat(body.data.entity, value));
     if (invalidValue) {
       return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "Um ou mais valores não respeitam o formato do campo escolhido.");
     }
@@ -223,7 +228,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
           return problem(reply, 409, "STALE_OPERATIONAL_VALUE", "Este valor foi alterado por outra pessoa. Atualize a lista e tente novamente.");
         }
         if (body.data.value.length > operationalValueMax[previous.entity_key]
-          || (previous.entity_key === "CURRENCY" && !/^[A-Z]{3}$/u.test(body.data.value))) {
+          || !operationalValueHasValidFormat(previous.entity_key, body.data.value)) {
           await client.query("ROLLBACK");
           return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "O valor não respeita o formato do campo escolhido.");
         }

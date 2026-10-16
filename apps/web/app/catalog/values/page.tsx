@@ -11,7 +11,7 @@ const entities = [
   ["product_group", "Grupo de produto"], ["group", "Group"], ["purpose", "Finalidade"], ["demand", "Demanda"],
   ["logistics_status", "Status logístico"], ["customs_channel", "Canal aduaneiro"],
   ["container_type", "Tipo de container"], ["priority", "Prioridade"],
-  ["unit_of_measure", "Unidade de medida"],
+  ["unit_of_measure", "Unidade de medida"], ["product", "Produto"], ["ncm", "NCM"],
   ["requester", "Solicitante"], ["cost_center", "Centro de custo"], ["broker", "Despachante"],
   ["forwarder", "Agente de carga"], ["supplier", "Fornecedor"],
 ] as const;
