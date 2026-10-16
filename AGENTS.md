@@ -13,6 +13,8 @@
 ## Ambiente e segredos
 
 - Mantenha testes de homologação no ambiente e banco isolados de produção.
+- Nunca presuma o estado, o conteúdo ou a configuração do banco com base apenas no código, scripts, seeds, logs ou contexto anterior. Ao trabalhar na branch `homologacao`, acesse o banco real de homologação e confira nele os dados e as condições necessários antes de diagnosticar, afirmar ou corrigir qualquer questão relacionada ao banco.
+- Confirme que a conexão aponta para o banco HML antes de consultar ou alterar dados. Não use o banco de produção para essas verificações; alterações no HML devem respeitar a autorização da tarefa e preservar dados e registros existentes.
 - Não copie dados de negócio de produção para homologação, exceto quando o usuário solicitar explicitamente essa operação. Nesse caso, transfira somente as entidades e os campos solicitados, mantenha o destino isolado em homologação e nunca escreva na produção.
 - Não mostre, registre em commits ou inclua em capturas de tela tokens, senhas, URLs de conexão ou outros segredos. Use variáveis de ambiente e os arquivos protegidos já provisionados.
 - Não altere variáveis da Vercel nem configurações da VPS como parte de um deploy de código sem que a tarefa peça essa mudança.

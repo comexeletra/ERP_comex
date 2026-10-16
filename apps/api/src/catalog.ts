@@ -35,6 +35,11 @@ const operationalValueUpdateBody = z.object({
   value: z.string().trim().min(1).max(240),
   reason: z.string().trim().min(8).max(500),
 }).strict();
+const operationalValueDeleteBody = z.object({
+  expectedCode: z.string().trim().min(1).max(120).nullable().optional(),
+  expectedValue: z.string().trim().min(1).max(240),
+  reason: z.string().trim().min(8).max(500),
+}).strict();
 const listQuery = z.object({ importer: z.string().trim().min(1).max(120).optional(),
   search: z.string().trim().max(120).optional(), page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25) }).strict();
@@ -278,6 +283,74 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
         if (isUniqueError(error)) {
           return problem(reply, 409, "DUPLICATE_OPERATIONAL_VALUE", "Esse valor já existe para esta entidade.");
         }
+        throw error;
+      } finally { client.release(); }
+    });
+
+  app.delete<{ Params: { id: string } }>("/api/v1/operational-values/:id",
+    { config: permissionConfig("catalog.write") }, async (request, reply) => {
+      const id = operationalValueId.safeParse(request.params.id);
+      const body = operationalValueDeleteBody.safeParse(request.body);
+      const actor = request.authContext;
+      if (!id.success || !body.success) {
+        return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "Informe o valor que deseja excluir.");
+      }
+      if (!actor) return problem(reply, 401, "AUTHENTICATION_REQUIRED", "Sessão ausente.");
+      if (!request.authorizationContext?.roles.some(role => ["Master", "Administrador", "Compras"].includes(role))) {
+        return problem(reply, 403, "PERMISSION_DENIED", "Perfil sem permissão para administrar valores das entidades.");
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const current = await client.query<{ entity_key: string; code: string | null; value: string }>(
+          `SELECT entity_key, code, value FROM catalog.operational_value WHERE id = $1 FOR UPDATE`, [id.data]);
+        const previous = current.rows[0];
+        if (!previous) {
+          await client.query("ROLLBACK");
+          return problem(reply, 404, "OPERATIONAL_VALUE_NOT_FOUND", "Valor não encontrado.");
+        }
+        if (previous.value !== body.data.expectedValue
+          || (previous.entity_key === "GROUP" && (body.data.expectedCode ?? null) !== previous.code)
+          || (previous.entity_key !== "GROUP" && body.data.expectedCode !== undefined)) {
+          await client.query("ROLLBACK");
+          return problem(reply, 409, "STALE_OPERATIONAL_VALUE", "Este valor foi alterado por outra pessoa. Atualize a lista e tente novamente.");
+        }
+        if (previous.entity_key === "IMPORTER") {
+          const usage = await client.query<{ in_use: boolean }>(
+            `SELECT EXISTS (
+               SELECT 1 FROM procurement.purchase_order WHERE upper(btrim(importer)) = upper(btrim($1))
+               UNION ALL SELECT 1 FROM imports.import_process WHERE upper(btrim(importer)) = upper(btrim($1))
+               UNION ALL SELECT 1 FROM procurement.purchase_request WHERE upper(btrim(importer)) = upper(btrim($1))
+               UNION ALL SELECT 1 FROM procurement.import_request WHERE upper(btrim(importer)) = upper(btrim($1))
+               UNION ALL SELECT 1 FROM identity.erp_user_importer_scope WHERE upper(btrim(importer_code)) = upper(btrim($1))
+               UNION ALL SELECT 1 FROM catalog.entry WHERE upper(btrim(importer)) = upper(btrim($1))
+               UNION ALL SELECT 1 FROM jobs.export_job WHERE upper(btrim($1)) = ANY (
+                 SELECT upper(btrim(scope_value)) FROM unnest(importer_scopes) AS scopes(scope_value))
+             ) AS in_use`, [previous.value]);
+          if (usage.rows[0]?.in_use) {
+            await client.query("ROLLBACK");
+            return problem(reply, 409, "OPERATIONAL_VALUE_IN_USE", "Esta importadora está vinculada a cadastros ou registros existentes e não pode ser excluída.");
+          }
+        }
+
+        await client.query("DELETE FROM catalog.operational_value WHERE id = $1", [id.data]);
+        const correlationId = randomUUID();
+        await client.query(
+          `INSERT INTO audit.audit_log
+            (id,aggregate_type,aggregate_id,entity_type,entity_id,operation,field_name,old_value,new_value,actor_id,occurred_at,reason,correlation_id)
+           VALUES ($1,'OPERATIONAL_VALUE',$2,'OPERATIONAL_VALUE',$2,'DELETE','value',$3::jsonb,NULL,$4,now(),$5,$6)`,
+          [randomUUID(), id.data,
+            JSON.stringify({ entity: previous.entity_key.toLowerCase(), code: previous.code, value: previous.value }),
+            `${actor.issuer}#${actor.subject}`, body.data.reason, correlationId]);
+        await client.query(
+          `INSERT INTO audit.outbox_message (event_id,event_type,aggregate_type,aggregate_id,payload,occurred_at)
+           VALUES ($1,'catalog.operational_value.deleted','OPERATIONAL_VALUE',$2,$3::jsonb,now())`,
+          [correlationId, id.data, JSON.stringify({ id: id.data, entity: previous.entity_key.toLowerCase() })]);
+        await client.query("COMMIT");
+        return { id: id.data, entity: previous.entity_key.toLowerCase(), deleted: true };
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => undefined);
         throw error;
       } finally { client.release(); }
     });

@@ -188,6 +188,25 @@ export default function OperationalValuesPage() {
     finally { setBusy(false); }
   }
 
+  async function deleteOption(option: Option) {
+    const label = `${entity === "group" && option.code ? `${option.code} · ` : ""}${option.value}`;
+    if (!window.confirm(`Excluir "${label}" das opções de ${entities.find(([key]) => key === entity)?.[1] ?? "entidade"}? Os valores já salvos em registros não serão apagados.`)) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await apiFetch(`/api/v1/operational-values/${option.id}`, {
+        method: "DELETE", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expectedValue: option.value,
+          ...(entity === "group" ? { expectedCode: option.code ?? null } : {}), reason: automaticAuditReason }),
+      });
+      const result = await response.json() as { detail?: string };
+      if (!response.ok) throw new Error(result.detail || "Não foi possível excluir o valor.");
+      if (editingId === option.id) cancelEditing();
+      await load();
+      setNotice("Valor removido das opções da entidade. Os registros existentes foram preservados.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao excluir valor."); }
+    finally { setBusy(false); }
+  }
+
   async function selectJson(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     setJsonValues([]); setJsonFileName(""); setError(""); setNotice("");
@@ -330,6 +349,8 @@ export default function OperationalValuesPage() {
           <span>{entity === "group" && option.code ? <><strong>{option.code}</strong> · </> : null}{option.value}</span>
           <button className="button secondary entity-value-action" type="button" disabled={busy}
             aria-label={`Editar ${option.value}`} onClick={() => startEditing(option)}>Editar</button>
+          {canWrite && <button className="button secondary entity-value-action" type="button" disabled={busy}
+            aria-label={`Excluir ${option.value}`} onClick={() => void deleteOption(option)}>Excluir</button>}
         </>}
       </li>)}</ul> :
         <p className="muted">Ainda não há valores cadastrados para este campo.</p>}
