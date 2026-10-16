@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
@@ -135,6 +135,7 @@ export default function FollowupPanel({ id }: { id: string }) {
   const [factoryShipDrafts, setFactoryShipDrafts] = useState<Record<string, string>>({});
   const [docDrafts, setDocDrafts] = useState<Record<string, DocDraft>>({});
   const [editingDoc, setEditingDoc] = useState<Record<string, string>>({});
+  const [expandedLine, setExpandedLine] = useState("");
   const [options, setOptions] = useState<OperationalOption[]>([]);
   useEffect(() => {
     const controller = new AbortController();
@@ -227,7 +228,10 @@ export default function FollowupPanel({ id }: { id: string }) {
         </tr></thead><tbody>{shipmentLines(data).map(({ item, shipment }) => {
           const process = shipment && processes.find(entry => entry.process.id === shipment.process.id);
           const documents = process?.documents ?? [];
-          return <tr key={shipment?.allocationId ?? item.id}>
+          const rowId = shipment?.allocationId ?? item.id;
+          const detailsId = `po-ip-line-${rowId}`;
+          const lineExpanded = expandedLine === rowId;
+          return <Fragment key={rowId}><tr>
             <td><strong>{data.number}</strong><small>{data.supplierText || "Fornecedor não informado"}</small></td>
             <td><strong>{item.productCode}</strong><small>{value(item.description)}</small></td>
             <td>{formatNumber(item.orderedQuantity)} {value(item.unit) === "—" ? "" : value(item.unit)}</td>
@@ -236,7 +240,9 @@ export default function FollowupPanel({ id }: { id: string }) {
             <td>{shipment ? value(shipment.calculated.status) : /^(CANCELLED|CANCELED)$/i.test(String(item.sourceStatus ?? "")) ? "Cancelado" : "A distribuir"}</td>
             <td>{shipment ? value(shipment.calculated.eta) : "—"}</td>
             <td>{shipment ? value(shipment.process.deliveryDate) : "—"}</td>
-            <td><details><summary>Ver linha</summary>
+            <td><button className="po-ip-line-toggle" type="button" aria-expanded={lineExpanded} aria-controls={detailsId}
+              onClick={() => setExpandedLine(current => current === rowId ? "" : rowId)}>{lineExpanded ? "Ocultar linha" : "Ver linha"}</button></td>
+          </tr>{lineExpanded && <tr className="po-ip-line-detail"><td colSpan={9}><section id={detailsId} className="po-ip-line-detail-panel">
               <h4>Pré embarque · PO {data.number}</h4>
               <dl className="followup-grid">
                 {([["Importadora", data.importer], ["Fornecedor", data.supplierText], ["Data da PO", data.orderDate],
@@ -270,8 +276,7 @@ export default function FollowupPanel({ id }: { id: string }) {
                     <div key={name}><dt>{name.toUpperCase()}</dt><dd>Meta {formatNumber(stage.targetDays)} · Real {formatNumber(stage.actualDays)} · Desvio {formatNumber(stage.delayDays)} dias</dd></div>)}</dl>}
                 </details>
               </> : <p>Distribua uma quantidade deste item para um IP na seção acima.</p>}
-            </details></td>
-          </tr>;
+            </section></td></tr>}</Fragment>;
         })}</tbody></table></div>}
       <h3>Atualizar pós embarque por IP</h3>
       <p className="muted">Preencha cada IP uma vez. As alterações serão exibidas em todas as linhas de PO ligadas a ele.</p>

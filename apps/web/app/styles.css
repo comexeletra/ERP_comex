@@ -466,8 +466,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .shipment-milestones { border-bottom: 1px solid #dce6eb; margin-bottom: 14px; padding-bottom: 14px; }
 .po-ip-lines td { vertical-align: top; }
 .po-ip-lines td small { color: #617985; display: block; margin-top: 3px; max-width: 220px; }
-.po-ip-lines td > details { min-width: 150px; }
-.po-ip-lines td > details[open] { min-width: min(720px, 75vw); }
+.po-ip-line-toggle { background: transparent; border: 0; color: #086d7e; cursor: pointer; font: inherit; font-weight: 700; padding: 0; white-space: nowrap; }
+.po-ip-line-detail > td { background: #f8fbfc; padding: 16px; white-space: normal; }
+.po-ip-line-detail-panel { min-width: 0; width: 100%; }
+.po-ip-line-detail-panel > h4:first-child { margin-top: 0; }
+.po-ip-line-detail-panel .followup-grid { grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); }
 .po-ip-lines .po-ip-pending { color: #966318; font-weight: 700; }
 :root[data-theme="dark"] .po-ip-lines td small { color: #a9c2ce; }
 :root[data-theme="dark"] .po-ip-lines .po-ip-pending { color: #e1b86f; }
