@@ -48,6 +48,20 @@ BEGIN
      ORDER BY entity_key, id
   LOOP
     repaired_value := catalog.normalize_utf8_mojibake(entry.value);
+
+    -- These two HML values contain Windows-1252 control-byte sequences that
+    -- cannot be reversed by a generic charset conversion. Their canonical
+    -- spellings are present in the reviewed entity JSON files.
+    IF repaired_value = entry.value THEN
+      IF entry.entity_key = 'BROKER'
+         AND encode(convert_to(entry.value, 'UTF8'), 'hex') = 'c383c692c382c28147494c' THEN
+        repaired_value := 'ÁGIL';
+      ELSIF entry.entity_key = 'REQUESTER'
+         AND encode(convert_to(entry.value, 'UTF8'), 'hex') = '526544202d204a4fc383c692c386e280994f205a414c45534b49' THEN
+        repaired_value := 'ReD - JOÃO ZALESKI';
+      END IF;
+    END IF;
+
     IF repaired_value = entry.value THEN
       CONTINUE;
     END IF;
