@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createNcmCatalogUrl, createNcmPayload, updateNcmPayload } from "../lib/catalog-ncms.ts";
+
+const catalogPage = readFileSync(new URL("../app/catalog/values/page.tsx", import.meta.url), "utf8");
 
 test("NCM values load from the global catalog without importer filters", () => {
   const url = createNcmCatalogUrl(3, "  8528  ");
@@ -25,4 +28,11 @@ test("NCM create and edit payloads use global catalog fields without importer", 
   });
   assert.equal("importer" in createNcmPayload(draft, "Cadastro manual autorizado."), false);
   assert.equal("importer" in updateNcmPayload(draft, "Cadastro manual autorizado."), false);
+});
+
+test("NCM catalog labels render Portuguese accents correctly", () => {
+  assert.match(catalogPage, /Descrições e atributos obrigatórios/iu);
+  assert.match(catalogPage, /Atualizar NCMs já cadastrados/iu);
+  assert.match(catalogPage, /Pesquise pela descrição ou pelo código/iu);
+  assert.doesNotMatch(catalogPage, /[ÃÂ�]/u);
 });

@@ -588,9 +588,9 @@ export default function OperationalValuesPage() {
         {entities.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select></label>
       <p className="muted">NCMs são um catálogo fiscal global, sem vínculo com importadora.</p>
-      <p className="muted">DescriÃ§Ãµes e atributos obrigatÃ³rios sÃ£o consultados na tabela oficial do Siscomex. A busca permite adicionar somente NCMs usados pela entidade.</p>
+      <p className="muted">Descrições e atributos obrigatórios são consultados na tabela oficial do Siscomex. A busca permite adicionar somente NCMs usados pela entidade.</p>
       {canWriteNcm && <button className="button secondary ncm-refresh-button" type="button" disabled={busy}
-        onClick={() => void refreshRegisteredNcms()}>{busy ? "Atualizando..." : "Atualizar NCMs jÃ¡ cadastrados"}</button>}
+        onClick={() => void refreshRegisteredNcms()}>{busy ? "Atualizando..." : "Atualizar NCMs já cadastrados"}</button>}
       <h3>NCMs cadastrados &middot; {ncmTotalCount}</h3>
       <label className="product-catalog-search">Pesquisar por código ou descrição
         <input maxLength={120} value={ncmSearch} onChange={event => { setNcmSearch(event.target.value); setNcmPage(1); }} />
@@ -640,9 +640,9 @@ export default function OperationalValuesPage() {
       </nav>}
       <section className="ncm-official-search" aria-labelledby="ncm-official-search-title">
         <h3 id="ncm-official-search-title">Pesquisar NCMs oficiais</h3>
-        <p className="muted">Pesquise pela descriÃ§Ã£o ou pelo cÃ³digo e adicione somente os NCMs usados pela entidade.</p>
+        <p className="muted">Pesquise pela descrição ou pelo código e adicione somente os NCMs usados pela entidade.</p>
         <form className="ncm-official-search-form" onSubmit={event => { event.preventDefault(); void searchOfficialNcms(1); }}>
-          <label>DescriÃ§Ã£o ou cÃ³digo NCM
+          <label>Descrição ou código NCM
             <input maxLength={120} minLength={2} value={officialNcmSearchTerm}
               onChange={event => setOfficialNcmSearchTerm(event.target.value)} placeholder="Ex.: resistor ou 01012100" />
           </label>
@@ -661,18 +661,18 @@ export default function OperationalValuesPage() {
               </div>
               <div className="product-catalog-actions">
                 {item.alreadyRegistered
-                  ? <span className="product-catalog-status active">JÃ¡ cadastrado</span>
+                  ? <span className="product-catalog-status active">Já cadastrado</span>
                   : canWriteNcm && <button className="button entity-value-action" type="button" disabled={busy}
-                    onClick={() => void addOfficialNcm(item.code)}>Adicionar Ã  entidade</button>}
+                    onClick={() => void addOfficialNcm(item.code)}>Adicionar à entidade</button>}
               </div>
               <NcmMandatoryAttributes attributes={item.mandatoryImportAttributes ?? []} />
             </li>)}
-          </ul> : <p className="muted">Nenhuma NCM vigente corresponde Ã  pesquisa.</p>}
-          {officialNcmTotalCount > 25 && <nav className="pagination" aria-label="PÃ¡ginas da busca oficial de NCMs">
+          </ul> : <p className="muted">Nenhuma NCM vigente corresponde à pesquisa.</p>}
+          {officialNcmTotalCount > 25 && <nav className="pagination" aria-label="Páginas da busca oficial de NCMs">
             <button className="button secondary" disabled={officialNcmPage <= 1} onClick={() => void searchOfficialNcms(officialNcmPage - 1, officialNcmSearch)}>Anterior</button>
-            <span>PÃ¡gina {officialNcmPage} de {Math.ceil(officialNcmTotalCount / 25)}</span>
+            <span>Página {officialNcmPage} de {Math.ceil(officialNcmTotalCount / 25)}</span>
             <button className="button" disabled={officialNcmPage * 25 >= officialNcmTotalCount}
-              onClick={() => void searchOfficialNcms(officialNcmPage + 1, officialNcmSearch)}>PrÃ³xima</button>
+              onClick={() => void searchOfficialNcms(officialNcmPage + 1, officialNcmSearch)}>Próxima</button>
           </nav>}
         </>}
       </section>
