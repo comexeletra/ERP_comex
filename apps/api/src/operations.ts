@@ -216,13 +216,12 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         if (!exporterText || body.process.supplierText?.trim() !== exporterText) {
           throw new BusinessError(400, "INVOICE_EXPORTER_REQUIRED", "O supplier do IP deve corresponder ao campo Exporter da invoice.");
         }
-        const matchedItems = await client.query<{ id: string; purchase_order_id: string; number: string; importer: string; quantity: string; product_code: string; supplier_text: string | null; supplier_name: string | null }>(
+        const matchedItems = await client.query<{ id: string; purchase_order_id: string; number: string; importer: string; quantity: string; product_code: string; supplier_entry_id: string | null; supplier_text: string | null; supplier_name: string | null; supplier_code: string | null }>(
           `SELECT item.id, item.purchase_order_id, po.external_number AS number, po.importer,
-                  item.ordered_quantity::text AS quantity, item.product_code, po.supplier_text,
-                  supplier.name AS supplier_name
+                  item.ordered_quantity::text AS quantity, item.product_code, po.supplier_entry_id, po.supplier_text,
+                  supplier.name AS supplier_name, supplier.code AS supplier_code
            FROM procurement.purchase_order_item item JOIN procurement.purchase_order po ON po.id = item.purchase_order_id
-           LEFT JOIN catalog.entry supplier ON supplier.importer = po.importer AND supplier.kind = 'SUPPLIER'
-             AND upper(btrim(supplier.code)) = upper(btrim(po.supplier_text)) AND supplier.status = 'ACTIVE'
+           LEFT JOIN catalog.entry supplier ON supplier.id = po.supplier_entry_id
            WHERE item.id = ANY($1::uuid[]) ORDER BY item.id FOR UPDATE OF item, po`, [[...aggregated.keys()]],
         );
         if (matchedItems.rowCount !== aggregated.size || matchedItems.rows.some(item => item.importer !== body.process.importer)) {
@@ -231,9 +230,11 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const byItemId = new Map(matchedItems.rows.map(item => [item.id, item]));
         const normalizePo = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "");
         const normalizeSupplier = (value: string | null) => value?.trim().toLocaleUpperCase("en-US") ?? "";
-        if (matchedItems.rows.some(item => !item.supplier_text ||
+        const supplierEntityIds = new Set(matchedItems.rows.map(item => item.supplier_entry_id).filter((id): id is string => id !== null));
+        if (supplierEntityIds.size !== 1 || matchedItems.rows.some(item => !item.supplier_entry_id ||
           (normalizeSupplier(item.supplier_text) !== normalizeSupplier(exporterText)
-            && normalizeSupplier(item.supplier_name) !== normalizeSupplier(exporterText)))) {
+            && normalizeSupplier(item.supplier_name) !== normalizeSupplier(exporterText)
+            && normalizeSupplier(item.supplier_code) !== normalizeSupplier(exporterText)))) {
           throw new BusinessError(409, "PO_SUPPLIER_MISMATCH", "O Exporter da invoice não corresponde ao fornecedor cadastrado na SC/PO de uma ou mais POs selecionadas.");
         }
         for (const assignment of invoiceAssignments.data) {
@@ -245,11 +246,11 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const processId = randomUUID();
         await client.query(
           `INSERT INTO imports.import_process
-           (id,importer,ip_number,normalized_ip_number,logistics_status,priority,notes,source_kind,version,supplier_text,
+           (id,importer,ip_number,normalized_ip_number,logistics_status,priority,notes,source_kind,version,supplier_text,supplier_entry_id,
             incoterm,port_loading,port_discharge)
-           VALUES ($1,$2,$3,upper($3),$4,$5,$6,'CHINA_INVOICE',1,$7,$8,$9,$10)`,
+           VALUES ($1,$2,$3,upper($3),$4,$5,$6,'CHINA_INVOICE',1,$7,$8,$9,$10,$11)`,
           [processId, body.process.importer, body.process.ipNumber, body.process.logisticsStatus,
-            body.process.priority, body.process.notes, exporterText,
+            body.process.priority, body.process.notes, exporterText, [...supplierEntityIds][0],
             typeof body.invoice.metadata.incoterm === "string" ? body.invoice.metadata.incoterm : null,
             typeof body.invoice.metadata.originText === "string" ? body.invoice.metadata.originText : null,
             typeof body.invoice.metadata.destinationText === "string" ? body.invoice.metadata.destinationText : null],
@@ -293,19 +294,23 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
       if (!id.success) return problem(reply, 400, "INVALID_ID", "Identificador inválido.");
       const scopes = request.authorizationContext?.importerScopes ?? [];
       const po = await pool.query<Record<string, unknown>>(
-        `SELECT po.id, po.importer, po.external_number AS number, po.supplier_text AS "supplierText",
+        `SELECT po.id, po.importer, po.external_number AS number, po.supplier_entry_id AS "supplierEntryId",
+                coalesce(supplier.code, po.supplier_text) AS "supplierText", supplier.name AS "supplierName",
                 coalesce(po.order_date, CASE WHEN po.source_kind = 'MANUAL_TOTVS_REFERENCE'
                   THEN (po.created_at AT TIME ZONE 'America/Sao_Paulo')::date END)::text AS "orderDate",
                 po.notes, po.source_kind AS "sourceKind", po.version::text,
                 po.purchase_request_id AS "purchaseRequestId",
                 CASE WHEN sc.id IS NULL THEN NULL ELSE jsonb_build_object(
-                  'id', sc.id, 'scNumber', sc.sc_number, 'supplierText', sc.supplier_text,
+                  'id', sc.id, 'scNumber', sc.sc_number, 'supplierEntryId', sc.supplier_entry_id,
+                  'supplierText', coalesce(sc_supplier.code, sc.supplier_text), 'supplierName', sc_supplier.name,
                   'scDate', sc.sc_date::text,
                   'commercialPlanReceivedDate', sc.commercial_plan_received_date::text,
                   'requester', sc.requester, 'approvalDate', sc.approval_date::text,
                   'importer', sc.importer) END AS "purchaseRequest"
          FROM procurement.purchase_order po
+         LEFT JOIN catalog.entry supplier ON supplier.id = po.supplier_entry_id
          LEFT JOIN procurement.purchase_request sc ON sc.id = po.purchase_request_id
+         LEFT JOIN catalog.entry sc_supplier ON sc_supplier.id = sc.supplier_entry_id
          WHERE po.id = $1 AND po.importer = ANY($2::text[])`, [id.data, scopes]);
       if (!po.rows[0]) return problem(reply, 404, "RESOURCE_NOT_FOUND", "PO não encontrada.");
       const items = await pool.query<Record<string, unknown>>(

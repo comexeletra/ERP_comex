@@ -39,7 +39,11 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
       return problem(reply, 404, "RESOURCE_NOT_FOUND", "Importadora fora do seu escopo.");
     }
     const result = await pool.query(
-      `SELECT sc.id, sc.importer, sc.sc_number AS "scNumber", sc.supplier_text AS "supplierText", sc.sc_date::text AS "scDate",
+      `SELECT sc.id, sc.importer, sc.sc_number AS "scNumber", sc.supplier_entry_id AS "supplierEntryId",
+              coalesce((SELECT entry.code FROM catalog.entry entry WHERE entry.id = sc.supplier_entry_id),
+                sc.supplier_text) AS "supplierText",
+              (SELECT entry.name FROM catalog.entry entry WHERE entry.id = sc.supplier_entry_id) AS "supplierName",
+              sc.sc_date::text AS "scDate",
               sc.commercial_plan_received_date::text AS "commercialPlanReceivedDate",
               sc.requester, sc.approval_date::text AS "approvalDate", sc.version::text AS version,
               count(po.id)::int AS "purchaseOrderCount"
@@ -95,7 +99,11 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
       const claim = await receipt(client, actor.actor.userId, key, "PURCHASE_REQUEST", parsed.data);
       if (claim.existingId) {
         const existing = await client.query(
-          `SELECT id, importer, sc_number AS "scNumber", supplier_text AS "supplierText", sc_date::text AS "scDate",
+          `SELECT id, importer, sc_number AS "scNumber", supplier_entry_id AS "supplierEntryId",
+                  coalesce((SELECT entry.code FROM catalog.entry entry WHERE entry.id = supplier_entry_id),
+                    supplier_text) AS "supplierText",
+                  (SELECT entry.name FROM catalog.entry entry WHERE entry.id = supplier_entry_id) AS "supplierName",
+                  sc_date::text AS "scDate",
                   commercial_plan_received_date::text AS "commercialPlanReceivedDate",
                   requester, approval_date::text AS "approvalDate", version::text
            FROM procurement.purchase_request WHERE id = $1 AND importer = ANY($2::text[])`,
@@ -110,7 +118,8 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
            (id, importer, sc_number, normalized_sc_number, supplier_text, sc_date, commercial_plan_received_date,
             requester, approval_date, created_by)
          VALUES ($1,$2,$3::varchar,upper(btrim($3::varchar)),$4,$5,$6,$7,$8,$9)
-         RETURNING id, importer, sc_number AS "scNumber", supplier_text AS "supplierText", sc_date::text AS "scDate",
+         RETURNING id, importer, sc_number AS "scNumber", supplier_entry_id AS "supplierEntryId",
+                   supplier_text AS "supplierText", sc_date::text AS "scDate",
                    commercial_plan_received_date::text AS "commercialPlanReceivedDate",
                    requester, approval_date::text AS "approvalDate", version::text`,
         [id, parsed.data.importer, parsed.data.scNumber, parsed.data.supplierText, parsed.data.scDate,
@@ -140,7 +149,7 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
 
       return transaction(pool, reply, async client => {
         const found = await client.query<Record<string, unknown>>(
-          `SELECT id, importer, sc_number, supplier_text, sc_date::text AS sc_date,
+          `SELECT id, importer, sc_number, supplier_entry_id, supplier_text, sc_date::text AS sc_date,
                   commercial_plan_received_date::text AS commercial_plan_received_date,
                   requester, approval_date::text AS approval_date, version::text AS version
            FROM procurement.purchase_request
@@ -201,7 +210,8 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
                commercial_plan_received_date = $6, requester = $7, approval_date = $8,
                version = version + 1, updated_at = now()
            WHERE id = $1
-           RETURNING id, importer, sc_number AS "scNumber", supplier_text AS "supplierText", sc_date::text AS "scDate",
+           RETURNING id, importer, sc_number AS "scNumber", supplier_entry_id AS "supplierEntryId",
+                     supplier_text AS "supplierText", sc_date::text AS "scDate",
                      commercial_plan_received_date::text AS "commercialPlanReceivedDate",
                      requester, approval_date::text AS "approvalDate", version::text AS version`,
           [id.data, body.importer, body.scNumber, body.supplierText, body.scDate, body.commercialPlanReceivedDate, body.requester, body.approvalDate]);

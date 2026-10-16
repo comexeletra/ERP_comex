@@ -389,11 +389,14 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
       const id = z.uuid().safeParse(request.params.id);
       if (!id.success) return problem(reply, 400, "INVALID_ID", "PO inválida.");
       const scopes = request.authorizationContext?.importerScopes ?? [];
-        const po = await pool.query(`SELECT id, importer, external_number AS number, version::text,
-          supplier_text AS "supplierText",
+        const po = await pool.query(`SELECT po.id, po.importer, po.external_number AS number, po.version::text,
+          po.supplier_entry_id AS "supplierEntryId",
+          coalesce(supplier.code, po.supplier_text) AS "supplierText", supplier.name AS "supplierName",
           coalesce(order_date, CASE WHEN source_kind = 'MANUAL_TOTVS_REFERENCE'
-            THEN (created_at AT TIME ZONE 'America/Sao_Paulo')::date END)::text AS "orderDate"
-        FROM procurement.purchase_order WHERE id=$1 AND importer=ANY($2::text[])`, [id.data, scopes]);
+            THEN (po.created_at AT TIME ZONE 'America/Sao_Paulo')::date END)::text AS "orderDate"
+        FROM procurement.purchase_order po
+        LEFT JOIN catalog.entry supplier ON supplier.id = po.supplier_entry_id
+        WHERE po.id=$1 AND po.importer=ANY($2::text[])`, [id.data, scopes]);
       if (!po.rows[0]) return problem(reply, 404, "RESOURCE_NOT_FOUND", "PO não encontrada.");
       const items = await pool.query(`SELECT item.*, to_jsonb(item)->>'item_group' AS "group"
         FROM procurement.purchase_order_item item WHERE item.purchase_order_id=$1 ORDER BY item.line_number`, [id.data]);

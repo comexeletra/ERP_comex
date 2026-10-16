@@ -46,7 +46,9 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
     const scope = importerScopePredicate("process.importer", 1, request.authorizationContext?.importerScopes ?? []);
     const result = await pool.query<{ total_count: number; items: Record<string, unknown>[] }>(
       `WITH filtered AS MATERIALIZED (
-         SELECT process.id, process.ip_number, process.importer, process.supplier_text, process.logistics_status, process.lifecycle_status, process.quality_status,
+         SELECT process.id, process.ip_number, process.importer, process.supplier_entry_id,
+           coalesce(supplier.code, process.supplier_text) AS supplier_text, supplier.name AS supplier_name,
+           process.logistics_status, process.lifecycle_status, process.quality_status,
            (SELECT count(*)::int FROM procurement.process_purchase_order AS link
             JOIN procurement.purchase_order AS po ON po.id = link.purchase_order_id
             WHERE link.process_id = process.id AND po.importer = ANY($1::text[])) AS purchase_order_count,
@@ -57,6 +59,7 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
             WHERE allocation.process_id = process.id AND allocation.status = 'ACTIVE') AS operational_allocation_count,
            (SELECT count(*)::int FROM costs.process_cost AS cost WHERE cost.process_id = process.id) AS historical_cost_count
          FROM imports.import_process AS process
+         LEFT JOIN catalog.entry supplier ON supplier.id = process.supplier_entry_id
          WHERE ${scope.sql}
            AND ($2::text IS NULL OR strpos(lower(process.ip_number), lower($2)) > 0)
            AND ($3::text IS NULL OR strpos(lower(process.importer), lower($3)) > 0)
@@ -68,7 +71,8 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
        SELECT (SELECT count(*)::int FROM filtered) AS total_count,
          coalesce(jsonb_agg(jsonb_build_object(
            'id', page.id, 'ipNumber', page.ip_number, 'importer', page.importer,
-           'supplierText', page.supplier_text, 'logisticsStatus', page.logistics_status, 'lifecycleStatus', page.lifecycle_status,
+           'supplierEntryId', page.supplier_entry_id, 'supplierText', page.supplier_text, 'supplierName', page.supplier_name,
+           'logisticsStatus', page.logistics_status, 'lifecycleStatus', page.lifecycle_status,
            'qualityStatus', page.quality_status,
            'purchaseOrderCount', page.purchase_order_count,
            'historicalLineCount', page.historical_line_count,
@@ -87,7 +91,9 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
     const scope = importerScopePredicate("process.importer", 2, request.authorizationContext?.importerScopes ?? []);
     const result = await pool.query<{ item: Record<string, unknown> }>(
       `SELECT jsonb_build_object(
-         'id', process.id, 'ipNumber', process.ip_number, 'importer', process.importer, 'supplierText', process.supplier_text,
+         'id', process.id, 'ipNumber', process.ip_number, 'importer', process.importer,
+         'supplierEntryId', process.supplier_entry_id,
+         'supplierText', coalesce(supplier.code, process.supplier_text), 'supplierName', supplier.name,
          'logisticsStatus', process.logistics_status, 'qualityStatus', process.quality_status,
          'sourceKind', process.source_kind, 'priority', process.priority,
          'notes', process.notes, 'version', process.version::text,
@@ -126,7 +132,9 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
          JOIN migration.source_row AS source ON source.id = cost.source_row_id
          WHERE cost.process_id = process.id), '[]'::jsonb)
        ) AS item
-       FROM imports.import_process AS process WHERE process.id = $1 AND ${scope.sql} LIMIT 1`,
+       FROM imports.import_process AS process
+       LEFT JOIN catalog.entry supplier ON supplier.id = process.supplier_entry_id
+       WHERE process.id = $1 AND ${scope.sql} LIMIT 1`,
       [id.data, scope.values[0]],
     );
     if (!result.rowCount) return problem(reply, 404, "O IP não existe ou está fora do escopo autorizado.");

@@ -216,7 +216,7 @@ export default function PcmPage() {
         <div className="table-scroll"><table><thead><tr>
           <th>Número da SC</th><th>Fornecedor</th><th>Data da SC</th><th>Solicitante</th><th>Plano comercial recebido</th><th>Aprovação</th><th>POs vinculadas</th><th>Ação</th>
         </tr></thead><tbody>{items.map(item => <tr key={item.id}>
-          <td>{item.scNumber}</td><td>{item.supplierText}</td><td>{item.scDate ?? "—"}</td><td>{item.requester}</td><td>{item.commercialPlanReceivedDate ?? "—"}</td>
+          <td>{item.scNumber}</td><td>{item.supplierName ? `${item.supplierText} · ${item.supplierName}` : item.supplierText}</td><td>{item.scDate ?? "—"}</td><td>{item.requester}</td><td>{item.commercialPlanReceivedDate ?? "—"}</td>
           <td>{item.approvalDate ?? "Pendente"}</td><td>{item.purchaseOrderCount ?? 0}</td>
           <td><div className="sc-action-buttons">
             {canManage && <button className="button secondary" type="button" onClick={() => startEditing(item)}>Editar</button>}
