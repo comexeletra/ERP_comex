@@ -43,6 +43,9 @@ const operationalValueDeleteBody = z.object({
 const listQuery = z.object({ importer: z.string().trim().min(1).max(120).optional(),
   search: z.string().trim().max(120).optional(), page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25) }).strict();
+const globalListQuery = z.object({ search: z.string().trim().max(120).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25) }).strict();
 const historyQuery = z.object({ page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25) }).strict();
 const createBody = z.object({ importer: z.string().trim().min(1).max(120).optional(),
@@ -50,6 +53,7 @@ const createBody = z.object({ importer: z.string().trim().min(1).max(120).option
   name: z.string().trim().min(1).max(240), evidence: z.string().trim().min(8).max(2000),
   reason: z.string().trim().min(8).max(500),
   validFrom: z.iso.date().nullable().optional(), validTo: z.iso.date().nullable().optional() }).strict();
+const ncmCreateBody = createBody.omit({ importer: true });
 const productCreateBody = z.object({
   code: z.string().min(1).max(120).refine(value => value.trim().length > 0),
   name: z.string().trim().min(1).max(2000),
@@ -96,8 +100,9 @@ function canWriteKind(roles: readonly string[], kind: Kind): boolean {
 function dateValue(value: string | null | undefined): string | null {
   return value ?? null;
 }
-function validDates(kind: Kind, start: string | null, end: string | null): boolean {
-  return !(kind === "NCM" && !start) && (!end || (!!start && end >= start));
+function validDates(kind: Kind, start: string | null, end: string | null,
+  status: "ACTIVE" | "INACTIVE" = "ACTIVE"): boolean {
+  return !(kind === "NCM" && !start && status !== "INACTIVE") && (!end || (!!start && end >= start));
 }
 function validKey(value: unknown): value is string {
   return typeof value === "string" && /^[\x21-\x7e]{1,128}$/u.test(value);
@@ -441,90 +446,91 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
 
   for (const { path, kind, sourceColumn } of resources) {
     const base = `/api/v1/${path}`;
-    app.get(base, { config: permissionConfig("catalog.read") }, async (request, reply) => {
-      const parsed = listQuery.safeParse(request.query);
+    const scopeMode = kind === "NCM" ? "global" : "importer";
+    app.get(base, { config: permissionConfig("catalog.read", scopeMode) }, async (request, reply) => {
+      const parsed = (kind === "NCM" ? globalListQuery : listQuery).safeParse(request.query);
       if (!parsed.success) return problem(reply, 400, "INVALID_QUERY", "Filtros inválidos.");
-      const { importer, search, page, pageSize } = parsed.data;
+      const { search, page, pageSize } = parsed.data;
       const result = await pool.query<{ total_count: number; items: Entry[] }>(
         `WITH visible AS MATERIALIZED (
            SELECT entry.* FROM catalog.entry AS entry
-           WHERE entry.kind = $1
-             AND ((($1 IN ('SUPPLIER','PRODUCT')) AND entry.importer IS NULL)
-               OR ($1 = 'NCM' AND entry.importer = ANY($2::text[])
-                 AND ($3::text IS NULL OR entry.importer = $3)))
-             AND ($4::text IS NULL OR strpos(lower(entry.code), lower($4)) > 0
-                  OR strpos(lower(entry.name), lower($4)) > 0)
-         ), page AS (SELECT * FROM visible ORDER BY normalized_code, id LIMIT $5 OFFSET $6)
+           WHERE entry.kind = $1 AND entry.importer IS NULL
+             AND ($2::text IS NULL OR strpos(lower(entry.code), lower($2)) > 0
+                  OR strpos(lower(entry.name), lower($2)) > 0)
+         ), page AS (SELECT * FROM visible ORDER BY normalized_code, id LIMIT $3 OFFSET $4)
          SELECT (SELECT count(*)::int FROM visible) AS total_count,
                 coalesce(jsonb_agg(to_jsonb(page) - 'normalized_code' - 'created_by' - 'updated_by'
                   ORDER BY page.normalized_code, page.id) FILTER (WHERE page.id IS NOT NULL), '[]'::jsonb) AS items
          FROM page`,
-        [kind, request.authorizationContext?.importerScopes ?? [], importer ?? null, search || null,
-          pageSize, (page - 1) * pageSize]);
+        [kind, search || null, pageSize, (page - 1) * pageSize]);
       return { page, pageSize, totalCount: Number(result.rows[0]?.total_count ?? 0),
         items: (result.rows[0]?.items ?? []).map(present) };
     });
 
-    app.get(`${base}/candidates`, { config: permissionConfig("catalog.read") }, async (request, reply) => {
-      const parsed = listQuery.safeParse(request.query);
+    app.get(`${base}/candidates`, { config: permissionConfig("catalog.read", scopeMode) }, async (request, reply) => {
+      const parsed = (kind === "NCM" ? globalListQuery : listQuery).safeParse(request.query);
       if (!parsed.success) return problem(reply, 400, "INVALID_QUERY", "Filtros inválidos.");
-      const { importer, search, page, pageSize } = parsed.data;
-      const result = await pool.query<{ total_count: number; items: Array<{ importer: string;
+      const { search, page, pageSize } = parsed.data;
+      const importer = kind === "NCM" ? undefined : (parsed.data as z.infer<typeof listQuery>).importer;
+      const result = await pool.query<{ total_count: number; items: Array<{ importer: string | null;
         raw_code: string; observation_count: number; sample_source_row_id: string;
         sample_sheet_name: string; sample_row_number: number }> }>(
         `WITH candidates AS MATERIALIZED (
-           SELECT po.importer, obs.raw_values->>$1 AS raw_code,
+           SELECT CASE WHEN $5 = 'NCM' THEN NULL::text ELSE po.importer END AS importer,
+                  CASE WHEN $5 = 'NCM'
+                         AND regexp_replace(btrim(obs.raw_values->>$1), '[^0-9]', '', 'g') ~ '^[0-9]{8}$'
+                       THEN regexp_replace(btrim(obs.raw_values->>$1), '[^0-9]', '', 'g')
+                       ELSE btrim(obs.raw_values->>$1) END AS raw_code,
                   count(*)::int AS observation_count, min(obs.source_row_id::text) AS sample_source_row_id
            FROM procurement.po_line_observation AS obs
            JOIN procurement.purchase_order AS po ON po.id = obs.purchase_order_id
-           WHERE po.importer = ANY($2::text[])
-             AND ($3::text IS NULL OR po.importer = $3)
+           WHERE ($5 = 'NCM' OR po.importer = ANY($2::text[]))
+             AND ($5 = 'NCM' OR $3::text IS NULL OR po.importer = $3)
              AND nullif(btrim(obs.raw_values->>$1), '') IS NOT NULL
-             AND ($4::text IS NULL OR strpos(lower(obs.raw_values->>$1), lower($4)) > 0)
-           GROUP BY po.importer, obs.raw_values->>$1
+             AND ($4::text IS NULL OR strpos(lower(obs.raw_values->>$1), lower($4)) > 0
+                  OR ($5 = 'NCM' AND strpos(lower(regexp_replace(btrim(obs.raw_values->>$1), '[^0-9]', '', 'g')), lower($4)) > 0))
+           GROUP BY 1, 2
          ), page AS (
            SELECT candidate.*, source.sheet_name AS sample_sheet_name,
                   source.row_number AS sample_row_number
            FROM candidates AS candidate
            JOIN migration.source_row AS source ON source.id = candidate.sample_source_row_id::uuid
            ORDER BY candidate.observation_count DESC, candidate.importer, candidate.raw_code
-           LIMIT $5 OFFSET $6
+           LIMIT $6 OFFSET $7
          )
          SELECT (SELECT count(*)::int FROM candidates) AS total_count,
                 coalesce(jsonb_agg(to_jsonb(page) ORDER BY page.observation_count DESC, page.importer, page.raw_code)
-                  FILTER (WHERE page.importer IS NOT NULL), '[]'::jsonb) AS items FROM page`,
-        [sourceColumn, request.authorizationContext?.importerScopes ?? [], importer ?? null,
-          search || null, pageSize, (page - 1) * pageSize]);
+                  FILTER (WHERE page.sample_source_row_id IS NOT NULL), '[]'::jsonb) AS items FROM page`,
+         [sourceColumn, kind === "NCM" ? [] : request.authorizationContext?.importerScopes ?? [], importer ?? null,
+          search || null, kind, pageSize, (page - 1) * pageSize]);
       return { page, pageSize, totalCount: Number(result.rows[0]?.total_count ?? 0),
-        items: (result.rows[0]?.items ?? []).map(row => ({ importer: row.importer,
+        items: (result.rows[0]?.items ?? []).map(row => ({ ...(row.importer ? { importer: row.importer } : {}),
           rawCode: row.raw_code, observationCount: row.observation_count,
           sampleSourceRowId: row.sample_source_row_id, sampleSheetName: row.sample_sheet_name,
           sampleRowNumber: row.sample_row_number, status: "HISTORICAL_CANDIDATE",
-          eligibleFormat: kind !== "NCM" || /^[0-9]{8}$/u.test(row.raw_code.trim()) })) };
+          eligibleFormat: kind !== "NCM" || /^[0-9]{8}$/u.test(row.raw_code.replace(/\D/gu, "")) })) };
     });
 
-    app.get<{ Params: { id: string } }>(`${base}/:id`, { config: permissionConfig("catalog.read") }, async (request, reply) => {
+    app.get<{ Params: { id: string } }>(`${base}/:id`, { config: permissionConfig("catalog.read", scopeMode) }, async (request, reply) => {
       const id = z.uuid().safeParse(request.params.id);
       if (!id.success) return problem(reply, 400, "INVALID_ID", "Identificador inválido.");
       const result = await pool.query<Entry>(
-         `SELECT entry.* FROM catalog.entry AS entry WHERE entry.id = $1 AND entry.kind = $2
-         AND (($2 IN ('SUPPLIER','PRODUCT') AND entry.importer IS NULL)
-           OR ($2 = 'NCM' AND entry.importer = ANY($3::text[]))) LIMIT 1`,
-        [id.data, kind, request.authorizationContext?.importerScopes ?? []]);
+         `SELECT entry.* FROM catalog.entry AS entry
+          WHERE entry.id = $1 AND entry.kind = $2 AND entry.importer IS NULL LIMIT 1`,
+        [id.data, kind]);
       if (!result.rows[0]) return problem(reply, 404, "RESOURCE_NOT_FOUND", "Cadastro não encontrado.");
       reply.header("ETag", `"${result.rows[0].version}"`);
       return present(result.rows[0]);
     });
 
-    app.get<{ Params: { id: string } }>(`${base}/:id/history`, { config: permissionConfig("catalog.read") }, async (request, reply) => {
+    app.get<{ Params: { id: string } }>(`${base}/:id/history`, { config: permissionConfig("catalog.read", scopeMode) }, async (request, reply) => {
       const id = z.uuid().safeParse(request.params.id);
       const parsed = historyQuery.safeParse(request.query);
       if (!id.success || !parsed.success) return problem(reply, 400, "INVALID_QUERY", "Identificador ou paginação inválidos.");
       const visible = await pool.query<{ id: string }>(
-         `SELECT id FROM catalog.entry WHERE id = $1 AND kind = $2
-         AND (($2 IN ('SUPPLIER','PRODUCT') AND importer IS NULL)
-           OR ($2 = 'NCM' AND importer = ANY($3::text[]))) LIMIT 1`,
-        [id.data, kind, request.authorizationContext?.importerScopes ?? []]);
+         `SELECT id FROM catalog.entry
+          WHERE id = $1 AND kind = $2 AND importer IS NULL LIMIT 1`,
+        [id.data, kind]);
       if (!visible.rowCount) return problem(reply, 404, "RESOURCE_NOT_FOUND", "Cadastro não encontrado.");
       const { page, pageSize } = parsed.data;
       const history = await pool.query<{ total_count: number | string; items: Array<Record<string, unknown>> }>(
@@ -596,8 +602,9 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
       });
     }
 
-    app.post(base, { config: permissionConfig("catalog.write") }, async (request, reply) => {
-      const parsed = (kind === "PRODUCT" ? productCreateBody : createBody).safeParse(request.body);
+    app.post(base, { config: permissionConfig("catalog.write", scopeMode) }, async (request, reply) => {
+      const schema = kind === "PRODUCT" ? productCreateBody : kind === "NCM" ? ncmCreateBody : createBody;
+      const parsed = schema.safeParse(request.body);
       const key = request.headers["idempotency-key"];
       if (!parsed.success || !validKey(key)) return problem(reply, 400, "INVALID_CATALOG_ENTRY", "Informe cadastro, evidência, motivo e Idempotency-Key válidos.");
       const auth = request.authorizationContext;
@@ -609,10 +616,11 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
             evidence: product.evidence ?? "Cadastro global de produto pela aplica\u00e7\u00e3o.",
             reason: product.reason ?? "Cadastro global de produto.", validFrom: null, validTo: null };
         })()
-        : parsed.data as z.infer<typeof createBody>;
+        : kind === "NCM"
+          ? { ...(parsed.data as z.infer<typeof ncmCreateBody>), importer: undefined }
+          : parsed.data as z.infer<typeof createBody>;
       if (!auth || !actor) return problem(reply, 401, "AUTHENTICATION_REQUIRED", "Sessão ausente.");
       if (!canWriteKind(auth.roles, kind)) return problem(reply, 403, "PERMISSION_DENIED", "Perfil sem permissão para este cadastro.");
-      if (kind === "NCM" && (!body.importer || !hasScope(auth.importerScopes, body.importer))) return problem(reply, 404, "RESOURCE_NOT_FOUND", "Importador fora do escopo.");
       const code = body.code.trim();
       if ((kind === "NCM" && !/^[0-9]{8}$/u.test(code)) || !validDates(kind, dateValue(body.validFrom), dateValue(body.validTo))) {
         return problem(reply, 400, "INVALID_CATALOG_ENTRY", "Código ou vigência inválidos.");
@@ -627,27 +635,20 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
           [actor.userId, key]);
         if (existing.rows[0]) {
           const visible = await client.query<Entry>(
-            `SELECT * FROM catalog.entry WHERE id = $1 AND kind = $2
-             AND (($2 IN ('SUPPLIER','PRODUCT') AND importer IS NULL)
-               OR ($2 = 'NCM' AND importer = ANY($3::text[])))`,
-            [existing.rows[0].entry_id, kind, auth.importerScopes]);
+            `SELECT * FROM catalog.entry WHERE id = $1 AND kind = $2 AND importer IS NULL`,
+            [existing.rows[0].entry_id, kind]);
           await client.query("COMMIT");
           if (!visible.rows[0]) return problem(reply, 409, "IDEMPOTENCY_KEY_REUSED", "Chave já usada em outro cadastro.");
           if (existing.rows[0].payload_sha256.trim() !== hash) return problem(reply, 409, "IDEMPOTENCY_KEY_REUSED", "Chave já usada com outro conteúdo.");
           reply.header("ETag", `"${visible.rows[0].version}"`);
           return reply.code(200).send(present(visible.rows[0]));
         }
-        const importerExists = kind !== "NCM" ? { rowCount: 1 } : await client.query("SELECT 1 FROM procurement.purchase_order WHERE importer = $1 LIMIT 1", [body.importer]);
-        if (!importerExists.rowCount) {
-          await client.query("ROLLBACK");
-          return problem(reply, 404, "RESOURCE_NOT_FOUND", "Importador sem origem conhecida.");
-        }
         const id = randomUUID();
         const inserted = await client.query<Entry>(
           `INSERT INTO catalog.entry
             (id, importer, kind, code, name, evidence, valid_from, valid_to, created_by, updated_by)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9) RETURNING *`,
-          [id, kind === "SUPPLIER" || kind === "PRODUCT" ? null : body.importer, kind, code, body.name, body.evidence,
+          [id, null, kind, code, body.name, body.evidence,
             dateValue(body.validFrom), dateValue(body.validTo), actor.userId]);
         await client.query(
           `INSERT INTO catalog.entry_alias (id, entry_id, raw_code, source_kind, created_by)
@@ -664,18 +665,18 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
         await client.query(
           `INSERT INTO audit.outbox_message (event_id,event_type,aggregate_type,aggregate_id,payload,occurred_at)
            VALUES ($1,'catalog.entry.created','CATALOG_ENTRY',$2,$3::jsonb,now())`,
-          [randomUUID(), id, JSON.stringify({ id, importer: kind === "SUPPLIER" || kind === "PRODUCT" ? null : body.importer, kind, version: 1 })]);
+          [randomUUID(), id, JSON.stringify({ id, importer: null, kind, version: 1 })]);
         await client.query("COMMIT");
         reply.header("ETag", '"1"');
         return reply.code(201).send(present(inserted.rows[0]));
       } catch (error) {
         await client.query("ROLLBACK").catch(() => undefined);
-        if (isUniqueError(error)) return problem(reply, 409, "CATALOG_DUPLICATE", "Código já cadastrado neste importador.");
+        if (isUniqueError(error)) return problem(reply, 409, "CATALOG_DUPLICATE", "Código já cadastrado no catálogo.");
         throw error;
       } finally { client.release(); }
     });
 
-    app.patch<{ Params: { id: string } }>(`${base}/:id`, { config: permissionConfig("catalog.write") }, async (request, reply) => {
+    app.patch<{ Params: { id: string } }>(`${base}/:id`, { config: permissionConfig("catalog.write", scopeMode) }, async (request, reply) => {
       const id = z.uuid().safeParse(request.params.id);
       const parsed = (kind === "PRODUCT" ? productPatchBody : patchBody).safeParse(request.body);
       const rawExpected = request.headers["x-record-version"] ?? request.headers["if-match"];
@@ -694,10 +695,8 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
       try {
         await client.query("BEGIN");
         const found = await client.query<Entry>(
-          `SELECT * FROM catalog.entry WHERE id = $1 AND kind = $2
-           AND (($2 IN ('SUPPLIER','PRODUCT') AND importer IS NULL)
-             OR ($2 = 'NCM' AND importer = ANY($3::text[]))) FOR UPDATE`,
-          [id.data, kind, auth.importerScopes]);
+          `SELECT * FROM catalog.entry WHERE id = $1 AND kind = $2 AND importer IS NULL FOR UPDATE`,
+          [id.data, kind]);
         const before = found.rows[0];
         if (!before) { await client.query("ROLLBACK"); return problem(reply, 404, "RESOURCE_NOT_FOUND", "Cadastro não encontrado."); }
         if (`"${before.version}"` !== expected) { await client.query("ROLLBACK"); return problem(reply, 409, "VERSION_CONFLICT", "Cadastro alterado. Recarregue antes de salvar."); }
@@ -707,7 +706,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
         const evidence = body.evidence ?? before.evidence;
         const validFrom = body.validFrom === undefined ? before.valid_from : body.validFrom;
         const validTo = body.validTo === undefined ? before.valid_to : body.validTo;
-        if (!validDates(kind, validFrom, validTo)) {
+        if (!validDates(kind, validFrom, validTo, status)) {
           await client.query("ROLLBACK"); return problem(reply, 400, "INVALID_VALIDITY", "Vigência inválida.");
         }
         const changed = { name, status, evidence, valid_from: validFrom, valid_to: validTo };

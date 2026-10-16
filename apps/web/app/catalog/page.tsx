@@ -7,8 +7,7 @@ import { automaticAuditReason } from "../../lib/audit";
 import { formatUsDate, formatUsDateTime, parseUsDate } from "../../lib/date-format";
 
 type Resource = "products" | "ncms";
-type Importer = { code: string; historicalPoCount: number; status: string };
-type Candidate = { importer: string; rawCode: string; observationCount: number;
+type Candidate = { rawCode: string; observationCount: number;
   sampleSourceRowId: string; sampleSheetName: string; sampleRowNumber: number; eligibleFormat: boolean };
 type Entry = { id: string; importer: string | null; code: string; name: string; status: string;
   evidence: string; validFrom: string | null; validTo: string | null; version: string; provenance: string };
@@ -29,8 +28,6 @@ async function responseJson<T>(response: Response): Promise<T> {
 
 export default function CatalogPage() {
   const [resource, setResource] = useState<Resource>("products");
-  const [importers, setImporters] = useState<Importer[]>([]);
-  const [importer, setImporter] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [registered, setRegistered] = useState<Page<Entry>>();
@@ -53,17 +50,12 @@ export default function CatalogPage() {
   useEffect(() => {
     apiFetch("/auth/me").then(responseJson<{ roles: string[] }>)
       .then(data => setRoles(data.roles)).catch(() => undefined);
-    apiFetch("/api/v1/importers", { cache: "no-store" }).then(responseJson<{ items: Importer[] }>)
-      .then(data => { setImporters(data.items); })
-      .catch(reason => setError(reason instanceof Error ? reason.message : "Erro ao carregar importadores."));
   }, []);
 
   useEffect(() => {
-    if (resource === "ncms" && !importer) { setLoading(false); return; }
     const controller = new AbortController();
     setLoading(true); setError(undefined); setRegistered(undefined); setCandidates(undefined);
     const query = new URLSearchParams({ page: String(page), pageSize: "25" });
-    if (resource === "ncms") query.set("importer", importer);
     if (search) query.set("search", search);
     Promise.all([
       apiFetch("/api/v1/" + resource + "?" + query, { signal: controller.signal }).then(responseJson<Page<Entry>>),
@@ -72,11 +64,11 @@ export default function CatalogPage() {
       .catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Erro ao carregar cadastros."); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [resource, importer, search, page, refresh]);
+  }, [resource, search, page, refresh]);
 
   function chooseResource(next: Resource) { historyRequest.current += 1; setHistoryLoading(false); setResource(next); setPage(1); setDraft({ code: "", name: "", evidence: "", validFrom: "" }); setEditing(undefined); setHistoryEntry(undefined); setHistory(undefined); }
   function chooseCandidate(candidate: Candidate) {
-    setDraft({ code: candidate.rawCode, name: resource === "ncms" ? candidate.rawCode : "",
+    setDraft({ code: candidate.rawCode, name: "",
       evidence: `Origem ${candidate.sampleSheetName}, linha ${candidate.sampleRowNumber}; documento de confirmação: `,
       validFrom: "" });
     document.getElementById("catalog-create")?.scrollIntoView({ behavior: "smooth" });
@@ -91,7 +83,7 @@ export default function CatalogPage() {
       const response = await apiFetch(`/api/v1/${resource}`, { method: "POST",
         headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify(resource === "products" ? { code: draft.code, name: draft.name }
-          : { importer, code: draft.code, name: draft.name, evidence: draft.evidence, reason: automaticAuditReason, validFrom }) });
+          : { code: draft.code, name: draft.name, evidence: draft.evidence, reason: automaticAuditReason, validFrom }) });
       await responseJson<Entry>(response);
       setDraft({ code: "", name: "", evidence: "", validFrom: "" });
       setMessage("Cadastro registrado.");
@@ -149,9 +141,6 @@ export default function CatalogPage() {
     <section className="card catalog-controls" id="catalog-controls">
       <div role="group" aria-label="Tipo de cadastro">{(Object.keys(labels) as Resource[]).map(key =>
         <button type="button" key={key} className={`button ${resource === key ? "" : "secondary"}`} onClick={() => chooseResource(key)}>{labels[key]}</button>)}</div>
-      {resource === "ncms" && <label>Importador<select value={importer} onChange={event => { historyRequest.current += 1; setHistoryLoading(false); setImporter(event.target.value); setPage(1); setHistoryEntry(undefined); setHistory(undefined); }}>
-        {importers.map(value => <option key={value.code} value={value.code}>{value.code} - {value.historicalPoCount} POs historicas</option>)}
-      </select></label>}
       <label>Pesquisar código ou nome<input value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} /></label>
     </section>
     {error && <div className="notice error" role="alert">{error} <button className="button" type="button" onClick={() => setRefresh(value => value + 1)}>Tentar novamente</button></div>}
@@ -161,8 +150,8 @@ export default function CatalogPage() {
       <section className="card"><h2>{labels[resource]} cadastrados</h2>
         <p className="muted">{registered?.totalCount ?? 0} registros</p>
         {registered?.items.length === 0 && <p>Nenhum cadastro encontrado.</p>}
-        {!!registered?.items.length && <div className="table-scroll"><table><thead><tr><th>Código</th><th>Nome</th><th>Situação</th><th>Vigência</th><th>Versão</th><th>Ação</th></tr></thead><tbody>
-          {registered.items.map(entry => <tr key={entry.id}><td>{entry.code}</td><td>{entry.name}</td><td>{entry.status === "ACTIVE" ? "Ativo" : "Inativo"}</td>
+        {!!registered?.items.length && <div className="table-scroll"><table className="catalog-entry-table"><thead><tr><th>Código</th><th>Nome</th><th>Situação</th><th>Vigência</th><th>Versão</th><th>Ação</th></tr></thead><tbody>
+          {registered.items.map(entry => <tr key={entry.id}><td>{entry.code}</td><td className="catalog-entry-name">{entry.name}</td><td>{entry.status === "ACTIVE" ? "Ativo" : "Inativo"}</td>
             <td>{formatUsDate(entry.validFrom) || "—"}{entry.validTo ? ` a ${formatUsDate(entry.validTo)}` : ""}</td><td>{entry.version}</td>
             <td><button className="button secondary" type="button" aria-label={`Ver histórico de ${labels[resource].toLowerCase()} ${entry.code}`} disabled={historyLoading} onClick={() => void loadHistory(entry)}>Histórico</button>
               {canWrite && <button className="button secondary" type="button" aria-label={`Editar ${labels[resource].toLowerCase()} ${entry.code}`} onClick={() => startEdit(entry)}>Editar</button>}</td></tr>)}
@@ -199,11 +188,11 @@ export default function CatalogPage() {
     {canWrite && <section className="card" id="catalog-create"><h2>Registrar {labels[resource].toLowerCase()}</h2>
       <p className="muted">Informe os dados do novo cadastro.</p>
       <form className="stack-form" onSubmit={event => void create(event)}>
-        <label>{resource === "products" ? "C\u00f3digo do produto" : "C\u00f3digo ou nome da origem"}<input required maxLength={120} value={draft.code} onChange={event => setDraft(value => ({ ...value, code: event.target.value }))} /></label>
-        <label>{resource === "products" ? "Descri\u00e7\u00e3o do produto" : "Nome operacional"}<input required maxLength={resource === "products" ? 2000 : 240} value={draft.name} onChange={event => setDraft(value => ({ ...value, name: event.target.value }))} /></label>
+        <label>{resource === "products" ? "C\u00f3digo do produto" : "C\u00f3digo NCM"}<input required maxLength={resource === "products" ? 120 : 8} pattern={resource === "ncms" ? "[0-9]{8}" : undefined} value={draft.code} onChange={event => setDraft(value => ({ ...value, code: event.target.value }))} /></label>
+        <label>{resource === "products" ? "Descri\u00e7\u00e3o do produto" : "Descri\u00e7\u00e3o NCM"}<input required maxLength={resource === "products" ? 2000 : 240} value={draft.name} onChange={event => setDraft(value => ({ ...value, name: event.target.value }))} /></label>
         {resource === "ncms" && <label>Início da vigência (MM/DD/YYYY)<input required type="text" inputMode="numeric" maxLength={10} pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}" placeholder="MM/DD/YYYY" value={draft.validFrom} onChange={event => setDraft(value => ({ ...value, validFrom: event.target.value }))} /></label>}
         {resource === "ncms" && <label>Evid\u00eancia da revis\u00e3o<textarea required minLength={8} maxLength={2000} value={draft.evidence} onChange={event => setDraft(value => ({ ...value, evidence: event.target.value }))} placeholder="Documento, n\u00famero, data e onde conferir" /></label>}
-        <button className="button" disabled={saving || (resource === "ncms" && !importer)} type="submit">{saving ? "Salvando…" : "Registrar cadastro"}</button>
+        <button className="button" disabled={saving} type="submit">{saving ? "Salvando…" : "Registrar cadastro"}</button>
       </form>
     </section>}
     {editing && <section className="card"><h2>Editar {editing.code}</h2><p className="muted">Versão {editing.version}. Inativação preserva o histórico e o código original.</p>

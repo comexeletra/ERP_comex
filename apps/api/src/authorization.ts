@@ -90,7 +90,9 @@ export async function registerAuthorization(app: FastifyInstance, pool: Pool): P
 
     const permission = request.routeOptions.config.permission;
     const scopeMode = request.routeOptions.config.scopeMode;
-    if (!permission || !scopeMode || (scopeMode === "global" && permission !== "users.manage")) {
+    const globalPermissionAllowed = permission === "users.manage"
+      || permission === "catalog.read" || permission === "catalog.write";
+    if (!permission || !scopeMode || (scopeMode === "global" && !globalPermissionAllowed)) {
       return deny(reply, 403);
     }
 

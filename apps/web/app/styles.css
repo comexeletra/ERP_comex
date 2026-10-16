@@ -149,6 +149,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .table-scroll tbody tr:hover td { background: #eef7f7; }
 .table-scroll tbody tr:last-child td { border-bottom: 0; }
 .table-scroll .button { white-space: nowrap; }
+.table-scroll .catalog-entry-table { min-width: 980px; table-layout: fixed; width: 100%; }
+.catalog-entry-table th:nth-child(1) { width: 125px; }
+.catalog-entry-table th:nth-child(3) { width: 95px; }
+.catalog-entry-table th:nth-child(4) { width: 180px; }
+.catalog-entry-table th:nth-child(5) { width: 72px; }
+.catalog-entry-table th:nth-child(6) { width: 205px; }
+.catalog-entry-name { line-height: 1.45; overflow-wrap: anywhere; vertical-align: top; white-space: normal; }
 .sc-action-buttons { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; }
 .sc-list-filter { display: grid; font-weight: 700; gap: 8px; margin: 0 0 16px; max-width: 320px; }
 .sc-list-filter select { background: #fff; border: 1px solid #b7c5cf; border-radius: 7px; font: inherit; min-height: 42px; padding: 9px 10px; width: 100%; }
