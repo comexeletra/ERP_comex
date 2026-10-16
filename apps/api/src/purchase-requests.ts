@@ -12,6 +12,7 @@ const querySchema = z.object({ importer: z.string().trim().min(1).max(120).optio
 const createSchema = z.object({
   importer: z.string().trim().min(1).max(120),
   scNumber: z.string().trim().min(1).max(80),
+  supplierText: z.string().trim().min(1).max(240),
   scDate: date,
   commercialPlanReceivedDate: date,
   requester: z.string().trim().min(1).max(160),
@@ -21,6 +22,7 @@ const createSchema = z.object({
 const updateSchema = z.object({
   importer: z.string().trim().min(1).max(120),
   scNumber: z.string().trim().min(1).max(80),
+  supplierText: z.string().trim().min(1).max(240),
   scDate: date,
   commercialPlanReceivedDate: date,
   requester: z.string().trim().min(1).max(160),
@@ -37,7 +39,7 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
       return problem(reply, 404, "RESOURCE_NOT_FOUND", "Importadora fora do seu escopo.");
     }
     const result = await pool.query(
-      `SELECT sc.id, sc.importer, sc.sc_number AS "scNumber", sc.sc_date::text AS "scDate",
+      `SELECT sc.id, sc.importer, sc.sc_number AS "scNumber", sc.supplier_text AS "supplierText", sc.sc_date::text AS "scDate",
               sc.commercial_plan_received_date::text AS "commercialPlanReceivedDate",
               sc.requester, sc.approval_date::text AS "approvalDate", sc.version::text AS version,
               count(po.id)::int AS "purchaseOrderCount"
@@ -93,7 +95,7 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
       const claim = await receipt(client, actor.actor.userId, key, "PURCHASE_REQUEST", parsed.data);
       if (claim.existingId) {
         const existing = await client.query(
-          `SELECT id, importer, sc_number AS "scNumber", sc_date::text AS "scDate",
+          `SELECT id, importer, sc_number AS "scNumber", supplier_text AS "supplierText", sc_date::text AS "scDate",
                   commercial_plan_received_date::text AS "commercialPlanReceivedDate",
                   requester, approval_date::text AS "approvalDate", version::text
            FROM procurement.purchase_request WHERE id = $1 AND importer = ANY($2::text[])`,
@@ -105,13 +107,13 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
       const id = randomUUID();
       const inserted = await client.query(
         `INSERT INTO procurement.purchase_request
-           (id, importer, sc_number, normalized_sc_number, sc_date, commercial_plan_received_date,
+           (id, importer, sc_number, normalized_sc_number, supplier_text, sc_date, commercial_plan_received_date,
             requester, approval_date, created_by)
-         VALUES ($1,$2,$3::varchar,upper(btrim($3::varchar)),$4,$5,$6,$7,$8)
-         RETURNING id, importer, sc_number AS "scNumber", sc_date::text AS "scDate",
+         VALUES ($1,$2,$3::varchar,upper(btrim($3::varchar)),$4,$5,$6,$7,$8,$9)
+         RETURNING id, importer, sc_number AS "scNumber", supplier_text AS "supplierText", sc_date::text AS "scDate",
                    commercial_plan_received_date::text AS "commercialPlanReceivedDate",
                    requester, approval_date::text AS "approvalDate", version::text`,
-        [id, parsed.data.importer, parsed.data.scNumber, parsed.data.scDate,
+        [id, parsed.data.importer, parsed.data.scNumber, parsed.data.supplierText, parsed.data.scDate,
           parsed.data.commercialPlanReceivedDate, parsed.data.requester, parsed.data.approvalDate,
           `${actor.actor.issuer}#${actor.actor.subject}`]);
       await saveReceipt(client, actor.actor.userId, key, claim.hash, "PURCHASE_REQUEST", id);
@@ -138,7 +140,7 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
 
       return transaction(pool, reply, async client => {
         const found = await client.query<Record<string, unknown>>(
-          `SELECT id, importer, sc_number, sc_date::text AS sc_date,
+          `SELECT id, importer, sc_number, supplier_text, sc_date::text AS sc_date,
                   commercial_plan_received_date::text AS commercial_plan_received_date,
                   requester, approval_date::text AS approval_date, version::text AS version
            FROM procurement.purchase_request
@@ -151,6 +153,7 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
         const after = {
           importer: body.importer,
           scNumber: body.scNumber,
+          supplierText: body.supplierText,
           scDate: body.scDate,
           commercialPlanReceivedDate: body.commercialPlanReceivedDate,
           requester: body.requester,
@@ -159,6 +162,7 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
         const beforeAudit = {
           importer: before.importer,
           scNumber: before.sc_number,
+          supplierText: before.supplier_text,
           scDate: before.sc_date == null ? null : String(before.sc_date),
           commercialPlanReceivedDate: before.commercial_plan_received_date == null
             ? null : String(before.commercial_plan_received_date),
@@ -167,6 +171,7 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
         };
         if (body.importer === before.importer
           && body.scNumber === before.sc_number
+          && body.supplierText === before.supplier_text
           && body.scDate === beforeAudit.scDate
           && body.commercialPlanReceivedDate === beforeAudit.commercialPlanReceivedDate
           && body.requester === before.requester
@@ -192,14 +197,24 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
 
         const updated = await client.query(
           `UPDATE procurement.purchase_request
-           SET importer = $2, sc_number = $3, normalized_sc_number = upper(btrim($3::varchar)), sc_date = $4,
-               commercial_plan_received_date = $5, requester = $6, approval_date = $7,
+           SET importer = $2, sc_number = $3, normalized_sc_number = upper(btrim($3::varchar)), supplier_text = $4, sc_date = $5,
+               commercial_plan_received_date = $6, requester = $7, approval_date = $8,
                version = version + 1, updated_at = now()
            WHERE id = $1
-           RETURNING id, importer, sc_number AS "scNumber", sc_date::text AS "scDate",
+           RETURNING id, importer, sc_number AS "scNumber", supplier_text AS "supplierText", sc_date::text AS "scDate",
                      commercial_plan_received_date::text AS "commercialPlanReceivedDate",
                      requester, approval_date::text AS "approvalDate", version::text AS version`,
-          [id.data, body.importer, body.scNumber, body.scDate, body.commercialPlanReceivedDate, body.requester, body.approvalDate]);
+          [id.data, body.importer, body.scNumber, body.supplierText, body.scDate, body.commercialPlanReceivedDate, body.requester, body.approvalDate]);
+        const linkedOrders = await client.query<Record<string, unknown>>(
+          `SELECT id, supplier_text FROM procurement.purchase_order WHERE purchase_request_id = $1 FOR UPDATE`, [id.data]);
+        for (const po of linkedOrders.rows) {
+          if (po.supplier_text === body.supplierText) continue;
+          await client.query(
+            `UPDATE procurement.purchase_order SET supplier_text = $2, version = version + 1, updated_at = now() WHERE id = $1`,
+            [po.id, body.supplierText]);
+          await record(client, "PURCHASE_ORDER", String(po.id), "PURCHASE_ORDER", String(po.id), "UPDATE",
+            { supplierText: po.supplier_text }, { supplierText: body.supplierText }, actor.actor, body.reason);
+        }
         const syncedItems = await client.query<{ purchase_order_id: string }>(
           `UPDATE procurement.purchase_order_item AS item
            SET sc_number = CASE WHEN item.sc_number IS NOT DISTINCT FROM $2::varchar THEN $7::varchar ELSE item.sc_number END,

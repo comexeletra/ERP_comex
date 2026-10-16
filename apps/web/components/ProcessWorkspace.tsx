@@ -16,7 +16,7 @@ type PurchaseOrderItemChoice = { id: string; lineNumber: number; productCode: st
   orderedQuantity: string; remainingQuantity: string; unit: string | null; sourceStatus: string | null };
 type OperationalAllocation = { id: string; poId: string; poNumber: string; productCode: string; quantity: string;
   unit: string; poItemRemainingQuantity?: string };
-type Process = { id: string; ipNumber: string; importer: string; logisticsStatus: string | null;
+type Process = { id: string; ipNumber: string; importer: string; supplierText: string | null; logisticsStatus: string | null;
   qualityStatus: string; sourceKind: string; priority: string | null; notes: string;
   version: string; lifecycleStatus?: "OPEN" | "CLOSED"; closedAt: string | null;
   closedBy: string | null; closeReason: string | null;
@@ -273,7 +273,7 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
     {loading && <p role="status">Carregando IP…</p>}
     {error && <div className="notice error" role="alert"><p>{error}</p><button className="button" onClick={() => setRetry(value => value + 1)}>Tentar novamente</button></div>}
     {!loading && !error && process && lines && <>
-      <header className="page-header"><p className="eyebrow">IP · {process.importer}</p><h1>{process.ipNumber}</h1><p>Status logístico: {process.logisticsStatus ?? "não informado"}. Ciclo do IP: {process.lifecycleStatus === "CLOSED" ? "encerrado" : process.lifecycleStatus === "OPEN" ? "aberto" : "indisponível"}. Qualidade: {process.qualityStatus}. Origem: {process.sourceKind}.</p></header>
+      <header className="page-header"><p className="eyebrow">IP · {process.importer} · Fornecedor: {process.supplierText ?? "não informado"}</p><h1>{process.ipNumber}</h1><p>Status logístico: {process.logisticsStatus ?? "não informado"}. Ciclo do IP: {process.lifecycleStatus === "CLOSED" ? "encerrado" : process.lifecycleStatus === "OPEN" ? "aberto" : "indisponível"}. Qualidade: {process.qualityStatus}. Origem: {process.sourceKind}.</p></header>
       {compatibilityWarning && <p className="notice" role="status">{compatibilityWarning}</p>}
       <section className="metric-grid"><Metric label="POs vinculadas" value={process.purchaseOrders.length} /><Metric label="Linhas históricas" value={lines.totalCount} /><Metric label="Custos históricos" value={process.historicalCosts.length} /></section>
       <section className="card"><h2>Dados operacionais do IP</h2>

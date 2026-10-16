@@ -46,7 +46,7 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
     const scope = importerScopePredicate("process.importer", 1, request.authorizationContext?.importerScopes ?? []);
     const result = await pool.query<{ total_count: number; items: Record<string, unknown>[] }>(
       `WITH filtered AS MATERIALIZED (
-         SELECT process.id, process.ip_number, process.importer, process.logistics_status, process.lifecycle_status, process.quality_status,
+         SELECT process.id, process.ip_number, process.importer, process.supplier_text, process.logistics_status, process.lifecycle_status, process.quality_status,
            (SELECT count(*)::int FROM procurement.process_purchase_order AS link
             JOIN procurement.purchase_order AS po ON po.id = link.purchase_order_id
             WHERE link.process_id = process.id AND po.importer = ANY($1::text[])) AS purchase_order_count,
@@ -68,7 +68,7 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
        SELECT (SELECT count(*)::int FROM filtered) AS total_count,
          coalesce(jsonb_agg(jsonb_build_object(
            'id', page.id, 'ipNumber', page.ip_number, 'importer', page.importer,
-           'logisticsStatus', page.logistics_status, 'lifecycleStatus', page.lifecycle_status,
+           'supplierText', page.supplier_text, 'logisticsStatus', page.logistics_status, 'lifecycleStatus', page.lifecycle_status,
            'qualityStatus', page.quality_status,
            'purchaseOrderCount', page.purchase_order_count,
            'historicalLineCount', page.historical_line_count,
@@ -87,7 +87,7 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
     const scope = importerScopePredicate("process.importer", 2, request.authorizationContext?.importerScopes ?? []);
     const result = await pool.query<{ item: Record<string, unknown> }>(
       `SELECT jsonb_build_object(
-         'id', process.id, 'ipNumber', process.ip_number, 'importer', process.importer,
+         'id', process.id, 'ipNumber', process.ip_number, 'importer', process.importer, 'supplierText', process.supplier_text,
          'logisticsStatus', process.logistics_status, 'qualityStatus', process.quality_status,
          'sourceKind', process.source_kind, 'priority', process.priority,
          'notes', process.notes, 'version', process.version::text,

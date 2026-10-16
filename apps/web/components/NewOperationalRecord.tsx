@@ -163,10 +163,10 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
   }, []);
 
   useEffect(() => {
-    if (!importer || kind !== "po") { setSuppliers([]); setProducts([]); return; }
+    if (!importer) { setSuppliers([]); setProducts([]); return; }
     let active = true;
     setCatalogLoading(true);
-    Promise.all([loadCatalogChoices("suppliers", importer), loadCatalogChoices("products", importer)])
+    Promise.all([loadCatalogChoices("suppliers", importer), kind === "po" ? loadCatalogChoices("products", importer) : Promise.resolve([])])
       .then(([supplierItems, productItems]) => {
         if (!active) return;
         setSuppliers(supplierItems);
@@ -212,6 +212,8 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
     try {
       const draft = await parseChinaInvoiceXlsx(file);
       setInvoiceDraft(draft);
+      const supplierOptions = await loadCatalogChoices("suppliers", importer);
+      setSuppliers(supplierOptions);
       const lineIssues = draft.lines.flatMap(line => line.issues.map(issue => `Linha ${line.sourceRow}: ${issue}`));
       if (lineIssues.length) { setInvoiceError(lineIssues.join(" ")); return; }
       const normalized = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "");
@@ -227,8 +229,11 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
           const response = await apiFetch(`/api/v1/purchase-orders?${query}`, { cache: "no-store" });
           const list = await readResponse<{ items: Array<{ id: string; number: string }> }>(response);
           const records = await Promise.all(list.items.filter(po => normalized(po.number) === key).map(async po => {
-            const detail = await readResponse<{ items: InvoiceItemCandidate[] }>(await apiFetch(`/api/v1/purchase-orders/${po.id}/operational`, { cache: "no-store" }));
-            return detail.items;
+            const detail = await readResponse<{ supplierText: string | null; items: InvoiceItemCandidate[] }>(await apiFetch(`/api/v1/purchase-orders/${po.id}/operational`, { cache: "no-store" }));
+            const supplier = supplierOptions.find(option => option.code.toLocaleUpperCase("en-US") === detail.supplierText?.trim().toLocaleUpperCase("en-US"));
+            const matchesExporter = [detail.supplierText, supplier?.name].some(value =>
+              value?.trim().toLocaleUpperCase("en-US") === draft.exporterText.trim().toLocaleUpperCase("en-US"));
+            return matchesExporter ? detail.items : [];
           }));
           return records.flat().filter(item => Number(item.remainingQuantity) > 0);
         })());
@@ -256,9 +261,13 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
         if (!byPo.has(key)) byPo.set(key, (async () => {
           const query = new URLSearchParams({ number: match.poNumber, importer, page: "1", pageSize: "200" });
           const list = await readResponse<{ items: Array<{ id: string; number: string }> }>(await apiFetch(`/api/v1/purchase-orders?${query}`, { cache: "no-store" }));
-          const records = await Promise.all(list.items.filter(po => normalized(po.number) === key).map(async po => readResponse<{ items: InvoiceItemCandidate[] }>(
+          const records = await Promise.all(list.items.filter(po => normalized(po.number) === key).map(async po => readResponse<{ supplierText: string | null; items: InvoiceItemCandidate[] }>(
             await apiFetch(`/api/v1/purchase-orders/${po.id}/operational`, { cache: "no-store" }))));
-          return records.flatMap(record => record.items).filter(item => Number(item.remainingQuantity) > 0);
+          const exporter = invoiceDraft?.exporterText.trim().toLocaleUpperCase("en-US") ?? "";
+          return records.filter(record => {
+            const supplier = suppliers.find(option => option.code.toLocaleUpperCase("en-US") === record.supplierText?.trim().toLocaleUpperCase("en-US"));
+            return [record.supplierText, supplier?.name].some(value => value?.trim().toLocaleUpperCase("en-US") === exporter);
+          }).flatMap(record => record.items).filter(item => Number(item.remainingQuantity) > 0);
         })());
       }
       const refreshed = await Promise.all(invoiceMatches.map(async match => {
@@ -300,6 +309,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
   function selectPurchaseRequest(id: string) {
     setPurchaseRequestId(id);
     const selected = purchaseRequests.find(choice => choice.id === id);
+    if (selected?.supplierText) setSupplier(selected.supplierText);
     if (selected) setImporter(selected.importer);
     setCommonItemFields(current => ({ ...current, ...purchaseRequestOperationalFields(selected) }));
   }
@@ -449,7 +459,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
         if (invoiceMatches.length === 0 || invoiceMatches.some(match => !match.itemId))
           throw new Error("Revise e selecione o item de PO para todas as linhas da invoice.");
         const payload = {
-          process: { importer, ipNumber: number, logisticsStatus: status || null,
+          process: { importer, supplierText: invoiceDraft.exporterText, ipNumber: number, logisticsStatus: status || null,
             priority: priority || null, notes, reason: automaticAuditReason },
           invoice: { fileName: invoiceDraft.fileName, number: invoiceDraft.invoiceNumber,
             issueDate: /^\d{4}-\d{2}-\d{2}$/u.test(invoiceDraft.invoiceDate) ? invoiceDraft.invoiceDate : null,
@@ -484,7 +494,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
       const response = await apiFetch("/api/v1/processes", {
         method: "POST",
         headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({ importer, ipNumber: number, logisticsStatus: status || null,
+        body: JSON.stringify({ importer, supplierText: supplier || null, ipNumber: number, logisticsStatus: status || null,
           priority: priority || null, notes, reason: automaticAuditReason }),
       });
       const result = await readResponse<{ id: string }>(response);
@@ -521,9 +531,9 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
               <option value="">Selecione</option>{importers.map(value => <option key={value} value={value}>{value}</option>)}
             </select>{purchaseRequestId ? <small className="po-field-hint">Definida pela SC vinculada.</small> : null}</label>
             <label>Número da PO no TOTVS<input required maxLength={80} value={number} onChange={event => setNumber(event.target.value)} /></label>
-            <label>Fornecedor<select value={supplier} onChange={event => setSupplier(event.target.value)}>
+            <label>Fornecedor<select required disabled={Boolean(purchaseRequestId)} value={supplier} onChange={event => setSupplier(event.target.value)}>
               <option value="">Selecione</option>{suppliers.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
-            </select></label>
+            </select>{purchaseRequestId ? <small className="po-field-hint">Preenchido pela SC vinculada.</small> : null}</label>
             <label>Data da PO<input type="text" value="Automática ao salvar" readOnly aria-readonly="true" /></label>
           </div>
           <label>Observações do pedido<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
@@ -652,6 +662,10 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
           {invoiceError && <p className="notice error" role="alert">{invoiceError}</p>}
         </div>
         <div className="ip-entry-grid">
+        {invoiceDraft ? <label>Supplier (Exporter da invoice)<input readOnly value={invoiceDraft.exporterText} /></label> :
+          <label>Supplier<select required value={supplier} onChange={event => setSupplier(event.target.value)}>
+            <option value="">Selecione</option>{suppliers.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
+          </select></label>}
         <label>Importadora<select required value={importer} onChange={event => setImporter(event.target.value)}>
           <option value="">Selecione</option>{importers.map(value => <option key={value} value={value}>{value}</option>)}
         </select></label>

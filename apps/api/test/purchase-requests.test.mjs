@@ -19,7 +19,7 @@ async function createApp(t) {
       if (sql.includes("FROM procurement.purchase_request sc")) {
         assert.deepEqual(values[0], ["ELETRA MATRIZ"]);
         assert.ok(values[1] === "ELETRA MATRIZ" || values[1] === null);
-        return { rows: [{ id: scId, importer: "ELETRA MATRIZ", scNumber: "SC-100", scDate: "2026-10-07", requester: "Ana",
+        return { rows: [{ id: scId, importer: "ELETRA MATRIZ", scNumber: "SC-100", supplierText: "SUP-100", scDate: "2026-10-07", requester: "Ana",
           commercialPlanReceivedDate: "2026-10-10", approvalDate: null, version: "1", purchaseOrderCount: 0 }] };
       }
       throw new Error(`Unexpected pool query: ${sql}`);
@@ -34,8 +34,8 @@ async function createApp(t) {
           if (sql.includes("SELECT payload_sha256, resource_type, resource_id")) return { rows: [] };
           if (sql.includes("INSERT INTO procurement.purchase_request")) {
             assert.match(sql, /VALUES \(\$1,\$2,\$3::varchar,upper\(btrim\(\$3::varchar\)\)/);
-            return { rows: [{ id: scId, importer: values[1], scNumber: values[2], scDate: values[3],
-              commercialPlanReceivedDate: values[4], requester: values[5], approvalDate: values[6], version: "1" }] };
+            return { rows: [{ id: scId, importer: values[1], scNumber: values[2], supplierText: values[3], scDate: values[4],
+              commercialPlanReceivedDate: values[5], requester: values[6], approvalDate: values[7], version: "1" }] };
           }
           return { rows: [], rowCount: 1 };
         },
@@ -71,7 +71,7 @@ test("PCM manages SCs; PO writers can read them; importer scope is enforced", as
   assert.equal((await call("reader", "POST", "/api/v1/purchase-requests", {},
     { "idempotency-key": "reader" })).statusCode, 403);
 
-  const payload = { importer: "ELETRA MATRIZ", scNumber: "SC-200", scDate: "2026-10-11", requester: "Bruno",
+  const payload = { importer: "ELETRA MATRIZ", scNumber: "SC-200", supplierText: "SUP-200", scDate: "2026-10-11", requester: "Bruno",
     commercialPlanReceivedDate: null, approvalDate: "2026-10-12", reason: "Cadastro validado" };
   const created = await call("pcm", "POST", "/api/v1/purchase-requests", payload,
     { "idempotency-key": "pcm-sc-200" });

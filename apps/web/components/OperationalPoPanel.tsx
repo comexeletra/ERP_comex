@@ -29,7 +29,7 @@ type Allocation = { id: string; itemId: string; processId: string; ipNumber: str
 type OperationalPo = { id: string; importer: string; number: string; supplierText: string | null;
   orderDate: string | null; notes: string; sourceKind: string; version: string;
   purchaseRequestId: string | null;
-  purchaseRequest: { id: string; importer: string; scNumber: string; scDate: string | null; commercialPlanReceivedDate: string | null;
+  purchaseRequest: { id: string; importer: string; scNumber: string; supplierText: string | null; scDate: string | null; commercialPlanReceivedDate: string | null;
     requester: string; approvalDate: string | null } | null;
   items: Item[]; allocations: Allocation[] };
 type FollowupItem = { id: string } & Record<string, unknown>;
@@ -318,6 +318,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   function selectPurchaseRequest(value: string) {
     setPurchaseRequestId(value);
     const selected = purchaseRequests.find(choice => choice.id === value);
+    if (selected?.supplierText) setSupplier(selected.supplierText);
     for (const [key, fieldValue] of Object.entries(purchaseRequestOperationalFields(selected))) {
       updateCommonField(key, fieldValue);
     }
@@ -459,10 +460,10 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
           <form className="stack-form" onSubmit={saveHeader}>
             <label>Número da PO no TOTVS<input required maxLength={80} disabled={data.sourceKind !== "MANUAL_TOTVS_REFERENCE"}
               value={number} onChange={event => setNumber(event.target.value)} /></label>
-            <label>Fornecedor<select value={supplier} onChange={event => setSupplier(event.target.value)}>
+            <label>Fornecedor<select required disabled={Boolean(purchaseRequestId)} value={supplier} onChange={event => setSupplier(event.target.value)}>
               <option value="">Selecione</option>{!suppliers.some(item => item.code === supplier) && supplier && <option value={supplier}>{supplier} (valor atual)</option>}
               {suppliers.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
-            </select></label>
+            </select>{purchaseRequestId ? <small className="po-field-hint">Preenchido pela SC vinculada.</small> : null}</label>
             <label>Data da PO<input type="date" value={orderDate} readOnly aria-readonly="true" /></label>
             <PurchaseRequestSelect importer={data.importer} value={purchaseRequestId} choices={purchaseRequests}
               onChange={selectPurchaseRequest} />

@@ -7,6 +7,7 @@ export type PurchaseRequestChoice = {
   id: string;
   importer: string;
   scNumber: string;
+  supplierText: string | null;
   scDate: string | null;
   commercialPlanReceivedDate: string | null;
   requester: string;

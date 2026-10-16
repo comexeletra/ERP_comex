@@ -17,14 +17,17 @@ const poFields = z.object({
 }).strict();
 export const createPo = poFields.extend({
   importer: z.string().trim().min(1).max(120),
+  supplierText: z.string().trim().min(1).max(240),
 });
 const processFields = z.object({
   ipNumber: z.string().trim().min(1).max(80),
+  supplierText: nullableText(240).optional(),
   logisticsStatus: nullableText(40), priority: nullableText(20),
   notes: z.string().trim().max(4000), reason: z.string().trim().min(3).max(1000),
 }).strict();
 const createProcess = processFields.extend({
   importer: z.string().trim().min(1).max(120),
+  supplierText: z.string().trim().min(1).max(240),
 });
 const invoiceImport = z.object({
   process: createProcess,
@@ -208,10 +211,18 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           Math.abs(total - (assignedTotals.get(itemId) ?? Number.NaN)) > 0.00000001)) {
           throw new BusinessError(400, "INVOICE_ALLOCATION_MISMATCH", "As quantidades distribuídas não conferem com as associações da invoice.");
         }
-        const matchedItems = await client.query<{ id: string; purchase_order_id: string; number: string; importer: string; quantity: string; product_code: string }>(
+        const exporterText = typeof body.invoice.metadata.exporterText === "string"
+          ? body.invoice.metadata.exporterText.trim() : "";
+        if (!exporterText || body.process.supplierText?.trim() !== exporterText) {
+          throw new BusinessError(400, "INVOICE_EXPORTER_REQUIRED", "O supplier do IP deve corresponder ao campo Exporter da invoice.");
+        }
+        const matchedItems = await client.query<{ id: string; purchase_order_id: string; number: string; importer: string; quantity: string; product_code: string; supplier_text: string | null; supplier_name: string | null }>(
           `SELECT item.id, item.purchase_order_id, po.external_number AS number, po.importer,
-                  item.ordered_quantity::text AS quantity, item.product_code
+                  item.ordered_quantity::text AS quantity, item.product_code, po.supplier_text,
+                  supplier.name AS supplier_name
            FROM procurement.purchase_order_item item JOIN procurement.purchase_order po ON po.id = item.purchase_order_id
+           LEFT JOIN catalog.entry supplier ON supplier.importer = po.importer AND supplier.kind = 'SUPPLIER'
+             AND upper(btrim(supplier.code)) = upper(btrim(po.supplier_text)) AND supplier.status = 'ACTIVE'
            WHERE item.id = ANY($1::uuid[]) ORDER BY item.id FOR UPDATE OF item, po`, [[...aggregated.keys()]],
         );
         if (matchedItems.rowCount !== aggregated.size || matchedItems.rows.some(item => item.importer !== body.process.importer)) {
@@ -219,6 +230,12 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         }
         const byItemId = new Map(matchedItems.rows.map(item => [item.id, item]));
         const normalizePo = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "");
+        const normalizeSupplier = (value: string | null) => value?.trim().toLocaleUpperCase("en-US") ?? "";
+        if (matchedItems.rows.some(item => !item.supplier_text ||
+          (normalizeSupplier(item.supplier_text) !== normalizeSupplier(exporterText)
+            && normalizeSupplier(item.supplier_name) !== normalizeSupplier(exporterText)))) {
+          throw new BusinessError(409, "PO_SUPPLIER_MISMATCH", "O Exporter da invoice não corresponde ao fornecedor cadastrado na SC/PO de uma ou mais POs selecionadas.");
+        }
         for (const assignment of invoiceAssignments.data) {
           const item = byItemId.get(assignment.itemId);
           if (!item || item.product_code !== assignment.productCode || normalizePo(item.number) !== normalizePo(assignment.poNumber)) {
@@ -228,11 +245,12 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const processId = randomUUID();
         await client.query(
           `INSERT INTO imports.import_process
-           (id,importer,ip_number,normalized_ip_number,logistics_status,priority,notes,source_kind,version,
+           (id,importer,ip_number,normalized_ip_number,logistics_status,priority,notes,source_kind,version,supplier_text,
             incoterm,port_loading,port_discharge)
-           VALUES ($1,$2,$3,upper($3),$4,$5,$6,'CHINA_INVOICE',1,$7,$8,$9)`,
+           VALUES ($1,$2,$3,upper($3),$4,$5,$6,'CHINA_INVOICE',1,$7,$8,$9,$10)`,
           [processId, body.process.importer, body.process.ipNumber, body.process.logisticsStatus,
-            body.process.priority, body.process.notes, typeof body.invoice.metadata.incoterm === "string" ? body.invoice.metadata.incoterm : null,
+            body.process.priority, body.process.notes, exporterText,
+            typeof body.invoice.metadata.incoterm === "string" ? body.invoice.metadata.incoterm : null,
             typeof body.invoice.metadata.originText === "string" ? body.invoice.metadata.originText : null,
             typeof body.invoice.metadata.destinationText === "string" ? body.invoice.metadata.destinationText : null],
         );
@@ -281,7 +299,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
                 po.notes, po.source_kind AS "sourceKind", po.version::text,
                 po.purchase_request_id AS "purchaseRequestId",
                 CASE WHEN sc.id IS NULL THEN NULL ELSE jsonb_build_object(
-                  'id', sc.id, 'scNumber', sc.sc_number,
+                  'id', sc.id, 'scNumber', sc.sc_number, 'supplierText', sc.supplier_text,
                   'scDate', sc.sc_date::text,
                   'commercialPlanReceivedDate', sc.commercial_plan_received_date::text,
                   'requester', sc.requester, 'approvalDate', sc.approval_date::text,
@@ -465,9 +483,9 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const id = randomUUID();
         await client.query(
           `INSERT INTO imports.import_process
-           (id,importer,ip_number,normalized_ip_number,logistics_status,priority,notes,source_kind,version)
-           VALUES ($1,$2,$3::text,upper($3::text),$4,$5,$6,'MANUAL',1)`,
-          [id, body.importer, body.ipNumber, body.logisticsStatus, body.priority, body.notes]);
+           (id,importer,ip_number,normalized_ip_number,logistics_status,priority,notes,source_kind,version,supplier_text)
+           VALUES ($1,$2,$3::text,upper($3::text),$4,$5,$6,'MANUAL',1,$7)`,
+          [id, body.importer, body.ipNumber, body.logisticsStatus, body.priority, body.notes, body.supplierText]);
         await saveReceipt(client, auth.actor.userId, key, claim.hash, "IP", id);
         await record(client, "IMPORT_PROCESS", id, "IMPORT_PROCESS", id, "CREATE", null, body, auth.actor, body.reason);
         return { id, ipNumber: body.ipNumber, version: "1" };
@@ -589,10 +607,11 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         }
         const updated = await client.query<{ version: string }>(
           `UPDATE imports.import_process SET importer = $2, logistics_status = $3, priority = $4,
-            notes = $5, ip_number = $6::text, normalized_ip_number = upper($6::text),
+            notes = $5, ip_number = $6::text, normalized_ip_number = upper($6::text), supplier_text = $7,
             version = version + 1, updated_at = now()
            WHERE id = $1 RETURNING version::text`,
-          [id.data, body.importer, body.logisticsStatus, body.priority, body.notes, body.ipNumber]);
+          [id.data, body.importer, body.logisticsStatus, body.priority, body.notes, body.ipNumber,
+            body.supplierText ?? found.rows[0].supplier_text ?? null]);
         await record(client, "IMPORT_PROCESS", id.data, "IMPORT_PROCESS", id.data, "UPDATE",
           found.rows[0], body, auth.actor, body.reason);
         return { id: id.data, version: updated.rows[0].version };

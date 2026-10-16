@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, readApiJson } from "../../lib/api";
 import { automaticAuditReason } from "../../lib/audit";
 import { PurchaseRequestChoice } from "../../components/PurchaseRequestSelect";
-import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "../../components/OperationalOptionSelect";
+import { CatalogChoice, loadCatalogChoices, loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "../../components/OperationalOptionSelect";
 
 type Importer = { code: string };
 type PurchaseRequestHistory = {
@@ -18,6 +18,7 @@ type PurchaseRequestHistory = {
 };
 
 const historyFields = [
+  ["supplierText", "Fornecedor"],
   ["importer", "Importadora"], ["scNumber", "Número da SC"], ["scDate", "Data da SC"],
   ["requester", "Solicitante"], ["commercialPlanReceivedDate", "Recebimento do plano comercial"],
   ["approvalDate", "Data de aprovação"],
@@ -45,6 +46,8 @@ export default function PcmPage() {
   const [items, setItems] = useState<PurchaseRequestChoice[]>([]);
   const [purchaseRequestsLoading, setPurchaseRequestsLoading] = useState(true);
   const [options, setOptions] = useState<OperationalOption[]>([]);
+  const [suppliers, setSuppliers] = useState<CatalogChoice[]>([]);
+  const [supplierText, setSupplierText] = useState("");
   const [scNumber, setScNumber] = useState("");
   const [scDate, setScDate] = useState("");
   const [requester, setRequester] = useState("");
@@ -93,6 +96,17 @@ export default function PcmPage() {
     return () => controller.abort();
   }, [importerFilter]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    setSuppliers([]);
+    if (importer) loadCatalogChoices("suppliers", importer).then(values => {
+      if (!controller.signal.aborted) setSuppliers(values);
+    }).catch(cause => {
+      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "NÃ£o foi possÃ­vel carregar os fornecedores.");
+    });
+    return () => controller.abort();
+  }, [importer]);
+
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true); setError(""); setNotice("");
@@ -101,19 +115,19 @@ export default function PcmPage() {
         ? await apiFetch(`/api/v1/purchase-requests/${editingId}`, {
           method: "PATCH",
           headers: { "content-type": "application/json", "X-Record-Version": editingVersion },
-          body: JSON.stringify({ importer, scNumber, scDate: scDate || null, requester,
+          body: JSON.stringify({ importer, scNumber, supplierText, scDate: scDate || null, requester,
             commercialPlanReceivedDate: commercialPlanReceivedDate || null,
             approvalDate: approvalDate || null, reason: editReason }),
         })
         : await apiFetch("/api/v1/purchase-requests", {
           method: "POST",
           headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
-          body: JSON.stringify({ importer, scNumber, scDate: scDate || null, requester,
+          body: JSON.stringify({ importer, scNumber, supplierText, scDate: scDate || null, requester,
             commercialPlanReceivedDate: commercialPlanReceivedDate || null,
             approvalDate: approvalDate || null, reason: automaticAuditReason }),
         });
       const saved = await readApiJson<PurchaseRequestChoice>(response);
-      setScNumber(""); setScDate(""); setRequester(""); setCommercialPlanReceivedDate(""); setApprovalDate("");
+      setScNumber(""); setSupplierText(""); setScDate(""); setRequester(""); setCommercialPlanReceivedDate(""); setApprovalDate("");
       setEditingId(""); setEditingVersion(""); setEditReason("");
       const query = new URLSearchParams();
       if (importerFilter) query.set("importer", importerFilter);
@@ -131,14 +145,14 @@ export default function PcmPage() {
 
   function startEditing(item: PurchaseRequestChoice) {
     setEditingId(item.id); setEditingVersion(item.version); setImporter(item.importer);
-    setScNumber(item.scNumber); setScDate(item.scDate ?? ""); setRequester(item.requester);
+    setScNumber(item.scNumber); setSupplierText(item.supplierText ?? ""); setScDate(item.scDate ?? ""); setRequester(item.requester);
     setCommercialPlanReceivedDate(item.commercialPlanReceivedDate ?? ""); setApprovalDate(item.approvalDate ?? "");
     setEditReason(""); setError(""); setNotice(`Editando a SC ${item.scNumber}.`);
   }
 
   function cancelEditing() {
     setEditingId(""); setEditingVersion(""); setEditReason("");
-    setScNumber(""); setScDate(""); setRequester(""); setCommercialPlanReceivedDate(""); setApprovalDate("");
+    setScNumber(""); setSupplierText(""); setScDate(""); setRequester(""); setCommercialPlanReceivedDate(""); setApprovalDate("");
     setNotice(""); setError("");
   }
 
@@ -172,6 +186,10 @@ export default function PcmPage() {
             <option value="">Selecione</option>{importers.map(item => <option key={item.code} value={item.code}>{item.code}</option>)}
           </select></label>
           <label>Número da SC<input required maxLength={80} value={scNumber} onChange={event => setScNumber(event.target.value)} /></label>
+          <label>Fornecedor<select required value={supplierText} onChange={event => setSupplierText(event.target.value)}>
+            <option value="">Selecione</option>{!suppliers.some(item => item.code === supplierText) && supplierText && <option value={supplierText}>{supplierText} (valor atual)</option>}
+            {suppliers.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
+          </select></label>
           <label>Data da SC<input required type="date" value={scDate} onChange={event => setScDate(event.target.value)} /></label>
           <label>Data de recebimento do plano comercial<input type="date" value={commercialPlanReceivedDate}
             onChange={event => setCommercialPlanReceivedDate(event.target.value)} /></label>
@@ -196,9 +214,9 @@ export default function PcmPage() {
         {importerFilter ? "Nenhuma SC cadastrada para esta importadora." : "Nenhuma SC cadastrada."}
       </p> :
         <div className="table-scroll"><table><thead><tr>
-          <th>Número da SC</th><th>Data da SC</th><th>Solicitante</th><th>Plano comercial recebido</th><th>Aprovação</th><th>POs vinculadas</th><th>Ação</th>
+          <th>Número da SC</th><th>Fornecedor</th><th>Data da SC</th><th>Solicitante</th><th>Plano comercial recebido</th><th>Aprovação</th><th>POs vinculadas</th><th>Ação</th>
         </tr></thead><tbody>{items.map(item => <tr key={item.id}>
-          <td>{item.scNumber}</td><td>{item.scDate ?? "—"}</td><td>{item.requester}</td><td>{item.commercialPlanReceivedDate ?? "—"}</td>
+          <td>{item.scNumber}</td><td>{item.supplierText}</td><td>{item.scDate ?? "—"}</td><td>{item.requester}</td><td>{item.commercialPlanReceivedDate ?? "—"}</td>
           <td>{item.approvalDate ?? "Pendente"}</td><td>{item.purchaseOrderCount ?? 0}</td>
           <td><div className="sc-action-buttons">
             {canManage && <button className="button secondary" type="button" onClick={() => startEditing(item)}>Editar</button>}
