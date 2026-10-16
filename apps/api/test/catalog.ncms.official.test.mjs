@@ -145,3 +145,22 @@ test("refresh updates only already registered NCMs and preserves unmatched histo
   assert.equal(writes.some(write => write.sql.includes("INSERT INTO catalog.entry\n")), false);
   assert.equal(existing.length, 2);
 });
+
+test("official NCM failures return the retry window for search and refresh without writing", async t => {
+  const retryAt = Date.now() + 60_000;
+  const provider = async () => { throw Object.assign(new Error("rate limited"), { retryAt }); };
+  const { app, writes } = await createApp({ provider });
+  t.after(() => app.close());
+
+  const search = await app.inject({ method: "GET", url: "/api/v1/ncms/official-search?search=70",
+    headers: { "x-test-subject": "fiscal" } });
+  assert.equal(search.statusCode, 503, search.body);
+  assert.equal(search.headers["retry-after"], "60");
+  assert.match(search.json().detail, /horário de Brasília/u);
+
+  const refresh = await app.inject({ method: "POST", url: "/api/v1/ncms/refresh-official",
+    headers: { "x-test-subject": "fiscal" }, payload: {} });
+  assert.equal(refresh.statusCode, 503, refresh.body);
+  assert.ok(Number(refresh.headers["retry-after"]) > 0);
+  assert.equal(writes.length, 0);
+});

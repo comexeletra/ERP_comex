@@ -164,7 +164,7 @@ export function createOfficialNcmCatalogProvider(
     const currentTime = now();
     if (cached && cached.expiresAt > currentTime) return cached.catalog;
     if (blockedUntil > currentTime) {
-      throw new Error("A consulta oficial de NCM está aguardando a janela de retentativa do Siscomex.");
+      throw new SiscomexResponseError(429, blockedUntil);
     }
     if (!loading) {
       loading = fetchCatalog().then(catalog => {
@@ -179,7 +179,9 @@ export function createOfficialNcmCatalogProvider(
         const reportedRetryAt = error && typeof error === "object" && "retryAt" in error
           && typeof error.retryAt === "number" && Number.isFinite(error.retryAt) ? error.retryAt : 0;
         blockedUntil = Math.max(reportedRetryAt, now() + fallbackDelay);
-        throw error;
+        const statusCode = error && typeof error === "object" && "statusCode" in error
+          && typeof error.statusCode === "number" ? error.statusCode : 502;
+        throw new SiscomexResponseError(statusCode, blockedUntil);
       }).finally(() => { loading = null; });
     }
     return loading;

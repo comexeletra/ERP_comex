@@ -144,15 +144,15 @@ test("official NCM provider coalesces requests and suppresses retries during Sis
 
   const first = getCatalog();
   const concurrent = getCatalog();
-  await assert.rejects(first, /Siscomex indisponível/u);
-  await assert.rejects(concurrent, /Siscomex indisponível/u);
+  await assert.rejects(first, /Siscomex/u);
+  await assert.rejects(concurrent, /Siscomex/u);
   assert.equal(fetchCount, 1);
 
-  await assert.rejects(getCatalog(), /aguardando a janela de retentativa/u);
+  await assert.rejects(getCatalog(), /Siscomex/u);
   assert.equal(fetchCount, 1);
 
   now = retryAt + 1;
-  await assert.rejects(getCatalog(), /Siscomex indisponível/u);
+  await assert.rejects(getCatalog(), /Siscomex/u);
   assert.equal(fetchCount, 2);
 });
 
@@ -166,8 +166,8 @@ test("official NCM provider applies fallback cooldown and caches successful cata
     return catalog;
   }, { now: () => now, initialRetryDelayMs: 100, maxRetryDelayMs: 500, cacheLifetimeMs: 1_000 });
 
-  await assert.rejects(getCatalog(), /network error/u);
-  await assert.rejects(getCatalog(), /aguardando a janela de retentativa/u);
+  await assert.rejects(getCatalog(), /Siscomex/u);
+  await assert.rejects(getCatalog(), /Siscomex/u);
   assert.equal(fetchCount, 1);
 
   now = 1_101;

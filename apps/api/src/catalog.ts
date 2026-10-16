@@ -97,6 +97,19 @@ function problem(reply: FastifyReply, status: number, code: string, detail: stri
   return reply.code(status).send({ type: "about:blank", title: detail, status, detail,
     instance: reply.request.url.split("?", 1)[0], traceId: reply.request.id, code });
 }
+function siscomexUnavailable(reply: FastifyReply, error: unknown) {
+  const retryAt = error && typeof error === "object" && "retryAt" in error
+    && typeof error.retryAt === "number" && Number.isFinite(error.retryAt) ? error.retryAt : null;
+  if (retryAt !== null && retryAt > Date.now()) {
+    reply.header("retry-after", String(Math.max(1, Math.ceil((retryAt - Date.now()) / 1000))));
+    const retryTime = new Intl.DateTimeFormat("pt-BR", {
+      timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).format(retryAt);
+    return problem(reply, 503, "SISCOMEX_UNAVAILABLE",
+      `O catálogo oficial está temporariamente indisponível. Tente novamente após ${retryTime} (horário de Brasília).`);
+  }
+  return problem(reply, 502, "SISCOMEX_UNAVAILABLE", "Não foi possível consultar o catálogo oficial do Siscomex.");
+}
 function present(row: Entry) {
   return { id: row.id, ...(row.kind === "NCM" ? {} : { importer: row.importer }),
     kind: row.kind, code: row.code, name: row.name,
@@ -546,7 +559,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
         if (!parsed.success) return problem(reply, 400, "INVALID_QUERY", "Informe pelo menos dois caracteres para pesquisar NCMs oficiais.");
         let official: OfficialNcmCatalog;
         try { official = await getOfficialNcms(); }
-        catch { return problem(reply, 502, "SISCOMEX_UNAVAILABLE", "Não foi possível consultar o catálogo oficial do Siscomex."); }
+        catch (error) { return siscomexUnavailable(reply, error); }
         const search = parsed.data.search.toLocaleLowerCase("pt-BR");
         const codeSearch = parsed.data.search.replace(/\D/gu, "");
         const matches = official.items.filter(item => item.name.toLocaleLowerCase("pt-BR").includes(search)
@@ -581,7 +594,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
 
         let official: OfficialNcmCatalog;
         try { official = await getOfficialNcms(); }
-        catch { return problem(reply, 502, "SISCOMEX_UNAVAILABLE", "Não foi possível consultar o catálogo oficial do Siscomex."); }
+        catch (error) { return siscomexUnavailable(reply, error); }
 
         const client = await pool.connect();
         let matchedCount = 0;
@@ -691,7 +704,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
 
         let official: OfficialNcmCatalog;
         try { official = await getOfficialNcms(); }
-        catch { return problem(reply, 502, "SISCOMEX_UNAVAILABLE", "Não foi possível consultar o catálogo oficial do Siscomex."); }
+        catch (error) { return siscomexUnavailable(reply, error); }
         const source = official.items.find(item => item.code === parsed.data.code);
         if (!source) return problem(reply, 404, "OFFICIAL_NCM_NOT_FOUND", "Esse NCM não está na tabela vigente do Siscomex.");
 
