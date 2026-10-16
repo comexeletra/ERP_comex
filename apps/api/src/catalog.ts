@@ -159,7 +159,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool): P
       return problem(reply, 400, "INVALID_OPERATIONAL_VALUES", "Informe uma entidade e uma lista JSON válida com até 500 valores.");
     }
     if (body.data.entity === "GROUP") {
-      return problem(reply, 400, "INVALID_OPERATIONAL_VALUES", "Importe Group com código e valor por registro CSV.");
+      return problem(reply, 400, "INVALID_OPERATIONAL_VALUES", "Informe o código e o valor de cada registro Group.");
     }
     const invalidValue = body.data.values.find(value => value.length > operationalValueMax[body.data.entity]
       || !operationalValueHasValidFormat(body.data.entity, value));
