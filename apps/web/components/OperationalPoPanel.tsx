@@ -453,22 +453,24 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
     {!loading && data && <>
-      {canWritePo && <section className="po-entry-section">
-        <h3>Dados da PO</h3>
-        <form className="stack-form" onSubmit={saveHeader}>
-          <label>Número da PO no TOTVS<input required maxLength={80} disabled={data.sourceKind !== "MANUAL_TOTVS_REFERENCE"}
-            value={number} onChange={event => setNumber(event.target.value)} /></label>
-          <label>Fornecedor<select value={supplier} onChange={event => setSupplier(event.target.value)}>
-            <option value="">Selecione</option>{!suppliers.some(item => item.code === supplier) && supplier && <option value={supplier}>{supplier} (valor atual)</option>}
-            {suppliers.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
-          </select></label>
-          <label>Data da PO<input type="date" value={orderDate} readOnly aria-readonly="true" /></label>
-          <PurchaseRequestSelect importer={data.importer} value={purchaseRequestId} choices={purchaseRequests}
-            onChange={selectPurchaseRequest} />
-          <label>Observações<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
-          <button className="button" disabled={saving}>Salvar PO</button>
-        </form>
-      </section>}
+      {canWritePo && <details className="po-header-disclosure">
+        <summary>Dados da PO</summary>
+        <section className="po-entry-section">
+          <form className="stack-form" onSubmit={saveHeader}>
+            <label>Número da PO no TOTVS<input required maxLength={80} disabled={data.sourceKind !== "MANUAL_TOTVS_REFERENCE"}
+              value={number} onChange={event => setNumber(event.target.value)} /></label>
+            <label>Fornecedor<select value={supplier} onChange={event => setSupplier(event.target.value)}>
+              <option value="">Selecione</option>{!suppliers.some(item => item.code === supplier) && supplier && <option value={supplier}>{supplier} (valor atual)</option>}
+              {suppliers.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
+            </select></label>
+            <label>Data da PO<input type="date" value={orderDate} readOnly aria-readonly="true" /></label>
+            <PurchaseRequestSelect importer={data.importer} value={purchaseRequestId} choices={purchaseRequests}
+              onChange={selectPurchaseRequest} />
+            <label>Observações<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
+            <button className="button" disabled={saving}>Salvar PO</button>
+          </form>
+        </section>
+      </details>}
       <h3>Dados e saldo por item</h3>
       {canWritePo && <section className="po-entry-section po-common-fields">
         <h4>Dados compartilhados pelos produtos</h4>

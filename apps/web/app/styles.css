@@ -499,6 +499,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .historical-disclosure > :not(summary) { margin-left: 20px; margin-right: 20px; }
 .historical-disclosure > .muted { margin-bottom: 14px; margin-top: 14px; }
 .historical-disclosure > .table-scroll { margin-bottom: 18px; }
+.po-header-disclosure { border-bottom: 1px solid #e5ecef; margin: 18px 0; }
+.po-header-disclosure > summary { align-items: center; color: #203744; cursor: pointer; display: flex; font-size: 1.05rem; font-weight: 700; gap: 10px; list-style: none; padding: 8px 0; }
+.po-header-disclosure > summary::-webkit-details-marker { display: none; }
+.po-header-disclosure > summary::before { color: #087889; content: "+"; font-size: 1.15rem; width: 14px; }
+.po-header-disclosure[open] > summary::before { content: "−"; }
+.po-header-disclosure > .po-entry-section { padding: 10px 0 18px; }
 .historical-costs { border-top: 1px solid #e6ecef; margin-top: 12px; padding-top: 10px; }
 .historical-costs > summary { color: #617985; cursor: pointer; font-size: .82rem; font-weight: 700; }
 .historical-costs ul { color: #526b78; font-size: .84rem; margin: 8px 0 0; padding-left: 18px; }
@@ -739,6 +745,7 @@ td .button + .button { margin-left: 6px; }
 :root[data-theme="dark"] .source-field dd,
 :root[data-theme="dark"] .po-entry-item h4,
 :root[data-theme="dark"] .po-entry-item h5,
+:root[data-theme="dark"] .po-header-disclosure > summary,
 :root[data-theme="dark"] .po-item-summary,
 :root[data-theme="dark"] .po-item-code,
 :root[data-theme="dark"] .po-item-metrics strong,
