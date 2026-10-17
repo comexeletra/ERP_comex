@@ -121,6 +121,7 @@ export async function refreshScheduledNcms(provider: OfficialNcmCatalogProvider,
 }
 
 const BRASILIA_TIME_ZONE = "America/Sao_Paulo";
+const NCM_RETRY_INTERVAL_MS = 30 * 60 * 1000;
 const brasiliaParts = new Intl.DateTimeFormat("en-CA", {
   timeZone: BRASILIA_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit",
   hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
@@ -192,7 +193,7 @@ export function startDailyNcmRefresh(
         && typeof error.retryAt === "number" && Number.isFinite(error.retryAt) ? error.retryAt : 0;
       const nextAt = reportedRetryAt > Date.now()
         ? reportedRetryAt + 30_000
-        : Date.now() + 5 * 60 * 1000;
+        : Date.now() + NCM_RETRY_INTERVAL_MS;
       scheduleAt(nextAt, "retry");
     } finally {
       running = false;

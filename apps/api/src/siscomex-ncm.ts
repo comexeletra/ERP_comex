@@ -14,6 +14,7 @@ const siscomexClock = new Intl.DateTimeFormat("en-US", {
 const MAX_COMPRESSED_BYTES = 8 * 1024 * 1024;
 const MAX_JSON_BYTES = 32 * 1024 * 1024;
 const MIN_OFFICIAL_NCM_COUNT = 9_000;
+const SISCOMEX_RETRY_DELAY_MS = 30 * 60 * 1000;
 
 export type OfficialNcmAttribute = {
   code: string;
@@ -155,8 +156,8 @@ export function createOfficialNcmCatalogProvider(
   options: { cacheLifetimeMs?: number; initialRetryDelayMs?: number; maxRetryDelayMs?: number; now?: () => number } = {},
 ): OfficialNcmCatalogProvider {
   const cacheLifetimeMs = options.cacheLifetimeMs ?? 6 * 60 * 60 * 1000;
-  const initialRetryDelayMs = options.initialRetryDelayMs ?? 60 * 60 * 1000;
-  const maxRetryDelayMs = options.maxRetryDelayMs ?? 6 * 60 * 60 * 1000;
+  const initialRetryDelayMs = options.initialRetryDelayMs ?? SISCOMEX_RETRY_DELAY_MS;
+  const maxRetryDelayMs = options.maxRetryDelayMs ?? SISCOMEX_RETRY_DELAY_MS;
   const now = options.now ?? Date.now;
   let cached: { catalog: OfficialNcmCatalog; expiresAt: number } | null = null;
   let loading: Promise<OfficialNcmCatalog> | null = null;
