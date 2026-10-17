@@ -34,7 +34,11 @@ function findWorkbookUrl(html: string, pageUrl: string): string {
 }
 
 function sourceUpdateDate(html: string): string | null {
-  const match = /Atualizado\s+em\s+(\d{2})\/(\d{2})\/(\d{4})/iu.exec(html);
+  const pageText = html.replace(/<[^>]*>/gu, " ")
+    .replace(/&nbsp;|&#160;/giu, " ")
+    .replace(/&amp;/giu, "&")
+    .replace(/\s+/gu, " ");
+  const match = /Atualizado\s+em\s+(\d{2})\/(\d{2})\/(\d{4})/iu.exec(pageText);
   if (!match) return null;
   const [, day, month, year] = match;
   const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
