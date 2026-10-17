@@ -130,6 +130,15 @@ function canWriteKind(roles: readonly string[], kind: Kind): boolean {
 function dateValue(value: string | null | undefined): string | null {
   return value ?? null;
 }
+function currentBrasiliaDate(): string {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date()).map(part => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+function ncmIsCurrentlyValid(item: OfficialNcm, today = currentBrasiliaDate()): boolean {
+  return !!item.validFrom && item.validFrom <= today && (!item.validTo || item.validTo >= today);
+}
 function validDates(kind: Kind, start: string | null, end: string | null,
   status: "ACTIVE" | "INACTIVE" = "ACTIVE"): boolean {
   return !(kind === "NCM" && !start && status !== "INACTIVE") && (!end || (!!start && end >= start));
@@ -570,7 +579,10 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
         catch (error) { return siscomexUnavailable(reply, error); }
         const search = parsed.data.search.toLocaleLowerCase("pt-BR");
         const codeSearch = parsed.data.search.replace(/\D/gu, "");
-        const matches = official.items.filter(item => item.name.toLocaleLowerCase("pt-BR").includes(search)
+        const searchableItems = official.source === "SISCOMEX"
+          ? official.items.filter(item => ncmIsCurrentlyValid(item))
+          : official.items;
+        const matches = searchableItems.filter(item => item.name.toLocaleLowerCase("pt-BR").includes(search)
           || (codeSearch.length > 0 && item.code.includes(codeSearch)));
         matches.sort((left, right) => {
           const leftExact = left.code === codeSearch ? 0 : 1;
@@ -634,6 +646,10 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
         if (source.validFrom === null) {
           return problem(reply, 409, "OFFICIAL_NCM_VALIDITY_UNAVAILABLE",
             "A descrição está no catálogo oficial do MDIC, mas a fonte não informa a vigência individual. Use o formulário de cadastro e informe a vigência e a evidência do ato legal.");
+        }
+        if (!ncmIsCurrentlyValid(source)) {
+          return problem(reply, 409, "OFFICIAL_NCM_NOT_CURRENTLY_VALID",
+            "Este NCM não está vigente na data de hoje segundo a fonte oficial. Consulte a situação antes de cadastrá-lo.");
         }
 
         const client = await pool.connect();

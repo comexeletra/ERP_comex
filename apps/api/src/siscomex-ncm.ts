@@ -48,6 +48,7 @@ export type OfficialNcmCatalog = {
   sourceUpdatedAt: string | null;
   attributesVersion: string;
   syncedAt?: string;
+  siscomexRetryAt?: number | null;
   items: OfficialNcm[];
 };
 
@@ -175,7 +176,8 @@ export function createOfficialNcmCatalogProvider(
     if (!loading) {
       loading = fetchCatalog().then(catalog => {
         cached = { catalog, expiresAt: now() + cacheLifetimeMs };
-        blockedUntil = 0;
+        blockedUntil = catalog.siscomexRetryAt && catalog.siscomexRetryAt > now()
+          ? catalog.siscomexRetryAt : 0;
         failureCount = 0;
         return catalog;
       }).catch(error => {

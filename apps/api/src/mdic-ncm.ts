@@ -110,14 +110,19 @@ export async function fetchMdicNcmCatalog(fetcher: typeof fetch = fetch): Promis
 
 export async function fetchOfficialNcmCatalogWithFallback(fetcher: typeof fetch = fetch): Promise<OfficialNcmCatalog> {
   let siscomexError: unknown;
+  let siscomexRetryAt: number | null = null;
   try {
     return await fetchSiscomexNcmCatalog(fetcher);
   } catch (error) {
     siscomexError = error;
+    if (error && typeof error === "object" && "retryAt" in error
+      && typeof error.retryAt === "number" && Number.isFinite(error.retryAt)) {
+      siscomexRetryAt = error.retryAt;
+    }
   }
 
   try {
-    return await fetchMdicNcmCatalog(fetcher);
+    return { ...await fetchMdicNcmCatalog(fetcher), siscomexRetryAt };
   } catch (mdicError) {
     const combined = new AggregateError([siscomexError, mdicError], "As fontes oficiais Siscomex e MDIC estão indisponíveis.");
     if (siscomexError && typeof siscomexError === "object") {

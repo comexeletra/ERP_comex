@@ -164,8 +164,19 @@ export function createPersistedOfficialNcmCatalogProvider(
     return persist(await upstream());
   };
 
+  const refreshFromOfficialSources = async (): Promise<OfficialNcmCatalog> => {
+    const latest = await upstream({ forceRefresh: true });
+    if (latest.source === "MDIC_GECEX") {
+      // Keep the last complete Siscomex snapshot, including its validity dates
+      // and import attributes, while Siscomex is temporarily unavailable.
+      const existing = await readSnapshot();
+      if (existing?.source === "SISCOMEX") return latest;
+    }
+    return persist(latest);
+  };
+
   return async requestOptions => {
-    if (requestOptions?.forceRefresh) return persist(await upstream(requestOptions));
+    if (requestOptions?.forceRefresh) return refreshFromOfficialSources();
     if (loading) return loading;
     loading = loadPersistedOrFetch().finally(() => { loading = null; });
     return loading;

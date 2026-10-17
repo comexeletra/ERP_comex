@@ -29,8 +29,10 @@ if (!connectionString) throw new Error("DATABASE_URL não configurada na VPS.");
 
 const parsedDatabaseUrl = new URL(connectionString);
 const loopbackHosts = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
-const ncmAutoRefreshTime = process.env.NCM_AUTO_REFRESH_TIME;
-if (ncmAutoRefreshTime && parsedDatabaseUrl.pathname !== "/erp_po_totvs_hml") {
+const isHomologationDatabase = parsedDatabaseUrl.pathname === "/erp_po_totvs_hml";
+const ncmAutoRefreshTime = process.env.NCM_AUTO_REFRESH_TIME
+  ?? (isHomologationDatabase ? "06:00,12:00" : undefined);
+if (ncmAutoRefreshTime && !isHomologationDatabase) {
   throw new Error("A sincronização automática de NCM só pode ser ativada no banco erp_po_totvs_hml.");
 }
 if (process.env.NODE_ENV === "production" && !loopbackHosts.has(parsedDatabaseUrl.hostname)) {

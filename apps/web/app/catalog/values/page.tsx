@@ -292,11 +292,14 @@ export default function OperationalValuesPage() {
     try {
       const response = await apiFetch("/api/v1/ncms/refresh-official", { method: "POST",
         headers: { "content-type": "application/json" }, body: "{}" });
-      const result = await response.json() as { matchedCount?: number; updatedCount?: number;
+      const result = await response.json() as { catalogSource?: "SISCOMEX" | "MDIC_GECEX";
+        matchedCount?: number; updatedCount?: number; inactivatedCount?: number;
         attributesUpdatedCount?: number; preservedUnmatchedCount?: number; detail?: string };
       if (!response.ok) throw new Error(result.detail || "Não foi possível atualizar os NCMs cadastrados.");
       setNcmRefresh(current => current + 1);
-      setNotice(`${result.matchedCount ?? 0} NCMs cadastrados conferidos; ${result.updatedCount ?? 0} descrições atualizadas e ${result.attributesUpdatedCount ?? 0} conjuntos de atributos atualizados. ${result.preservedUnmatchedCount ?? 0} registros sem correspondência vigente foram mantidos.`);
+      setNotice(result.catalogSource === "MDIC_GECEX"
+        ? `O Siscomex está indisponível. A base oficial do MDIC permanece disponível para pesquisa; ${result.updatedCount ?? 0} cadastros tiveram as descrições conferidas. Vigências e situações não foram alteradas. O sistema tentará novamente consultar o Siscomex automaticamente.`
+        : `${result.matchedCount ?? 0} NCMs cadastrados conferidos; ${result.updatedCount ?? 0} cadastros atualizados, ${result.inactivatedCount ?? 0} inativados pela vigência ou ausência na tabela oficial, e ${result.attributesUpdatedCount ?? 0} conjuntos de atributos atualizados.`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao atualizar os NCMs."); }
     finally { setBusy(false); }
   }
