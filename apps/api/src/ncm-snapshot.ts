@@ -6,6 +6,8 @@ import {
 } from "./siscomex-ncm.js";
 
 type SnapshotMetadata = {
+  catalog_source: OfficialNcmCatalog["source"];
+  source_reference: string;
   source_updated_at: string | null;
   attributes_source_version: string;
   item_count: number;
@@ -15,7 +17,7 @@ type SnapshotMetadata = {
 type SnapshotItem = {
   code: string;
   name: string;
-  valid_from: string;
+  valid_from: string | null;
   valid_to: string | null;
   mandatory_import_attributes: OfficialNcmCatalog["items"][number]["mandatoryImportAttributes"];
 };
@@ -59,13 +61,15 @@ export async function replaceOfficialNcmSnapshot(pool: Pool, catalog: OfficialNc
 
     const metadata = await client.query<{ synced_at: Date | string }>(
       `INSERT INTO catalog.ncm_official_snapshot
-        (snapshot_id,source_updated_at,attributes_source_version,item_count,synced_at)
-       VALUES (1,$1,$2,$3,now())
-       ON CONFLICT (snapshot_id) DO UPDATE SET source_updated_at=EXCLUDED.source_updated_at,
+        (snapshot_id,catalog_source,source_reference,source_updated_at,attributes_source_version,item_count,synced_at)
+       VALUES (1,$1,$2,$3,$4,$5,now())
+       ON CONFLICT (snapshot_id) DO UPDATE SET catalog_source=EXCLUDED.catalog_source,
+         source_reference=EXCLUDED.source_reference,source_updated_at=EXCLUDED.source_updated_at,
          attributes_source_version=EXCLUDED.attributes_source_version,
          item_count=EXCLUDED.item_count,synced_at=EXCLUDED.synced_at
        RETURNING synced_at`,
-      [catalog.sourceUpdatedAt, catalog.attributesVersion, catalog.items.length]);
+      [catalog.source, catalog.sourceReference, catalog.sourceUpdatedAt,
+        catalog.attributesVersion, catalog.items.length]);
     await client.query("COMMIT");
     return timestamp(metadata.rows[0].synced_at);
   } catch (error) {
@@ -97,7 +101,7 @@ export function createPersistedOfficialNcmCatalogProvider(
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       const metadata = await client.query<SnapshotMetadata>(
-        `SELECT source_updated_at::text AS source_updated_at, attributes_source_version,
+        `SELECT catalog_source,source_reference,source_updated_at::text AS source_updated_at, attributes_source_version,
                 item_count, synced_at
          FROM catalog.ncm_official_snapshot WHERE snapshot_id=1`);
       const row = metadata.rows[0];
@@ -119,6 +123,8 @@ export function createPersistedOfficialNcmCatalogProvider(
         throw new Error("A cópia persistida do catálogo NCM está incompleta.");
       }
       const catalog: OfficialNcmCatalog = {
+        source: row.catalog_source,
+        sourceReference: row.source_reference,
         sourceUpdatedAt: row.source_updated_at,
         attributesVersion: row.attributes_source_version,
         syncedAt,

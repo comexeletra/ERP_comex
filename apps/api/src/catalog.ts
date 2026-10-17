@@ -3,9 +3,9 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
+import { fetchOfficialNcmCatalogWithFallback } from "./mdic-ncm.js";
 import { createPersistedOfficialNcmCatalogProvider } from "./ncm-snapshot.js";
 import {
-  fetchOfficialNcmCatalog,
   officialNcmAttributesHash,
   type OfficialNcm,
   type OfficialNcmCatalog,
@@ -108,7 +108,7 @@ function siscomexUnavailable(reply: FastifyReply, error: unknown) {
     return problem(reply, 503, "SISCOMEX_UNAVAILABLE",
       `O catálogo oficial está temporariamente indisponível. Tente novamente após ${retryTime} (horário de Brasília).`);
   }
-  return problem(reply, 502, "SISCOMEX_UNAVAILABLE", "Não foi possível consultar o catálogo oficial do Siscomex.");
+  return problem(reply, 502, "SISCOMEX_UNAVAILABLE", "Não foi possível consultar as fontes oficiais de NCM.");
 }
 function present(row: Entry) {
   return { id: row.id, ...(row.kind === "NCM" ? {} : { importer: row.importer }),
@@ -145,7 +145,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
   options: { officialNcmProvider?: OfficialNcmCatalogProvider;
     ncmAutoRefreshTime?: string; logger?: Pick<FastifyInstance["log"], "info" | "error"> } = {}): Promise<void> {
   const getOfficialNcms = options.officialNcmProvider
-    ?? createPersistedOfficialNcmCatalogProvider(pool, fetchOfficialNcmCatalog);
+    ?? createPersistedOfficialNcmCatalogProvider(pool, fetchOfficialNcmCatalogWithFallback);
   if (options.ncmAutoRefreshTime) {
     const stopSchedule = startDailyNcmRefresh(options.ncmAutoRefreshTime,
       () => refreshScheduledNcms(getOfficialNcms, pool), options.logger ?? app.log,
@@ -587,7 +587,8 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
           : { rows: [] };
         const registeredCodes = new Set(registered.rows.map(row => row.normalized_code));
         reply.header("cache-control", "no-store");
-        return { page, pageSize, totalCount: matches.length, sourceUpdatedAt: official.sourceUpdatedAt,
+        return { page, pageSize, totalCount: matches.length, source: official.source,
+          sourceReference: official.sourceReference, sourceUpdatedAt: official.sourceUpdatedAt,
           attributesSourceVersion: official.attributesVersion, snapshotSyncedAt: official.syncedAt ?? null,
           items: pageItems.map(item => ({ ...item, alreadyRegistered: registeredCodes.has(item.code) })) };
       });
@@ -600,12 +601,14 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
         if (!auth || !actor) return problem(reply, 401, "AUTHENTICATION_REQUIRED", "Sess\\u00e3o ausente.");
         if (!canWriteKind(auth.roles, "NCM")) return problem(reply, 403, "PERMISSION_DENIED", "Perfil sem permiss\\u00e3o para atualizar o cat\\u00e1logo NCM.");
         let official: OfficialNcmCatalog;
-        try { official = await getOfficialNcms(); }
+        try { official = await getOfficialNcms({ forceRefresh: true }); }
         catch (error) { return siscomexUnavailable(reply, error); }
         try {
           return await refreshRegisteredNcms(pool, official,
             { issuer: actor.issuer, subject: actor.subject, userId: actor.userId },
-            "Atualiza\u00e7\u00e3o manual dos NCMs cadastrados pela fonte oficial do Siscomex.");
+            official.source === "SISCOMEX"
+              ? "Atualiza\u00e7\u00e3o manual dos NCMs cadastrados pela fonte oficial do Siscomex."
+              : `Atualiza\u00e7\u00e3o manual das descri\u00e7\u00f5es pela fonte oficial do MDIC (${official.sourceReference}).`);
         } catch (error) {
           request.log.error({ error }, "Falha ao atualizar NCMs oficiais");
           return problem(reply, 500, "NCM_REFRESH_FAILED", "N\u00e3o foi poss\u00edvel concluir a atualiza\u00e7\u00e3o dos NCMs.");
@@ -627,7 +630,11 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
         try { official = await getOfficialNcms(); }
         catch (error) { return siscomexUnavailable(reply, error); }
         const source = official.items.find(item => item.code === parsed.data.code);
-        if (!source) return problem(reply, 404, "OFFICIAL_NCM_NOT_FOUND", "Esse NCM não está na tabela vigente do Siscomex.");
+        if (!source) return problem(reply, 404, "OFFICIAL_NCM_NOT_FOUND", "Esse NCM não está no catálogo oficial vigente.");
+        if (source.validFrom === null) {
+          return problem(reply, 409, "OFFICIAL_NCM_VALIDITY_UNAVAILABLE",
+            "A descrição está no catálogo oficial do MDIC, mas a fonte não informa a vigência individual. Use o formulário de cadastro e informe a vigência e a evidência do ato legal.");
+        }
 
         const client = await pool.connect();
         try {
@@ -659,13 +666,16 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
             return problem(reply, 409, "NCM_ALREADY_REGISTERED", "Esse NCM já está cadastrado na entidade.");
           }
           const id = randomUUID();
-          const evidence = "Tabela oficial NCM da Receita Federal / Portal Único Siscomex (Classif).";
+          const evidence = official.source === "SISCOMEX"
+            ? "Tabela oficial NCM da Receita Federal / Portal Único Siscomex (Classif)."
+            : `Descrição oficial do MDIC (${official.sourceReference}); vigência validada no ato legal informado.`;
+          const provenance = official.source === "SISCOMEX" ? "OFFICIAL_SISCOMEX" : "OFFICIAL_MDIC";
           const inserted = await client.query<Entry>(
             `INSERT INTO catalog.entry
               (id,importer,kind,code,name,status,provenance,evidence,valid_from,valid_to,created_by,updated_by)
-             VALUES ($1,NULL,'NCM',$2,$3,'ACTIVE','OFFICIAL_SISCOMEX',$4,$5,$6,$7,$7)
+             VALUES ($1,NULL,'NCM',$2,$3,'ACTIVE',$8,$4,$5,$6,$7,$7)
              ON CONFLICT (normalized_code) WHERE kind='NCM' AND importer IS NULL DO NOTHING RETURNING *`,
-            [id, source.code, source.name, evidence, source.validFrom, source.validTo, actor.userId]);
+            [id, source.code, source.name, evidence, source.validFrom, source.validTo, actor.userId, provenance]);
           if (!inserted.rowCount) {
             await client.query("ROLLBACK");
             return problem(reply, 409, "NCM_ALREADY_REGISTERED", "Esse NCM já está cadastrado na entidade.");

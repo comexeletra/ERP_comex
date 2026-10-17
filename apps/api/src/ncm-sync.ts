@@ -2,8 +2,6 @@ import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import { officialNcmAttributesHash, type OfficialNcmCatalog, type OfficialNcmCatalogProvider } from "./siscomex-ncm.js";
 
-const SYNC_REASON = "Atualização automática diária dos NCMs cadastrados pela fonte oficial do Siscomex.";
-
 export type NcmRefreshResult = {
   matchedCount: number;
   updatedCount: number;
@@ -17,13 +15,16 @@ export async function refreshRegisteredNcms(
   pool: Pool,
   official: OfficialNcmCatalog,
   actor: { issuer: string; subject: string; userId: string | null },
-  reason = SYNC_REASON,
+  reason?: string,
 ): Promise<NcmRefreshResult> {
   const client = await pool.connect();
   let matchedCount = 0;
   let updatedCount = 0;
   let attributesUpdatedCount = 0;
   const correlationId = randomUUID();
+  const auditReason = reason ?? (official.source === "MDIC_GECEX"
+    ? `Atualização automática das descrições pelo MDIC (${official.sourceReference}); vigência individual não informada por esta fonte.`
+    : "Atualização automática diária dos NCMs cadastrados pela fonte oficial do Siscomex.");
   try {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", ["catalog:siscomex:ncm:refresh"]);
@@ -41,9 +42,14 @@ export async function refreshRegisteredNcms(
       const source = official.items.find(item => item.code === before.normalized_code);
       if (!source) continue;
       matchedCount += 1;
-      const evidence = "Tabela oficial NCM da Receita Federal / Portal Único Siscomex (Classif).";
+      const isSiscomex = official.source !== "MDIC_GECEX";
+      const evidence = isSiscomex
+        ? "Tabela oficial NCM da Receita Federal / Portal Único Siscomex (Classif)."
+        : `Descrição conferida no Anexo I da Resolução Gecex nº 272/2021 (${official.sourceReference}); vigência individual não informada por esta fonte.`;
       const changed = { name: source.name, status: "ACTIVE" as const, evidence,
-        valid_from: source.validFrom, valid_to: source.validTo, provenance: "OFFICIAL_SISCOMEX" };
+        valid_from: source.validFrom ?? before.valid_from,
+        valid_to: source.validFrom === null ? before.valid_to : source.validTo,
+        provenance: isSiscomex ? "OFFICIAL_SISCOMEX" : "OFFICIAL_MDIC" };
       const old = { name: before.name, status: before.status, evidence: before.evidence,
         valid_from: before.valid_from, valid_to: before.valid_to, provenance: before.provenance };
       const differences = Object.entries(changed).filter(([field, value]) => value !== old[field as keyof typeof old]);
@@ -61,7 +67,7 @@ export async function refreshRegisteredNcms(
               (id,aggregate_type,aggregate_id,entity_type,entity_id,operation,field_name,old_value,new_value,actor_id,occurred_at,reason,correlation_id)
              VALUES ($1,'CATALOG_ENTRY',$2,'CATALOG_ENTRY',$2,'UPDATE',$3,$4::jsonb,$5::jsonb,$6,now(),$7,$8)`,
             [randomUUID(), before.id, field, JSON.stringify(old[field as keyof typeof old]), JSON.stringify(value),
-              `${actor.issuer}#${actor.subject}`, reason, correlationId]);
+              `${actor.issuer}#${actor.subject}`, auditReason, correlationId]);
         }
         await client.query(
           `INSERT INTO audit.outbox_message (event_id,event_type,aggregate_type,aggregate_id,payload,occurred_at)
@@ -70,6 +76,7 @@ export async function refreshRegisteredNcms(
             version: String(updated.rows[0].version), changedFields: differences.map(([field]) => field) })]);
       }
 
+      if (official.source !== "SISCOMEX") continue;
       const attributesHash = officialNcmAttributesHash(source.mandatoryImportAttributes);
       if (before.attributes_sha256?.trim() !== attributesHash) {
         attributesUpdatedCount += 1;
@@ -79,7 +86,7 @@ export async function refreshRegisteredNcms(
            VALUES ($1,'CATALOG_ENTRY',$2,'CATALOG_ENTRY',$2,$3,'mandatoryImportAttributes',$4::jsonb,$5::jsonb,$6,now(),$7,$8)`,
           [randomUUID(), before.id, before.attributes_sha256 ? "UPDATE" : "CREATE",
             before.mandatory_import_attributes ? JSON.stringify(before.mandatory_import_attributes) : null,
-            JSON.stringify(source.mandatoryImportAttributes), `${actor.issuer}#${actor.subject}`, reason, correlationId]);
+              JSON.stringify(source.mandatoryImportAttributes), `${actor.issuer}#${actor.subject}`, auditReason, correlationId]);
       }
       await client.query(
         `INSERT INTO catalog.ncm_siscomex_data
@@ -94,7 +101,7 @@ export async function refreshRegisteredNcms(
     }
     await client.query(
       `INSERT INTO audit.outbox_message (event_id,event_type,aggregate_type,aggregate_id,payload,occurred_at)
-       VALUES ($1,'catalog.ncm.siscomex.refreshed','NCM_SYNC',$1,$2::jsonb,now())`,
+       VALUES ($1,'catalog.ncm.official.refreshed','NCM_SYNC',$1,$2::jsonb,now())`,
       [correlationId, JSON.stringify({ matchedCount, updatedCount, attributesUpdatedCount,
         sourceUpdatedAt: official.sourceUpdatedAt, attributesSourceVersion: official.attributesVersion })]);
     await client.query("COMMIT");
@@ -112,7 +119,9 @@ export const systemNcmRefreshActor = { issuer: "system", subject: "siscomex-ncm-
 export async function refreshInitialNcms(provider: OfficialNcmCatalogProvider, pool: Pool): Promise<NcmRefreshResult> {
   const official = await provider();
   return refreshRegisteredNcms(pool, official, systemNcmRefreshActor,
-    "Sincronização automática inicial do catálogo oficial do Siscomex.");
+    official.source !== "MDIC_GECEX"
+      ? "Sincronização automática inicial do catálogo oficial do Siscomex."
+      : `Sincronização do catálogo oficial do MDIC (${official.sourceReference}).`);
 }
 
 export async function refreshScheduledNcms(provider: OfficialNcmCatalogProvider, pool: Pool): Promise<NcmRefreshResult> {

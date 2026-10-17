@@ -37,12 +37,14 @@ export type OfficialNcmAttribute = {
 export type OfficialNcm = {
   code: string;
   name: string;
-  validFrom: string;
+  validFrom: string | null;
   validTo: string | null;
   mandatoryImportAttributes: OfficialNcmAttribute[];
 };
 
 export type OfficialNcmCatalog = {
+  source: "SISCOMEX" | "MDIC_GECEX";
+  sourceReference: string;
   sourceUpdatedAt: string | null;
   attributesVersion: string;
   syncedAt?: string;
@@ -373,6 +375,8 @@ export function parseSiscomexCatalog(
   const nomenclature = parseSiscomexNcmTable(ncmPayload, minimumNcmCount);
   const attributes = parseSiscomexNcmAttributes(attributesZip, minimumNcmCount);
   return {
+    source: "SISCOMEX",
+    sourceReference: "Portal Único Siscomex / Classif",
     sourceUpdatedAt: nomenclature.sourceUpdatedAt,
     attributesVersion: attributes.version,
     items: nomenclature.items.map(item => ({

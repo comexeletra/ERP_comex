@@ -101,6 +101,8 @@ export default function OperationalValuesPage() {
   const [officialNcmResults, setOfficialNcmResults] = useState<OfficialNcmSearchResult[]>([]);
   const [officialNcmTotalCount, setOfficialNcmTotalCount] = useState(0);
   const [officialNcmSnapshotSyncedAt, setOfficialNcmSnapshotSyncedAt] = useState<string | null>(null);
+  const [officialNcmSource, setOfficialNcmSource] = useState<"SISCOMEX" | "MDIC_GECEX" | null>(null);
+  const [officialNcmSourceReference, setOfficialNcmSourceReference] = useState<string | null>(null);
   const [officialNcmPage, setOfficialNcmPage] = useState(1);
   const [officialNcmSearchLoading, setOfficialNcmSearchLoading] = useState(false);
   const [editingNcmId, setEditingNcmId] = useState("");
@@ -249,14 +251,17 @@ export default function OperationalValuesPage() {
       const query = new URLSearchParams({ search, page: String(page), pageSize: "25" });
       const response = await apiFetch(`/api/v1/ncms/official-search?${query}`, { cache: "no-store" });
       const result = await response.json() as { items?: OfficialNcmSearchResult[]; totalCount?: number;
+        source?: "SISCOMEX" | "MDIC_GECEX"; sourceReference?: string;
         snapshotSyncedAt?: string | null; detail?: string };
-      if (!response.ok) throw new Error(result.detail || "Não foi possível pesquisar no catálogo Siscomex.");
+      if (!response.ok) throw new Error(result.detail || "Não foi possível pesquisar no catálogo oficial.");
       setOfficialNcmSearch(search);
       setOfficialNcmResults(result.items ?? []);
       setOfficialNcmTotalCount(result.totalCount ?? 0);
       setOfficialNcmSnapshotSyncedAt(result.snapshotSyncedAt ?? null);
+      setOfficialNcmSource(result.source ?? null);
+      setOfficialNcmSourceReference(result.sourceReference ?? null);
       setOfficialNcmPage(page);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao consultar o Siscomex."); }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao consultar o catálogo oficial."); }
     finally { setOfficialNcmSearchLoading(false); }
   }
 
@@ -273,6 +278,13 @@ export default function OperationalValuesPage() {
       await searchOfficialNcms(officialNcmPage, officialNcmSearch);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao adicionar o NCM."); }
     finally { setBusy(false); }
+  }
+
+  function prepareOfficialNcm(item: OfficialNcmSearchResult) {
+    setNcmDraft({ code: item.code, description: item.name, status: "ACTIVE", validFrom: "", validTo: "",
+      evidence: `Descrição oficial do MDIC, Anexo I da Resolução Gecex nº 272/2021 (${officialNcmSourceReference ?? "catálogo vigente"}). Informe a vigência individual e o ato legal correspondente.` });
+    setNotice("Código e descrição oficial carregados. Informe a vigência e a evidência do ato legal para concluir o cadastro.");
+    document.getElementById("ncm-manual-create")?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   async function refreshRegisteredNcms() {
@@ -591,7 +603,7 @@ export default function OperationalValuesPage() {
         {entities.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select></label>
       <p className="muted">NCMs são um catálogo fiscal global, sem vínculo com importadora.</p>
-      <p className="muted">Descrições e atributos obrigatórios são consultados na tabela oficial do Siscomex. A busca permite adicionar somente NCMs usados pela entidade.</p>
+      <p className="muted">A pesquisa usa o catálogo oficial sincronizado. Quando a fonte não informar a vigência individual, o cadastro pede a data e a evidência legal.</p>
       {canWriteNcm && <button className="button secondary ncm-refresh-button" type="button" disabled={busy}
         onClick={() => void refreshRegisteredNcms()}>{busy ? "Atualizando..." : "Atualizar NCMs já cadastrados"}</button>}
       <h3>NCMs cadastrados &middot; {ncmTotalCount}</h3>
@@ -656,6 +668,7 @@ export default function OperationalValuesPage() {
         {officialNcmSearchLoading && <p role="status">Consultando o catálogo oficial sincronizado...</p>}
         {!officialNcmSearchLoading && officialNcmSearch && <>
           <p className="muted">{officialNcmTotalCount} resultados oficiais para “{officialNcmSearch}”.</p>
+          <p className="muted">Fonte: {officialNcmSourceReference ?? (officialNcmSource === "SISCOMEX" ? "Portal Único Siscomex / Classif" : "catálogo oficial sincronizado")}.</p>
           <p className="muted">Última sincronização: {officialNcmSnapshotSyncedAt
             ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short",
               timeZone: "America/Sao_Paulo" }).format(new Date(officialNcmSnapshotSyncedAt))
@@ -670,9 +683,12 @@ export default function OperationalValuesPage() {
                 {item.alreadyRegistered
                   ? <span className="product-catalog-status active">Já cadastrado</span>
                   : canWriteNcm && <button className="button entity-value-action" type="button" disabled={busy}
-                    onClick={() => void addOfficialNcm(item.code)}>Adicionar à entidade</button>}
+                    onClick={() => item.validFrom ? void addOfficialNcm(item.code) : prepareOfficialNcm(item)}>
+                    {item.validFrom ? "Adicionar à entidade" : "Usar dados oficiais"}</button>}
               </div>
-              <NcmMandatoryAttributes attributes={item.mandatoryImportAttributes ?? []} />
+              {officialNcmSource === "SISCOMEX"
+                ? <NcmMandatoryAttributes attributes={item.mandatoryImportAttributes ?? []} />
+                : <p className="muted">Esta fonte não inclui atributos obrigatórios de importação.</p>}
             </li>)}
           </ul> : <p className="muted">Nenhuma NCM vigente corresponde à pesquisa.</p>}
           {officialNcmTotalCount > 25 && <nav className="pagination" aria-label="Páginas da busca oficial de NCMs">
@@ -683,7 +699,7 @@ export default function OperationalValuesPage() {
           </nav>}
         </>}
       </section>
-      {canWriteNcm && <form className="stack-form" onSubmit={event => void addNcm(event)}>
+      {canWriteNcm && <form id="ncm-manual-create" className="stack-form" onSubmit={event => void addNcm(event)}>
         <h3>Adicionar NCM</h3>
         <label>Código NCM<input required maxLength={8} pattern="[0-9]{8}" inputMode="numeric" value={ncmDraft.code}
           onChange={event => setNcmDraft(current => ({ ...current, code: event.target.value }))} /></label>
