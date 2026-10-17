@@ -31,8 +31,9 @@ test("NCM create and edit payloads use global catalog fields without importer", 
 });
 
 test("NCM catalog labels render Portuguese accents correctly", () => {
-  assert.match(catalogPage, /Descrições e atributos obrigatórios/iu);
+  assert.match(catalogPage, /tentativa automática/iu);
   assert.match(catalogPage, /Atualizar NCMs já cadastrados/iu);
   assert.match(catalogPage, /Pesquise pela descrição ou pelo código/iu);
+  assert.match(catalogPage, /\/api\/v1\/ncms\/sync-status/u);
   assert.doesNotMatch(catalogPage, /[ÃÂ�]/u);
 });

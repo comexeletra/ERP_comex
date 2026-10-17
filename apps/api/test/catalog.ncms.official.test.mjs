@@ -11,6 +11,7 @@ const selectedAttributes = [{
   objectives: ["DUIMP"], organs: [], conditionalAttributes: [],
 }];
 const official = {
+  source: "SISCOMEX", sourceReference: "Siscomex",
   sourceUpdatedAt: "2026-10-15", attributesVersion: "359",
   items: [
     { code: "10000001", name: "Componente de teste A", validFrom: "2022-04-01", validTo: "9999-12-31", mandatoryImportAttributes: [] },
@@ -32,8 +33,18 @@ async function createApp({ provider = async () => official, existing = [], regis
   const writes = [];
   const audit = [];
   const outbox = [];
+  const syncState = {
+    last_attempt_at: null, last_success_at: null, last_source: null,
+    last_siscomex_success_at: null, last_error: null,
+    next_attempt_at: new Date(0), retry_mode: false,
+  };
   const pool = {
     async query(sql, values = []) {
+      if (sql.includes("FROM catalog.ncm_sync_state")) return { rows: [syncState] };
+      if (sql.includes("FROM catalog.ncm_official_snapshot")) return { rows: [{
+        catalog_source: "MDIC_GECEX", item_count: 10516,
+        synced_at: new Date("2026-10-17T19:59:27Z") }] };
+      if (sql.includes("FROM catalog.ncm_last_siscomex_snapshot")) return { rows: [] };
       if (sql.includes("FROM identity.erp_user AS u")) return { rows: [{ role: "Fiscal", importer_code: null }] };
       if (sql.includes("SELECT normalized_code FROM catalog.entry")) {
         return { rows: registeredCodes.filter(code => values[0].includes(code)).map(normalized_code => ({ normalized_code })) };
@@ -43,6 +54,17 @@ async function createApp({ provider = async () => official, existing = [], regis
     async connect() {
       return {
         async query(sql, values = []) {
+          if (sql.includes("pg_try_advisory_lock")) return { rows: [{ acquired: true }] };
+          if (sql.includes("pg_advisory_unlock")) return { rows: [{ pg_advisory_unlock: true }] };
+          if (sql.includes("FROM catalog.ncm_sync_state")) return { rows: [syncState] };
+          if (sql.includes("UPDATE catalog.ncm_sync_state")) {
+            if (values.length === 4) {
+              syncState.last_source = values[0];
+              syncState.next_attempt_at = values[2];
+              syncState.retry_mode = values[3];
+            }
+            return { rows: [], rowCount: 1 };
+          }
           if (["BEGIN", "COMMIT", "ROLLBACK"].includes(sql) || sql.includes("pg_advisory_xact_lock")) {
             writes.push({ sql, values }); return { rows: [], rowCount: 0 };
           }
@@ -51,7 +73,7 @@ async function createApp({ provider = async () => official, existing = [], regis
             const current = existing.find(row => row.code === values[0]) ?? writes.find(row => row.entry?.code === values[0])?.entry;
             return { rows: current ? [{ id: current.id }] : [], rowCount: current ? 1 : 0 };
           }
-          if (sql.includes("SELECT entry.*, entry.normalized_code")) return { rows: existing, rowCount: existing.length };
+          if (sql.includes("SELECT entry.*, entry.normalized_code")) return { rows: existing.map(row => ({ ...row })), rowCount: existing.length };
           if (sql.includes("INSERT INTO catalog.entry\n")) {
             const entry = makeEntry(values[1], values[2], {
               id: values[0], name: values[2], status: "ACTIVE", provenance: "OFFICIAL_SISCOMEX",
@@ -110,6 +132,19 @@ test("searching the official table marks existing NCMs without adding all search
   assert.equal(writes.length, 0);
 });
 
+test("sync status returns durable schedule and both snapshot sources without private configuration", async t => {
+  const { app } = await createApp();
+  t.after(() => app.close());
+  const response = await app.inject({ method: "GET", url: "/api/v1/ncms/sync-status",
+    headers: { "x-test-subject": "fiscal" } });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.equal(response.json().snapshot.source, "MDIC_GECEX");
+  assert.equal(response.json().snapshot.itemCount, 10516);
+  assert.equal(response.json().lastSiscomexSnapshot, null);
+  assert.ok(response.json().nextAttemptAt);
+  assert.equal(response.headers["cache-control"], "no-store");
+});
+
 test("a user can add one selected official NCM with its mandatory attributes", async t => {
   const { app, writes, audit, outbox } = await createApp();
   t.after(() => app.close());
@@ -144,6 +179,40 @@ test("refresh updates only already registered NCMs and preserves unmatched histo
   assert.equal(historical.name, "NCM histórico");
   assert.equal(writes.some(write => write.sql.includes("INSERT INTO catalog.entry\n")), false);
   assert.equal(existing.length, 2);
+});
+
+test("a complete MDIC current list inactivates registered codes absent from it", async t => {
+  const current = makeEntry("10000001", "Nome antigo", { status: "ACTIVE" });
+  const absent = makeEntry("99999999", "NCM anterior", { status: "ACTIVE" });
+  const provider = async () => ({ ...official, source: "MDIC_GECEX",
+    verifiedComplete: true, siscomexFailure: "Siscomex HTTP 422; catálogo MDIC carregado.",
+    items: [{ ...official.items[0], validFrom: null, validTo: null }] });
+  const { app, existing, audit, outbox } = await createApp({ provider, existing: [current, absent] });
+  t.after(() => app.close());
+  const response = await app.inject({ method: "POST", url: "/api/v1/ncms/refresh-official",
+    headers: { "x-test-subject": "fiscal" }, payload: {} });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.equal(response.json().inactivatedCount, 1);
+  assert.equal(response.json().preservedUnmatchedCount, 0);
+  assert.equal(absent.status, "INACTIVE");
+  assert.equal(absent.valid_from, "2022-04-01");
+  assert.equal(existing.length, 2);
+  assert.ok(audit.some(event => event.values[2] === "status"));
+  assert.ok(outbox.some(event => event.sql.includes("catalog.entry.updated")));
+});
+
+test("an unverified fallback preserves absent registered codes", async t => {
+  const absent = makeEntry("99999999", "NCM anterior", { status: "ACTIVE" });
+  const provider = async () => ({ ...official, source: "MDIC_GECEX", verifiedComplete: false,
+    items: [{ ...official.items[0], validFrom: null, validTo: null }] });
+  const { app } = await createApp({ provider, existing: [absent] });
+  t.after(() => app.close());
+  const response = await app.inject({ method: "POST", url: "/api/v1/ncms/refresh-official",
+    headers: { "x-test-subject": "fiscal" }, payload: {} });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.equal(response.json().inactivatedCount, 0);
+  assert.equal(response.json().preservedUnmatchedCount, 1);
+  assert.equal(absent.status, "ACTIVE");
 });
 
 test("official NCM failures return the retry window for search and refresh without writing", async t => {

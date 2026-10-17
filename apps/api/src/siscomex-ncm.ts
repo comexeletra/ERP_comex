@@ -49,6 +49,9 @@ export type OfficialNcmCatalog = {
   attributesVersion: string;
   syncedAt?: string;
   siscomexRetryAt?: number | null;
+  siscomexFailure?: string | null;
+  // Set only after the entire source has passed its structural and size checks.
+  verifiedComplete?: boolean;
   items: OfficialNcm[];
 };
 
@@ -266,13 +269,17 @@ export function parseSiscomexNcmTable(payload: unknown, minimumNcmCount = MIN_OF
     const name = asText(row.Descricao ?? row.descricao);
     if (!name || name.length > 2_000) throw new Error(`A descrição oficial do NCM ${code} é inválida.`);
     if (items.has(code)) throw new Error(`A tabela oficial contém NCM duplicado: ${code}.`);
+    const validFrom = parseBrazilianDate(row.Data_Inicio ?? row.dataInicio ?? row.data_inicio, `${code} inicio`);
+    if (!validFrom) throw new Error(`A tabela oficial não informou o início de vigência do NCM ${code}.`);
+    const validTo = row.Data_Fim === null || row.dataFim === null || row.data_fim === null
+      || (row.Data_Fim === undefined && row.dataFim === undefined && row.data_fim === undefined)
+      ? null : parseBrazilianDate(row.Data_Fim ?? row.dataFim ?? row.data_fim, `${code} fim`);
+    if (validTo && validTo < validFrom) throw new Error(`A vigência oficial do NCM ${code} é inconsistente.`);
     items.set(code, {
       code,
       name,
-      validFrom: parseBrazilianDate(row.Data_Inicio ?? row.dataInicio ?? row.data_inicio, `${code} inicio`),
-      validTo: row.Data_Fim === null || row.dataFim === null || row.data_fim === null
-        || (row.Data_Fim === undefined && row.dataFim === undefined && row.data_fim === undefined)
-        ? null : parseBrazilianDate(row.Data_Fim ?? row.dataFim ?? row.data_fim, `${code} fim`),
+      validFrom,
+      validTo,
     });
   }
   if (items.size < minimumNcmCount) {
@@ -378,6 +385,7 @@ export function parseSiscomexCatalog(
   const attributes = parseSiscomexNcmAttributes(attributesZip, minimumNcmCount);
   return {
     source: "SISCOMEX",
+    verifiedComplete: true,
     sourceReference: "Portal Único Siscomex / Classif",
     sourceUpdatedAt: nomenclature.sourceUpdatedAt,
     attributesVersion: attributes.version,

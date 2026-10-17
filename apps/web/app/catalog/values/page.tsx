@@ -31,12 +31,22 @@ type Ncm = { id: string; code: string; name: string; status: "ACTIVE" | "INACTIV
   mandatoryImportAttributes?: OfficialNcmAttribute[]; sourceUpdatedAt?: string | null;
   attributesSourceVersion?: string | null; officialDataSyncedAt?: string | null };
 type OfficialNcmSearchResult = Omit<Ncm, "id" | "status" | "evidence" | "version"> & { alreadyRegistered: boolean };
+type NcmSyncStatus = { lastAttemptAt: string | null; lastSuccessAt: string | null;
+  lastSource: "SISCOMEX" | "MDIC_GECEX" | null; lastSiscomexSuccessAt: string | null;
+  lastError: string | null; nextAttemptAt: string; retryMode: boolean;
+  snapshot: { source: string; itemCount: number; syncedAt: string } | null;
+  lastSiscomexSnapshot: { itemCount: number; syncedAt: string } | null };
 const emptyNcmDraft: NcmDraft = { code: "", description: "", status: "ACTIVE", evidence: "", validFrom: "", validTo: "" };
 
 function formatNcmDate(value: string | null) {
   if (!value) return null;
   const date = /^(\d{4})-(\d{2})-(\d{2})/u.exec(value);
   return date ? `${date[3]}/${date[2]}/${date[1]}` : value;
+}
+
+function formatNcmDateTime(value: string | null) {
+  return value ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short",
+    timeZone: "America/Sao_Paulo" }).format(new Date(value)) : "ainda não registrado";
 }
 
 function NcmValidityDates({ validFrom, validTo }: { validFrom: string | null; validTo: string | null }) {
@@ -105,6 +115,7 @@ export default function OperationalValuesPage() {
   const [officialNcmSourceReference, setOfficialNcmSourceReference] = useState<string | null>(null);
   const [officialNcmPage, setOfficialNcmPage] = useState(1);
   const [officialNcmSearchLoading, setOfficialNcmSearchLoading] = useState(false);
+  const [ncmSyncStatus, setNcmSyncStatus] = useState<NcmSyncStatus | null>(null);
   const [editingNcmId, setEditingNcmId] = useState("");
   const [ncmDraft, setNcmDraft] = useState<NcmDraft>(emptyNcmDraft);
   const [entity, setEntity] = useState<string>(entities[0][0]);
@@ -193,6 +204,20 @@ export default function OperationalValuesPage() {
       }).finally(() => { if (!controller.signal.aborted) setNcmLoading(false); });
     return () => controller.abort();
   }, [entity, ncmPage, ncmRefresh, ncmSearch]);
+
+  useEffect(() => {
+    if (entity !== "ncm") return;
+    let active = true;
+    const loadStatus = async () => {
+      try {
+        const response = await apiFetch("/api/v1/ncms/sync-status", { cache: "no-store" });
+        if (response.ok && active) setNcmSyncStatus(await response.json() as NcmSyncStatus);
+      } catch { /* The catalog remains usable if status is temporarily unavailable. */ }
+    };
+    void loadStatus();
+    const interval = setInterval(() => { void loadStatus(); }, 60_000);
+    return () => { active = false; clearInterval(interval); };
+  }, [entity, ncmRefresh]);
 
   function startEditingNcm(ncm: Ncm) {
     setEditingNcmId(ncm.id);
@@ -298,7 +323,7 @@ export default function OperationalValuesPage() {
       if (!response.ok) throw new Error(result.detail || "Não foi possível atualizar os NCMs cadastrados.");
       setNcmRefresh(current => current + 1);
       setNotice(result.catalogSource === "MDIC_GECEX"
-        ? `O Siscomex está indisponível. A base oficial do MDIC permanece disponível para pesquisa; ${result.updatedCount ?? 0} cadastros tiveram as descrições conferidas. Vigências e situações não foram alteradas. O sistema tentará novamente consultar o Siscomex automaticamente.`
+        ? `O Siscomex está indisponível. A base vigente do MDIC permanece disponível para pesquisa; ${result.updatedCount ?? 0} cadastros foram conferidos e ${result.inactivatedCount ?? 0} códigos ausentes da lista completa foram inativados. O sistema tentará novamente consultar o Siscomex automaticamente.`
         : `${result.matchedCount ?? 0} NCMs cadastrados conferidos; ${result.updatedCount ?? 0} cadastros atualizados, ${result.inactivatedCount ?? 0} inativados pela vigência ou ausência na tabela oficial, e ${result.attributesUpdatedCount ?? 0} conjuntos de atributos atualizados.`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao atualizar os NCMs."); }
     finally { setBusy(false); }
@@ -609,6 +634,14 @@ export default function OperationalValuesPage() {
       <p className="muted">A pesquisa usa o catálogo oficial sincronizado. Quando a fonte não informar a vigência individual, o cadastro pede a data e a evidência legal.</p>
       {canWriteNcm && <button className="button secondary ncm-refresh-button" type="button" disabled={busy}
         onClick={() => void refreshRegisteredNcms()}>{busy ? "Atualizando..." : "Atualizar NCMs já cadastrados"}</button>}
+      {ncmSyncStatus && <div className="muted" role="status">
+        <p>Catálogo para pesquisa: {ncmSyncStatus.snapshot?.source === "MDIC_GECEX" ? "MDIC"
+          : ncmSyncStatus.snapshot?.source === "SISCOMEX" ? "Siscomex" : "aguardando carga"}
+          {ncmSyncStatus.snapshot ? ` · ${ncmSyncStatus.snapshot.itemCount} códigos · carga ${formatNcmDateTime(ncmSyncStatus.snapshot.syncedAt)}` : " · aguardando primeira carga"}.</p>
+        <p>Última tentativa: {formatNcmDateTime(ncmSyncStatus.lastAttemptAt)}. Último sucesso do Siscomex: {formatNcmDateTime(ncmSyncStatus.lastSiscomexSuccessAt)}.</p>
+        {ncmSyncStatus.lastError && <p>Situação atual: {ncmSyncStatus.lastError}</p>}
+        <p>Próxima {ncmSyncStatus.retryMode ? "tentativa automática" : "sincronização diária"}: {formatNcmDateTime(ncmSyncStatus.nextAttemptAt)} (Brasília).</p>
+      </div>}
       <h3>NCMs cadastrados &middot; {ncmTotalCount}</h3>
       <label className="product-catalog-search">Pesquisar por código ou descrição
         <input maxLength={120} value={ncmSearch} onChange={event => { setNcmSearch(event.target.value); setNcmPage(1); }} />

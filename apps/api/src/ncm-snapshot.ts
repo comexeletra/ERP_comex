@@ -34,13 +34,20 @@ function timestamp(value: Date | string): string {
 }
 
 export async function replaceOfficialNcmSnapshot(pool: Pool, catalog: OfficialNcmCatalog): Promise<string> {
-  if (catalog.items.length === 0) throw new Error("Não é possível persistir um catálogo oficial NCM vazio.");
+  if (!catalog.verifiedComplete || catalog.items.length < 9_000) {
+    throw new Error("Não é possível persistir um catálogo NCM incompleto.");
+  }
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
       ["catalog:siscomex:ncm:snapshot"]);
+    const previous = await client.query<{ item_count: number }>(
+      "SELECT item_count FROM catalog.ncm_official_snapshot WHERE snapshot_id=1");
+    if (previous.rows[0] && catalog.items.length < Number(previous.rows[0].item_count) * 0.95) {
+      throw new Error("O catálogo NCM diminuiu mais de 5% frente à última carga; revisão necessária.");
+    }
     await client.query("DELETE FROM catalog.ncm_official_item");
 
     for (let offset = 0; offset < catalog.items.length; offset += SNAPSHOT_WRITE_BATCH_SIZE) {
@@ -70,6 +77,18 @@ export async function replaceOfficialNcmSnapshot(pool: Pool, catalog: OfficialNc
        RETURNING synced_at`,
       [catalog.source, catalog.sourceReference, catalog.sourceUpdatedAt,
         catalog.attributesVersion, catalog.items.length]);
+    if (catalog.source === "SISCOMEX") {
+      await client.query("DELETE FROM catalog.ncm_last_siscomex_item");
+      await client.query("INSERT INTO catalog.ncm_last_siscomex_item SELECT * FROM catalog.ncm_official_item");
+      await client.query(
+        `INSERT INTO catalog.ncm_last_siscomex_snapshot
+          (snapshot_id,source_updated_at,attributes_source_version,item_count,synced_at)
+         VALUES (1,$1,$2,$3,now())
+         ON CONFLICT (snapshot_id) DO UPDATE SET source_updated_at=EXCLUDED.source_updated_at,
+           attributes_source_version=EXCLUDED.attributes_source_version,
+           item_count=EXCLUDED.item_count,synced_at=EXCLUDED.synced_at`,
+        [catalog.sourceUpdatedAt, catalog.attributesVersion, catalog.items.length]);
+    }
     await client.query("COMMIT");
     return timestamp(metadata.rows[0].synced_at);
   } catch (error) {
@@ -128,6 +147,7 @@ export function createPersistedOfficialNcmCatalogProvider(
         sourceUpdatedAt: row.source_updated_at,
         attributesVersion: row.attributes_source_version,
         syncedAt,
+        verifiedComplete: result.rows.length >= 9_000,
         items: result.rows.map(item => ({
           code: item.code,
           name: item.name,
@@ -166,12 +186,6 @@ export function createPersistedOfficialNcmCatalogProvider(
 
   const refreshFromOfficialSources = async (): Promise<OfficialNcmCatalog> => {
     const latest = await upstream({ forceRefresh: true });
-    if (latest.source === "MDIC_GECEX") {
-      // Keep the last complete Siscomex snapshot, including its validity dates
-      // and import attributes, while Siscomex is temporarily unavailable.
-      const existing = await readSnapshot();
-      if (existing?.source === "SISCOMEX") return latest;
-    }
     return persist(latest);
   };
 

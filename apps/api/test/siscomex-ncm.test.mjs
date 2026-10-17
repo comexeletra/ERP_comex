@@ -98,6 +98,12 @@ test("NCM table rejects a partial source and duplicate eight-digit codes", () =>
   ] }, 1), /duplicado/u);
 });
 
+test("Siscomex nomenclature without per-code validity cannot replace the last good catalog", () => {
+  assert.throws(() => parseSiscomexNcmTable({ nomenclaturas: [
+    { codigo: "0101.21.00", descricao: "Teste" },
+  ] }, 1), /Data inválida|início de vigência/u);
+});
+
 test("NCM table accepts the documented Siscomex JSON fields and validity dates", () => {
   const parsed = parseSiscomexNcmTable({
     dataUltimaAlteracao: "2026-10-15T00:00:00-03:00",

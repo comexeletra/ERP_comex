@@ -5,6 +5,7 @@ import { officialNcmAttributesHash, type OfficialNcmCatalog, type OfficialNcmCat
 export type NcmRefreshResult = {
   catalogSource: OfficialNcmCatalog["source"];
   siscomexRetryAt: number | null;
+  siscomexFailure?: string | null;
   matchedCount: number;
   updatedCount: number;
   inactivatedCount: number;
@@ -34,7 +35,7 @@ export async function refreshRegisteredNcms(
   const today = `${todayParts.year}-${todayParts.month}-${todayParts.day}`;
   const officialByCode = new Map(official.items.map(item => [item.code, item]));
   const auditReason = reason ?? (official.source === "MDIC_GECEX"
-    ? `Atualização automática das descrições pelo MDIC (${official.sourceReference}); vigência individual não informada por esta fonte.`
+    ? `Conferência das NCMs vigentes pelo MDIC (${official.sourceReference}); vigência individual não informada por esta fonte.`
     : "Atualização automática diária dos NCMs cadastrados pela fonte oficial do Siscomex.");
   try {
     await client.query("BEGIN");
@@ -51,7 +52,7 @@ export async function refreshRegisteredNcms(
 
     for (const before of result.rows) {
       const source = officialByCode.get(before.normalized_code);
-      if (!source && !isSiscomex) {
+      if (!source && !official.verifiedComplete) {
         preservedUnmatchedCount += 1;
         continue;
       }
@@ -66,7 +67,7 @@ export async function refreshRegisteredNcms(
             ? `Vigência confirmada pela tabela oficial NCM da Receita Federal / Portal Único Siscomex em ${today}.`
             : `Não vigente em ${today}, conforme as datas da tabela oficial NCM do Siscomex.`
           : `Descrição conferida no Anexo I da Resolução Gecex nº 272/2021 (${official.sourceReference}); a fonte não informa vigência individual.`
-        : `Código ausente da tabela oficial completa do Siscomex consultada em ${official.sourceUpdatedAt ?? today}; inativado automaticamente para revisão fiscal.`;
+        : `Código ausente da tabela oficial completa de NCMs vigentes ${isSiscomex ? "do Siscomex" : "do MDIC"} consultada em ${today}; inativado automaticamente para revisão fiscal.`;
       const changed = source
         ? {
           name: source.name,
@@ -79,7 +80,7 @@ export async function refreshRegisteredNcms(
           provenance: isSiscomex ? "OFFICIAL_SISCOMEX" : "OFFICIAL_MDIC",
         }
         : { name: before.name, status: "INACTIVE", evidence, valid_from: before.valid_from,
-          valid_to: before.valid_to, provenance: "OFFICIAL_SISCOMEX" };
+          valid_to: before.valid_to, provenance: isSiscomex ? "OFFICIAL_SISCOMEX" : "OFFICIAL_MDIC" };
       const old = { name: before.name, status: before.status, evidence: before.evidence,
         valid_from: before.valid_from, valid_to: before.valid_to, provenance: before.provenance };
       const differences = Object.entries(changed).filter(([field, value]) => value !== old[field as keyof typeof old]);
@@ -138,6 +139,7 @@ export async function refreshRegisteredNcms(
         attributesSourceVersion: official.attributesVersion })]);
     await client.query("COMMIT");
     return { catalogSource: official.source, siscomexRetryAt: official.siscomexRetryAt ?? null,
+      siscomexFailure: official.siscomexFailure ?? null,
       matchedCount, updatedCount, inactivatedCount, attributesUpdatedCount, preservedUnmatchedCount,
       sourceUpdatedAt: official.sourceUpdatedAt, attributesSourceVersion: official.attributesVersion };
   } catch (error) {

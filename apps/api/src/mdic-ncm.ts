@@ -84,6 +84,7 @@ async function parseMdicWorkbook(bytes: Uint8Array, updatedAt: string | null, so
   }
   return {
     source: "MDIC_GECEX",
+    verifiedComplete: true,
     sourceReference,
     sourceUpdatedAt: updatedAt,
     attributesVersion: "not-provided",
@@ -122,7 +123,10 @@ export async function fetchOfficialNcmCatalogWithFallback(fetcher: typeof fetch 
   }
 
   try {
-    return { ...await fetchMdicNcmCatalog(fetcher), siscomexRetryAt };
+    const status = siscomexError && typeof siscomexError === "object" && "statusCode" in siscomexError
+      && typeof siscomexError.statusCode === "number" ? `HTTP ${siscomexError.statusCode}` : "falha de conexão ou resposta";
+    return { ...await fetchMdicNcmCatalog(fetcher), siscomexRetryAt,
+      siscomexFailure: `Siscomex: ${status}; catálogo MDIC carregado.` };
   } catch (mdicError) {
     const combined = new AggregateError([siscomexError, mdicError], "As fontes oficiais Siscomex e MDIC estão indisponíveis.");
     if (siscomexError && typeof siscomexError === "object") {

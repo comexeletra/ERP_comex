@@ -11,7 +11,8 @@ import {
   type OfficialNcmCatalog,
   type OfficialNcmCatalogProvider,
 } from "./siscomex-ncm.js";
-import { refreshInitialNcms, refreshRegisteredNcms, refreshScheduledNcms, startDailyNcmRefresh } from "./ncm-sync.js";
+import { refreshRegisteredNcms, refreshScheduledNcms } from "./ncm-sync.js";
+import { readNcmSyncState, runCoordinatedNcmRefresh, startDurableNcmRefresh } from "./ncm-scheduler.js";
 
 type Kind = "SUPPLIER" | "PRODUCT" | "NCM";
 const resources: ReadonlyArray<{ path: string; kind: Kind; sourceColumn: string }> = [
@@ -106,7 +107,7 @@ function siscomexUnavailable(reply: FastifyReply, error: unknown) {
       timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
     }).format(retryAt);
     return problem(reply, 503, "SISCOMEX_UNAVAILABLE",
-      `O catálogo oficial está temporariamente indisponível. Tente novamente após ${retryTime} (horário de Brasília).`);
+      `O catálogo oficial está temporariamente indisponível. A próxima tentativa automática está agendada após ${retryTime} (horário de Brasília).`);
   }
   return problem(reply, 502, "SISCOMEX_UNAVAILABLE", "Não foi possível consultar as fontes oficiais de NCM.");
 }
@@ -156,9 +157,8 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
   const getOfficialNcms = options.officialNcmProvider
     ?? createPersistedOfficialNcmCatalogProvider(pool, fetchOfficialNcmCatalogWithFallback);
   if (options.ncmAutoRefreshTime) {
-    const stopSchedule = startDailyNcmRefresh(options.ncmAutoRefreshTime,
-      () => refreshScheduledNcms(getOfficialNcms, pool), options.logger ?? app.log,
-      { initialRefresh: () => refreshInitialNcms(getOfficialNcms, pool) });
+    const stopSchedule = startDurableNcmRefresh(pool, options.ncmAutoRefreshTime,
+      () => refreshScheduledNcms(getOfficialNcms, pool), options.logger ?? app.log);
     app.addHook("onClose", async () => stopSchedule());
   }
   app.get("/api/v1/operational-values", { config: permissionConfig("catalog.read") }, async (request, reply) => {
@@ -569,6 +569,22 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
     });
 
     if (kind === "NCM") {
+      app.get(`${base}/sync-status`, { config: permissionConfig("catalog.read", "global") }, async (_request, reply) => {
+        const [state, snapshot, siscomex] = await Promise.all([
+          readNcmSyncState(pool),
+          pool.query<{ catalog_source: string; item_count: number; synced_at: Date }>(
+            "SELECT catalog_source,item_count,synced_at FROM catalog.ncm_official_snapshot WHERE snapshot_id=1"),
+          pool.query<{ item_count: number; synced_at: Date }>(
+            "SELECT item_count,synced_at FROM catalog.ncm_last_siscomex_snapshot WHERE snapshot_id=1"),
+        ]);
+        reply.header("cache-control", "no-store");
+        return { ...state, snapshot: snapshot.rows[0] ? {
+          source: snapshot.rows[0].catalog_source, itemCount: snapshot.rows[0].item_count,
+          syncedAt: snapshot.rows[0].synced_at.toISOString() } : null,
+          lastSiscomexSnapshot: siscomex.rows[0] ? {
+            itemCount: siscomex.rows[0].item_count,
+            syncedAt: siscomex.rows[0].synced_at.toISOString() } : null };
+      });
       app.get(`${base}/official-search`, { config: permissionConfig("catalog.read", "global") }, async (request, reply) => {
         const parsed = z.object({ search: z.string().trim().min(2).max(120),
           page: z.coerce.number().int().min(1).default(1),
@@ -612,16 +628,20 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
         if (!body.success) return problem(reply, 400, "INVALID_REQUEST", "A atualiza\\u00e7\\u00e3o oficial n\\u00e3o recebe par\\u00e2metros.");
         if (!auth || !actor) return problem(reply, 401, "AUTHENTICATION_REQUIRED", "Sess\\u00e3o ausente.");
         if (!canWriteKind(auth.roles, "NCM")) return problem(reply, 403, "PERMISSION_DENIED", "Perfil sem permiss\\u00e3o para atualizar o cat\\u00e1logo NCM.");
-        let official: OfficialNcmCatalog;
-        try { official = await getOfficialNcms({ forceRefresh: true }); }
-        catch (error) { return siscomexUnavailable(reply, error); }
         try {
-          return await refreshRegisteredNcms(pool, official,
-            { issuer: actor.issuer, subject: actor.subject, userId: actor.userId },
-            official.source === "SISCOMEX"
-              ? "Atualiza\u00e7\u00e3o manual dos NCMs cadastrados pela fonte oficial do Siscomex."
-              : `Atualiza\u00e7\u00e3o manual das descri\u00e7\u00f5es pela fonte oficial do MDIC (${official.sourceReference}).`);
+          const completed = await runCoordinatedNcmRefresh(pool, async () => {
+            const official = await getOfficialNcms({ forceRefresh: true });
+            return refreshRegisteredNcms(pool, official,
+              { issuer: actor.issuer, subject: actor.subject, userId: actor.userId },
+              official.source === "SISCOMEX"
+                ? "Atualização manual dos NCMs cadastrados pela fonte oficial do Siscomex."
+                : `Atualização manual pela tabela vigente do MDIC (${official.sourceReference}).`);
+          }, options.ncmAutoRefreshTime ?? "06:00,12:00", "manual");
+          return { ...completed.result, syncState: completed.state };
         } catch (error) {
+          if (error && typeof error === "object" && "retryAt" in error) {
+            return siscomexUnavailable(reply, error);
+          }
           request.log.error({ error }, "Falha ao atualizar NCMs oficiais");
           return problem(reply, 500, "NCM_REFRESH_FAILED", "N\u00e3o foi poss\u00edvel concluir a atualiza\u00e7\u00e3o dos NCMs.");
         }
