@@ -135,6 +135,7 @@ test("NCM table accepts date-time headers and ignores an unrecognized informatio
     ["17/10/2026 18:00:00", "2026-10-17"],
     ["2026-10-17 18:00:00", "2026-10-17"],
     ["17/10/2026", "2026-10-17"],
+    ["Vigente em 17/10/2026", "2026-10-17"],
     ["formato desconhecido", null],
   ]) {
     const parsed = parseSiscomexNcmTable({ dataUltimaAlteracao: header, nomenclaturas }, 1);

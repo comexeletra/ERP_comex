@@ -101,7 +101,7 @@ function parseBrazilianDate(value: unknown, label: string): string {
 
 function parseHeaderDate(value: unknown): string | null {
   if (typeof value !== "string" || !value.trim()) return null;
-  const text = value.trim();
+  const text = value.trim().replace(/^Vigente\s+em\s+/iu, "");
   const isoDate = /^(\d{4}-\d{2}-\d{2})(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$/u.exec(text);
   const brazilianDate = /^(\d{2}\/\d{2}\/\d{4})(?:[ T]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?)?$/u.exec(text);
   const date = isoDate?.[1] ?? brazilianDate?.[1];
