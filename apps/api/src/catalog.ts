@@ -3,8 +3,8 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
+import { createPersistedOfficialNcmCatalogProvider } from "./ncm-snapshot.js";
 import {
-  createOfficialNcmCatalogProvider,
   fetchOfficialNcmCatalog,
   officialNcmAttributesHash,
   type OfficialNcm,
@@ -93,8 +93,6 @@ type Entry = { id: string; importer: string | null; kind: Kind; code: string; na
   mandatory_import_attributes?: OfficialNcm["mandatoryImportAttributes"];
   source_updated_at?: string | null; attributes_source_version?: string | null; synced_at?: Date | null };
 
-const cachedOfficialNcmCatalog = createOfficialNcmCatalogProvider(fetchOfficialNcmCatalog);
-
 function problem(reply: FastifyReply, status: number, code: string, detail: string) {
   return reply.code(status).send({ type: "about:blank", title: detail, status, detail,
     instance: reply.request.url.split("?", 1)[0], traceId: reply.request.id, code });
@@ -146,7 +144,8 @@ function isUniqueError(error: unknown): boolean {
 export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
   options: { officialNcmProvider?: OfficialNcmCatalogProvider;
     ncmAutoRefreshTime?: string; logger?: Pick<FastifyInstance["log"], "info" | "error"> } = {}): Promise<void> {
-  const getOfficialNcms = options.officialNcmProvider ?? cachedOfficialNcmCatalog;
+  const getOfficialNcms = options.officialNcmProvider
+    ?? createPersistedOfficialNcmCatalogProvider(pool, fetchOfficialNcmCatalog);
   if (options.ncmAutoRefreshTime) {
     const stopSchedule = startDailyNcmRefresh(options.ncmAutoRefreshTime,
       () => refreshScheduledNcms(getOfficialNcms, pool), options.logger ?? app.log);
@@ -588,7 +587,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
         const registeredCodes = new Set(registered.rows.map(row => row.normalized_code));
         reply.header("cache-control", "no-store");
         return { page, pageSize, totalCount: matches.length, sourceUpdatedAt: official.sourceUpdatedAt,
-          attributesSourceVersion: official.attributesVersion,
+          attributesSourceVersion: official.attributesVersion, snapshotSyncedAt: official.syncedAt ?? null,
           items: pageItems.map(item => ({ ...item, alreadyRegistered: registeredCodes.has(item.code) })) };
       });
 

@@ -100,6 +100,7 @@ export default function OperationalValuesPage() {
   const [officialNcmSearch, setOfficialNcmSearch] = useState("");
   const [officialNcmResults, setOfficialNcmResults] = useState<OfficialNcmSearchResult[]>([]);
   const [officialNcmTotalCount, setOfficialNcmTotalCount] = useState(0);
+  const [officialNcmSnapshotSyncedAt, setOfficialNcmSnapshotSyncedAt] = useState<string | null>(null);
   const [officialNcmPage, setOfficialNcmPage] = useState(1);
   const [officialNcmSearchLoading, setOfficialNcmSearchLoading] = useState(false);
   const [editingNcmId, setEditingNcmId] = useState("");
@@ -247,11 +248,13 @@ export default function OperationalValuesPage() {
     try {
       const query = new URLSearchParams({ search, page: String(page), pageSize: "25" });
       const response = await apiFetch(`/api/v1/ncms/official-search?${query}`, { cache: "no-store" });
-      const result = await response.json() as { items?: OfficialNcmSearchResult[]; totalCount?: number; detail?: string };
+      const result = await response.json() as { items?: OfficialNcmSearchResult[]; totalCount?: number;
+        snapshotSyncedAt?: string | null; detail?: string };
       if (!response.ok) throw new Error(result.detail || "Não foi possível pesquisar no catálogo Siscomex.");
       setOfficialNcmSearch(search);
       setOfficialNcmResults(result.items ?? []);
       setOfficialNcmTotalCount(result.totalCount ?? 0);
+      setOfficialNcmSnapshotSyncedAt(result.snapshotSyncedAt ?? null);
       setOfficialNcmPage(page);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao consultar o Siscomex."); }
     finally { setOfficialNcmSearchLoading(false); }
@@ -647,12 +650,16 @@ export default function OperationalValuesPage() {
               onChange={event => setOfficialNcmSearchTerm(event.target.value)} placeholder="Ex.: resistor ou 01012100" />
           </label>
           <button className="button" disabled={officialNcmSearchLoading || officialNcmSearchTerm.trim().length < 2}>
-            {officialNcmSearchLoading ? "Pesquisando..." : "Pesquisar no Siscomex"}
+            {officialNcmSearchLoading ? "Pesquisando..." : "Pesquisar catálogo oficial"}
           </button>
         </form>
-        {officialNcmSearchLoading && <p role="status">Consultando a tabela oficial do Siscomex...</p>}
+        {officialNcmSearchLoading && <p role="status">Consultando o catálogo oficial sincronizado...</p>}
         {!officialNcmSearchLoading && officialNcmSearch && <>
           <p className="muted">{officialNcmTotalCount} resultados oficiais para “{officialNcmSearch}”.</p>
+          <p className="muted">Última sincronização: {officialNcmSnapshotSyncedAt
+            ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short",
+              timeZone: "America/Sao_Paulo" }).format(new Date(officialNcmSnapshotSyncedAt))
+            : "não registrada"} (horário de Brasília).</p>
           {officialNcmResults.length ? <ul className="product-catalog-list ncm-official-search-list">
             {officialNcmResults.map(item => <li className="product-catalog-item" key={item.code}>
               <div className="product-catalog-description"><strong className="product-catalog-code">{item.code}</strong>

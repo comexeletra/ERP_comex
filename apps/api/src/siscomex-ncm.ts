@@ -44,6 +44,7 @@ export type OfficialNcm = {
 export type OfficialNcmCatalog = {
   sourceUpdatedAt: string | null;
   attributesVersion: string;
+  syncedAt?: string;
   items: OfficialNcm[];
 };
 
