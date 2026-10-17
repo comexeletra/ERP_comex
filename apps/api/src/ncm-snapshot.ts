@@ -34,6 +34,9 @@ function timestamp(value: Date | string): string {
 }
 
 export async function replaceOfficialNcmSnapshot(pool: Pool, catalog: OfficialNcmCatalog): Promise<string> {
+  if (catalog.source !== "SISCOMEX") {
+    throw new Error("A fonte MDIC está inativa; somente o Siscomex pode atualizar o catálogo NCM.");
+  }
   if (!catalog.verifiedComplete || catalog.items.length < 9_000) {
     throw new Error("Não é possível persistir um catálogo NCM incompleto.");
   }
@@ -44,7 +47,7 @@ export async function replaceOfficialNcmSnapshot(pool: Pool, catalog: OfficialNc
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
       ["catalog:siscomex:ncm:snapshot"]);
     const previous = await client.query<{ item_count: number }>(
-      "SELECT item_count FROM catalog.ncm_official_snapshot WHERE snapshot_id=1");
+      "SELECT item_count FROM catalog.ncm_last_siscomex_snapshot WHERE snapshot_id=1");
     if (previous.rows[0] && catalog.items.length < Number(previous.rows[0].item_count) * 0.95) {
       throw new Error("O catálogo NCM diminuiu mais de 5% frente à última carga; revisão necessária.");
     }
@@ -123,7 +126,16 @@ export function createPersistedOfficialNcmCatalogProvider(
         `SELECT catalog_source,source_reference,source_updated_at::text AS source_updated_at, attributes_source_version,
                 item_count, synced_at
          FROM catalog.ncm_official_snapshot WHERE snapshot_id=1`);
-      const row = metadata.rows[0];
+      const current = metadata.rows[0];
+      const archived = current?.catalog_source === "MDIC_GECEX"
+        ? await client.query<SnapshotMetadata>(
+          `SELECT 'SISCOMEX' AS catalog_source,
+                  'Portal Único Siscomex / Classif' AS source_reference,
+                  source_updated_at::text AS source_updated_at,attributes_source_version,
+                  item_count,synced_at
+           FROM catalog.ncm_last_siscomex_snapshot WHERE snapshot_id=1`)
+        : null;
+      const row = archived ? archived.rows[0] : current;
       if (!row) {
         await client.query("COMMIT");
         return null;
@@ -137,7 +149,7 @@ export function createPersistedOfficialNcmCatalogProvider(
       const result = await client.query<SnapshotItem>(
         `SELECT code,name,valid_from::text AS valid_from,valid_to::text AS valid_to,
                 mandatory_import_attributes
-         FROM catalog.ncm_official_item ORDER BY code`);
+         FROM ${archived ? "catalog.ncm_last_siscomex_item" : "catalog.ncm_official_item"} ORDER BY code`);
       if (result.rows.length !== Number(row.item_count)) {
         throw new Error("A cópia persistida do catálogo NCM está incompleta.");
       }

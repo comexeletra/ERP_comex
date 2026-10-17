@@ -21,6 +21,9 @@ export async function refreshRegisteredNcms(
   actor: { issuer: string; subject: string; userId: string | null },
   reason?: string,
 ): Promise<NcmRefreshResult> {
+  if (official.source !== "SISCOMEX") {
+    throw new Error("A fonte MDIC está inativa; somente o Siscomex pode sincronizar NCMs.");
+  }
   const client = await pool.connect();
   let matchedCount = 0;
   let updatedCount = 0;
@@ -28,15 +31,12 @@ export async function refreshRegisteredNcms(
   let preservedUnmatchedCount = 0;
   let attributesUpdatedCount = 0;
   const correlationId = randomUUID();
-  const isSiscomex = official.source === "SISCOMEX";
   const todayParts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit",
   }).formatToParts(new Date()).map(part => [part.type, part.value]));
   const today = `${todayParts.year}-${todayParts.month}-${todayParts.day}`;
   const officialByCode = new Map(official.items.map(item => [item.code, item]));
-  const auditReason = reason ?? (official.source === "MDIC_GECEX"
-    ? `Conferência das NCMs vigentes pelo MDIC (${official.sourceReference}); vigência individual não informada por esta fonte.`
-    : "Atualização automática diária dos NCMs cadastrados pela fonte oficial do Siscomex.");
+  const auditReason = reason ?? "Atualização automática diária dos NCMs cadastrados pela fonte oficial do Siscomex.";
   try {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", ["catalog:siscomex:ncm:refresh"]);
@@ -58,29 +58,25 @@ export async function refreshRegisteredNcms(
       }
       if (source) matchedCount += 1;
 
-      const isCurrentlyValid = source && isSiscomex
+      const isCurrentlyValid = source
         && (!source.validFrom || source.validFrom <= today)
         && (!source.validTo || source.validTo >= today);
       const evidence = source
-        ? isSiscomex
-          ? isCurrentlyValid
-            ? `Vigência confirmada pela tabela oficial NCM da Receita Federal / Portal Único Siscomex em ${today}.`
-            : `Não vigente em ${today}, conforme as datas da tabela oficial NCM do Siscomex.`
-          : `Descrição conferida no Anexo I da Resolução Gecex nº 272/2021 (${official.sourceReference}); a fonte não informa vigência individual.`
-        : `Código ausente da tabela oficial completa de NCMs vigentes ${isSiscomex ? "do Siscomex" : "do MDIC"} consultada em ${today}; inativado automaticamente para revisão fiscal.`;
+        ? isCurrentlyValid
+          ? `Vigência confirmada pela tabela oficial NCM da Receita Federal / Portal Único Siscomex em ${today}.`
+          : `Não vigente em ${today}, conforme as datas da tabela oficial NCM do Siscomex.`
+        : `Código ausente da tabela oficial completa de NCMs vigentes do Siscomex consultada em ${today}; inativado automaticamente para revisão fiscal.`;
       const changed = source
         ? {
           name: source.name,
-          // The MDIC fallback supplies official descriptions but no per-code
-          // validity dates. Only a successful Siscomex response changes status.
-          status: isSiscomex ? (isCurrentlyValid ? "ACTIVE" : "INACTIVE") : before.status,
+          status: isCurrentlyValid ? "ACTIVE" : "INACTIVE",
           evidence,
-          valid_from: isSiscomex ? source.validFrom : before.valid_from,
-          valid_to: isSiscomex ? source.validTo : before.valid_to,
-          provenance: isSiscomex ? "OFFICIAL_SISCOMEX" : "OFFICIAL_MDIC",
+          valid_from: source.validFrom,
+          valid_to: source.validTo,
+          provenance: "OFFICIAL_SISCOMEX",
         }
         : { name: before.name, status: "INACTIVE", evidence, valid_from: before.valid_from,
-          valid_to: before.valid_to, provenance: isSiscomex ? "OFFICIAL_SISCOMEX" : "OFFICIAL_MDIC" };
+          valid_to: before.valid_to, provenance: before.provenance };
       const old = { name: before.name, status: before.status, evidence: before.evidence,
         valid_from: before.valid_from, valid_to: before.valid_to, provenance: before.provenance };
       const differences = Object.entries(changed).filter(([field, value]) => value !== old[field as keyof typeof old]);
@@ -108,7 +104,7 @@ export async function refreshRegisteredNcms(
             version: String(updated.rows[0].version), changedFields: differences.map(([field]) => field) })]);
       }
 
-      if (!source || !isSiscomex) continue;
+      if (!source) continue;
       const attributesHash = officialNcmAttributesHash(source.mandatoryImportAttributes);
       if (before.attributes_sha256?.trim() !== attributesHash) {
         attributesUpdatedCount += 1;
@@ -153,9 +149,7 @@ export const systemNcmRefreshActor = { issuer: "system", subject: "siscomex-ncm-
 export async function refreshInitialNcms(provider: OfficialNcmCatalogProvider, pool: Pool): Promise<NcmRefreshResult> {
   const official = await provider({ forceRefresh: true });
   return refreshRegisteredNcms(pool, official, systemNcmRefreshActor,
-    official.source !== "MDIC_GECEX"
-      ? "Sincronização automática inicial do catálogo oficial do Siscomex."
-      : `Sincronização do catálogo oficial do MDIC (${official.sourceReference}).`);
+    "Sincronização automática inicial do catálogo oficial do Siscomex.");
 }
 
 export async function refreshScheduledNcms(provider: OfficialNcmCatalogProvider, pool: Pool): Promise<NcmRefreshResult> {
@@ -164,7 +158,6 @@ export async function refreshScheduledNcms(provider: OfficialNcmCatalogProvider,
 }
 
 const BRASILIA_TIME_ZONE = "America/Sao_Paulo";
-const NCM_RETRY_INTERVAL_MS = 30 * 60 * 1000;
 const brasiliaParts = new Intl.DateTimeFormat("en-CA", {
   timeZone: BRASILIA_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit",
   hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
@@ -212,14 +205,13 @@ export function startDailyNcmRefresh(
   let running = false;
   let initialRefreshPending = options.initialRefresh !== undefined;
 
-  const scheduleAt = (nextAt: number, label: "daily" | "retry") => {
+  const scheduleAt = (nextAt: number) => {
     if (stopped) return;
-    logger.info({ nextAt: new Date(nextAt).toISOString(), times, timeZone: BRASILIA_TIME_ZONE, label },
-      label === "retry" ? "Agendada nova tentativa da sincronizacao de NCMs"
-        : "Agendada proxima sincronizacao diaria de NCMs");
+    logger.info({ nextAt: new Date(nextAt).toISOString(), times, timeZone: BRASILIA_TIME_ZONE },
+      "Agendada proxima sincronizacao diaria de NCMs");
     timer = setTimeout(() => { void runRefresh(); }, Math.max(1, nextAt - Date.now()));
   };
-  const scheduleNextDaily = () => scheduleAt(nextBrasiliaNcmRefresh(Date.now(), times), "daily");
+  const scheduleNextDaily = (after = Date.now()) => scheduleAt(nextBrasiliaNcmRefresh(after, times));
 
   const runRefresh = async () => {
     if (stopped || running) return;
@@ -227,27 +219,17 @@ export function startDailyNcmRefresh(
     const isInitial = initialRefreshPending;
     try {
       const result = await (isInitial ? options.initialRefresh!() : refresh());
-      logger.info({ ...result, initial: isInitial }, "Sincronizacao automatica de NCMs concluida");
       if (result.catalogSource === "MDIC_GECEX") {
-        const reportedRetryAt = result.siscomexRetryAt ?? 0;
-        const nextAt = reportedRetryAt > Date.now()
-          ? reportedRetryAt + 30_000
-          : Date.now() + NCM_RETRY_INTERVAL_MS;
-        logger.info({ nextAt: new Date(nextAt).toISOString(), catalogSource: result.catalogSource },
-          "Catalogo oficial MDIC mantido; nova tentativa do Siscomex agendada");
-        scheduleAt(nextAt, "retry");
-        return;
+        throw new Error("A fonte MDIC está inativa; somente o Siscomex pode concluir a sincronização.");
       }
+      logger.info({ ...result, initial: isInitial }, "Sincronizacao automatica de NCMs concluida");
       if (isInitial) initialRefreshPending = false;
       scheduleNextDaily();
     } catch (error) {
       logger.error({ error, initial: isInitial }, "Falha na sincronizacao automatica de NCMs");
       const reportedRetryAt = error && typeof error === "object" && "retryAt" in error
         && typeof error.retryAt === "number" && Number.isFinite(error.retryAt) ? error.retryAt : 0;
-      const nextAt = reportedRetryAt > Date.now()
-        ? reportedRetryAt + 30_000
-        : Date.now() + NCM_RETRY_INTERVAL_MS;
-      scheduleAt(nextAt, "retry");
+      scheduleNextDaily(Math.max(Date.now(), reportedRetryAt));
     } finally {
       running = false;
     }

@@ -34,3 +34,22 @@ test("automatic refresh runs only at the configured slots", async t => {
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(calls, 2);
 });
+
+test("a failed Siscomex slot does not retry before the next fixed slot", async t => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: Date.parse("2026-10-16T08:59:00.000Z") });
+  let calls = 0;
+  const stop = startDailyNcmRefresh("06:00,12:00", async () => {
+    calls += 1;
+    throw new Error("Siscomex indisponível");
+  }, { info() {}, error() {} });
+  t.after(stop);
+  t.mock.timers.tick(60_000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls, 1);
+  t.mock.timers.tick(5 * 60 * 60 * 1000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls, 1);
+  t.mock.timers.tick(60 * 60 * 1000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls, 2);
+});

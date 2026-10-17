@@ -631,16 +631,15 @@ export default function OperationalValuesPage() {
         {entities.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select></label>
       <p className="muted">NCMs são um catálogo fiscal global, sem vínculo com importadora.</p>
-      <p className="muted">A pesquisa usa o catálogo oficial sincronizado. Quando a fonte não informar a vigência individual, o cadastro pede a data e a evidência legal.</p>
+      <p className="muted">A pesquisa usa o último catálogo Siscomex sincronizado. Se uma nova consulta falhar, a cópia anterior permanece disponível e os NCMs cadastrados não são alterados.</p>
       {canWriteNcm && <button className="button secondary ncm-refresh-button" type="button" disabled={busy}
         onClick={() => void refreshRegisteredNcms()}>{busy ? "Atualizando..." : "Atualizar NCMs já cadastrados"}</button>}
       {ncmSyncStatus && <div className="muted" role="status">
-        <p>Catálogo para pesquisa: {ncmSyncStatus.snapshot?.source === "MDIC_GECEX" ? "MDIC"
-          : ncmSyncStatus.snapshot?.source === "SISCOMEX" ? "Siscomex" : "aguardando carga"}
+        <p>Catálogo para pesquisa: {ncmSyncStatus.snapshot?.source === "SISCOMEX" ? "Siscomex" : "aguardando carga Siscomex"}
           {ncmSyncStatus.snapshot ? ` · ${ncmSyncStatus.snapshot.itemCount} códigos · carga ${formatNcmDateTime(ncmSyncStatus.snapshot.syncedAt)}` : " · aguardando primeira carga"}.</p>
         <p>Última tentativa: {formatNcmDateTime(ncmSyncStatus.lastAttemptAt)}. Último sucesso do Siscomex: {formatNcmDateTime(ncmSyncStatus.lastSiscomexSuccessAt)}.</p>
         {ncmSyncStatus.lastError && <p>Situação atual: {ncmSyncStatus.lastError}</p>}
-        <p>Próxima {ncmSyncStatus.retryMode ? "tentativa automática" : "sincronização diária"}: {formatNcmDateTime(ncmSyncStatus.nextAttemptAt)} (Brasília).</p>
+        <p>Próxima sincronização programada: {formatNcmDateTime(ncmSyncStatus.nextAttemptAt)} (Brasília).</p>
       </div>}
       <h3>NCMs cadastrados &middot; {ncmTotalCount}</h3>
       <label className="product-catalog-search">Pesquisar por código ou descrição

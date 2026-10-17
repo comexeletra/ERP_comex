@@ -1,7 +1,6 @@
 import type { Pool } from "pg";
 import { nextBrasiliaNcmRefresh, type NcmRefreshResult } from "./ncm-sync.js";
 
-const RETRY_MS = 30 * 60 * 1000;
 const LOCK_KEY = "catalog:ncm:coordinated-refresh";
 
 export type NcmSyncState = {
@@ -54,11 +53,6 @@ export class NcmRefreshDeferred extends Error {
   }
 }
 
-function nextRetryAt(reported: number | null | undefined): number {
-  const now = Date.now();
-  return reported && reported > now ? reported + 30_000 : now + RETRY_MS;
-}
-
 function errorRetryAt(error: unknown): number | null {
   return error && typeof error === "object" && "retryAt" in error
     && typeof error.retryAt === "number" && Number.isFinite(error.retryAt) ? error.retryAt : null;
@@ -86,31 +80,31 @@ export async function runCoordinatedNcmRefresh(
       throw new NcmRefreshDeferred(scheduledAt);
     }
 
-    // Write a recovery time before network I/O. A process crash cannot lose the retry.
+    // Record the next fixed slot before network I/O so a crash cannot trigger extra attempts.
     await client.query(
       `UPDATE catalog.ncm_sync_state SET last_attempt_at=now(),
-         next_attempt_at=now()+interval '30 minutes',retry_mode=true,
-         last_error='Tentativa interrompida antes da conclusão.',updated_at=now() WHERE id=1`);
+         next_attempt_at=$1,retry_mode=false,
+         last_error='Tentativa interrompida antes da conclusão.',updated_at=now() WHERE id=1`,
+      [new Date(nextBrasiliaNcmRefresh(Date.now(), times))]);
     try {
       const result = await refresh();
-      const nextAt = result.catalogSource === "SISCOMEX"
-        ? nextBrasiliaNcmRefresh(Date.now(), times)
-        : nextRetryAt(result.siscomexRetryAt);
+      if (result.catalogSource !== "SISCOMEX") {
+        throw new Error("A fonte MDIC está inativa; somente o Siscomex pode concluir a sincronização.");
+      }
+      const nextAt = nextBrasiliaNcmRefresh(Date.now(), times);
       await client.query(
         `UPDATE catalog.ncm_sync_state SET last_success_at=now(),last_source=$1::text,
            last_siscomex_success_at=CASE WHEN $1::text='SISCOMEX' THEN now() ELSE last_siscomex_success_at END,
            last_error=$2,next_attempt_at=$3,retry_mode=$4,updated_at=now() WHERE id=1`,
-        [result.catalogSource, result.catalogSource === "SISCOMEX" ? null
-          : result.siscomexFailure ?? "Siscomex indisponível; catálogo MDIC carregado.",
-        new Date(nextAt), result.catalogSource !== "SISCOMEX"]);
+        [result.catalogSource, null, new Date(nextAt), false]);
       const saved = await client.query<StateRow>(stateSql);
       if (!saved.rows[0]) throw new Error("Estado da sincronização NCM não inicializado após a atualização.");
       return { result, state: present(saved.rows[0]) };
     } catch (error) {
-      const nextAt = nextRetryAt(errorRetryAt(error));
+      const nextAt = nextBrasiliaNcmRefresh(Math.max(Date.now(), errorRetryAt(error) ?? 0), times);
       await client.query(
         `UPDATE catalog.ncm_sync_state SET last_error=$1,next_attempt_at=$2,
-           retry_mode=true,updated_at=now() WHERE id=1`,
+           retry_mode=false,updated_at=now() WHERE id=1`,
         [error instanceof Error ? error.message.slice(0, 500) : "Falha desconhecida.", new Date(nextAt)]);
       throw error;
     }

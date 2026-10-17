@@ -3,9 +3,9 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
-import { fetchOfficialNcmCatalogWithFallback } from "./mdic-ncm.js";
 import { createPersistedOfficialNcmCatalogProvider } from "./ncm-snapshot.js";
 import {
+  fetchOfficialNcmCatalog,
   officialNcmAttributesHash,
   type OfficialNcm,
   type OfficialNcmCatalog,
@@ -154,8 +154,15 @@ function isUniqueError(error: unknown): boolean {
 export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
   options: { officialNcmProvider?: OfficialNcmCatalogProvider;
     ncmAutoRefreshTime?: string; logger?: Pick<FastifyInstance["log"], "info" | "error"> } = {}): Promise<void> {
-  const getOfficialNcms = options.officialNcmProvider
-    ?? createPersistedOfficialNcmCatalogProvider(pool, fetchOfficialNcmCatalogWithFallback);
+  const sourceProvider = options.officialNcmProvider
+    ?? createPersistedOfficialNcmCatalogProvider(pool, fetchOfficialNcmCatalog);
+  const getOfficialNcms: OfficialNcmCatalogProvider = async requestOptions => {
+    const catalog = await sourceProvider(requestOptions);
+    if (catalog.source !== "SISCOMEX") {
+      throw new Error("A fonte MDIC está inativa; somente o Siscomex pode fornecer NCMs.");
+    }
+    return catalog;
+  };
   if (options.ncmAutoRefreshTime) {
     const stopSchedule = startDurableNcmRefresh(pool, options.ncmAutoRefreshTime,
       () => refreshScheduledNcms(getOfficialNcms, pool), options.logger ?? app.log);

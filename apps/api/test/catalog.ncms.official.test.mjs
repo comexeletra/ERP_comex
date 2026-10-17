@@ -165,7 +165,7 @@ test("a user can add one selected official NCM with its mandatory attributes", a
 test("refresh updates only already registered NCMs and preserves unmatched historical rows", async t => {
   const current = makeEntry("10000001", "Nome antigo");
   const historical = makeEntry("99999999", "NCM histórico");
-  const { app, writes, existing } = await createApp({ existing: [current, historical] });
+  const { app, writes, audit, existing } = await createApp({ existing: [current, historical] });
   t.after(() => app.close());
 
   const response = await app.inject({ method: "POST", url: "/api/v1/ncms/refresh-official",
@@ -176,42 +176,48 @@ test("refresh updates only already registered NCMs and preserves unmatched histo
   assert.equal(response.json().attributesUpdatedCount, 1);
   assert.equal(response.json().preservedUnmatchedCount, 1);
   assert.equal(current.name, "Componente de teste A");
+  assert.equal(current.status, "ACTIVE");
+  assert.equal(current.valid_from, "2022-04-01");
+  assert.equal(current.valid_to, "9999-12-31");
+  assert.equal(current.provenance, "OFFICIAL_SISCOMEX");
   assert.equal(historical.name, "NCM histórico");
   assert.equal(writes.some(write => write.sql.includes("INSERT INTO catalog.entry\n")), false);
+  assert.equal(writes.some(write => write.sql.includes("INSERT INTO catalog.ncm_siscomex_data")), true);
+  assert.equal(audit.some(event => event.values[2] === "valid_to"), true);
+  assert.equal(audit.some(event => event.sql.includes("mandatoryImportAttributes")), true);
   assert.equal(existing.length, 2);
 });
 
-test("a complete MDIC current list inactivates registered codes absent from it", async t => {
+test("a complete MDIC list cannot overwrite or inactivate registered Siscomex codes", async t => {
   const current = makeEntry("10000001", "Nome antigo", { status: "ACTIVE" });
   const absent = makeEntry("99999999", "NCM anterior", { status: "ACTIVE" });
   const provider = async () => ({ ...official, source: "MDIC_GECEX",
     verifiedComplete: true, siscomexFailure: "Siscomex HTTP 422; catálogo MDIC carregado.",
     items: [{ ...official.items[0], validFrom: null, validTo: null }] });
-  const { app, existing, audit, outbox } = await createApp({ provider, existing: [current, absent] });
+  const { app, existing, audit, outbox, writes } = await createApp({ provider, existing: [current, absent] });
   t.after(() => app.close());
   const response = await app.inject({ method: "POST", url: "/api/v1/ncms/refresh-official",
     headers: { "x-test-subject": "fiscal" }, payload: {} });
-  assert.equal(response.statusCode, 200, response.body);
-  assert.equal(response.json().inactivatedCount, 1);
-  assert.equal(response.json().preservedUnmatchedCount, 0);
-  assert.equal(absent.status, "INACTIVE");
+  assert.equal(response.statusCode, 500, response.body);
+  assert.equal(current.name, "Nome antigo");
+  assert.equal(absent.status, "ACTIVE");
   assert.equal(absent.valid_from, "2022-04-01");
   assert.equal(existing.length, 2);
-  assert.ok(audit.some(event => event.values[2] === "status"));
-  assert.ok(outbox.some(event => event.sql.includes("catalog.entry.updated")));
+  assert.equal(writes.some(write => write.sql.includes("UPDATE catalog.entry")), false);
+  assert.equal(audit.length, 0);
+  assert.equal(outbox.length, 0);
 });
 
-test("an unverified fallback preserves absent registered codes", async t => {
+test("an MDIC search result is rejected while Siscomex is the only active source", async t => {
   const absent = makeEntry("99999999", "NCM anterior", { status: "ACTIVE" });
   const provider = async () => ({ ...official, source: "MDIC_GECEX", verifiedComplete: false,
     items: [{ ...official.items[0], validFrom: null, validTo: null }] });
   const { app } = await createApp({ provider, existing: [absent] });
   t.after(() => app.close());
-  const response = await app.inject({ method: "POST", url: "/api/v1/ncms/refresh-official",
-    headers: { "x-test-subject": "fiscal" }, payload: {} });
-  assert.equal(response.statusCode, 200, response.body);
-  assert.equal(response.json().inactivatedCount, 0);
-  assert.equal(response.json().preservedUnmatchedCount, 1);
+  const response = await app.inject({ method: "GET", url: "/api/v1/ncms/official-search?search=10000001",
+    headers: { "x-test-subject": "fiscal" } });
+  assert.equal(response.statusCode, 502, response.body);
+  assert.equal(response.json().code, "SISCOMEX_UNAVAILABLE");
   assert.equal(absent.status, "ACTIVE");
 });
 

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { NcmRefreshDeferred, readNcmSyncState, runCoordinatedNcmRefresh,
   startDurableNcmRefresh } from "../dist/ncm-scheduler.js";
+import { nextBrasiliaNcmRefresh } from "../dist/ncm-sync.js";
 
 function fakePool() {
   const row = { last_attempt_at: null, last_success_at: null, last_source: null,
@@ -17,10 +18,10 @@ function fakePool() {
     if (sql.includes("pg_advisory_unlock")) { lockHeld = false; return { rows: [] }; }
     if (sql.includes("FROM catalog.ncm_sync_state")) return { rows: [{ ...row }] };
     if (sql.includes("UPDATE catalog.ncm_sync_state")) {
-      if (values.length === 0) {
+      if (sql.includes("last_attempt_at=now()")) {
         row.last_attempt_at = new Date();
-        row.next_attempt_at = new Date(Date.now() + 30 * 60_000);
-        row.retry_mode = true;
+        row.next_attempt_at = values[0];
+        row.retry_mode = false;
         row.last_error = "Tentativa interrompida antes da conclusão.";
       } else if (values.length === 4) {
         row.last_success_at = new Date();
@@ -32,6 +33,7 @@ function fakePool() {
       } else {
         row.last_error = values[0];
         row.next_attempt_at = values[1];
+        row.retry_mode = false;
       }
       return { rows: [] };
     }
@@ -46,20 +48,21 @@ const mdicResult = { catalogSource: "MDIC_GECEX", siscomexRetryAt: null,
   attributesUpdatedCount: 0, preservedUnmatchedCount: 0,
   sourceUpdatedAt: "2026-10-05", attributesSourceVersion: "not-provided" };
 
-test("MDIC success persists a retry and a restarted scheduler respects it", async () => {
+test("MDIC cannot mark a synchronization successful or change the Siscomex catalog", async () => {
   const pool = fakePool();
   let calls = 0;
-  const { state } = await runCoordinatedNcmRefresh(pool, async () => {
+  await assert.rejects(runCoordinatedNcmRefresh(pool, async () => {
     calls += 1; return mdicResult;
-  }, "06:00,12:00", "automatic");
-  assert.equal(state.lastSource, "MDIC_GECEX");
+  }, "06:00,12:00", "automatic"), /MDIC está inativa/u);
+  const state = await readNcmSyncState(pool);
+  assert.equal(state.lastSource, null);
   assert.equal(state.lastSiscomexSuccessAt, null);
-  assert.equal(state.retryMode, true);
-  assert.match(state.lastError, /Siscomex HTTP 422/u);
+  assert.equal(state.retryMode, false);
+  assert.match(state.lastError, /MDIC está inativa/u);
   assert.ok(Date.parse(state.nextAttemptAt) > Date.now());
   await assert.rejects(runCoordinatedNcmRefresh(pool, async () => {
     calls += 1; return mdicResult;
-  }, "06:00,12:00", "manual"), NcmRefreshDeferred);
+  }, "06:00,12:00", "automatic"), NcmRefreshDeferred);
   const stop = startDurableNcmRefresh(pool, "06:00,12:00", async () => {
     calls += 1; return mdicResult;
   }, { info() {}, error() {} });
@@ -68,7 +71,7 @@ test("MDIC success persists a retry and a restarted scheduler respects it", asyn
   assert.equal(calls, 1);
 });
 
-test("failed sync keeps the last success and schedules a retry", async () => {
+test("failed sync keeps the last success and waits for the next fixed slot", async () => {
   const pool = fakePool();
   pool.row.last_source = "SISCOMEX";
   pool.row.last_siscomex_success_at = new Date("2026-10-15T12:00:00Z");
@@ -79,6 +82,6 @@ test("failed sync keeps the last success and schedules a retry", async () => {
   const state = await readNcmSyncState(pool);
   assert.equal(state.lastSource, "SISCOMEX");
   assert.equal(state.lastSiscomexSuccessAt, "2026-10-15T12:00:00.000Z");
-  assert.ok(Date.parse(state.nextAttemptAt) >= releaseAt);
-  assert.equal(state.retryMode, true);
+  assert.equal(Date.parse(state.nextAttemptAt), nextBrasiliaNcmRefresh(releaseAt, "06:00,12:00"));
+  assert.equal(state.retryMode, false);
 });
