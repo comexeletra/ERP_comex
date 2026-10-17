@@ -97,8 +97,8 @@ export async function runCoordinatedNcmRefresh(
         ? nextBrasiliaNcmRefresh(Date.now(), times)
         : nextRetryAt(result.siscomexRetryAt);
       await client.query(
-        `UPDATE catalog.ncm_sync_state SET last_success_at=now(),last_source=$1,
-           last_siscomex_success_at=CASE WHEN $1='SISCOMEX' THEN now() ELSE last_siscomex_success_at END,
+        `UPDATE catalog.ncm_sync_state SET last_success_at=now(),last_source=$1::text,
+           last_siscomex_success_at=CASE WHEN $1::text='SISCOMEX' THEN now() ELSE last_siscomex_success_at END,
            last_error=$2,next_attempt_at=$3,retry_mode=$4,updated_at=now() WHERE id=1`,
         [result.catalogSource, result.catalogSource === "SISCOMEX" ? null
           : result.siscomexFailure ?? "Siscomex indisponível; catálogo MDIC carregado.",
