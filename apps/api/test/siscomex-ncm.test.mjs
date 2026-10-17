@@ -126,6 +126,27 @@ test("NCM table accepts the documented Siscomex JSON fields and validity dates",
   }]);
 });
 
+test("NCM table accepts date-time headers and ignores an unrecognized informational date", () => {
+  const nomenclaturas = [{
+    codigo: "0101.21.00", descricao: "Reprodutores de raça pura",
+    dataInicio: "2022-04-01", dataFim: "9999-12-31",
+  }];
+  for (const [header, expected] of [
+    ["17/10/2026 18:00:00", "2026-10-17"],
+    ["2026-10-17 18:00:00", "2026-10-17"],
+    ["17/10/2026", "2026-10-17"],
+    ["formato desconhecido", null],
+  ]) {
+    const parsed = parseSiscomexNcmTable({ dataUltimaAlteracao: header, nomenclaturas }, 1);
+    assert.equal(parsed.sourceUpdatedAt, expected);
+    assert.equal(parsed.items.length, 1);
+  }
+  assert.throws(() => parseSiscomexNcmTable({
+    dataUltimaAlteracao: "formato desconhecido",
+    nomenclaturas: [{ ...nomenclaturas[0], dataInicio: "formato desconhecido" }],
+  }, 1), /Data inválida/u);
+});
+
 test("Siscomex retry time is interpreted in Brasília time", () => {
   const now = Date.parse("2026-10-16T20:02:00.000Z");
   assert.equal(
