@@ -109,6 +109,12 @@ export async function refreshRegisteredNcms(
 
 export const systemNcmRefreshActor = { issuer: "system", subject: "siscomex-ncm-scheduler", userId: null };
 
+export async function refreshInitialNcms(provider: OfficialNcmCatalogProvider, pool: Pool): Promise<NcmRefreshResult> {
+  const official = await provider();
+  return refreshRegisteredNcms(pool, official, systemNcmRefreshActor,
+    "Sincronização automática inicial do catálogo oficial do Siscomex.");
+}
+
 export async function refreshScheduledNcms(provider: OfficialNcmCatalogProvider, pool: Pool): Promise<NcmRefreshResult> {
   const official = await provider({ forceRefresh: true });
   return refreshRegisteredNcms(pool, official, systemNcmRefreshActor);
@@ -155,24 +161,45 @@ export function startDailyNcmRefresh(
   times: string | readonly string[],
   refresh: () => Promise<NcmRefreshResult>,
   logger: { info: (details: object, message: string) => void; error: (details: object, message: string) => void },
+  options: { initialRefresh?: () => Promise<NcmRefreshResult> } = {},
 ): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
-  const schedule = () => {
+  let running = false;
+  let initialRefreshPending = options.initialRefresh !== undefined;
+
+  const scheduleAt = (nextAt: number, label: "daily" | "retry") => {
     if (stopped) return;
-    const nextAt = nextBrasiliaNcmRefresh(Date.now(), times);
-    logger.info({ nextAt: new Date(nextAt).toISOString(), times, timeZone: BRASILIA_TIME_ZONE },
-      "Agendada próxima sincronização diária de NCMs");
-    timer = setTimeout(async () => {
-      try {
-        const result = await refresh();
-        logger.info({ ...result }, "Sincronização diária de NCMs concluída");
-      } catch (error) {
-        logger.error({ error }, "Falha na sincronização diária de NCMs; próxima tentativa no horário agendado");
-      }
-      schedule();
-    }, Math.max(1, nextAt - Date.now()));
+    logger.info({ nextAt: new Date(nextAt).toISOString(), times, timeZone: BRASILIA_TIME_ZONE, label },
+      label === "retry" ? "Agendada nova tentativa da sincronizacao de NCMs"
+        : "Agendada proxima sincronizacao diaria de NCMs");
+    timer = setTimeout(() => { void runRefresh(); }, Math.max(1, nextAt - Date.now()));
   };
-  schedule();
+  const scheduleNextDaily = () => scheduleAt(nextBrasiliaNcmRefresh(Date.now(), times), "daily");
+
+  const runRefresh = async () => {
+    if (stopped || running) return;
+    running = true;
+    const isInitial = initialRefreshPending;
+    try {
+      const result = await (isInitial ? options.initialRefresh!() : refresh());
+      if (isInitial) initialRefreshPending = false;
+      logger.info({ ...result, initial: isInitial }, "Sincronizacao automatica de NCMs concluida");
+      scheduleNextDaily();
+    } catch (error) {
+      logger.error({ error, initial: isInitial }, "Falha na sincronizacao automatica de NCMs");
+      const reportedRetryAt = error && typeof error === "object" && "retryAt" in error
+        && typeof error.retryAt === "number" && Number.isFinite(error.retryAt) ? error.retryAt : 0;
+      const nextAt = reportedRetryAt > Date.now()
+        ? reportedRetryAt + 30_000
+        : Date.now() + 5 * 60 * 1000;
+      scheduleAt(nextAt, "retry");
+    } finally {
+      running = false;
+    }
+  };
+
+  if (initialRefreshPending) void runRefresh();
+  else scheduleNextDaily();
   return () => { stopped = true; if (timer) clearTimeout(timer); };
 }

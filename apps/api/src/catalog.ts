@@ -11,7 +11,7 @@ import {
   type OfficialNcmCatalog,
   type OfficialNcmCatalogProvider,
 } from "./siscomex-ncm.js";
-import { refreshRegisteredNcms, refreshScheduledNcms, startDailyNcmRefresh } from "./ncm-sync.js";
+import { refreshInitialNcms, refreshRegisteredNcms, refreshScheduledNcms, startDailyNcmRefresh } from "./ncm-sync.js";
 
 type Kind = "SUPPLIER" | "PRODUCT" | "NCM";
 const resources: ReadonlyArray<{ path: string; kind: Kind; sourceColumn: string }> = [
@@ -148,7 +148,8 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
     ?? createPersistedOfficialNcmCatalogProvider(pool, fetchOfficialNcmCatalog);
   if (options.ncmAutoRefreshTime) {
     const stopSchedule = startDailyNcmRefresh(options.ncmAutoRefreshTime,
-      () => refreshScheduledNcms(getOfficialNcms, pool), options.logger ?? app.log);
+      () => refreshScheduledNcms(getOfficialNcms, pool), options.logger ?? app.log,
+      { initialRefresh: () => refreshInitialNcms(getOfficialNcms, pool) });
     app.addHook("onClose", async () => stopSchedule());
   }
   app.get("/api/v1/operational-values", { config: permissionConfig("catalog.read") }, async (request, reply) => {

@@ -181,7 +181,8 @@ export function createOfficialNcmCatalogProvider(
         const fallbackDelay = Math.min(maxRetryDelayMs, initialRetryDelayMs * (2 ** exponent));
         const reportedRetryAt = error && typeof error === "object" && "retryAt" in error
           && typeof error.retryAt === "number" && Number.isFinite(error.retryAt) ? error.retryAt : 0;
-        blockedUntil = Math.max(reportedRetryAt, now() + fallbackDelay);
+        const failedAt = now();
+        blockedUntil = reportedRetryAt > failedAt ? reportedRetryAt : failedAt + fallbackDelay;
         const statusCode = error && typeof error === "object" && "statusCode" in error
           && typeof error.statusCode === "number" ? error.statusCode : 502;
         throw new SiscomexResponseError(statusCode, blockedUntil);
