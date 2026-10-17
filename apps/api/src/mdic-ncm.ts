@@ -109,6 +109,13 @@ export async function fetchMdicNcmCatalog(fetcher: typeof fetch = fetch): Promis
   return parseMdicWorkbook(new Uint8Array(workbookBytes), updatedAt, sourceReference);
 }
 
+export function summarizeSiscomexFailure(error: unknown): string {
+  if (error && typeof error === "object" && "statusCode" in error && typeof error.statusCode === "number") {
+    return `HTTP ${error.statusCode}`;
+  }
+  return error instanceof Error ? error.message.slice(0, 200) : "falha de conexão ou resposta";
+}
+
 export async function fetchOfficialNcmCatalogWithFallback(fetcher: typeof fetch = fetch): Promise<OfficialNcmCatalog> {
   let siscomexError: unknown;
   let siscomexRetryAt: number | null = null;
@@ -123,8 +130,7 @@ export async function fetchOfficialNcmCatalogWithFallback(fetcher: typeof fetch 
   }
 
   try {
-    const status = siscomexError && typeof siscomexError === "object" && "statusCode" in siscomexError
-      && typeof siscomexError.statusCode === "number" ? `HTTP ${siscomexError.statusCode}` : "falha de conexão ou resposta";
+    const status = summarizeSiscomexFailure(siscomexError);
     return { ...await fetchMdicNcmCatalog(fetcher), siscomexRetryAt,
       siscomexFailure: `Siscomex: ${status}; catálogo MDIC carregado.` };
   } catch (mdicError) {

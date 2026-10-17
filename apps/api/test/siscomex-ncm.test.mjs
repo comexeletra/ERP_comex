@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createOfficialNcmCatalogProvider,
+  fetchOfficialNcmCatalog,
   parseSiscomexCatalog,
   parseSiscomexNcmTable,
   parseSiscomexRetryAt,
 } from "../src/siscomex-ncm.ts";
+import { summarizeSiscomexFailure } from "../dist/mdic-ncm.js";
 
 function zipJson(value) {
   const name = Buffer.from("attributes.json", "utf8");
@@ -130,6 +132,16 @@ test("Siscomex retry time is interpreted in Brasília time", () => {
     parseSiscomexRetryAt("Disponível novamente após as 17:59:59 (horário de Brasília).", now),
     Date.parse("2026-10-16T20:59:59.000Z"),
   );
+});
+
+test("source failures retain endpoint and parser details for the fallback status", async () => {
+  const fetcher = async url => {
+    if (url.includes("nomenclatura")) throw new Error("connection timed out");
+    return new Response(null, { status: 200 });
+  };
+  await assert.rejects(fetchOfficialNcmCatalog(fetcher), /nomenclaturas NCM.*connection timed out/u);
+  assert.match(summarizeSiscomexFailure(new Error("JSON de NCM inválido")), /JSON de NCM inválido/u);
+  assert.equal(summarizeSiscomexFailure({ statusCode: 422 }), "HTTP 422");
 });
 
 test("official NCM provider coalesces requests and suppresses retries during Siscomex cooldown", async () => {

@@ -397,9 +397,15 @@ export function parseSiscomexCatalog(
 }
 
 export async function fetchOfficialNcmCatalog(fetcher: typeof fetch = fetch): Promise<OfficialNcmCatalog> {
+  const download = async (url: string, label: string): Promise<Response> => {
+    try { return await fetcher(url, { signal: AbortSignal.timeout(60_000) }); }
+    catch (error) {
+      throw new Error(`Falha ao baixar ${label} do Siscomex: ${error instanceof Error ? error.message : "erro desconhecido"}.`);
+    }
+  };
   const [ncmResponse, attributeResponse] = await Promise.all([
-    fetcher(SISCOMEX_NCM_URL, { signal: AbortSignal.timeout(60_000) }),
-    fetcher(SISCOMEX_NCM_ATTRIBUTES_URL, { signal: AbortSignal.timeout(60_000) }),
+    download(SISCOMEX_NCM_URL, "nomenclaturas NCM"),
+    download(SISCOMEX_NCM_ATTRIBUTES_URL, "atributos NCM"),
   ]);
   if (!ncmResponse.ok || !attributeResponse.ok) {
     const failedResponses = [ncmResponse, attributeResponse].filter(response => !response.ok);
