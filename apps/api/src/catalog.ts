@@ -37,16 +37,26 @@ function operationalValueHasValidFormat(entity: string, value: string): boolean 
   return (entity !== "CURRENCY" || /^[A-Z]{3}$/u.test(value))
     && (entity !== "NCM" || /^\d{8}$/u.test(value));
 }
+const formattedCnpj = /^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}$/u;
 const operationalValueId = z.uuid();
 const operationalValueUpdateBody = z.object({
   expectedCode: z.string().trim().min(1).max(120).nullable().optional(),
+  expectedImportCons: z.string().trim().min(1).max(40).nullable().optional(),
+  expectedCnpj: z.string().trim().min(1).max(18).nullable().optional(),
+  expectedShortName: z.string().trim().min(1).max(240).nullable().optional(),
   expectedValue: z.string().trim().min(1).max(240),
-  code: z.string().trim().min(1).max(120).optional(),
+  code: z.string().trim().min(1).max(120).nullable().optional(),
+  importCons: z.string().trim().min(1).max(40).nullable().optional(),
+  cnpj: z.string().trim().min(1).max(18).nullable().optional(),
+  shortName: z.string().trim().min(1).max(240).nullable().optional(),
   value: z.string().trim().min(1).max(240),
   reason: z.string().trim().min(8).max(500),
 }).strict();
 const operationalValueDeleteBody = z.object({
   expectedCode: z.string().trim().min(1).max(120).nullable().optional(),
+  expectedImportCons: z.string().trim().min(1).max(40).nullable().optional(),
+  expectedCnpj: z.string().trim().min(1).max(18).nullable().optional(),
+  expectedShortName: z.string().trim().min(1).max(240).nullable().optional(),
   expectedValue: z.string().trim().min(1).max(240),
   reason: z.string().trim().min(8).max(500),
 }).strict();
@@ -173,8 +183,9 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
   }
   app.get("/api/v1/operational-values", { config: permissionConfig("catalog.read") }, async (request, reply) => {
     reply.header("cache-control", "no-store");
-    const result = await pool.query<{ id: string; entity_key: string; code: string | null; value: string; created_by: string | null }>(
-      `SELECT id, entity_key, code, value, created_by FROM catalog.operational_value
+    const result = await pool.query<{ id: string; entity_key: string; code: string | null; value: string;
+      import_cons: string | null; cnpj: string | null; short_name: string | null; created_by: string | null }>(
+      `SELECT id, entity_key, code, value, import_cons, cnpj, short_name, created_by FROM catalog.operational_value
        ORDER BY entity_key, normalized_value`);
     const groupColumn = await pool.query<{ enabled: boolean }>(
       `SELECT EXISTS (SELECT 1 FROM information_schema.columns
@@ -185,12 +196,18 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
     const userId = request.authContext?.userId;
     return { items: result.rows.filter(row => row.entity_key !== "IMPORTER" || canViewAllImporters
       || scopes.includes(row.value) || row.created_by === userId)
-      .map(row => ({ id: row.id, entity: row.entity_key.toLowerCase(), code: row.code, value: row.value })),
+      .map(row => ({ id: row.id, entity: row.entity_key.toLowerCase(), code: row.code, value: row.value,
+        ...(row.import_cons != null ? { importCons: row.import_cons } : {}),
+        ...(row.cnpj != null ? { cnpj: row.cnpj } : {}),
+        ...(row.short_name != null ? { shortName: row.short_name } : {}) })),
       capabilities: { purchaseOrderGroup: groupColumn.rows[0]?.enabled ?? false } };
   });
 
   app.post("/api/v1/operational-values", { config: permissionConfig("catalog.write") }, async (request, reply) => {
-    const body = z.object({ entity: z.string().trim().toUpperCase(), code: z.string().trim().min(1).max(120).optional(), value: z.string().trim().min(1).max(240),
+    const body = z.object({ entity: z.string().trim().toUpperCase(), code: z.string().trim().min(1).max(120).optional(),
+      importCons: z.string().trim().min(1).max(40).optional(), cnpj: z.string().trim().min(1).max(18).optional(),
+      shortName: z.string().trim().min(1).max(240).optional(),
+      value: z.string().trim().min(1).max(240),
       reason: z.string().trim().min(8).max(500) }).strict().safeParse(request.body);
     const actor = request.authContext;
     if (!body.success || !operationalValueKeys.has(body.data.entity)) {
@@ -200,7 +217,13 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
       || !operationalValueHasValidFormat(body.data.entity, body.data.value)) {
       return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "O valor não respeita o formato do campo escolhido.");
     }
-    if ((body.data.entity === "GROUP") !== (body.data.code !== undefined)) {
+    if (body.data.cnpj !== undefined && !formattedCnpj.test(body.data.cnpj)) {
+      return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "Informe um CNPJ no formato 00.000.000/0000-00.");
+    }
+    if (((body.data.entity === "GROUP" || body.data.entity === "IMPORTER") !== (body.data.code !== undefined))
+      || ((body.data.entity === "IMPORTER") !== (body.data.importCons !== undefined))
+      || ((body.data.entity === "IMPORTER") !== (body.data.cnpj !== undefined))
+      || (body.data.entity !== "IMPORTER" && body.data.shortName !== undefined)) {
       return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "Informe código e valor para Group; as demais entidades recebem somente valor.");
     }
     if (!actor) return problem(reply, 401, "AUTHENTICATION_REQUIRED", "Sessão ausente.");
@@ -211,16 +234,20 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
     try {
       await client.query("BEGIN");
       const id = randomUUID();
-      const inserted = await client.query<{ id: string; entity_key: string; code: string | null; value: string }>(
-        `INSERT INTO catalog.operational_value (id, entity_key, code, value, created_by)
-         VALUES ($1,$2,$3,$4,$5) RETURNING id, entity_key, code, value`,
-        [id, body.data.entity, body.data.code ?? null, body.data.value, actor.userId]);
+      const inserted = await client.query<{ id: string; entity_key: string; code: string | null; value: string;
+        import_cons: string | null; cnpj: string | null; short_name: string | null }>(
+        `INSERT INTO catalog.operational_value (id, entity_key, code, value, import_cons, cnpj, short_name, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, entity_key, code, value, import_cons, cnpj, short_name`,
+        [id, body.data.entity, body.data.code ?? null, body.data.value, body.data.importCons ?? null,
+          body.data.cnpj ?? null, body.data.shortName ?? null, actor.userId]);
       const correlationId = randomUUID();
       await client.query(
         `INSERT INTO audit.audit_log
           (id,aggregate_type,aggregate_id,entity_type,entity_id,operation,field_name,old_value,new_value,actor_id,occurred_at,reason,correlation_id)
          VALUES ($1,'OPERATIONAL_VALUE',$2,'OPERATIONAL_VALUE',$2,'CREATE','value',NULL,$3::jsonb,$4,now(),$5,$6)`,
-        [randomUUID(), id, JSON.stringify({ entity: body.data.entity.toLowerCase(), code: body.data.code ?? null, value: body.data.value }),
+        [randomUUID(), id, JSON.stringify({ entity: body.data.entity.toLowerCase(), code: body.data.code ?? null,
+          value: body.data.value, importCons: body.data.importCons ?? null, cnpj: body.data.cnpj ?? null,
+          shortName: body.data.shortName ?? null }),
           `${actor.issuer}#${actor.subject}`, body.data.reason, correlationId]);
       await client.query(
         `INSERT INTO audit.outbox_message (event_id,event_type,aggregate_type,aggregate_id,payload,occurred_at)
@@ -228,7 +255,9 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
         [correlationId, id, JSON.stringify({ id, entity: body.data.entity.toLowerCase() })]);
       await client.query("COMMIT");
       return reply.code(201).send({ id: inserted.rows[0].id,
-        entity: inserted.rows[0].entity_key.toLowerCase(), code: inserted.rows[0].code, value: inserted.rows[0].value });
+        entity: inserted.rows[0].entity_key.toLowerCase(), code: inserted.rows[0].code, value: inserted.rows[0].value,
+        importCons: inserted.rows[0].import_cons, cnpj: inserted.rows[0].cnpj,
+        shortName: inserted.rows[0].short_name });
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       if (isUniqueError(error)) return problem(reply, 409, "DUPLICATE_OPERATIONAL_VALUE", "Esse valor já existe para a entidade.");
@@ -244,7 +273,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
     if (!body.success || !operationalValueKeys.has(body.data.entity)) {
       return problem(reply, 400, "INVALID_OPERATIONAL_VALUES", "Informe uma entidade e uma lista JSON válida com até 500 valores.");
     }
-    if (body.data.entity === "GROUP") {
+    if (body.data.entity === "GROUP" || body.data.entity === "IMPORTER") {
       return problem(reply, 400, "INVALID_OPERATIONAL_VALUES", "Informe o código e o valor de cada registro Group.");
     }
     const invalidValue = body.data.values.find(value => value.length > operationalValueMax[body.data.entity]
@@ -310,8 +339,9 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
-        const current = await client.query<{ entity_key: string; code: string | null; value: string }>(
-          `SELECT entity_key, code, value FROM catalog.operational_value WHERE id = $1 FOR UPDATE`, [id.data]);
+        const current = await client.query<{ entity_key: string; code: string | null; value: string;
+          import_cons: string | null; cnpj: string | null; short_name: string | null }>(
+          `SELECT entity_key, code, value, import_cons, cnpj, short_name FROM catalog.operational_value WHERE id = $1 FOR UPDATE`, [id.data]);
         const previous = current.rows[0];
         if (!previous) {
           await client.query("ROLLBACK");
@@ -321,12 +351,29 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
           await client.query("ROLLBACK");
           return problem(reply, 409, "STALE_OPERATIONAL_VALUE", "Este valor foi alterado por outra pessoa. Atualize a lista e tente novamente.");
         }
+        const importerCodeChanged = body.data.code !== undefined || body.data.expectedCode !== undefined;
+        const importerTypeChanged = body.data.importCons !== undefined || body.data.expectedImportCons !== undefined;
+        const importerCnpjChanged = body.data.cnpj !== undefined || body.data.expectedCnpj !== undefined;
+        const importerShortNameChanged = body.data.shortName !== undefined || body.data.expectedShortName !== undefined;
         if ((previous.entity_key === "GROUP" && (body.data.expectedCode ?? null) !== previous.code)
-          || (previous.entity_key !== "GROUP" && (body.data.code !== undefined || body.data.expectedCode !== undefined))) {
+          || (previous.entity_key === "IMPORTER" && importerCodeChanged
+            && (body.data.expectedCode ?? null) !== previous.code)
+          || (previous.entity_key === "IMPORTER" && importerTypeChanged
+            && (body.data.expectedImportCons ?? null) !== previous.import_cons)
+          || (previous.entity_key === "IMPORTER" && importerCnpjChanged
+            && (body.data.expectedCnpj ?? null) !== previous.cnpj)
+          || (previous.entity_key === "IMPORTER" && importerShortNameChanged
+            && (body.data.expectedShortName ?? null) !== previous.short_name)
+          || (previous.entity_key !== "GROUP" && previous.entity_key !== "IMPORTER" && importerCodeChanged)
+          || (previous.entity_key !== "IMPORTER"
+            && (importerTypeChanged || importerCnpjChanged || importerShortNameChanged))) {
           await client.query("ROLLBACK");
           return problem(reply, 409, "STALE_OPERATIONAL_VALUE", "O código foi alterado ou não corresponde ao cadastro atual.");
         }
-        const code = body.data.code ?? previous.code;
+        const code = body.data.code === undefined ? previous.code : body.data.code;
+        const importCons = body.data.importCons === undefined ? previous.import_cons : body.data.importCons;
+        const cnpj = body.data.cnpj === undefined ? previous.cnpj : body.data.cnpj;
+        const shortName = body.data.shortName === undefined ? previous.short_name : body.data.shortName;
         if (previous.entity_key === "GROUP" && !code) {
           await client.query("ROLLBACK");
           return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "Group exige código e valor.");
@@ -336,29 +383,43 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
           await client.query("ROLLBACK");
           return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "O valor não respeita o formato do campo escolhido.");
         }
-        if (previous.value === body.data.value && previous.code === code) {
+        if (previous.entity_key === "IMPORTER" && cnpj !== null && !formattedCnpj.test(cnpj)) {
+          await client.query("ROLLBACK");
+          return problem(reply, 400, "INVALID_OPERATIONAL_VALUE", "Informe um CNPJ no formato 00.000.000/0000-00.");
+        }
+        if (previous.value === body.data.value && previous.code === code && previous.import_cons === importCons
+          && previous.cnpj === cnpj && previous.short_name === shortName) {
           await client.query("COMMIT");
-          return { id: id.data, entity: previous.entity_key.toLowerCase(), value: previous.value, unchanged: true };
+          return { id: id.data, entity: previous.entity_key.toLowerCase(), code: previous.code,
+            value: previous.value, importCons: previous.import_cons, cnpj: previous.cnpj,
+            shortName: previous.short_name, unchanged: true };
         }
 
-        const updated = await client.query<{ entity_key: string; code: string | null; value: string }>(
-          `UPDATE catalog.operational_value SET code = $2, value = $3 WHERE id = $1
-           RETURNING entity_key, code, value`, [id.data, code, body.data.value]);
+        const updated = await client.query<{ entity_key: string; code: string | null; value: string;
+          import_cons: string | null; cnpj: string | null; short_name: string | null }>(
+          `UPDATE catalog.operational_value SET code = $2, import_cons = $3, cnpj = $4, short_name = $5, value = $6 WHERE id = $1
+           RETURNING entity_key, code, value, import_cons, cnpj, short_name`,
+          [id.data, code, importCons, cnpj, shortName, body.data.value]);
         const correlationId = randomUUID();
         await client.query(
           `INSERT INTO audit.audit_log
             (id,aggregate_type,aggregate_id,entity_type,entity_id,operation,field_name,old_value,new_value,actor_id,occurred_at,reason,correlation_id)
            VALUES ($1,'OPERATIONAL_VALUE',$2,'OPERATIONAL_VALUE',$2,'UPDATE','value',$3::jsonb,$4::jsonb,$5,now(),$6,$7)`,
           [randomUUID(), id.data,
-            JSON.stringify({ entity: previous.entity_key.toLowerCase(), code: previous.code, value: previous.value }),
-            JSON.stringify({ entity: updated.rows[0].entity_key.toLowerCase(), code: updated.rows[0].code, value: updated.rows[0].value }),
+            JSON.stringify({ entity: previous.entity_key.toLowerCase(), code: previous.code, value: previous.value,
+              importCons: previous.import_cons, cnpj: previous.cnpj, shortName: previous.short_name }),
+            JSON.stringify({ entity: updated.rows[0].entity_key.toLowerCase(), code: updated.rows[0].code,
+              value: updated.rows[0].value, importCons: updated.rows[0].import_cons,
+              cnpj: updated.rows[0].cnpj, shortName: updated.rows[0].short_name }),
             `${actor.issuer}#${actor.subject}`, body.data.reason, correlationId]);
         await client.query(
           `INSERT INTO audit.outbox_message (event_id,event_type,aggregate_type,aggregate_id,payload,occurred_at)
            VALUES ($1,'catalog.operational_value.updated','OPERATIONAL_VALUE',$2,$3::jsonb,now())`,
           [correlationId, id.data, JSON.stringify({ id: id.data, entity: updated.rows[0].entity_key.toLowerCase() })]);
         await client.query("COMMIT");
-        return { id: id.data, entity: updated.rows[0].entity_key.toLowerCase(), code: updated.rows[0].code, value: updated.rows[0].value };
+        return { id: id.data, entity: updated.rows[0].entity_key.toLowerCase(), code: updated.rows[0].code,
+          value: updated.rows[0].value, importCons: updated.rows[0].import_cons, cnpj: updated.rows[0].cnpj,
+          shortName: updated.rows[0].short_name };
       } catch (error) {
         await client.query("ROLLBACK").catch(() => undefined);
         if (isUniqueError(error)) {
@@ -384,8 +445,9 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
-        const current = await client.query<{ entity_key: string; code: string | null; value: string }>(
-          `SELECT entity_key, code, value FROM catalog.operational_value WHERE id = $1 FOR UPDATE`, [id.data]);
+        const current = await client.query<{ entity_key: string; code: string | null; value: string;
+          import_cons: string | null; cnpj: string | null; short_name: string | null }>(
+          `SELECT entity_key, code, value, import_cons, cnpj, short_name FROM catalog.operational_value WHERE id = $1 FOR UPDATE`, [id.data]);
         const previous = current.rows[0];
         if (!previous) {
           await client.query("ROLLBACK");
@@ -393,22 +455,36 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
         }
         if (previous.value !== body.data.expectedValue
           || (previous.entity_key === "GROUP" && (body.data.expectedCode ?? null) !== previous.code)
-          || (previous.entity_key !== "GROUP" && body.data.expectedCode !== undefined)) {
+          || (previous.entity_key === "IMPORTER" && body.data.expectedCode !== undefined
+            && body.data.expectedCode !== previous.code)
+          || (previous.entity_key !== "GROUP" && previous.entity_key !== "IMPORTER" && body.data.expectedCode !== undefined)
+          || (previous.entity_key === "IMPORTER" && body.data.expectedImportCons !== undefined
+            && body.data.expectedImportCons !== previous.import_cons)
+          || (previous.entity_key !== "IMPORTER" && body.data.expectedImportCons !== undefined)
+          || (previous.entity_key === "IMPORTER" && body.data.expectedCnpj !== undefined
+            && body.data.expectedCnpj !== previous.cnpj)
+          || (previous.entity_key !== "IMPORTER" && body.data.expectedCnpj !== undefined)
+          || (previous.entity_key === "IMPORTER" && body.data.expectedShortName !== undefined
+            && body.data.expectedShortName !== previous.short_name)
+          || (previous.entity_key !== "IMPORTER" && body.data.expectedShortName !== undefined)) {
           await client.query("ROLLBACK");
           return problem(reply, 409, "STALE_OPERATIONAL_VALUE", "Este valor foi alterado por outra pessoa. Atualize a lista e tente novamente.");
         }
         if (previous.entity_key === "IMPORTER") {
+          const importerKeys = [previous.value, previous.code].filter((value): value is string => !!value)
+            .map(value => value.trim().toUpperCase());
           const usage = await client.query<{ in_use: boolean }>(
             `SELECT EXISTS (
-               SELECT 1 FROM procurement.purchase_order WHERE upper(btrim(importer)) = upper(btrim($1))
-               UNION ALL SELECT 1 FROM imports.import_process WHERE upper(btrim(importer)) = upper(btrim($1))
-               UNION ALL SELECT 1 FROM procurement.purchase_request WHERE upper(btrim(importer)) = upper(btrim($1))
-               UNION ALL SELECT 1 FROM procurement.import_request WHERE upper(btrim(importer)) = upper(btrim($1))
-               UNION ALL SELECT 1 FROM identity.erp_user_importer_scope WHERE upper(btrim(importer_code)) = upper(btrim($1))
-               UNION ALL SELECT 1 FROM catalog.entry WHERE upper(btrim(importer)) = upper(btrim($1))
-               UNION ALL SELECT 1 FROM jobs.export_job WHERE upper(btrim($1)) = ANY (
-                 SELECT upper(btrim(scope_value)) FROM unnest(importer_scopes) AS scopes(scope_value))
-             ) AS in_use`, [previous.value]);
+               SELECT 1 FROM procurement.purchase_order WHERE upper(btrim(importer)) = ANY($1::text[])
+               UNION ALL SELECT 1 FROM imports.import_process WHERE upper(btrim(importer)) = ANY($1::text[])
+               UNION ALL SELECT 1 FROM procurement.purchase_request WHERE upper(btrim(importer)) = ANY($1::text[])
+               UNION ALL SELECT 1 FROM procurement.import_request WHERE upper(btrim(importer)) = ANY($1::text[])
+               UNION ALL SELECT 1 FROM identity.erp_user_importer_scope WHERE upper(btrim(importer_code)) = ANY($1::text[])
+               UNION ALL SELECT 1 FROM catalog.entry WHERE upper(btrim(importer)) = ANY($1::text[])
+               UNION ALL SELECT 1 FROM jobs.export_job WHERE EXISTS (
+                 SELECT 1 FROM unnest(importer_scopes) AS scopes(scope_value)
+                  WHERE upper(btrim(scope_value)) = ANY($1::text[]))
+             ) AS in_use`, [importerKeys]);
           if (usage.rows[0]?.in_use) {
             await client.query("ROLLBACK");
             return problem(reply, 409, "OPERATIONAL_VALUE_IN_USE", "Esta importadora está vinculada a cadastros ou registros existentes e não pode ser excluída.");
@@ -422,7 +498,8 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
             (id,aggregate_type,aggregate_id,entity_type,entity_id,operation,field_name,old_value,new_value,actor_id,occurred_at,reason,correlation_id)
            VALUES ($1,'OPERATIONAL_VALUE',$2,'OPERATIONAL_VALUE',$2,'DELETE','value',$3::jsonb,NULL,$4,now(),$5,$6)`,
           [randomUUID(), id.data,
-            JSON.stringify({ entity: previous.entity_key.toLowerCase(), code: previous.code, value: previous.value }),
+            JSON.stringify({ entity: previous.entity_key.toLowerCase(), code: previous.code, value: previous.value,
+              importCons: previous.import_cons, cnpj: previous.cnpj, shortName: previous.short_name }),
             `${actor.issuer}#${actor.subject}`, body.data.reason, correlationId]);
         await client.query(
           `INSERT INTO audit.outbox_message (event_id,event_type,aggregate_type,aggregate_id,payload,occurred_at)

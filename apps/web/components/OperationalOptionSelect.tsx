@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { apiFetch } from "../lib/api";
 
-export type OperationalOption = { entity: string; value: string };
+export type OperationalOption = { entity: string; value: string; shortName?: string | null };
 export type OperationalCatalog = { items: OperationalOption[]; purchaseOrderGroup: boolean };
 
 export async function loadOperationalCatalog(): Promise<OperationalCatalog> {
@@ -21,7 +21,9 @@ export function OperationalOptionSelect({ entity, value, values, onChange, requi
   return <select required={required} value={value} onChange={event => onChange(event.target.value)}>
     <option value="">Selecione</option>
     {!hasCurrent && <option value={value}>{value} (valor atual)</option>}
-    {options.map(option => <option key={`${option.entity}:${option.value}`} value={option.value}>{option.value}</option>)}
+    {options.map(option => <option key={`${option.entity}:${option.value}`} value={option.value}>
+      {option.entity === "importer" ? option.shortName || option.value : option.value}
+    </option>)}
   </select>;
 }
 

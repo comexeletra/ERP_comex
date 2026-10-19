@@ -13,8 +13,8 @@ async function createApp({ entity = "CATEGORY", code = null, value = "Acessório
       if (sql === "BEGIN") return { rows: [] };
       if (sql === "COMMIT") return { rows: [] };
       if (sql === "ROLLBACK") { state.rollback = true; return { rows: [] }; }
-      if (sql.includes("SELECT entity_key, code, value FROM catalog.operational_value")) {
-        return { rows: [{ entity_key: entity, code, value }], rowCount: 1 };
+      if (sql.includes("SELECT entity_key, code, value, import_cons, cnpj, short_name FROM catalog.operational_value")) {
+        return { rows: [{ entity_key: entity, code, value, import_cons: null, cnpj: null, short_name: null }], rowCount: 1 };
       }
       if (sql.includes("SELECT EXISTS (")) return { rows: [{ in_use: inUse }], rowCount: 1 };
       if (sql.includes("DELETE FROM catalog.operational_value")) {

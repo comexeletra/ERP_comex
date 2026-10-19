@@ -6,6 +6,7 @@ import { apiFetch } from "../../../lib/api";
 import { automaticAuditReason } from "../../../lib/audit";
 import { createNcmCatalogUrl, createNcmPayload, updateNcmPayload, type NcmDraft } from "../../../lib/catalog-ncms";
 import { parseProductCatalogJson, type ProductCatalogImport } from "../../../lib/catalog-products-json";
+import { filterImporterCatalog } from "../../../lib/catalog-importers";
 import { createSupplierCatalogUrl } from "../../../lib/catalog-suppliers";
 
 const entities = [
@@ -18,7 +19,7 @@ const entities = [
   ["requester", "Solicitante"], ["cost_center", "Centro de custo"], ["broker", "Despachante"],
   ["forwarder", "Agente de carga"], ["supplier", "Fornecedor"],
 ] as const;
-type Option = { id: string; entity: string; code?: string | null; value: string };
+type Option = { id: string; entity: string; code?: string | null; value: string; importCons?: string | null; cnpj?: string | null; shortName?: string | null };
 type Supplier = { id: string; code: string; name: string; status: "ACTIVE" | "INACTIVE"; version: string };
 type Product = { id: string; importer: string | null; code: string; name: string; status: string; version: string };
 type OfficialNcmAttributeDefinition = {
@@ -129,7 +130,14 @@ export default function OperationalValuesPage() {
   const [valueCode, setValueCode] = useState("");
   const [editingId, setEditingId] = useState("");
   const [editCode, setEditCode] = useState("");
+  const [importCons, setImportCons] = useState("");
+  const [editImportCons, setEditImportCons] = useState("");
+  const [cnpj, setCnpj] = useState("");
+  const [editCnpj, setEditCnpj] = useState("");
+  const [shortName, setShortName] = useState("");
+  const [editShortName, setEditShortName] = useState("");
   const [editValue, setEditValue] = useState("");
+  const [importerSearch, setImporterSearch] = useState("");
   const [jsonValues, setJsonValues] = useState<string[]>([]);
   const [jsonFileName, setJsonFileName] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
@@ -459,6 +467,8 @@ export default function OperationalValuesPage() {
   function chooseEntity(next: string) {
     setEntity(next);
     setError(""); setNotice(""); setEditingId("");
+    setImporterSearch(""); setImportCons(""); setEditImportCons(""); setCnpj(""); setEditCnpj("");
+    setShortName(""); setEditShortName("");
     setEditingProductId(""); setProductPage(1); setProductSearch("");
     setNcmPage(1); setNcmSearch("");
     setEditingNcmId(""); setNcmDraft(emptyNcmDraft);
@@ -468,10 +478,13 @@ export default function OperationalValuesPage() {
     event.preventDefault(); setBusy(true); setError(""); setNotice("");
     try {
       const response = await apiFetch("/api/v1/operational-values", { method: "POST",
-        headers: { "content-type": "application/json" }, body: JSON.stringify({ entity, ...(entity === "group" ? { code: valueCode } : {}), value, reason: automaticAuditReason }) });
+        headers: { "content-type": "application/json" }, body: JSON.stringify({ entity,
+          ...(entity === "group" || entity === "importer" ? { code: valueCode } : {}),
+          ...(entity === "importer" ? { importCons, cnpj, ...(shortName.trim() ? { shortName } : {}) } : {}),
+          value, reason: automaticAuditReason }) });
       const result = await response.json() as { detail?: string };
       if (!response.ok) throw new Error(result.detail || "Não foi possível adicionar o valor.");
-      setValue(""); setValueCode(""); await load(); setNotice("Valor adicionado ao cadastro e disponível nos seletores.");
+      setValue(""); setValueCode(""); setImportCons(""); setCnpj(""); setShortName(""); await load(); setNotice("Valor adicionado ao cadastro e disponível nos seletores.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao adicionar valor."); }
     finally { setBusy(false); }
   }
@@ -479,6 +492,9 @@ export default function OperationalValuesPage() {
   function startEditing(option: Option) {
     setEditingId(option.id);
     setEditCode(option.code ?? "");
+    setEditImportCons(option.importCons ?? "");
+    setEditCnpj(option.cnpj ?? "");
+    setEditShortName(option.shortName ?? "");
     setEditValue(option.value);
     setError("");
     setNotice("");
@@ -487,6 +503,9 @@ export default function OperationalValuesPage() {
   function cancelEditing() {
     setEditingId("");
     setEditCode("");
+    setEditImportCons("");
+    setEditCnpj("");
+    setEditShortName("");
     setEditValue("");
   }
 
@@ -495,7 +514,13 @@ export default function OperationalValuesPage() {
     try {
       const response = await apiFetch(`/api/v1/operational-values/${option.id}`, {
         method: "PATCH", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ expectedValue: option.value, ...(entity === "group" ? { expectedCode: option.code ?? null, code: editCode } : {}), value: editValue, reason: automaticAuditReason }),
+        body: JSON.stringify({ expectedValue: option.value,
+          ...(entity === "group" ? { expectedCode: option.code ?? null, code: editCode } : {}),
+          ...(entity === "importer" ? { expectedCode: option.code ?? null, code: editCode.trim() || null,
+            expectedImportCons: option.importCons ?? null, importCons: editImportCons.trim() || null,
+            expectedCnpj: option.cnpj ?? null, cnpj: editCnpj.trim() || null,
+            expectedShortName: option.shortName ?? null, shortName: editShortName.trim() || null } : {}),
+          value: editValue, reason: automaticAuditReason }),
       });
       const result = await response.json() as { detail?: string; value?: string; unchanged?: boolean };
       if (!response.ok) throw new Error(result.detail || "Não foi possível editar o valor.");
@@ -507,14 +532,17 @@ export default function OperationalValuesPage() {
   }
 
   async function deleteOption(option: Option) {
-    const label = `${entity === "group" && option.code ? `${option.code} · ` : ""}${option.value}`;
+    const label = `${(entity === "group" || entity === "importer") && option.code ? `${option.code} · ` : ""}${option.value}`;
     if (!window.confirm(`Excluir "${label}" das opções de ${entities.find(([key]) => key === entity)?.[1] ?? "entidade"}? Os valores já salvos em registros não serão apagados.`)) return;
     setBusy(true); setError(""); setNotice("");
     try {
       const response = await apiFetch(`/api/v1/operational-values/${option.id}`, {
         method: "DELETE", headers: { "content-type": "application/json" },
         body: JSON.stringify({ expectedValue: option.value,
-          ...(entity === "group" ? { expectedCode: option.code ?? null } : {}), reason: automaticAuditReason }),
+          ...(entity === "group" ? { expectedCode: option.code ?? null } : {}),
+          ...(entity === "importer" ? { expectedCode: option.code ?? null,
+            expectedImportCons: option.importCons ?? null, expectedCnpj: option.cnpj ?? null,
+            expectedShortName: option.shortName ?? null } : {}), reason: automaticAuditReason }),
       });
       const result = await response.json() as { detail?: string };
       if (!response.ok) throw new Error(result.detail || "Não foi possível excluir o valor.");
@@ -584,7 +612,9 @@ export default function OperationalValuesPage() {
     finally { setBusy(false); }
   }
 
-  const visible = options.filter(option => option.entity === entity).sort((a, b) => a.value.localeCompare(b.value));
+  const entityOptions = options.filter(option => option.entity === entity);
+  const visible = (entity === "importer" ? filterImporterCatalog(entityOptions, importerSearch) : entityOptions)
+    .sort((a, b) => a.value.localeCompare(b.value));
   if (entity === "product") return <main className="shell">
     <header className="page-header"><p className="eyebrow">ERP Comex</p><h1>Valores das entidades</h1>
       <p>Gerencie as opções usadas nos campos do sistema.</p>
@@ -857,10 +887,23 @@ export default function OperationalValuesPage() {
         {entities.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select></label>
       <h3>Valores cadastrados · {visible.length}</h3>
+      {entity === "importer" && <label>Buscar importadora<input type="search" value={importerSearch}
+        onChange={event => setImporterSearch(event.target.value)} placeholder="Codigo, nome, tipo ou CNPJ" /></label>}
       {visible.length ? <ul className="entity-value-list">{visible.map(option => <li key={option.id}>
         {editingId === option.id ? <form className="entity-value-edit" onSubmit={event => void saveEdit(event, option)}>
-          {entity === "group" && <><label className="sr-only" htmlFor={`operational-code-${option.id}`}>Código</label>
-            <input id={`operational-code-${option.id}`} required maxLength={120} value={editCode} onChange={event => setEditCode(event.target.value)} /></>}
+          {(entity === "group" || entity === "importer") && <><label className="sr-only" htmlFor={`operational-code-${option.id}`}>Codigo</label>
+            <input id={`operational-code-${option.id}`} required={entity === "group"} maxLength={120} value={editCode} onChange={event => setEditCode(event.target.value)} /></>}
+          {entity === "importer" && <>
+            <label className="sr-only" htmlFor={`operational-short-name-${option.id}`}>Nome reduzido</label>
+            <input id={`operational-short-name-${option.id}`} maxLength={240} value={editShortName}
+              placeholder="Nome reduzido" onChange={event => setEditShortName(event.target.value)} />
+            <label className="sr-only" htmlFor={`operational-import-cons-${option.id}`}>Import/Cons.</label>
+            <input id={`operational-import-cons-${option.id}`} maxLength={40} value={editImportCons}
+              placeholder="Import/Cons." onChange={event => setEditImportCons(event.target.value)} />
+            <label className="sr-only" htmlFor={`operational-cnpj-${option.id}`}>CNPJ</label>
+            <input id={`operational-cnpj-${option.id}`} maxLength={18} value={editCnpj} placeholder="00.000.000/0000-00"
+              onChange={event => setEditCnpj(event.target.value)} />
+          </>}
           <label className="sr-only" htmlFor={`operational-value-${option.id}`}>Valor atualizado</label>
           <input id={`operational-value-${option.id}`} required maxLength={240} value={editValue}
             onChange={event => setEditValue(event.target.value)} />
@@ -869,10 +912,17 @@ export default function OperationalValuesPage() {
           </button>
           <button className="button secondary entity-value-action" type="button" disabled={busy} onClick={cancelEditing}>Cancelar</button>
         </form> : <>
-          <span>{entity === "group" && option.code ? <><strong>{option.code}</strong> · </> : null}{option.value}</span>
+          <span>
+            {(entity === "group" || entity === "importer") && option.code ? <><strong>{option.code}</strong> · </> : null}
+            {entity === "importer" ? <>
+              <strong>{option.shortName || option.value}</strong>
+              {option.shortName && option.shortName !== option.value ? <> · {option.value}</> : null}
+              {(option.importCons || option.cnpj) && <small> · {option.importCons ?? ""} · {option.cnpj ?? ""}</small>}
+            </> : option.value}
+          </span>
           <button className="button secondary entity-value-action" type="button" disabled={busy}
             aria-label={`Editar ${option.value}`} onClick={() => startEditing(option)}>Editar</button>
-          {canWrite && <button className="button secondary entity-value-action" type="button" disabled={busy}
+          {canWrite && entity !== "importer" && <button className="button secondary entity-value-action" type="button" disabled={busy}
             aria-label={`Excluir ${option.value}`} onClick={() => void deleteOption(option)}>Excluir</button>}
         </>}
       </li>)}</ul> :
@@ -881,12 +931,20 @@ export default function OperationalValuesPage() {
     {canWrite && <section className="card entity-value-form">
       <h2>Adicionar valor à entidade</h2>
       <form className="stack-form" onSubmit={add}>
-        {entity === "group" && <label>Código<input required maxLength={120} value={valueCode} onChange={event => setValueCode(event.target.value)} /></label>}
-        <label>Novo valor<input required maxLength={240} value={value} onChange={event => setValue(event.target.value)} /></label>
-        <button className="button" disabled={busy || !value.trim()}>{busy ? "Salvando…" : "Adicionar valor"}</button>
+        {(entity === "group" || entity === "importer") && <label>Codigo<input required maxLength={120} value={valueCode} onChange={event => setValueCode(event.target.value)} /></label>}
+        <label>{entity === "importer" ? "Nome completo" : "Novo valor"}<input required maxLength={240} value={value} onChange={event => setValue(event.target.value)} /></label>
+        {entity === "importer" && <>
+          <label>Nome reduzido (opcional)<input maxLength={240} value={shortName} onChange={event => setShortName(event.target.value)} /></label>
+          <label>Import/Cons.<input required maxLength={40} value={importCons} onChange={event => setImportCons(event.target.value)} /></label>
+          <label>CNPJ<input required maxLength={18} pattern="\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}" placeholder="00.000.000/0000-00"
+            value={cnpj} onChange={event => setCnpj(event.target.value)} /></label>
+        </>}
+        <button className="button" disabled={busy || !value.trim()
+          || (entity === "importer" && (!valueCode.trim() || !importCons.trim() || !cnpj.trim()))}>
+          {busy ? "Salvando…" : "Adicionar valor"}</button>
       </form>
     </section>}
-    {canWrite && entity !== "group" && <section className="card entity-value-form">
+    {canWrite && entity !== "group" && entity !== "importer" && <section className="card entity-value-form">
       <h2>Importar valores por JSON</h2>
       <p className="muted">Selecione um arquivo com uma lista de textos ou com a propriedade <code>values</code>. Máximo de 500 valores por importação.</p>
       <form className="stack-form" onSubmit={importJson}>
