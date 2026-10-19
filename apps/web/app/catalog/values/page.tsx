@@ -6,7 +6,7 @@ import { apiFetch } from "../../../lib/api";
 import { automaticAuditReason } from "../../../lib/audit";
 import { createNcmCatalogUrl, createNcmPayload, updateNcmPayload, type NcmDraft } from "../../../lib/catalog-ncms";
 import { parseProductCatalogJson, type ProductCatalogImport } from "../../../lib/catalog-products-json";
-import { filterImporterCatalog } from "../../../lib/catalog-importers";
+import { filterImporterCatalog, sortImporterCatalog } from "../../../lib/catalog-importers";
 import { createSupplierCatalogUrl } from "../../../lib/catalog-suppliers";
 
 const entities = [
@@ -613,8 +613,9 @@ export default function OperationalValuesPage() {
   }
 
   const entityOptions = options.filter(option => option.entity === entity);
-  const visible = (entity === "importer" ? filterImporterCatalog(entityOptions, importerSearch) : entityOptions)
-    .sort((a, b) => a.value.localeCompare(b.value));
+  const visible = entity === "importer"
+    ? sortImporterCatalog(filterImporterCatalog(entityOptions, importerSearch))
+    : entityOptions.sort((a, b) => a.value.localeCompare(b.value));
   if (entity === "product") return <main className="shell">
     <header className="page-header"><p className="eyebrow">ERP Comex</p><h1>Valores das entidades</h1>
       <p>Gerencie as opções usadas nos campos do sistema.</p>
