@@ -36,6 +36,25 @@ test("snapshot persists the creation act with the required attribute details", a
   assert.equal(pool.statements.includes("COMMIT"), true);
 });
 
+test("large attribute domains are split into memory-bounded PostgreSQL statements", async () => {
+  const pool = fakePool();
+  const large = { ...items[0], mandatoryImportAttributes: [{
+    code: "ATT_1", domain: [{ code: "1", description: "x".repeat(20_000) }],
+  }] };
+  await replaceOfficialNcmSnapshot(pool, { source: "SISCOMEX", sourceReference: "Siscomex",
+    sourceUpdatedAt: "2026-10-19", attributesVersion: "360", verifiedComplete: true,
+    items: [...Array.from({ length: 40 }, (_, index) => ({ ...large, code: items[index].code })),
+      ...items.slice(40)] });
+  const batches = pool.writes.filter(write => write.sql.includes("INSERT INTO catalog.ncm_official_item"));
+  assert.ok(batches.length > 475);
+  for (const batch of batches) {
+    assert.ok(batch.values.length <= 20 * 6);
+    const bytes = batch.values.reduce((sum, value) => sum + Buffer.byteLength(String(value ?? "")), 0);
+    assert.ok(bytes <= 256 * 1024, `Oversized batch: ${bytes} bytes`);
+  }
+  assert.equal(pool.statements.includes("COMMIT"), true);
+});
+
 test("an incomplete source cannot replace the persisted catalog", async () => {
   const pool = fakePool();
   await assert.rejects(replaceOfficialNcmSnapshot(pool, {

@@ -65,6 +65,14 @@ async function createApp({ provider = async () => official, existing = [], regis
               syncState.last_source = values[0];
               syncState.next_attempt_at = values[2];
               syncState.retry_mode = values[3];
+              syncState.last_success_at = new Date();
+              syncState.last_error = null;
+            } else if (values.length === 2) {
+              syncState.last_error = values[0];
+              syncState.next_attempt_at = values[1];
+            } else {
+              syncState.last_attempt_at = new Date();
+              syncState.last_error = "Tentativa interrompida antes da conclusão.";
             }
             return { rows: [], rowCount: 1 };
           }
@@ -106,7 +114,7 @@ async function createApp({ provider = async () => official, existing = [], regis
           }
           throw new Error(`Unexpected client query: ${sql}`);
         },
-        release() {},
+        on() {}, off() {}, release() {},
       };
     },
   };
@@ -120,6 +128,17 @@ async function createApp({ provider = async () => official, existing = [], regis
   });
   await registerCatalogRoutes(app, pool, { officialNcmProvider: provider });
   return { app, writes, audit, outbox, existing };
+}
+
+async function waitForManualRefresh(app) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const response = await app.inject({ method: "GET", url: "/api/v1/ncms/sync-status",
+      headers: { "x-test-subject": "fiscal" } });
+    assert.equal(response.statusCode, 200, response.body);
+    if (response.json().manualRefresh.status !== "running") return response.json();
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  throw new Error("A atualização manual simulada não terminou.");
 }
 
 test("searching the official table marks existing NCMs without adding all search results", async t => {
@@ -176,11 +195,13 @@ test("refresh updates only already registered NCMs and preserves unmatched histo
 
   const response = await app.inject({ method: "POST", url: "/api/v1/ncms/refresh-official",
     headers: { "x-test-subject": "fiscal" }, payload: {} });
-  assert.equal(response.statusCode, 200, response.body);
-  assert.equal(response.json().matchedCount, 1);
-  assert.equal(response.json().updatedCount, 1);
-  assert.equal(response.json().attributesUpdatedCount, 1);
-  assert.equal(response.json().preservedUnmatchedCount, 1);
+  assert.equal(response.statusCode, 202, response.body);
+  const status = await waitForManualRefresh(app);
+  assert.equal(status.manualRefresh.status, "succeeded");
+  assert.equal(status.manualRefresh.result.matchedCount, 1);
+  assert.equal(status.manualRefresh.result.updatedCount, 1);
+  assert.equal(status.manualRefresh.result.attributesUpdatedCount, 1);
+  assert.equal(status.manualRefresh.result.preservedUnmatchedCount, 1);
   assert.equal(current.name, "Componente de teste A");
   assert.equal(current.status, "ACTIVE");
   assert.equal(current.valid_from, "2022-04-01");
@@ -205,7 +226,8 @@ test("a complete MDIC list cannot overwrite or inactivate registered Siscomex co
   t.after(() => app.close());
   const response = await app.inject({ method: "POST", url: "/api/v1/ncms/refresh-official",
     headers: { "x-test-subject": "fiscal" }, payload: {} });
-  assert.equal(response.statusCode, 500, response.body);
+  assert.equal(response.statusCode, 202, response.body);
+  assert.equal((await waitForManualRefresh(app)).manualRefresh.status, "failed");
   assert.equal(current.name, "Nome antigo");
   assert.equal(absent.status, "ACTIVE");
   assert.equal(absent.valid_from, "2022-04-01");
@@ -228,7 +250,7 @@ test("an MDIC search result is rejected while Siscomex is the only active source
   assert.equal(absent.status, "ACTIVE");
 });
 
-test("official NCM failures return the retry window for search and refresh without writing", async t => {
+test("official NCM failures keep the retry window and do not write catalog data", async t => {
   const retryAt = Date.now() + 60_000;
   const provider = async () => { throw Object.assign(new Error("rate limited"), { retryAt }); };
   const { app, writes } = await createApp({ provider });
@@ -242,7 +264,27 @@ test("official NCM failures return the retry window for search and refresh witho
 
   const refresh = await app.inject({ method: "POST", url: "/api/v1/ncms/refresh-official",
     headers: { "x-test-subject": "fiscal" }, payload: {} });
-  assert.equal(refresh.statusCode, 503, refresh.body);
-  assert.ok(Number(refresh.headers["retry-after"]) > 0);
+  assert.equal(refresh.statusCode, 202, refresh.body);
+  const status = await waitForManualRefresh(app);
+  assert.equal(status.manualRefresh.status, "failed");
+  assert.ok(Date.parse(status.nextAttemptAt) >= retryAt);
   assert.equal(writes.length, 0);
+});
+
+test("a second manual request shares the running update instead of downloading again", async t => {
+  let resolveProvider;
+  let calls = 0;
+  const provider = () => { calls += 1; return new Promise(resolve => { resolveProvider = resolve; }); };
+  const { app } = await createApp({ provider });
+  t.after(() => app.close());
+  const first = await app.inject({ method: "POST", url: "/api/v1/ncms/refresh-official",
+    headers: { "x-test-subject": "fiscal" }, payload: {} });
+  const second = await app.inject({ method: "POST", url: "/api/v1/ncms/refresh-official",
+    headers: { "x-test-subject": "fiscal" }, payload: {} });
+  assert.equal(first.statusCode, 202);
+  assert.equal(second.statusCode, 202);
+  assert.equal(second.json().status, "running");
+  assert.equal(calls, 1);
+  resolveProvider(official);
+  assert.equal((await waitForManualRefresh(app)).manualRefresh.status, "succeeded");
 });

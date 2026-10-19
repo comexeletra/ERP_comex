@@ -54,6 +54,10 @@ const app = Fastify({
   },
   bodyLimit: 1_048_576,
 });
+pool.on("error", (error) => {
+  app.log.error({ code: "DATABASE_CONNECTION_LOST", message: error.message },
+    "Conexão ociosa com PostgreSQL encerrada");
+});
 
 await app.register(helmet);
 await app.register(rateLimit, { max: 120, timeWindow: "1 minute" });

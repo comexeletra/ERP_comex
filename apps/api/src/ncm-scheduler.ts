@@ -65,6 +65,11 @@ export async function runCoordinatedNcmRefresh(
   mode: "manual" | "automatic",
 ): Promise<{ result: NcmRefreshResult; state: NcmSyncState }> {
   const client = await pool.connect();
+  let connectionError: Error | null = null;
+  // The advisory-lock client stays idle while Siscomex is downloaded and the
+  // snapshot is written. A database restart must not crash the API process.
+  const onClientError = (error: Error) => { connectionError = error; };
+  client.on("error", onClientError);
   let locked = false;
   try {
     const lock = await client.query<{ acquired: boolean }>(
@@ -102,15 +107,20 @@ export async function runCoordinatedNcmRefresh(
       return { result, state: present(saved.rows[0]) };
     } catch (error) {
       const nextAt = nextBrasiliaNcmRefresh(Math.max(Date.now(), errorRetryAt(error) ?? 0), times);
-      await client.query(
-        `UPDATE catalog.ncm_sync_state SET last_error=$1,next_attempt_at=$2,
-           retry_mode=false,updated_at=now() WHERE id=1`,
-        [error instanceof Error ? error.message.slice(0, 500) : "Falha desconhecida.", new Date(nextAt)]);
+      const statement = `UPDATE catalog.ncm_sync_state SET last_error=$1,next_attempt_at=$2,
+        retry_mode=false,updated_at=now() WHERE id=1`;
+      const values = [error instanceof Error ? error.message.slice(0, 500) : "Falha desconhecida.", new Date(nextAt)];
+      await (connectionError ? pool : client).query(statement, values)
+        .catch(() => pool.query(statement, values)).catch(() => undefined);
       throw error;
     }
   } finally {
-    if (locked) await client.query("SELECT pg_advisory_unlock(hashtextextended($1, 0))", [LOCK_KEY]);
-    client.release();
+    if (locked && !connectionError) {
+      await client.query("SELECT pg_advisory_unlock(hashtextextended($1, 0))", [LOCK_KEY])
+        .catch(() => undefined);
+    }
+    client.release(connectionError ?? undefined);
+    client.off("error", onClientError);
   }
 }
 

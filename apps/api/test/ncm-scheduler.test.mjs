@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import test from "node:test";
 import { NcmRefreshDeferred, readNcmSyncState, runCoordinatedNcmRefresh,
   startDurableNcmRefresh } from "../dist/ncm-scheduler.js";
@@ -39,7 +40,8 @@ function fakePool() {
     }
     throw new Error(`Unexpected query: ${sql}`);
   };
-  return { query, async connect() { return { query, release() {} }; }, row };
+  const client = Object.assign(new EventEmitter(), { query, release() {} });
+  return { query, async connect() { return client; }, row, client };
 }
 
 const mdicResult = { catalogSource: "MDIC_GECEX", siscomexRetryAt: null,
@@ -84,4 +86,13 @@ test("failed sync keeps the last success and waits for the next fixed slot", asy
   assert.equal(state.lastSiscomexSuccessAt, "2026-10-15T12:00:00.000Z");
   assert.equal(Date.parse(state.nextAttemptAt), nextBrasiliaNcmRefresh(releaseAt, "06:00,12:00"));
   assert.equal(state.retryMode, false);
+});
+
+test("a lost lock connection is handled without an unhandled client error", async () => {
+  const pool = fakePool();
+  await assert.rejects(runCoordinatedNcmRefresh(pool, async () => {
+    pool.client.emit("error", new Error("Connection terminated unexpectedly"));
+    throw new Error("Database unavailable during snapshot");
+  }, "06:00,12:00", "manual"), /Database unavailable/u);
+  assert.match(pool.row.last_error, /Database unavailable/u);
 });

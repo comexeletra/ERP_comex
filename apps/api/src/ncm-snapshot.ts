@@ -26,7 +26,11 @@ type SnapshotItem = {
 type CachedSnapshot = { catalog: OfficialNcmCatalog; syncedAt: string };
 
 const SNAPSHOT_CHECK_INTERVAL_MS = 60_000;
-const SNAPSHOT_WRITE_BATCH_SIZE = 400;
+// Domains can make an individual NCM much larger than its description. Keep
+// each PostgreSQL statement small enough for the HML database's memory limit.
+const SNAPSHOT_WRITE_BATCH_SIZE = 20;
+const SNAPSHOT_WRITE_BATCH_BYTES = 256 * 1024;
+const MAX_SNAPSHOT_ITEM_BYTES = 8 * 1024 * 1024;
 
 function timestamp(value: Date | string): string {
   const parsed = value instanceof Date ? value : new Date(value);
@@ -54,15 +58,26 @@ export async function replaceOfficialNcmSnapshot(pool: Pool, catalog: OfficialNc
     }
     await client.query("DELETE FROM catalog.ncm_official_item");
 
-    for (let offset = 0; offset < catalog.items.length; offset += SNAPSHOT_WRITE_BATCH_SIZE) {
-      const items = catalog.items.slice(offset, offset + SNAPSHOT_WRITE_BATCH_SIZE);
+    for (let offset = 0; offset < catalog.items.length;) {
       const values: unknown[] = [];
-      const tuples = items.map((item, index) => {
-        const parameter = index * 6;
-        values.push(item.code, item.name, item.validFrom, item.validTo,
-          JSON.stringify(item.mandatoryImportAttributes), item.creationAct ? JSON.stringify(item.creationAct) : null);
-        return `($${parameter + 1},$${parameter + 2},$${parameter + 3},$${parameter + 4},$${parameter + 5}::jsonb,$${parameter + 6}::jsonb)`;
-      });
+      const tuples: string[] = [];
+      let batchBytes = 0;
+      while (offset < catalog.items.length && tuples.length < SNAPSHOT_WRITE_BATCH_SIZE) {
+        const item = catalog.items[offset];
+        const attributes = JSON.stringify(item.mandatoryImportAttributes);
+        const creationAct = item.creationAct ? JSON.stringify(item.creationAct) : null;
+        const itemBytes = Buffer.byteLength(item.code) + Buffer.byteLength(item.name)
+          + Buffer.byteLength(attributes) + (creationAct ? Buffer.byteLength(creationAct) : 0);
+        if (itemBytes > MAX_SNAPSHOT_ITEM_BYTES) {
+          throw new Error(`O NCM ${item.code} excede o tamanho seguro para persistência.`);
+        }
+        if (tuples.length && batchBytes + itemBytes > SNAPSHOT_WRITE_BATCH_BYTES) break;
+        const parameter = tuples.length * 6;
+        values.push(item.code, item.name, item.validFrom, item.validTo, attributes, creationAct);
+        tuples.push(`($${parameter + 1},$${parameter + 2},$${parameter + 3},$${parameter + 4},$${parameter + 5}::jsonb,$${parameter + 6}::jsonb)`);
+        batchBytes += itemBytes;
+        offset += 1;
+      }
       await client.query(
         `INSERT INTO catalog.ncm_official_item
           (code,name,valid_from,valid_to,mandatory_import_attributes,creation_act)
