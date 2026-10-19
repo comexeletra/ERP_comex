@@ -5,18 +5,21 @@ import { registerAuthorization } from "../dist/authorization.js";
 import { registerCatalogRoutes } from "../dist/catalog.js";
 
 const selectedCode = "20000002";
+const creationAct = { tipoOrgaoAtoIni: "Resolução", numeroAtoIni: "42", anoAtoIni: "2022" };
 const selectedAttributes = [{
   code: "ATT_1", name: "Material principal", displayName: "Material principal", fillType: "TEXTO",
   required: true, multivalued: false, startsOn: "2025-01-01", endsOn: null,
-  objectives: ["DUIMP"], organs: [], conditionalAttributes: [],
+  objectives: ["DUIMP"], organs: [], domain: [{ code: "82", description: "Dispositivo médico" }],
+  subattributes: [], conditionalAttributes: [],
 }];
 const official = {
   source: "SISCOMEX", sourceReference: "Siscomex",
   sourceUpdatedAt: "2026-10-15", attributesVersion: "359",
   items: [
-    { code: "10000001", name: "Componente de teste A", validFrom: "2022-04-01", validTo: "9999-12-31", mandatoryImportAttributes: [] },
+    { code: "10000001", name: "Componente de teste A", validFrom: "2022-04-01", validTo: "9999-12-31",
+      creationAct, mandatoryImportAttributes: [] },
     { code: selectedCode, name: "Componente eletrônico de teste", validFrom: "2022-04-01", validTo: "9999-12-31",
-      mandatoryImportAttributes: selectedAttributes },
+      creationAct, mandatoryImportAttributes: selectedAttributes },
   ],
 };
 
@@ -25,7 +28,7 @@ function makeEntry(code, name, overrides = {}) {
     importer: null, kind: "NCM", code, normalized_code: code, name, status: "INACTIVE",
     provenance: "MANUAL_REVIEW", evidence: "Registro anterior do catálogo fiscal.",
     valid_from: "2022-04-01", valid_to: "2024-12-31", version: "1",
-    mandatory_import_attributes: null, source_updated_at: null, attributes_source_version: null,
+    mandatory_import_attributes: null, creation_act: null, source_updated_at: null, attributes_source_version: null,
     attributes_sha256: null, synced_at: null, created_at: new Date(), updated_at: new Date(), ...overrides };
 }
 
@@ -128,6 +131,7 @@ test("searching the official table marks existing NCMs without adding all search
   assert.equal(response.statusCode, 200, response.body);
   assert.equal(response.json().totalCount, 2);
   assert.equal(response.json().items.find(item => item.code === selectedCode).alreadyRegistered, true);
+  assert.deepEqual(response.json().items.find(item => item.code === selectedCode).creationAct, creationAct);
   assert.equal(response.json().items.find(item => item.code === "10000001").alreadyRegistered, false);
   assert.equal(writes.length, 0);
 });
@@ -155,6 +159,8 @@ test("a user can add one selected official NCM with its mandatory attributes", a
   assert.equal(response.json().code, selectedCode);
   assert.equal(response.json().name, "Componente eletrônico de teste");
   assert.equal(response.json().mandatoryImportAttributes[0].name, "Material principal");
+  assert.deepEqual(response.json().mandatoryImportAttributes[0].domain, selectedAttributes[0].domain);
+  assert.deepEqual(response.json().creationAct, creationAct);
   assert.equal("importer" in response.json(), false);
   assert.equal(writes.filter(write => write.sql.includes("INSERT INTO catalog.entry\n")).length, 1);
   assert.equal(writes.filter(write => write.sql.includes("INSERT INTO catalog.ncm_siscomex_data")).length, 1);
@@ -185,6 +191,7 @@ test("refresh updates only already registered NCMs and preserves unmatched histo
   assert.equal(writes.some(write => write.sql.includes("INSERT INTO catalog.ncm_siscomex_data")), true);
   assert.equal(audit.some(event => event.values[2] === "valid_to"), true);
   assert.equal(audit.some(event => event.sql.includes("mandatoryImportAttributes")), true);
+  assert.equal(audit.some(event => event.sql.includes("creationAct")), true);
   assert.equal(existing.length, 2);
 });
 

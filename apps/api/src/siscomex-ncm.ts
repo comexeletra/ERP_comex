@@ -27,11 +27,22 @@ export type OfficialNcmAttribute = {
   endsOn: string | null;
   objectives: string[];
   organs: string[];
+  domain: Array<{ code: string; description: string }>;
+  subattributes: Array<Omit<OfficialNcmAttribute, "required">>;
   conditionalAttributes: Array<{
     required: boolean;
     condition: string | null;
+    conditionRule: unknown | null;
+    startsOn: string | null;
+    endsOn: string | null;
     attribute: Omit<OfficialNcmAttribute, "required">;
   }>;
+};
+
+export type OfficialNcmCreationAct = {
+  tipoOrgaoAtoIni: string | null;
+  numeroAtoIni: string | null;
+  anoAtoIni: string | null;
 };
 
 export type OfficialNcm = {
@@ -39,6 +50,7 @@ export type OfficialNcm = {
   name: string;
   validFrom: string | null;
   validTo: string | null;
+  creationAct?: OfficialNcmCreationAct | null;
   mandatoryImportAttributes: OfficialNcmAttribute[];
 };
 
@@ -71,6 +83,10 @@ function asArray(value: unknown, label: string): unknown[] {
 
 function asText(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function asIdentifier(value: unknown): string | null {
+  return asText(value) ?? (typeof value === "number" && Number.isFinite(value) ? String(value) : null);
 }
 
 function normalizeNcmCode(value: unknown): string | null {
@@ -208,7 +224,7 @@ export function createOfficialNcmCatalogProvider(
   };
 }
 
-function mapAttributeDefinition(value: unknown, depth = 0): Omit<OfficialNcmAttribute, "required"> {
+function mapAttributeDefinition(value: unknown, details: Map<string, JsonObject>, depth = 0): Omit<OfficialNcmAttribute, "required"> {
   if (depth > 8) throw new Error("A hierarquia de atributos Siscomex excede o limite suportado.");
   const detail = asObject(value, "detalhes do atributo");
   const code = asText(detail.codigo);
@@ -220,8 +236,31 @@ function mapAttributeDefinition(value: unknown, depth = 0): Omit<OfficialNcmAttr
     .map(conditioned => ({
       required: true,
       condition: asText(conditioned.descricaoCondicao),
-      attribute: mapAttributeDefinition(conditioned.atributo, depth + 1),
+      conditionRule: conditioned.condicao ?? null,
+      startsOn: asText(conditioned.dataInicioVigencia),
+      endsOn: asText(conditioned.dataFimVigencia),
+      attribute: mapAttributeDefinition(conditioned.atributo, details, depth + 1),
     }));
+  const domain = (Array.isArray(detail.dominio) ? detail.dominio : [])
+    .map(value => {
+      if (typeof value === "string" || typeof value === "number") {
+        const text = asIdentifier(value);
+        return text ? { code: text, description: text } : null;
+      }
+      if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+      const option = value as JsonObject;
+      const optionCode = asIdentifier(option.codigo ?? option.valor);
+      const description = asText(option.descricao ?? option.nome ?? option.label);
+      return optionCode ? { code: optionCode, description: description ?? optionCode } : null;
+    })
+    .filter((option): option is { code: string; description: string } => option !== null);
+  const subattributes = (Array.isArray(detail.listaSubatributos) ? detail.listaSubatributos : [])
+    .map(value => {
+      const subattribute = asObject(value, "subatributo");
+      const reference = asText(subattribute.codigo);
+      return mapAttributeDefinition(subattribute.atributo ?? (reference ? details.get(reference) : undefined) ?? subattribute,
+        details, depth + 1);
+    });
 
   return {
     code,
@@ -238,6 +277,8 @@ function mapAttributeDefinition(value: unknown, depth = 0): Omit<OfficialNcmAttr
     organs: asArray(detail.orgaos ?? [], "órgãos do atributo")
       .map(organ => asText(organ))
       .filter((organ): organ is string => organ !== null),
+    domain,
+    subattributes,
     conditionalAttributes,
   };
 }
@@ -252,7 +293,7 @@ function mapRequiredImportAttribute(
   const detail = code ? details.get(code) : undefined;
   if (!code || !detail) throw new Error("Há atributo obrigatório sem detalhes na resposta Siscomex.");
   return {
-    ...mapAttributeDefinition(detail),
+    ...mapAttributeDefinition(detail, details),
     required: true,
     multivalued: link.multivalorado === true || detail.multivalorado === true,
     startsOn: asText(link.dataInicioVigencia) ?? asText(detail.dataInicioVigencia),
@@ -283,11 +324,16 @@ export function parseSiscomexNcmTable(payload: unknown, minimumNcmCount = MIN_OF
       || (row.Data_Fim === undefined && row.dataFim === undefined && row.data_fim === undefined)
       ? null : parseBrazilianDate(row.Data_Fim ?? row.dataFim ?? row.data_fim, `${code} fim`);
     if (validTo && validTo < validFrom) throw new Error(`A vigência oficial do NCM ${code} é inconsistente.`);
+    const tipoOrgaoAtoIni = asIdentifier(row.tipoOrgaoAtoIni ?? row.Tipo_Orgao_Ato_Ini);
+    const numeroAtoIni = asIdentifier(row.numeroAtoIni ?? row.Numero_Ato_Ini);
+    const anoAtoIni = asIdentifier(row.anoAtoIni ?? row.Ano_Ato_Ini);
     items.set(code, {
       code,
       name,
       validFrom,
       validTo,
+      creationAct: tipoOrgaoAtoIni || numeroAtoIni || anoAtoIni
+        ? { tipoOrgaoAtoIni, numeroAtoIni, anoAtoIni } : null,
     });
   }
   if (items.size < minimumNcmCount) {

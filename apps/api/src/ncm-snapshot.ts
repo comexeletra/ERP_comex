@@ -19,6 +19,7 @@ type SnapshotItem = {
   name: string;
   valid_from: string | null;
   valid_to: string | null;
+  creation_act: OfficialNcmCatalog["items"][number]["creationAct"];
   mandatory_import_attributes: OfficialNcmCatalog["items"][number]["mandatoryImportAttributes"];
 };
 
@@ -57,14 +58,14 @@ export async function replaceOfficialNcmSnapshot(pool: Pool, catalog: OfficialNc
       const items = catalog.items.slice(offset, offset + SNAPSHOT_WRITE_BATCH_SIZE);
       const values: unknown[] = [];
       const tuples = items.map((item, index) => {
-        const parameter = index * 5;
+        const parameter = index * 6;
         values.push(item.code, item.name, item.validFrom, item.validTo,
-          JSON.stringify(item.mandatoryImportAttributes));
-        return `($${parameter + 1},$${parameter + 2},$${parameter + 3},$${parameter + 4},$${parameter + 5}::jsonb)`;
+          JSON.stringify(item.mandatoryImportAttributes), item.creationAct ? JSON.stringify(item.creationAct) : null);
+        return `($${parameter + 1},$${parameter + 2},$${parameter + 3},$${parameter + 4},$${parameter + 5}::jsonb,$${parameter + 6}::jsonb)`;
       });
       await client.query(
         `INSERT INTO catalog.ncm_official_item
-          (code,name,valid_from,valid_to,mandatory_import_attributes)
+          (code,name,valid_from,valid_to,mandatory_import_attributes,creation_act)
          VALUES ${tuples.join(",")}`,
         values);
     }
@@ -148,7 +149,7 @@ export function createPersistedOfficialNcmCatalogProvider(
 
       const result = await client.query<SnapshotItem>(
         `SELECT code,name,valid_from::text AS valid_from,valid_to::text AS valid_to,
-                mandatory_import_attributes
+                mandatory_import_attributes,creation_act
          FROM ${archived ? "catalog.ncm_last_siscomex_item" : "catalog.ncm_official_item"} ORDER BY code`);
       if (result.rows.length !== Number(row.item_count)) {
         throw new Error("A cópia persistida do catálogo NCM está incompleta.");
@@ -165,6 +166,7 @@ export function createPersistedOfficialNcmCatalogProvider(
           name: item.name,
           validFrom: item.valid_from,
           validTo: item.valid_to,
+          creationAct: item.creation_act,
           mandatoryImportAttributes: item.mandatory_import_attributes,
         })),
       };

@@ -105,6 +105,7 @@ type Entry = { id: string; importer: string | null; kind: Kind; code: string; na
   status: "ACTIVE" | "INACTIVE"; provenance: string; evidence: string;
   valid_from: string | null; valid_to: string | null; version: string; created_at: Date; updated_at: Date;
   mandatory_import_attributes?: OfficialNcm["mandatoryImportAttributes"];
+  creation_act?: OfficialNcm["creationAct"];
   source_updated_at?: string | null; attributes_source_version?: string | null; synced_at?: Date | null };
 
 function problem(reply: FastifyReply, status: number, code: string, detail: string) {
@@ -131,6 +132,7 @@ function present(row: Entry) {
     validFrom: row.valid_from, validTo: row.valid_to, version: String(row.version),
     createdAt: row.created_at, updatedAt: row.updated_at,
     ...(row.mandatory_import_attributes !== undefined ? { mandatoryImportAttributes: row.mandatory_import_attributes,
+      creationAct: row.creation_act ?? null,
       sourceUpdatedAt: row.source_updated_at ?? null, attributesSourceVersion: row.attributes_source_version ?? null,
       officialDataSyncedAt: row.synced_at ?? null } : {}) };
 }
@@ -587,7 +589,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
       ? `LEFT JOIN catalog.ncm_siscomex_data AS official ON official.ncm_entry_id = entry.id`
       : "";
     const officialNcmFields = kind === "NCM"
-      ? `, official.mandatory_import_attributes, official.source_updated_at::text AS source_updated_at,
+      ? `, official.mandatory_import_attributes, official.creation_act, official.source_updated_at::text AS source_updated_at,
            official.attributes_source_version, official.synced_at`
       : "";
     app.get(base, { config: permissionConfig("catalog.read", scopeMode) }, async (request, reply) => {
@@ -770,7 +772,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
             [actor.userId, key]);
           if (receipt.rows[0]) {
             const existing = await client.query<Entry>(
-              `SELECT entry.*, official.mandatory_import_attributes,
+              `SELECT entry.*, official.mandatory_import_attributes, official.creation_act,
                       official.source_updated_at::text AS source_updated_at,
                       official.attributes_source_version, official.synced_at
                FROM catalog.entry AS entry LEFT JOIN catalog.ncm_siscomex_data AS official ON official.ncm_entry_id=entry.id
@@ -806,10 +808,11 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
           const attributesHash = officialNcmAttributesHash(source.mandatoryImportAttributes);
           await client.query(
             `INSERT INTO catalog.ncm_siscomex_data
-              (ncm_entry_id,source_updated_at,attributes_source_version,mandatory_import_attributes,attributes_sha256,synced_at)
-             VALUES ($1,$2,$3,$4::jsonb,$5,now())`,
+              (ncm_entry_id,source_updated_at,attributes_source_version,mandatory_import_attributes,attributes_sha256,creation_act,synced_at)
+             VALUES ($1,$2,$3,$4::jsonb,$5,$6::jsonb,now())`,
             [id, official.sourceUpdatedAt, official.attributesVersion,
-              JSON.stringify(source.mandatoryImportAttributes), attributesHash]);
+              JSON.stringify(source.mandatoryImportAttributes), attributesHash,
+              source.creationAct ? JSON.stringify(source.creationAct) : null]);
           await client.query(
             `INSERT INTO catalog.command_receipt (actor_user_id,idempotency_key,payload_sha256,entry_id)
              VALUES ($1,$2,$3,$4)`, [actor.userId, key, payloadHash, id]);
@@ -833,6 +836,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
           reply.header("ETag", '"1"');
           return reply.code(201).send({ ...present(inserted.rows[0]),
             mandatoryImportAttributes: source.mandatoryImportAttributes,
+            creationAct: source.creationAct ?? null,
             sourceUpdatedAt: official.sourceUpdatedAt, attributesSourceVersion: official.attributesVersion });
         } catch (error) {
           await client.query("ROLLBACK").catch(() => undefined);
@@ -847,7 +851,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
       if (!id.success) return problem(reply, 400, "INVALID_ID", "Identificador inválido.");
       const result = await pool.query<Entry>(
         kind === "NCM"
-          ? `SELECT entry.*, official.mandatory_import_attributes,
+          ? `SELECT entry.*, official.mandatory_import_attributes, official.creation_act,
                     official.source_updated_at::text AS source_updated_at,
                     official.attributes_source_version, official.synced_at
              FROM catalog.entry AS entry

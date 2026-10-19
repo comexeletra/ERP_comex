@@ -42,7 +42,7 @@ export async function refreshRegisteredNcms(
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", ["catalog:siscomex:ncm:refresh"]);
     const result = await client.query<any>(
       `SELECT entry.*, entry.normalized_code, entry.valid_from::text AS valid_from,
-              entry.valid_to::text AS valid_to, official.mandatory_import_attributes,
+              entry.valid_to::text AS valid_to, official.mandatory_import_attributes, official.creation_act,
               official.source_updated_at::text AS source_updated_at, official.attributes_source_version,
               official.attributes_sha256, official.synced_at
        FROM catalog.entry AS entry
@@ -116,16 +116,30 @@ export async function refreshRegisteredNcms(
             before.mandatory_import_attributes ? JSON.stringify(before.mandatory_import_attributes) : null,
               JSON.stringify(source.mandatoryImportAttributes), `${actor.issuer}#${actor.subject}`, auditReason, correlationId]);
       }
+      const creationAct = source.creationAct ?? null;
+      const previousCreationAct = before.creation_act ?? null;
+      const creationActChanged = (["tipoOrgaoAtoIni", "numeroAtoIni", "anoAtoIni"] as const)
+        .some(field => (previousCreationAct?.[field] ?? null) !== (creationAct?.[field] ?? null));
+      if (creationActChanged) {
+        await client.query(
+          `INSERT INTO audit.audit_log
+            (id,aggregate_type,aggregate_id,entity_type,entity_id,operation,field_name,old_value,new_value,actor_id,occurred_at,reason,correlation_id)
+           VALUES ($1,'CATALOG_ENTRY',$2,'CATALOG_ENTRY',$2,$3,'creationAct',$4::jsonb,$5::jsonb,$6,now(),$7,$8)`,
+          [randomUUID(), before.id, previousCreationAct ? "UPDATE" : "CREATE",
+            JSON.stringify(previousCreationAct), JSON.stringify(creationAct),
+            `${actor.issuer}#${actor.subject}`, auditReason, correlationId]);
+      }
       await client.query(
         `INSERT INTO catalog.ncm_siscomex_data
-          (ncm_entry_id,source_updated_at,attributes_source_version,mandatory_import_attributes,attributes_sha256,synced_at)
-         VALUES ($1,$2,$3,$4::jsonb,$5,now())
+          (ncm_entry_id,source_updated_at,attributes_source_version,mandatory_import_attributes,attributes_sha256,creation_act,synced_at)
+         VALUES ($1,$2,$3,$4::jsonb,$5,$6::jsonb,now())
          ON CONFLICT (ncm_entry_id) DO UPDATE SET source_updated_at=EXCLUDED.source_updated_at,
            attributes_source_version=EXCLUDED.attributes_source_version,
            mandatory_import_attributes=EXCLUDED.mandatory_import_attributes,
-           attributes_sha256=EXCLUDED.attributes_sha256,synced_at=now()`,
+           attributes_sha256=EXCLUDED.attributes_sha256,creation_act=EXCLUDED.creation_act,synced_at=now()`,
         [before.id, official.sourceUpdatedAt, official.attributesVersion,
-          JSON.stringify(source.mandatoryImportAttributes), attributesHash]);
+          JSON.stringify(source.mandatoryImportAttributes), attributesHash,
+          creationAct ? JSON.stringify(creationAct) : null]);
     }
     await client.query(
       `INSERT INTO audit.outbox_message (event_id,event_type,aggregate_type,aggregate_id,payload,occurred_at)

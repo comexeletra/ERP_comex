@@ -9,9 +9,11 @@ const items = Array.from({ length: 9_500 }, (_, index) => ({
 
 function fakePool(previousCount = 9_500) {
   const statements = [];
+  const writes = [];
   const client = {
-    async query(sql) {
+    async query(sql, values = []) {
       statements.push(sql);
+      writes.push({ sql, values });
       if (sql.includes("SELECT item_count FROM catalog.ncm_last_siscomex_snapshot")) {
         return { rows: [{ item_count: previousCount }] };
       }
@@ -19,8 +21,20 @@ function fakePool(previousCount = 9_500) {
       return { rows: [] };
     }, release() {},
   };
-  return { statements, async connect() { return client; } };
+  return { statements, writes, async connect() { return client; } };
 }
+
+test("snapshot persists the creation act with the required attribute details", async () => {
+  const pool = fakePool();
+  const creationAct = { tipoOrgaoAtoIni: "Resolução", numeroAtoIni: "42", anoAtoIni: "2022" };
+  await replaceOfficialNcmSnapshot(pool, { source: "SISCOMEX", sourceReference: "Siscomex",
+    sourceUpdatedAt: "2026-10-19", attributesVersion: "360", verifiedComplete: true,
+    items: [{ ...items[0], creationAct }, ...items.slice(1)] });
+  const insert = pool.writes.find(write => write.sql.includes("INSERT INTO catalog.ncm_official_item"));
+  assert.ok(insert);
+  assert.equal(insert.values[5], JSON.stringify(creationAct));
+  assert.equal(pool.statements.includes("COMMIT"), true);
+});
 
 test("an incomplete source cannot replace the persisted catalog", async () => {
   const pool = fakePool();

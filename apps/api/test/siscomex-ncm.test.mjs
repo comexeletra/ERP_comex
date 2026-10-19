@@ -80,13 +80,16 @@ test("NCM import uses official descriptions and only mandatory import attributes
   assert.equal(catalog.items.length, 1);
   assert.deepEqual(catalog.items[0], {
     code: "01012100", name: "Reprodutores de raça pura", validFrom: "2022-04-01", validTo: "9999-12-31",
+    creationAct: null,
     mandatoryImportAttributes: [{
       code: "ATT_1", name: "Identificação do animal", displayName: "Identificação do animal", fillType: "TEXTO",
       required: true, multivalued: false, startsOn: "2025-05-01", endsOn: null, objectives: ["DUIMP"], organs: [],
-      conditionalAttributes: [{ required: true, condition: "ATT_4 igual a SIM", attribute: {
+      domain: [], subattributes: [],
+      conditionalAttributes: [{ required: true, condition: "ATT_4 igual a SIM", conditionRule: null,
+        startsOn: null, endsOn: null, attribute: {
         code: "ATT_4", name: "Registro do animal", displayName: "Registro do animal", fillType: "TEXTO",
         multivalued: false, startsOn: "2025-01-01", endsOn: null, objectives: ["DUIMP"], organs: [],
-        conditionalAttributes: [],
+        domain: [], subattributes: [], conditionalAttributes: [],
       } }],
     }],
   });
@@ -123,7 +126,39 @@ test("NCM table accepts the documented Siscomex JSON fields and validity dates",
     name: "Reprodutores de raça pura",
     validFrom: "2022-04-01",
     validTo: "9999-12-31",
+    creationAct: null,
   }]);
+});
+
+test("official NCM keeps creation act and details of required import fields without expanding optional fields", () => {
+  const catalog = parseSiscomexCatalog({ nomenclaturas: [{
+    codigo: "90189099", descricao: "Instrumentos médicos", dataInicio: "2022-04-01", dataFim: "9999-12-31",
+    tipoOrgaoAtoIni: "Resolução", numeroAtoIni: 42, anoAtoIni: 2022,
+  }] }, zipJson({ versao: 360, listaNcm: [{ codigoNcm: "90189099", listaAtributos: [
+    { codigo: "ATT_14545", modalidade: "Importação", obrigatorio: true },
+    { codigo: "ATT_OPTIONAL", modalidade: "Importação", obrigatorio: false },
+  ] }], detalhesAtributos: [
+    detail("ATT_14545", "Categoria de produto", { formaPreenchimento: "LISTA_ESTATICA",
+      dominio: [{ codigo: "82", descricao: "Dispositivo médico" }, { codigo: "99", descricao: "Outros" }],
+      listaSubatributos: [detail("ATT_PART", "Detalhamento")],
+      condicionados: [{ obrigatorio: true, descricaoCondicao: "'ATT_14545' igual '82'",
+        condicao: { atributo: "ATT_14545", operador: "IGUAL", valor: "82" },
+        dataInicioVigencia: "2026-01-01", dataFimVigencia: "2026-12-31",
+        atributo: detail("ATT_14546", "Prazo de validade") }],
+    }),
+    detail("ATT_OPTIONAL", "Campo opcional"),
+  ] }), 1);
+  const ncm = catalog.items[0];
+  assert.deepEqual(ncm.creationAct, { tipoOrgaoAtoIni: "Resolução", numeroAtoIni: "42", anoAtoIni: "2022" });
+  assert.equal(ncm.mandatoryImportAttributes.length, 1);
+  const attribute = ncm.mandatoryImportAttributes[0];
+  assert.deepEqual(attribute.domain, [{ code: "82", description: "Dispositivo médico" },
+    { code: "99", description: "Outros" }]);
+  assert.equal(attribute.subattributes[0].displayName, "Detalhamento");
+  assert.deepEqual(attribute.conditionalAttributes[0].conditionRule,
+    { atributo: "ATT_14545", operador: "IGUAL", valor: "82" });
+  assert.equal(attribute.conditionalAttributes[0].startsOn, "2026-01-01");
+  assert.equal(attribute.conditionalAttributes[0].endsOn, "2026-12-31");
 });
 
 test("NCM table accepts date-time headers and ignores an unrecognized informational date", () => {
