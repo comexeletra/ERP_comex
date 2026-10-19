@@ -492,8 +492,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .entity-value-list { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
 .entity-value-list li { align-items: center; background: #edf5f6; border: 1px solid #d3e4e6; border-radius: 10px; color: #264650; display: flex; gap: 8px; max-width: 100%; padding: 7px 9px; }
 .entity-value-list li > span { overflow-wrap: anywhere; }
-.entity-value-edit { align-items: center; display: flex; flex-wrap: wrap; gap: 7px; }
-.entity-value-edit input { border: 1px solid #b7c5cf; border-radius: 6px; font: inherit; min-width: min(180px, 100%); padding: 6px 8px; }
+.entity-value-edit { align-items: flex-end; display: flex; flex-wrap: wrap; gap: 7px; }
+.entity-value-edit > label { color: #526371; display: grid; flex: 1 1 180px; font-size: .85rem; font-weight: 700; gap: 6px; min-width: min(180px, 100%); }
+.entity-value-edit input { border: 1px solid #b7c5cf; border-radius: 6px; box-sizing: border-box; font: inherit; min-width: min(180px, 100%); padding: 6px 8px; width: 100%; }
 .entity-value-action { font-size: .76rem; margin-left: 0; padding: 5px 8px; }
 .entity-values-card label.supplier-search { max-width: 640px; }
 .supplier-catalog-list { display: grid; gap: 10px; list-style: none; margin: 0; padding: 0; }

@@ -892,22 +892,29 @@ export default function OperationalValuesPage() {
         onChange={event => setImporterSearch(event.target.value)} placeholder="Codigo, nome, tipo ou CNPJ" /></label>}
       {visible.length ? <ul className="entity-value-list">{visible.map(option => <li key={option.id}>
         {editingId === option.id ? <form className="entity-value-edit" onSubmit={event => void saveEdit(event, option)}>
-          {(entity === "group" || entity === "importer") && <><label className="sr-only" htmlFor={`operational-code-${option.id}`}>Codigo</label>
-            <input id={`operational-code-${option.id}`} required={entity === "group"} maxLength={120} value={editCode} onChange={event => setEditCode(event.target.value)} /></>}
+          {(entity === "group" || entity === "importer") && <label htmlFor={`operational-code-${option.id}`}>
+            {entity === "importer" ? "Código do importador" : "Código"}
+            <input id={`operational-code-${option.id}`} required={entity === "group"} maxLength={120} value={editCode} onChange={event => setEditCode(event.target.value)} />
+          </label>}
           {entity === "importer" && <>
-            <label className="sr-only" htmlFor={`operational-short-name-${option.id}`}>Nome reduzido</label>
-            <input id={`operational-short-name-${option.id}`} maxLength={240} value={editShortName}
-              placeholder="Nome reduzido" onChange={event => setEditShortName(event.target.value)} />
-            <label className="sr-only" htmlFor={`operational-import-cons-${option.id}`}>Import/Cons.</label>
-            <input id={`operational-import-cons-${option.id}`} maxLength={40} value={editImportCons}
-              placeholder="Import/Cons." onChange={event => setEditImportCons(event.target.value)} />
-            <label className="sr-only" htmlFor={`operational-cnpj-${option.id}`}>CNPJ</label>
-            <input id={`operational-cnpj-${option.id}`} maxLength={18} value={editCnpj} placeholder="00.000.000/0000-00"
-              onChange={event => setEditCnpj(event.target.value)} />
+            <label htmlFor={`operational-short-name-${option.id}`}>Nome reduzido
+              <input id={`operational-short-name-${option.id}`} maxLength={240} value={editShortName}
+                onChange={event => setEditShortName(event.target.value)} />
+            </label>
+            <label htmlFor={`operational-import-cons-${option.id}`}>Import/Cons.
+              <input id={`operational-import-cons-${option.id}`} maxLength={40} value={editImportCons}
+                onChange={event => setEditImportCons(event.target.value)} />
+            </label>
+            <label htmlFor={`operational-cnpj-${option.id}`}>CNPJ
+              <input id={`operational-cnpj-${option.id}`} maxLength={18} value={editCnpj} placeholder="00.000.000/0000-00"
+                onChange={event => setEditCnpj(event.target.value)} />
+            </label>
           </>}
-          <label className="sr-only" htmlFor={`operational-value-${option.id}`}>Valor atualizado</label>
-          <input id={`operational-value-${option.id}`} required maxLength={240} value={editValue}
-            onChange={event => setEditValue(event.target.value)} />
+          <label htmlFor={`operational-value-${option.id}`}>
+            {entity === "importer" ? "Nome completo" : "Valor"}
+            <input id={`operational-value-${option.id}`} required maxLength={240} value={editValue}
+              onChange={event => setEditValue(event.target.value)} />
+          </label>
           <button className="button entity-value-action" disabled={busy || !editValue.trim()}>
             {busy ? "Salvando…" : "Salvar"}
           </button>
