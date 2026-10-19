@@ -6,6 +6,7 @@ import { apiFetch } from "../../../lib/api";
 import { automaticAuditReason } from "../../../lib/audit";
 import { createNcmCatalogUrl, createNcmPayload, updateNcmPayload, type NcmDraft } from "../../../lib/catalog-ncms";
 import { parseProductCatalogJson, type ProductCatalogImport } from "../../../lib/catalog-products-json";
+import { createSupplierCatalogUrl } from "../../../lib/catalog-suppliers";
 
 const entities = [
   ["importer", "Importadora"], ["incoterm", "Incoterm"], ["transport_mode", "Modal"], ["port_loading", "POL / porto de origem"],
@@ -18,7 +19,7 @@ const entities = [
   ["forwarder", "Agente de carga"], ["supplier", "Fornecedor"],
 ] as const;
 type Option = { id: string; entity: string; code?: string | null; value: string };
-type Supplier = { id: string; code: string; name: string; status: string };
+type Supplier = { id: string; code: string; name: string; status: "ACTIVE" | "INACTIVE"; version: string };
 type Product = { id: string; importer: string | null; code: string; name: string; status: string; version: string };
 type OfficialNcmAttributeDefinition = {
   code: string; name: string; displayName: string; fillType: string | null; multivalued: boolean;
@@ -86,6 +87,11 @@ export default function OperationalValuesPage() {
   const [options, setOptions] = useState<Option[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [suppliersLoading, setSuppliersLoading] = useState(false);
+  const [supplierTotalCount, setSupplierTotalCount] = useState(0);
+  const [supplierPage, setSupplierPage] = useState(1);
+  const [supplierSearch, setSupplierSearch] = useState("");
+  const [editingSupplierId, setEditingSupplierId] = useState("");
+  const [supplierEditDraft, setSupplierEditDraft] = useState({ code: "", name: "", status: "ACTIVE" as "ACTIVE" | "INACTIVE" });
   const [supplierDraft, setSupplierDraft] = useState({ code: "", name: "", evidence: "" });
   const [supplierRefresh, setSupplierRefresh] = useState(0);
   const [products, setProducts] = useState<Product[]>([]);
@@ -148,20 +154,22 @@ export default function OperationalValuesPage() {
   useEffect(() => { void load().catch(cause => setError(cause instanceof Error ? cause.message : "Erro ao carregar.")); }, [load]);
 
   useEffect(() => {
-    if (entity !== "supplier") { setSuppliers([]); return; }
+    if (entity !== "supplier") return;
     const controller = new AbortController();
     setSuppliersLoading(true);
-    const query = new URLSearchParams({ page: "1", pageSize: "100" });
-    apiFetch(`/api/v1/suppliers?${query}`, { cache: "no-store", signal: controller.signal })
+    apiFetch(createSupplierCatalogUrl(supplierPage, supplierSearch), { cache: "no-store", signal: controller.signal })
       .then(async response => {
-        const data = await response.json() as { items?: Supplier[]; detail?: string };
+        const data = await response.json() as { items?: Supplier[]; totalCount?: number; detail?: string };
         if (!response.ok) throw new Error(data.detail || "Não foi possível carregar os fornecedores.");
-        if (!controller.signal.aborted) setSuppliers(data.items ?? []);
+        if (!controller.signal.aborted) {
+          setSuppliers(data.items ?? []);
+          setSupplierTotalCount(data.totalCount ?? 0);
+        }
       })
       .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro ao carregar fornecedores."); })
       .finally(() => { if (!controller.signal.aborted) setSuppliersLoading(false); });
     return () => controller.abort();
-  }, [entity, supplierRefresh]);
+  }, [entity, supplierPage, supplierRefresh, supplierSearch]);
 
   useEffect(() => {
     if (entity !== "product") { setProducts([]); return; }
@@ -367,13 +375,39 @@ export default function OperationalValuesPage() {
       const result = await response.json() as { detail?: string };
       if (!response.ok) throw new Error(result.detail || "Não foi possível cadastrar o fornecedor.");
       setSupplierDraft({ code: "", name: "", evidence: "" });
-      const query = new URLSearchParams({ page: "1", pageSize: "100" });
-      const listResponse = await apiFetch(`/api/v1/suppliers?${query}`, { cache: "no-store" });
-      const list = await listResponse.json() as { items?: Supplier[]; detail?: string };
-      if (!listResponse.ok) throw new Error(list.detail || "Fornecedor salvo, mas não foi possível atualizar a lista.");
-      setSuppliers(list.items ?? []);
+      setSupplierSearch("");
+      setSupplierPage(1);
+      setSupplierRefresh(current => current + 1);
       setNotice("Fornecedor cadastrado e disponível para associação às POs e aos IPs.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao cadastrar fornecedor."); }
+    finally { setBusy(false); }
+  }
+
+  function startEditingSupplier(supplier: Supplier) {
+    setEditingSupplierId(supplier.id);
+    setSupplierEditDraft({ code: supplier.code, name: supplier.name, status: supplier.status });
+    setError("");
+    setNotice("");
+  }
+
+  function cancelEditingSupplier() {
+    setEditingSupplierId("");
+    setSupplierEditDraft({ code: "", name: "", status: "ACTIVE" });
+  }
+
+  async function saveSupplierEdit(event: FormEvent<HTMLFormElement>, supplier: Supplier) {
+    event.preventDefault(); setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await apiFetch(`/api/v1/suppliers/${supplier.id}`, { method: "PATCH",
+        headers: { "content-type": "application/json", "X-Record-Version": supplier.version },
+        body: JSON.stringify({ code: supplierEditDraft.code, name: supplierEditDraft.name,
+          status: supplierEditDraft.status, reason: automaticAuditReason }) });
+      const result = await response.json() as { detail?: string };
+      if (!response.ok) throw new Error(result.detail || "Não foi possível atualizar o fornecedor.");
+      cancelEditingSupplier();
+      setSupplierRefresh(current => current + 1);
+      setNotice("Fornecedor atualizado com auditoria.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao atualizar fornecedor."); }
     finally { setBusy(false); }
   }
 
@@ -761,10 +795,47 @@ export default function OperationalValuesPage() {
         {entities.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select></label>
       <p className="muted">Fornecedores são entidades globais, compartilhadas entre importadoras. O mesmo cadastro é usado nas POs e nos IPs.</p>
-      <h3>Fornecedores cadastrados · {suppliers.length}</h3>
-      {suppliersLoading ? <p role="status">Carregando fornecedores…</p> : suppliers.length ? <ul className="entity-value-list">
-        {suppliers.map(supplier => <li key={supplier.id}><span>{supplier.code} · {supplier.name}</span><span className="muted">{supplier.status === "ACTIVE" ? "Ativo" : "Inativo"}</span></li>)}
-      </ul> : <p className="muted">Ainda não há fornecedores cadastrados para esta importadora.</p>}
+      <h3>Fornecedores cadastrados · {supplierTotalCount}</h3>
+      <label className="supplier-search" htmlFor="supplier-search">Pesquisar por código ou razão social
+        <input id="supplier-search" type="search" value={supplierSearch}
+          onChange={event => { setSupplierSearch(event.target.value); setSupplierPage(1); }}
+          placeholder="Digite o código Protheus ou parte do nome" />
+      </label>
+      {suppliersLoading ? <p role="status">Carregando fornecedores…</p> : suppliers.length ? <ul className="supplier-catalog-list">
+        {suppliers.map(supplier => <li className="supplier-catalog-row" key={supplier.id}>
+          {editingSupplierId === supplier.id ? <form className="supplier-edit-form" onSubmit={event => void saveSupplierEdit(event, supplier)}>
+            <label>Código Protheus<input required maxLength={120} value={supplierEditDraft.code}
+              onChange={event => setSupplierEditDraft(current => ({ ...current, code: event.target.value }))} /></label>
+            <label>Razão social<input required maxLength={240} value={supplierEditDraft.name}
+              onChange={event => setSupplierEditDraft(current => ({ ...current, name: event.target.value }))} /></label>
+            <label>Status<select value={supplierEditDraft.status}
+              onChange={event => setSupplierEditDraft(current => ({ ...current, status: event.target.value as "ACTIVE" | "INACTIVE" }))}>
+              <option value="ACTIVE">Ativo</option><option value="INACTIVE">Inativo</option>
+            </select></label>
+            <div className="supplier-edit-actions">
+              <button className="button entity-value-action" disabled={busy || !supplierEditDraft.code.trim() || !supplierEditDraft.name.trim()}>
+                {busy ? "Salvando…" : "Salvar"}
+              </button>
+              <button className="button secondary entity-value-action" type="button" disabled={busy} onClick={cancelEditingSupplier}>Cancelar</button>
+            </div>
+          </form> : <>
+            <div className="supplier-catalog-details"><strong>{supplier.code}</strong><span>{supplier.name}</span>
+              <span className={`product-catalog-status ${supplier.status === "ACTIVE" ? "active" : "inactive"}`}>
+                {supplier.status === "ACTIVE" ? "Ativo" : "Inativo"}
+              </span>
+            </div>
+            {canWrite && <button className="button secondary entity-value-action" type="button" disabled={busy}
+              aria-label={`Editar fornecedor ${supplier.code}`} onClick={() => startEditingSupplier(supplier)}>Editar</button>}
+          </>}
+        </li>)}
+      </ul> : <p className="muted">{supplierSearch.trim()
+        ? "Nenhum fornecedor corresponde à pesquisa."
+        : "Ainda não há fornecedores cadastrados."}</p>}
+      {!suppliersLoading && supplierTotalCount > 25 && <nav className="pagination" aria-label="Páginas dos fornecedores">
+        <button className="button secondary" disabled={supplierPage <= 1} onClick={() => setSupplierPage(page => page - 1)}>Anterior</button>
+        <span>Página {supplierPage} de {Math.ceil(supplierTotalCount / 25)}</span>
+        <button className="button" disabled={supplierPage * 25 >= supplierTotalCount} onClick={() => setSupplierPage(page => page + 1)}>Próxima</button>
+      </nav>}
       {canWrite && <form className="stack-form" onSubmit={event => void addSupplier(event)}>
         <h3>Adicionar fornecedor</h3>
         <label>Código do fornecedor<input required maxLength={120} value={supplierDraft.code} onChange={event => setSupplierDraft(current => ({ ...current, code: event.target.value }))} /></label>
@@ -772,7 +843,6 @@ export default function OperationalValuesPage() {
         <label>Evidência da revisão<textarea required minLength={8} maxLength={2000} value={supplierDraft.evidence} onChange={event => setSupplierDraft(current => ({ ...current, evidence: event.target.value }))} placeholder="Documento, número, data e onde conferir" /></label>
         <button className="button" disabled={busy}>{busy ? "Salvando…" : "Adicionar fornecedor"}</button>
       </form>}
-      <Link className="button secondary" href="/catalog">Gerenciar e editar fornecedores</Link>
     </section>
   </main>;
   return <main className="shell">

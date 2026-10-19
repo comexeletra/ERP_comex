@@ -86,6 +86,9 @@ const patchBody = z.object({ name: z.string().trim().min(1).max(240).optional(),
   evidence: z.string().trim().min(8).max(2000).optional(),
   validFrom: z.iso.date().nullable().optional(), validTo: z.iso.date().nullable().optional(),
   reason: z.string().trim().min(8).max(500) }).strict();
+const supplierPatchBody = patchBody.extend({
+  code: z.string().min(1).max(120).refine(value => value.trim().length > 0).optional(),
+});
 const productPatchBody = patchBody.extend({ name: z.string().trim().min(1).max(2000).optional() });
 const ncmPatchBody = patchBody.extend({ name: z.string().trim().min(1).max(2000).optional() });
 type Entry = { id: string; importer: string | null; kind: Kind; code: string; name: string;
@@ -936,7 +939,8 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
 
     app.patch<{ Params: { id: string } }>(`${base}/:id`, { config: permissionConfig("catalog.write", scopeMode) }, async (request, reply) => {
       const id = z.uuid().safeParse(request.params.id);
-      const patchSchema = kind === "PRODUCT" ? productPatchBody : kind === "NCM" ? ncmPatchBody : patchBody;
+      const patchSchema = kind === "PRODUCT" ? productPatchBody
+        : kind === "NCM" ? ncmPatchBody : supplierPatchBody;
       const parsed = patchSchema.safeParse(request.body);
       const rawExpected = request.headers["x-record-version"] ?? request.headers["if-match"];
       const expected = typeof rawExpected === "string" && /^[1-9][0-9]*$/u.test(rawExpected)
@@ -960,6 +964,18 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
         if (!before) { await client.query("ROLLBACK"); return problem(reply, 404, "RESOURCE_NOT_FOUND", "Cadastro não encontrado."); }
         if (`"${before.version}"` !== expected) { await client.query("ROLLBACK"); return problem(reply, 409, "VERSION_CONFLICT", "Cadastro alterado. Recarregue antes de salvar."); }
         const body = parsed.data;
+        const supplierBody = kind === "SUPPLIER" ? body as z.infer<typeof supplierPatchBody> : undefined;
+        const code = supplierBody?.code?.trim() ?? before.code;
+        if (kind === "SUPPLIER" && code !== before.code) {
+          const duplicateCode = await client.query<{ id: string }>(
+            `SELECT id FROM catalog.entry WHERE kind = 'SUPPLIER' AND importer IS NULL
+               AND id <> $1 AND normalized_code = upper(btrim($2)) LIMIT 1`,
+            [id.data, code]);
+          if (duplicateCode.rows[0]) {
+            await client.query("ROLLBACK");
+            return problem(reply, 409, "CATALOG_DUPLICATE", "Código de fornecedor já cadastrado.");
+          }
+        }
         const name = body.name ?? before.name;
         const status = body.status ?? before.status;
         const evidence = body.evidence ?? before.evidence;
@@ -968,23 +984,31 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
         if (!validDates(kind, validFrom, validTo, status)) {
           await client.query("ROLLBACK"); return problem(reply, 400, "INVALID_VALIDITY", "Vigência inválida.");
         }
-        const changed = { name, status, evidence, valid_from: validFrom, valid_to: validTo,
-          provenance: kind === "NCM" ? "MANUAL_REVIEW" : before.provenance };
-        const old = { name: before.name, status: before.status, evidence: before.evidence,
+        const provenance = kind === "NCM" ? "MANUAL_REVIEW" : before.provenance;
+        const changed: Record<string, unknown> = { ...(kind === "SUPPLIER" ? { code } : {}),
+          name, status, evidence, valid_from: validFrom, valid_to: validTo, provenance };
+        const old: Record<string, unknown> = { ...(kind === "SUPPLIER" ? { code: before.code } : {}),
+          name: before.name, status: before.status, evidence: before.evidence,
           valid_from: before.valid_from, valid_to: before.valid_to, provenance: before.provenance };
-        const differences = Object.entries(changed).filter(([field, value]) => value !== old[field as keyof typeof old]);
+        const differences = Object.entries(changed).filter(([field, value]) => value !== old[field]);
         if (differences.length === 0) { await client.query("ROLLBACK"); return problem(reply, 400, "NO_CHANGES", "Nenhuma alteração informada."); }
         const updated = await client.query<Entry>(
-          `UPDATE catalog.entry SET name=$2,status=$3,evidence=$4,valid_from=$5,valid_to=$6,provenance=$7,
-             version=version+1,updated_by=$8,updated_at=now() WHERE id=$1 RETURNING *`,
-          [id.data, name, status, evidence, validFrom, validTo, changed.provenance, actor.userId]);
+          `UPDATE catalog.entry SET code=$2,name=$3,status=$4,evidence=$5,valid_from=$6,valid_to=$7,provenance=$8,
+             version=version+1,updated_by=$9,updated_at=now() WHERE id=$1 RETURNING *`,
+          [id.data, code, name, status, evidence, validFrom, validTo, provenance, actor.userId]);
+        if (kind === "SUPPLIER" && code !== before.code) {
+          await client.query(
+            `INSERT INTO catalog.entry_alias (id, entry_id, raw_code, source_kind, created_by)
+             VALUES ($1,$2,$3,'MANUAL_ENTRY',$4) ON CONFLICT (entry_id, raw_code) DO NOTHING`,
+            [randomUUID(), id.data, code, actor.userId]);
+        }
         const correlationId = randomUUID();
         for (const [field, value] of differences) {
           await client.query(
             `INSERT INTO audit.audit_log
               (id,aggregate_type,aggregate_id,entity_type,entity_id,operation,field_name,old_value,new_value,actor_id,occurred_at,reason,correlation_id)
              VALUES ($1,'CATALOG_ENTRY',$2,'CATALOG_ENTRY',$2,'UPDATE',$3,$4::jsonb,$5::jsonb,$6,now(),$7,$8)`,
-            [randomUUID(), id.data, field, JSON.stringify(old[field as keyof typeof old]),
+            [randomUUID(), id.data, field, JSON.stringify(old[field]),
               JSON.stringify(value), `${actor.issuer}#${actor.subject}`, body.reason, correlationId]);
         }
         await client.query(

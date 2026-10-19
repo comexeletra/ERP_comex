@@ -34,10 +34,10 @@ async function createApp() {
               provenance: "MANUAL_REVIEW", valid_from: null, valid_to: null, version: "1",
               created_at: new Date(), updated_at: new Date() }], rowCount: 1 };
           }
-          if (sql.includes("UPDATE catalog.entry SET name=$2")) {
-            return { rows: [{ id: values[0], importer: null, kind: "PRODUCT", code: "EDIT-1",
-              name: values[1], status: values[2], evidence: values[3], provenance: "MANUAL_REVIEW",
-              valid_from: values[4], valid_to: values[5], version: "2",
+          if (sql.includes("UPDATE catalog.entry SET code=$2")) {
+            return { rows: [{ id: values[0], importer: null, kind: "PRODUCT", code: values[1],
+              name: values[2], status: values[3], evidence: values[4], provenance: values[7],
+              valid_from: values[5], valid_to: values[6], version: "2",
               created_at: new Date(), updated_at: new Date() }], rowCount: 1 };
           }
           if (sql.includes("INSERT INTO catalog.entry\n")) {

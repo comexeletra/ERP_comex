@@ -56,9 +56,9 @@ async function createApp() {
           if (sql.includes("SELECT * FROM catalog.entry WHERE id = $1 AND kind = $2 AND importer IS NULL FOR UPDATE")) {
             return { rows: [entry], rowCount: 1 };
           }
-          if (sql.includes("UPDATE catalog.entry SET name=$2")) {
-            Object.assign(entry, { name: values[1], status: values[2], evidence: values[3],
-              valid_from: values[4], valid_to: values[5], version: "2" });
+          if (sql.includes("UPDATE catalog.entry SET code=$2")) {
+            Object.assign(entry, { code: values[1], name: values[2], status: values[3], evidence: values[4],
+              valid_from: values[5], valid_to: values[6], provenance: values[7], version: "2" });
             return { rows: [entry], rowCount: 1 };
           }
           if (sql.includes("INSERT INTO catalog.entry_alias") || sql.includes("INSERT INTO catalog.command_receipt")
