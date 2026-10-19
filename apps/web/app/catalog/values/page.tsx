@@ -4,7 +4,8 @@ import Link from "next/link";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 import { automaticAuditReason } from "../../../lib/audit";
-import { createNcmCatalogUrl, createNcmPayload, updateNcmPayload, type NcmDraft } from "../../../lib/catalog-ncms";
+import { createNcmCatalogUrl, createNcmPayload, readNcmRefreshStart, updateNcmPayload,
+  type NcmDraft } from "../../../lib/catalog-ncms";
 import { parseProductCatalogJson, type ProductCatalogImport } from "../../../lib/catalog-products-json";
 import { filterImporterCatalog, sortImporterCatalog } from "../../../lib/catalog-importers";
 import { createSupplierCatalogUrl } from "../../../lib/catalog-suppliers";
@@ -40,6 +41,9 @@ type OfficialNcmSearchResult = Omit<Ncm, "id" | "status" | "evidence" | "version
 type NcmSyncStatus = { lastAttemptAt: string | null; lastSuccessAt: string | null;
   lastSource: "SISCOMEX" | "MDIC_GECEX" | null; lastSiscomexSuccessAt: string | null;
   lastError: string | null; nextAttemptAt: string; retryMode: boolean;
+  manualRefresh?: { status: "idle" | "running" | "succeeded" | "failed";
+    startedAt: string | null; completedAt: string | null;
+    result: { matchedCount: number; updatedCount: number; attributesUpdatedCount: number } | null };
   snapshot: { source: string; itemCount: number; syncedAt: string } | null;
   lastSiscomexSnapshot: { itemCount: number; syncedAt: string } | null };
 const emptyNcmDraft: NcmDraft = { code: "", description: "", status: "ACTIVE", evidence: "", validFrom: "", validTo: "" };
@@ -184,6 +188,7 @@ export default function OperationalValuesPage() {
   const [officialNcmPage, setOfficialNcmPage] = useState(1);
   const [officialNcmSearchLoading, setOfficialNcmSearchLoading] = useState(false);
   const [ncmSyncStatus, setNcmSyncStatus] = useState<NcmSyncStatus | null>(null);
+  const [ncmManualRunning, setNcmManualRunning] = useState(false);
   const [editingNcmId, setEditingNcmId] = useState("");
   const [ncmDraft, setNcmDraft] = useState<NcmDraft>(emptyNcmDraft);
   const [entity, setEntity] = useState<string>(entities[0][0]);
@@ -288,13 +293,26 @@ export default function OperationalValuesPage() {
     const loadStatus = async () => {
       try {
         const response = await apiFetch("/api/v1/ncms/sync-status", { cache: "no-store" });
-        if (response.ok && active) setNcmSyncStatus(await response.json() as NcmSyncStatus);
+        if (response.ok && active) {
+          const status = await response.json() as NcmSyncStatus;
+          setNcmSyncStatus(status);
+          if (status.manualRefresh?.status === "running") setNcmManualRunning(true);
+          else if (ncmManualRunning) {
+            setNcmManualRunning(false);
+            if (status.manualRefresh?.status === "succeeded") {
+              setNcmRefresh(current => current + 1);
+              setNotice(`${status.manualRefresh.result?.matchedCount ?? 0} NCMs conferidos; ${status.manualRefresh.result?.updatedCount ?? 0} cadastros e ${status.manualRefresh.result?.attributesUpdatedCount ?? 0} conjuntos de atributos atualizados.`);
+            } else {
+              setError(status.lastError || "A atualização dos NCMs não foi concluída. Consulte o estado da sincronização antes de tentar novamente.");
+            }
+          }
+        }
       } catch { /* The catalog remains usable if status is temporarily unavailable. */ }
     };
     void loadStatus();
-    const interval = setInterval(() => { void loadStatus(); }, 60_000);
+    const interval = setInterval(() => { void loadStatus(); }, ncmManualRunning ? 5_000 : 60_000);
     return () => { active = false; clearInterval(interval); };
-  }, [entity, ncmRefresh]);
+  }, [entity, ncmRefresh, ncmManualRunning]);
 
   function startEditingNcm(ncm: Ncm) {
     setEditingNcmId(ncm.id);
@@ -394,14 +412,9 @@ export default function OperationalValuesPage() {
     try {
       const response = await apiFetch("/api/v1/ncms/refresh-official", { method: "POST",
         headers: { "content-type": "application/json" }, body: "{}" });
-      const result = await response.json() as { catalogSource?: "SISCOMEX" | "MDIC_GECEX";
-        matchedCount?: number; updatedCount?: number; inactivatedCount?: number;
-        attributesUpdatedCount?: number; preservedUnmatchedCount?: number; detail?: string };
-      if (!response.ok) throw new Error(result.detail || "Não foi possível atualizar os NCMs cadastrados.");
-      setNcmRefresh(current => current + 1);
-      setNotice(result.catalogSource === "MDIC_GECEX"
-        ? `O Siscomex está indisponível. A base vigente do MDIC permanece disponível para pesquisa; ${result.updatedCount ?? 0} cadastros foram conferidos e ${result.inactivatedCount ?? 0} códigos ausentes da lista completa foram inativados. O sistema tentará novamente consultar o Siscomex automaticamente.`
-        : `${result.matchedCount ?? 0} NCMs cadastrados conferidos; ${result.updatedCount ?? 0} cadastros atualizados, ${result.inactivatedCount ?? 0} inativados pela vigência ou ausência na tabela oficial, e ${result.attributesUpdatedCount ?? 0} conjuntos de atributos atualizados.`);
+      await readNcmRefreshStart(response);
+      setNcmManualRunning(true);
+      setNotice("Atualização iniciada. Os dados serão conferidos em segundo plano; acompanhe o andamento abaixo.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro ao atualizar os NCMs."); }
     finally { setBusy(false); }
   }
@@ -758,13 +771,16 @@ export default function OperationalValuesPage() {
       </select></label>
       <p className="muted">NCMs são um catálogo fiscal global, sem vínculo com importadora.</p>
       <p className="muted">A pesquisa usa o último catálogo Siscomex sincronizado. Se uma nova consulta falhar, a cópia anterior permanece disponível e os NCMs cadastrados não são alterados.</p>
-      {canWriteNcm && <button className="button secondary ncm-refresh-button" type="button" disabled={busy}
-        onClick={() => void refreshRegisteredNcms()}>{busy ? "Atualizando..." : "Atualizar NCMs já cadastrados"}</button>}
+      {canWriteNcm && <button className="button secondary ncm-refresh-button" type="button"
+        disabled={busy || ncmManualRunning || ncmSyncStatus?.manualRefresh?.status === "running"}
+        onClick={() => void refreshRegisteredNcms()}>{ncmManualRunning || ncmSyncStatus?.manualRefresh?.status === "running"
+          ? "Atualização em andamento..." : "Atualizar NCMs já cadastrados"}</button>}
       {ncmSyncStatus && <div className="muted" role="status">
         <p>Catálogo para pesquisa: {ncmSyncStatus.snapshot?.source === "SISCOMEX" ? "Siscomex" : "aguardando carga Siscomex"}
           {ncmSyncStatus.snapshot ? ` · ${ncmSyncStatus.snapshot.itemCount} códigos · carga ${formatNcmDateTime(ncmSyncStatus.snapshot.syncedAt)}` : " · aguardando primeira carga"}.</p>
         <p>Última tentativa: {formatNcmDateTime(ncmSyncStatus.lastAttemptAt)}. Último sucesso do Siscomex: {formatNcmDateTime(ncmSyncStatus.lastSiscomexSuccessAt)}.</p>
-        {ncmSyncStatus.lastError && <p>Situação atual: {ncmSyncStatus.lastError}</p>}
+        {ncmSyncStatus.manualRefresh?.status === "running" && <p>Atualização manual em andamento. Esta página pode ser fechada sem interromper a carga.</p>}
+        {ncmSyncStatus.lastError && ncmSyncStatus.manualRefresh?.status !== "running" && <p>Situação atual: {ncmSyncStatus.lastError}</p>}
         <p>Próxima sincronização programada: {formatNcmDateTime(ncmSyncStatus.nextAttemptAt)} (Brasília).</p>
       </div>}
       <h3>NCMs cadastrados &middot; {ncmTotalCount}</h3>

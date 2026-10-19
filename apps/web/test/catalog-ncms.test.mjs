@@ -1,11 +1,21 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { createNcmCatalogUrl, createNcmPayload, updateNcmPayload } from "../lib/catalog-ncms.ts";
+import { createNcmCatalogUrl, createNcmPayload, readNcmRefreshStart,
+  updateNcmPayload } from "../lib/catalog-ncms.ts";
 import { describeNcmAttributeCondition, describeNcmCreationAct, describeNcmDomainOption,
   describeNcmFillType } from "../lib/catalog-ncm-attributes.ts";
 
 const catalogPage = readFileSync(new URL("../app/catalog/values/page.tsx", import.meta.url), "utf8");
+
+test("manual NCM refresh accepts the asynchronous API contract and explains a non-JSON gateway error", async () => {
+  assert.equal(await readNcmRefreshStart(Response.json({ status: "started" }, { status: 202 })), "started");
+  assert.equal(await readNcmRefreshStart(Response.json({ status: "running" }, { status: 202 })), "running");
+  await assert.rejects(readNcmRefreshStart(new Response("Bad Gateway", { status: 502 })),
+    /atualização não pôde ser iniciada \(HTTP 502\)/u);
+  await assert.rejects(readNcmRefreshStart(Response.json({ detail: "Siscomex indisponível" }, { status: 503 })),
+    /Siscomex indisponível/u);
+});
 
 test("NCM values load from the global catalog without importer filters", () => {
   const url = createNcmCatalogUrl(3, "  8528  ");
