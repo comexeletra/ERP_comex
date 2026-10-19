@@ -1,5 +1,14 @@
 # PostgreSQL migrations
 
+Every ERP database must use the same migration set. The current operational,
+test, and empty homologation databases are all at M001–M034. M032 adds export
+jobs, M033 indexes open issues by source, and M034 stores XLSX export results.
+The separate `erp_po_totvs_gatewayflow_20261010_test` database was upgraded from
+M031 to M034 on 2026-10-15. The empty `erp_po_totvs_hml` database was created
+from migrations without restoring operational data; catalog seed rows were
+cleared after migration. See `deploy/hostinger/README.md` for verification and
+the isolated runtime configuration.
+
 These PostgreSQL migrations are applied by the explicit Node migration runner.
 `M018_operational_po_ip.sql` adds manually transcribed PO items and quantitative
 allocations to IPs, plus editable operational header fields. It preserves the
@@ -224,3 +233,10 @@ cannot safely identify multiple shipment dates.
 M024 passed restored-copy validation and was applied with M022 and M023 to the
 operational database on 2026-10-06. The ledger is 24/24; backup, API health and
 rollback details are recorded in `deploy/hostinger/README.md`.
+
+`M040_purchase_request_supplier.sql` adds supplier to the SC and IP records.
+Selecting an SC makes its supplier authoritative on the linked PO. Invoice
+imports set the IP supplier from the invoice Exporter and validate it against
+the supplier code/name on every allocated PO. Active allocations prevent later
+supplier changes that would break the match. Validate M040 on an isolated
+restored database before deploying the matching API/UI.

@@ -20,6 +20,31 @@ iniciou sem erro e a geracao foi reaberta com ExcelJS como `.xlsx`. O codigo da
 API anterior foi preservado em
 `/var/backups/import-erp/m032-api-20261015T012904Z`.
 
+## Paridade de migrations e base vazia de homologação (2026-10-15)
+
+Os bancos da plataforma usam o mesmo ledger de migrations. `erp_po_totvs_test`
+está em M001–M034; o banco de testes
+`erp_po_totvs_gatewayflow_20261010_test` foi atualizado de M031 para M034; e a
+base nova `erp_po_totvs_hml` foi criada em M001–M034 a partir das migrations
+instaladas na VPS. A homologação não foi restaurada do operacional. Após aplicar
+as migrations, os valores padrão inseridos nos catálogos foram removidos; todas
+as tabelas de aplicação estão vazias, exceto pelo ledger
+`migration.schema_migration`.
+
+O runtime da homologação usa a role isolada `import_erp_hml_app`, que não recebe
+grants nos esquemas do banco operacional. A configuração fica em
+`/etc/import-erp/homologation-db.env` (root:import-erp, modo 0640); ela aponta
+para o banco local e usa o listener da API na porta 4001 quando esse serviço for
+ativado. O frontend/Preview ainda não foi
+direcionado à API de homologação.
+
+Para validar os ledgers e confirmar que a homologação continua vazia, rode
+`verify-homologation-db.sh`. Para criar uma homologação nova em um cluster, use
+`create-homologation-db.sh`; o script recusa nomes, roles ou arquivos de ambiente
+que já existam e exige o operational ledger alinhado ao diretório de migrations.
+Após qualquer nova migration, aplique-a a cada banco ERP isolado e confira a
+paridade antes de liberar os testes.
+
 ## M031 Group (2026-10-08)
 
 `release-m031.sh` verified a restorable backup, applied M031 to a disposable
@@ -33,7 +58,7 @@ live/ready health checks. The previous API files are in
 `/var/backups/import-erp/m031-api-20261008T210946Z`. Vercel Production marked
 commit `726f82d` READY and assigned the `fup-comex-eletra.vercel.app` alias.
 
-> O [checklist vigente](../../CHECKLIST_ATUAL_IMPLEMENTACAO.md) registra M001–M024 aplicadas no banco operacional. As instruções de release M013/M014 abaixo são históricas. Confira o ledger real antes de qualquer release futuro.
+> As seções de release abaixo registram histórico. O estado atual dos bancos está descrito no início deste arquivo; confira todos os ledgers antes de qualquer release futuro.
 
 ## Release M022–M024: histórico PO/IP e pós embarque (2026-10-06)
 
@@ -349,3 +374,27 @@ curl --silent --output /dev/null --write-out '%{http_code}\n' https://api.72-60-
 ```
 
 As respostas esperadas são `active`, uma task `Running`, `{"status":"ok"}` e 401 sem token. Para a verificação autenticada, use o token somente dentro da VPS e não o imprima. `journalctl -u import-erp-api` e `docker service logs import_erp_edge` ajudam a diagnosticar falhas sem ler arquivos de segredo.
+
+## Homologação vazia para testes
+
+O banco `erp_po_totvs_hml` foi criado aplicando M001–M034, sem copiar dados de
+outros ambientes. As roles de runtime e migração são separadas; a role da API
+HML não tem leitura do banco operacional. Duas contas Master locais foram
+criadas para permitir o primeiro acesso; as senhas temporárias estão somente
+em `/root/.config/import-erp/homologation-master-credentials.txt` (modo 0600).
+O banco não contém dados de negócio nem catálogo. Para validar novamente os
+três ledgers e a ausência de dados de negócio:
+
+```sh
+ERP_MIGRATIONS_DIR=/opt/import-erp/apps/api/migrations \
+  /tmp/verify-homologation-db.sh
+```
+
+A API separada escutará em `172.18.0.1:4001`, exposta por
+`https://api-hml.72-60-250-212.sslip.io`. Para ativá-la, defina
+`PREVIEW_PUBLIC_ORIGIN` com o alias HTTPS estável do Vercel Preview e execute
+`enable-homologation-api.sh` junto ao arquivo `import-erp-hml-api.service`.
+Depois, cadastre no escopo Preview da Vercel `PREVIEW_PUBLIC_ORIGIN`,
+`PREVIEW_API_URL=https://api-hml.72-60-250-212.sslip.io` e
+`PREVIEW_API_TOKEN` usando o `GATEWAY_TOKEN` do arquivo HML. A origem da API e
+`PREVIEW_PUBLIC_ORIGIN` devem coincidir exatamente.

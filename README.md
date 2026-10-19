@@ -10,10 +10,10 @@ Next encaminha `/auth/*` e `/api/v1/*` à VPS com token server-only.
 A API Fastify roda na VPS com PostgreSQL, gateway HTTPS, sessões no banco e
 login por contas locais. Duas contas Master foram criadas para administrar os
 demais usuários, seus papéis e seus escopos de importadoras. O frontend Next.js
-roda na Vercel e usa o proxy server-side para a API. M001–M017 estão aplicadas
-no banco operacional `erp_po_totvs_test`; M016/M017 foram validadas em cópia
-restaurada após backup verificado. OIDC/PKCE continua no código para integração
-futura. O estado vigente e as pendências estão em
+roda na Vercel e usa o proxy server-side para a API. O banco operacional, o
+banco de testes e a base de homologação estão em M001–M034. A homologação
+`erp_po_totvs_hml` preserva a estrutura e começa sem registros de aplicação.
+OIDC/PKCE continua no código para integração futura. O estado vigente e as pendências estão em
 [CHECKLIST_ATUAL_IMPLEMENTACAO.md](CHECKLIST_ATUAL_IMPLEMENTACAO.md); a cronologia
 está em [CHECKLIST_IMPLEMENTACAO.md](CHECKLIST_IMPLEMENTACAO.md) e o produto
 completo em [Plano_Implementacao_ERP_PO_TOTVS.md](Plano_Implementacao_ERP_PO_TOTVS.md).
@@ -37,7 +37,8 @@ O projeto Vercel `erp-comex` usa Root Directory `apps/web` e contém
 `VPS_API_URL` e `VPS_API_TOKEN` somente em Production. Na VPS,
 `/etc/import-erp/api.env` contém `DATABASE_URL`, `GATEWAY_TOKEN`,
 `AUTH_SESSION_SECRET` e `APP_PUBLIC_ORIGIN`. Não configure credenciais do banco
-na Vercel. Preview fica sem acesso à API operacional até existir ambiente isolado.
+na Vercel. O banco de homologação tem credenciais próprias em
+`/etc/import-erp/homologation-db.env`; mantenha Preview separado de Production.
 Mantenha a porta PostgreSQL bloqueada pela firewall externa.
 
 Os modelos `systemd`/Nginx e o procedimento de instalação estão em

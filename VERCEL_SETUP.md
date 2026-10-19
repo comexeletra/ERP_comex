@@ -26,14 +26,16 @@ No projeto que realmente atende `fup-comex-eletra.vercel.app`, configure **somen
 Não use prefixo `NEXT_PUBLIC_`. Não configure `DATABASE_URL`, senha PostgreSQL ou segredo OIDC na Vercel. O navegador chama `/auth/*` e `/api/v1/*` na origem da Vercel; o proxy Next.js envia as chamadas à API com o token no servidor. Preview fica sem acesso ao banco operacional até existir um ambiente isolado.
 
 O código exige `PREVIEW_PUBLIC_ORIGIN`, `PREVIEW_API_URL` e `PREVIEW_API_TOKEN`
-em deployments Vercel Preview. Configure as variáveis somente depois de
-provisionar uma API e um banco de teste isolados; o proxy não reutiliza as
-variáveis de Production como fallback. `PREVIEW_PUBLIC_ORIGIN` deve ser o alias
-HTTPS estável do Preview, e o `APP_PUBLIC_ORIGIN` configurado na API de staging
-deve ser exatamente esse valor. URLs de deployment variáveis redirecionam para
-esse alias, mantendo cookies e validação CSRF na mesma origem. Sem a origem
-estável, as páginas Preview respondem 503; sem as variáveis de API, suas rotas
-respondem 503.
+em deployments Vercel Preview. O banco `erp_po_totvs_hml` está provisionado em
+M001–M034 e tem somente duas contas Master locais, sem dados de negócio. A API
+isolada usa `https://api-hml.72-60-250-212.sslip.io`; sua ativação aguarda o
+alias HTTPS estável do Preview. Configure as três variáveis somente no escopo
+Preview. `PREVIEW_PUBLIC_ORIGIN` e `APP_PUBLIC_ORIGIN` na API devem ter o mesmo
+valor exato. URLs de deployment variáveis redirecionam para esse alias,
+mantendo cookies e validação CSRF na mesma origem. O token da API HML está em
+`GATEWAY_TOKEN` no arquivo `/etc/import-erp/homologation-db.env` da VPS; cadastre-o
+como segredo `PREVIEW_API_TOKEN`, sem copiá-lo para o navegador ou para o Git.
+O proxy não reutiliza variáveis de Production como fallback.
 
 Depois de alterar as variáveis, faça um novo deployment Production: os deployments existentes não passam a usar valores novos automaticamente. O projeto tem Root Directory `apps/web`, framework Next.js e branch `main`.
 

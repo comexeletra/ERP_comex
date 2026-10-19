@@ -1,0 +1,27 @@
+[Unit]
+Description=ERP Comex Homologation API
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=import-erp
+Group=import-erp
+WorkingDirectory=/opt/import-erp/apps/api
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/import-erp/homologation-db.env
+ExecStart=/opt/node-v24/bin/node /opt/import-erp/apps/api/dist/server.js
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/import-erp
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
