@@ -8,6 +8,7 @@ import { createNcmCatalogUrl, createNcmPayload, updateNcmPayload, type NcmDraft 
 import { parseProductCatalogJson, type ProductCatalogImport } from "../../../lib/catalog-products-json";
 import { filterImporterCatalog, sortImporterCatalog } from "../../../lib/catalog-importers";
 import { createSupplierCatalogUrl } from "../../../lib/catalog-suppliers";
+import { describeNcmAttributeCondition } from "../../../lib/catalog-ncm-attributes";
 
 const entities = [
   ["importer", "Importadora"], ["incoterm", "Incoterm"], ["transport_mode", "Modal"], ["port_loading", "POL / porto de origem"],
@@ -59,13 +60,16 @@ function NcmValidityDates({ validFrom, validTo }: { validFrom: string | null; va
   </small>;
 }
 
-function NcmConditionalAttributes({ attributes }: { attributes: OfficialNcmAttributeDefinition["conditionalAttributes"] }) {
+function NcmConditionalAttributes({ attributes, controllingAttribute }: {
+  attributes: OfficialNcmAttributeDefinition["conditionalAttributes"];
+  controllingAttribute: Pick<OfficialNcmAttributeDefinition, "code" | "displayName">;
+}) {
   if (!attributes.length) return null;
   return <ul className="ncm-conditional-attributes">
     {attributes.map(item => <li key={`${item.attribute.code}-${item.condition}`}>
-      <strong>{item.attribute.displayName}</strong> <code>{item.attribute.code}</code>
-      <span>{item.condition ? `Obrigatório quando ${item.condition}` : "Obrigatório sob condição Siscomex"}</span>
-      <NcmConditionalAttributes attributes={item.attribute.conditionalAttributes} />
+      <strong>{item.attribute.displayName}</strong> <code title="Identificador oficial deste atributo no Siscomex">{item.attribute.code}</code>
+      <span>{describeNcmAttributeCondition(item.condition, controllingAttribute)}</span>
+      <NcmConditionalAttributes attributes={item.attribute.conditionalAttributes} controllingAttribute={item.attribute} />
     </li>)}
   </ul>;
 }
@@ -73,12 +77,13 @@ function NcmConditionalAttributes({ attributes }: { attributes: OfficialNcmAttri
 function NcmMandatoryAttributes({ attributes }: { attributes: OfficialNcmAttribute[] }) {
   return <details className="ncm-mandatory-attributes">
     <summary>Atributos obrigatórios na importação · {attributes.length}</summary>
+    <p className="ncm-attribute-help">Cada item é uma informação a preencher sobre o produto. O código <code>ATT_…</code> é o identificador oficial do campo; as regras abaixo explicam em que situação um atributo condicionado se torna obrigatório.</p>
     {attributes.length ? <ul className="ncm-attribute-list">
       {attributes.map(attribute => <li key={attribute.code}>
-        <strong>{attribute.displayName}</strong> <code>{attribute.code}</code>
+        <strong>{attribute.displayName}</strong> <code title="Identificador oficial deste atributo no Siscomex">{attribute.code}</code>
         <span>{[attribute.fillType, ...attribute.objectives].filter(Boolean).join(" · ")}</span>
         {attribute.organs.length > 0 && <span>Órgão(s): {attribute.organs.join(", ")}</span>}
-        <NcmConditionalAttributes attributes={attribute.conditionalAttributes} />
+        <NcmConditionalAttributes attributes={attribute.conditionalAttributes} controllingAttribute={attribute} />
       </li>)}
     </ul> : <p className="muted">A fonte oficial não indica atributos obrigatórios para esta NCM.</p>}
   </details>;

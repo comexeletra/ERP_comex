@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createNcmCatalogUrl, createNcmPayload, updateNcmPayload } from "../lib/catalog-ncms.ts";
+import { describeNcmAttributeCondition } from "../lib/catalog-ncm-attributes.ts";
 
 const catalogPage = readFileSync(new URL("../app/catalog/values/page.tsx", import.meta.url), "utf8");
 
@@ -37,4 +38,16 @@ test("NCM catalog labels render Portuguese accents correctly", () => {
   assert.match(catalogPage, /Pesquise pela descrição ou pelo código/iu);
   assert.match(catalogPage, /\/api\/v1\/ncms\/sync-status/u);
   assert.doesNotMatch(catalogPage, /[ÃÂ�]/u);
+});
+
+test("NCM attribute conditions use the controlling field name and clarify option codes", () => {
+  assert.equal(describeNcmAttributeCondition(
+    "'ATT_14545' igual '83' OU 'ATT_14545' igual '84' OU 'ATT_14545' igual '90'",
+    { code: "ATT_14545", displayName: "Categoria do produto" },
+  ), "Obrigatório quando “Categoria do produto” for uma das opções 83, 84 ou 90.");
+  assert.equal(describeNcmAttributeCondition(
+    "ATT_14547 igual true",
+    { code: "ATT_14547", displayName: "É produto estéril?" },
+  ), "Obrigatório quando “É produto estéril?” for Sim.");
+  assert.match(describeNcmAttributeCondition("ATT_1 diferente de SIM"), /regra oficial do Siscomex/u);
 });
