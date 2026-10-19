@@ -33,6 +33,39 @@ deve ser apresentada como benefício já concedido. A interface deve separar
   A integração tributária terá adaptador, cache, estado e rotas próprios. Não
   ampliar o download atual de NCM para buscar tributos durante cada atualização.
 
+## Requisito obrigatório: preservar a consulta Siscomex existente
+
+Este é um critério de aceite da futura implementação, não apenas uma preferência
+de arquitetura. A consulta tributária TTCE deve ser **independente** do fluxo já
+em uso para nomenclatura e atributos NCM. Ao implementar:
+
+- Manter o comportamento, as permissões, os parâmetros e os retornos das rotas
+  atuais `/api/v1/ncms`, `/api/v1/ncms/official-search`,
+  `/api/v1/ncms/import-official`, `/api/v1/ncms/refresh-official` e
+  `/api/v1/ncms/sync-status`. A busca oficial, a inclusão individual e a
+  atualização manual dos NCMs já cadastrados devem continuar funcionando.
+- Manter o agendamento automático das 06:00 e 12:00 (Brasília), a atualização
+  somente dos NCMs cadastrados, a auditoria/outbox, o cache, a coordenação de
+  downloads e o bloqueio com `Retry-After` após falha/limite da fonte NCM.
+  Preservar o retorno rápido `202` e o acompanhamento da atualização manual.
+- Não alterar as fontes de nomenclatura/atributos, o parser em
+  `apps/api/src/siscomex-ncm.ts`, nem usar `getOfficialNcms()` ou
+  `refreshRegisteredNcms()` para obter tributos. Consultas TTCE não podem disparar
+  novo download de nomenclatura, consumir suas cotas, escrever nos snapshots
+  NCM ou modificar a vigência/descrição/atributos de um NCM cadastrado.
+- Criar cliente, armazenamento, limites, cache e estado de erro **separados** para
+  TTCE. Se TTCE estiver lento, indisponível ou limitado, a busca e a atualização
+  atuais de NCM permanecem disponíveis. Se a fonte NCM falhar, um tratamento
+  tributário íntegro já armazenado continua consultável com sua data/fonte.
+- Antes de publicar, executar os testes atuais de NCM e testes de regressão que
+  provem essa independência: uma consulta TTCE não chama os endpoints NCM; falha
+  TTCE não muda `/official-search` ou `/sync-status`; atualização manual/automática
+  NCM não chama TTCE; ambas preservam seus próprios dados e horários de
+  retentativa. Validar esses fluxos na API HML e na interface.
+
+Qualquer necessidade futura de alterar o fluxo de NCM existente deve ser tratada
+como mudança separada, com justificativa, testes de contrato e validação na HML.
+
 ## Fonte oficial e limite do que foi confirmado
 
 O Tratamento Tributário do Comércio Exterior (TTCE) do Portal Único publica uma
@@ -145,6 +178,9 @@ alíquotas específicas antes de liberar totais completos.
   atômico. Falha, timeout, resposta inválida e limite do Portal preservam a
   última versão válida e mostram estado/retentativa, sem bloquear a consulta
   manual/automática atual da nomenclatura.
+- Todas as rotas e os fluxos de NCM enumerados em “Requisito obrigatório” mantêm
+  seus contratos e passam nos testes de regressão antes e depois da integração
+  TTCE, inclusive quando o TTCE retorna erro ou demora.
 - UI distingue tratamento possível, estimativa, declarado e pago; não chama
   total incompleto de “imposto devido”. Fundamentos e condições ficam legíveis,
   com referência técnica acessível.
