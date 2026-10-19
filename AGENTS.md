@@ -27,8 +27,9 @@
 
 ## Acesso SSH da VPS de homologação
 
-- Use o alias SSH `erp-validation-vps` definido em `%USERPROFILE%\.ssh\Host erp-validation-vps.txt`.
-- A chave privada usada nas sessões anteriores fica em `.local-keys/rf06_ed25519`, relativa à raiz deste repositório. `.local-keys/` está no `.gitignore`.
+- No notebook da empresa, use o alias SSH `erp-validation-vps` definido em `%USERPROFILE%\.ssh\Host erp-validation-vps.txt`. A chave privada dessa máquina fica em `.local-keys/rf06_ed25519`, relativa à raiz do repositório.
+- No desktop de casa, a chave SSH funcional fica em `.local-keys/rf06_api_9583966c3df64c5a93048c4c1fb7fe8d.key`. O alias do notebook não está configurado nele; use o host e o usuário documentados em `deploy/hostinger/README.md`, com `-o BatchMode=yes -o IdentitiesOnly=yes -o HostKeyAlias=72.60.250.212 -i .local-keys/rf06_api_9583966c3df64c5a93048c4c1fb7fe8d.key`.
+- `.local-keys/` está no `.gitignore` em ambas as máquinas. Nunca inclua uma chave no Git.
 - Neste ambiente, `ssh` no `PATH` pode apontar para um bloqueio do sandbox; o cliente OpenSSH instalado fica em `C:\Windows\System32\OpenSSH\ssh.exe`.
 - Nunca exiba, copie para logs ou inclua em commits o conteúdo da chave. O acesso SSH não autoriza escrita em produção; confirme o banco HML antes de consultar ou gravar dados.
 

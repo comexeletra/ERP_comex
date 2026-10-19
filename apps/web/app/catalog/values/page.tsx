@@ -8,7 +8,8 @@ import { createNcmCatalogUrl, createNcmPayload, updateNcmPayload, type NcmDraft 
 import { parseProductCatalogJson, type ProductCatalogImport } from "../../../lib/catalog-products-json";
 import { filterImporterCatalog, sortImporterCatalog } from "../../../lib/catalog-importers";
 import { createSupplierCatalogUrl } from "../../../lib/catalog-suppliers";
-import { describeNcmAttributeCondition } from "../../../lib/catalog-ncm-attributes";
+import { describeNcmAttributeCondition, describeNcmCreationAct, describeNcmDomainOption,
+  describeNcmFillType, type NcmCreationAct, type NcmDomainOption } from "../../../lib/catalog-ncm-attributes";
 
 const entities = [
   ["importer", "Importadora"], ["incoterm", "Incoterm"], ["transport_mode", "Modal"], ["port_loading", "POL / porto de origem"],
@@ -26,12 +27,14 @@ type Product = { id: string; importer: string | null; code: string; name: string
 type OfficialNcmAttributeDefinition = {
   code: string; name: string; displayName: string; fillType: string | null; multivalued: boolean;
   startsOn: string | null; endsOn: string | null; objectives: string[]; organs: string[];
-  conditionalAttributes: Array<{ required: boolean; condition: string | null; attribute: OfficialNcmAttributeDefinition }>;
+  domain?: NcmDomainOption[]; subattributes?: OfficialNcmAttributeDefinition[];
+  conditionalAttributes: Array<{ required: boolean; condition: string | null; conditionRule?: unknown;
+    startsOn?: string | null; endsOn?: string | null; attribute: OfficialNcmAttributeDefinition }>;
 };
 type OfficialNcmAttribute = OfficialNcmAttributeDefinition & { required: true };
 type Ncm = { id: string; code: string; name: string; status: "ACTIVE" | "INACTIVE";
   evidence: string; validFrom: string | null; validTo: string | null; version: string;
-  mandatoryImportAttributes?: OfficialNcmAttribute[]; sourceUpdatedAt?: string | null;
+  mandatoryImportAttributes?: OfficialNcmAttribute[]; creationAct?: NcmCreationAct | null; sourceUpdatedAt?: string | null;
   attributesSourceVersion?: string | null; officialDataSyncedAt?: string | null };
 type OfficialNcmSearchResult = Omit<Ncm, "id" | "status" | "evidence" | "version"> & { alreadyRegistered: boolean };
 type NcmSyncStatus = { lastAttemptAt: string | null; lastSuccessAt: string | null;
@@ -60,32 +63,85 @@ function NcmValidityDates({ validFrom, validTo }: { validFrom: string | null; va
   </small>;
 }
 
-function NcmConditionalAttributes({ attributes, controllingAttribute }: {
-  attributes: OfficialNcmAttributeDefinition["conditionalAttributes"];
-  controllingAttribute: Pick<OfficialNcmAttributeDefinition, "code" | "displayName">;
+function NcmCreationAct({ act }: { act?: NcmCreationAct | null }) {
+  const description = describeNcmCreationAct(act);
+  return description ? <small className="ncm-creation-act">{description}</small> : null;
+}
+
+function NcmAttributeOptions({ options }: { options?: NcmDomainOption[] }) {
+  if (!options?.length) return null;
+  const list = <ul className="ncm-domain-options">{options.map(option =>
+    <li key={option.code}>{describeNcmDomainOption(option)}</li>)}</ul>;
+  return options.length <= 6
+    ? <div className="ncm-domain"><span>Opções aceitas:</span>{list}</div>
+    : <details className="ncm-domain"><summary>Ver {options.length} opções aceitas</summary>{list}</details>;
+}
+
+function NcmAttributeItem({ attribute, lookup, parent, condition, conditionRule,
+  conditionStartsOn, conditionEndsOn, kind }: {
+  attribute: OfficialNcmAttributeDefinition;
+  lookup: ReadonlyMap<string, OfficialNcmAttributeDefinition>;
+  parent?: OfficialNcmAttributeDefinition;
+  condition?: string | null;
+  conditionRule?: unknown;
+  conditionStartsOn?: string | null;
+  conditionEndsOn?: string | null;
+  kind: "required" | "conditional" | "part";
 }) {
-  if (!attributes.length) return null;
-  return <ul className="ncm-conditional-attributes">
-    {attributes.map(item => <li key={`${item.attribute.code}-${item.condition}`}>
-      <strong>{item.attribute.displayName}</strong> <code title="Identificador oficial deste atributo no Siscomex">{item.attribute.code}</code>
-      <span>{describeNcmAttributeCondition(item.condition, controllingAttribute)}</span>
-      <NcmConditionalAttributes attributes={item.attribute.conditionalAttributes} controllingAttribute={item.attribute} />
-    </li>)}
-  </ul>;
+  const fillHint = describeNcmFillType(attribute.fillType);
+  const uses = attribute.objectives.map(value => {
+    if (/^produto$/iu.test(value)) return "cadastro do produto";
+    if (/^duimp$/iu.test(value)) return "declaração de importação";
+    if (/^tratamento administrativo$/iu.test(value)) return "licenciamento";
+    return value.toLocaleLowerCase("pt-BR");
+  });
+  return <li className="ncm-attribute-card">
+    <strong>{attribute.displayName}</strong>
+    <p className="ncm-attribute-rule">{kind === "conditional"
+      ? describeNcmAttributeCondition(condition ?? null, parent, lookup)
+      : kind === "part" ? "Parte da informação acima." : "Informação obrigatória para esta NCM na importação."}</p>
+    {kind === "conditional" && (conditionStartsOn || conditionEndsOn) && <p>
+      {conditionStartsOn && conditionEndsOn
+        ? `Regra válida de ${formatNcmDate(conditionStartsOn)} até ${formatNcmDate(conditionEndsOn)}.`
+        : conditionStartsOn ? `Regra válida desde ${formatNcmDate(conditionStartsOn)}.`
+          : `Regra válida até ${formatNcmDate(conditionEndsOn!)}.`}
+    </p>}
+    {fillHint && <p>{fillHint}{attribute.multivalued ? "; pode informar mais de um valor" : ""}.</p>}
+    {uses.length > 0 && <p>Usado em: {uses.join(", ")}.</p>}
+    {attribute.organs.length > 0 && <p>Órgão responsável: {attribute.organs.join(", ")}.</p>}
+    <NcmAttributeOptions options={attribute.domain} />
+    {!!attribute.subattributes?.length && <div className="ncm-subattributes"><span>Informações que compõem este campo:</span>
+      <ul>{attribute.subattributes.map(item => <NcmAttributeItem key={item.code} attribute={item} lookup={lookup}
+        parent={attribute} kind="part" />)}</ul>
+    </div>}
+    {!!attribute.conditionalAttributes?.length && <div className="ncm-conditional-attributes"><span>Informações exigidas conforme a resposta:</span>
+      <ul>{attribute.conditionalAttributes.map(item => <NcmAttributeItem key={`${item.attribute.code}-${item.condition}`}
+        attribute={item.attribute} lookup={lookup} parent={attribute} kind="conditional"
+        condition={item.condition} conditionRule={item.conditionRule}
+        conditionStartsOn={item.startsOn} conditionEndsOn={item.endsOn} />)}</ul>
+    </div>}
+    <details className="ncm-attribute-technical"><summary>Referência técnica</summary>
+      <p>Código Siscomex: <code>{attribute.code}</code>{attribute.fillType ? ` · Tipo: ${attribute.fillType}` : ""}</p>
+      {condition && <p>Regra original: <code>{condition}</code></p>}
+      {conditionRule != null && <p>Regra estruturada: <code>{JSON.stringify(conditionRule)}</code></p>}
+    </details>
+  </li>;
 }
 
 function NcmMandatoryAttributes({ attributes }: { attributes: OfficialNcmAttribute[] }) {
+  const lookup = new Map<string, OfficialNcmAttributeDefinition>();
+  const addToLookup = (attribute: OfficialNcmAttributeDefinition) => {
+    lookup.set(attribute.code, attribute);
+    attribute.subattributes?.forEach(addToLookup);
+    attribute.conditionalAttributes?.forEach(item => addToLookup(item.attribute));
+  };
+  attributes.forEach(addToLookup);
   return <details className="ncm-mandatory-attributes">
-    <summary>Atributos obrigatórios na importação · {attributes.length}</summary>
-    <p className="ncm-attribute-help">Cada item é uma informação a preencher sobre o produto. O código <code>ATT_…</code> é o identificador oficial do campo; as regras abaixo explicam em que situação um atributo condicionado se torna obrigatório.</p>
+    <summary>Informações exigidas para importar · {attributes.length}</summary>
+    <p className="ncm-attribute-help">Veja o que precisa ser informado e quando cada campo se aplica. Os códigos oficiais ficam em “Referência técnica”.</p>
     {attributes.length ? <ul className="ncm-attribute-list">
-      {attributes.map(attribute => <li key={attribute.code}>
-        <strong>{attribute.displayName}</strong> <code title="Identificador oficial deste atributo no Siscomex">{attribute.code}</code>
-        <span>{[attribute.fillType, ...attribute.objectives].filter(Boolean).join(" · ")}</span>
-        {attribute.organs.length > 0 && <span>Órgão(s): {attribute.organs.join(", ")}</span>}
-        <NcmConditionalAttributes attributes={attribute.conditionalAttributes} controllingAttribute={attribute} />
-      </li>)}
-    </ul> : <p className="muted">A fonte oficial não indica atributos obrigatórios para esta NCM.</p>}
+      {attributes.map(attribute => <NcmAttributeItem key={attribute.code} attribute={attribute} lookup={lookup} kind="required" />)}
+    </ul> : <p className="muted">A fonte oficial não indica informações obrigatórias para esta NCM.</p>}
   </details>;
 }
 
@@ -742,6 +798,7 @@ export default function OperationalValuesPage() {
             <div className="product-catalog-description"><strong className="product-catalog-code">{ncm.code}</strong>
               <span>{ncm.name}</span>
               <NcmValidityDates validFrom={ncm.validFrom} validTo={ncm.validTo} />
+              <NcmCreationAct act={ncm.creationAct} />
             </div>
             <div className="product-catalog-actions"><span className={`product-catalog-status ${ncm.status === "ACTIVE" ? "active" : "inactive"}`}>
               {ncm.status === "ACTIVE" ? "Ativo" : "Inativo"}
@@ -783,6 +840,7 @@ export default function OperationalValuesPage() {
               <div className="product-catalog-description"><strong className="product-catalog-code">{item.code}</strong>
                 <span>{item.name}</span>
                 <NcmValidityDates validFrom={item.validFrom} validTo={item.validTo} />
+                <NcmCreationAct act={item.creationAct} />
               </div>
               <div className="product-catalog-actions">
                 {item.alreadyRegistered

@@ -527,19 +527,23 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .ncm-official-search-form label { max-width: none; }
 .ncm-official-search-form button { min-width: 175px; }
 .ncm-official-search-list { margin-top: 10px; }
+.ncm-creation-act { color: #36545b; font-size: .82rem; }
 .ncm-mandatory-attributes { border-top: 1px solid #d3e4e6; grid-column: 1 / -1; min-width: 0; padding-top: 8px; }
-.ncm-mandatory-attributes > summary { color: #15505b; cursor: pointer; font-size: .86rem; font-weight: 700; }
-.ncm-attribute-help { color: #627381; font-size: .82rem; margin: 8px 0 0; }
-.ncm-attribute-help code { color: #526b78; }
-.ncm-attribute-list,
-.ncm-conditional-attributes { display: grid; gap: 9px; list-style: none; margin: 12px 0 0; padding: 0; }
-.ncm-attribute-list > li,
-.ncm-conditional-attributes > li { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
-.ncm-attribute-list code,
-.ncm-conditional-attributes code { color: #526b78; font-size: .78rem; }
-.ncm-attribute-list > li > span,
-.ncm-conditional-attributes > li > span { color: #627381; font-size: .82rem; }
-.ncm-conditional-attributes { border-left: 2px solid #c4dadd; margin: 5px 0 0 8px; padding-left: 12px; }
+.ncm-mandatory-attributes > summary { color: #15505b; cursor: pointer; font-size: .9rem; font-weight: 700; }
+.ncm-attribute-help { color: #526b78; font-size: .84rem; margin: 8px 0 0; }
+.ncm-attribute-list, .ncm-subattributes ul, .ncm-conditional-attributes ul { display: grid; gap: 10px; list-style: none; margin: 12px 0 0; padding: 0; }
+.ncm-attribute-card { background: #fff; border: 1px solid #d3e4e6; border-radius: 8px; min-width: 0; overflow-wrap: anywhere; padding: 12px; }
+.ncm-attribute-card > strong { color: #183e4b; display: block; font-size: .95rem; }
+.ncm-attribute-card p { color: #526b78; font-size: .83rem; line-height: 1.45; margin: 5px 0 0; }
+.ncm-attribute-card .ncm-attribute-rule { color: #184d56; font-weight: 600; }
+.ncm-domain { color: #36545b; font-size: .83rem; margin-top: 9px; }
+.ncm-domain > summary, .ncm-attribute-technical > summary { cursor: pointer; }
+.ncm-domain-options { display: flex; flex-wrap: wrap; gap: 5px; list-style: none; margin: 6px 0 0; padding: 0; }
+.ncm-domain-options > li { background: #eaf4f3; border-radius: 5px; padding: 4px 7px; }
+.ncm-subattributes, .ncm-conditional-attributes { border-left: 2px solid #bfd8d9; margin: 12px 0 0 4px; padding-left: 12px; }
+.ncm-subattributes > span, .ncm-conditional-attributes > span { color: #36545b; font-size: .82rem; font-weight: 600; }
+.ncm-attribute-technical { color: #647985; font-size: .78rem; margin-top: 10px; }
+.ncm-attribute-technical code { color: #526b78; white-space: normal; }
 .catalog-validity-fields { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .catalog-validity-fields > label { display: grid; gap: 6px; }
 @media (max-width: 600px) {

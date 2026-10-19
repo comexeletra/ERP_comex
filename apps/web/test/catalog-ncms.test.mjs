@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createNcmCatalogUrl, createNcmPayload, updateNcmPayload } from "../lib/catalog-ncms.ts";
-import { describeNcmAttributeCondition } from "../lib/catalog-ncm-attributes.ts";
+import { describeNcmAttributeCondition, describeNcmCreationAct, describeNcmDomainOption,
+  describeNcmFillType } from "../lib/catalog-ncm-attributes.ts";
 
 const catalogPage = readFileSync(new URL("../app/catalog/values/page.tsx", import.meta.url), "utf8");
 
@@ -41,13 +42,27 @@ test("NCM catalog labels render Portuguese accents correctly", () => {
 });
 
 test("NCM attribute conditions use the controlling field name and clarify option codes", () => {
+  const controlling = { code: "ATT_14545", displayName: "Categoria do produto",
+    domain: [{ code: "83", description: "Produto para diagnóstico" },
+      { code: "84", description: "Material hospitalar" }, { code: "90", description: "Outro dispositivo" },
+      { code: "99", description: "Outros" }, { code: "97", description: "Não informado" }] };
   assert.equal(describeNcmAttributeCondition(
     "'ATT_14545' igual '83' OU 'ATT_14545' igual '84' OU 'ATT_14545' igual '90'",
-    { code: "ATT_14545", displayName: "Categoria do produto" },
-  ), "Obrigatório quando “Categoria do produto” for uma das opções 83, 84 ou 90.");
+    controlling,
+  ), "Obrigatório quando “Categoria do produto” for Produto para diagnóstico (83), Material hospitalar (84) ou Outro dispositivo (90).");
+  assert.equal(describeNcmAttributeCondition(
+    "'ATT_14545' Diferente '99' E 'ATT_14545' Diferente '97'", controlling,
+  ), "Obrigatório quando “Categoria do produto” não for Outros (99) nem Não informado (97).");
   assert.equal(describeNcmAttributeCondition(
     "ATT_14547 igual true",
     { code: "ATT_14547", displayName: "É produto estéril?" },
   ), "Obrigatório quando “É produto estéril?” for Sim.");
-  assert.match(describeNcmAttributeCondition("ATT_1 diferente de SIM"), /regra oficial do Siscomex/u);
+  assert.match(describeNcmAttributeCondition("regra (complexa)"), /regra específica do Siscomex/u);
+  assert.equal(describeNcmDomainOption({ code: "82", description: "Dispositivo médico" }), "Dispositivo médico (82)");
+  assert.equal(describeNcmFillType("LISTA_ESTATICA"), "Escolha uma opção da lista oficial");
+  assert.equal(describeNcmCreationAct({ tipoOrgaoAtoIni: "Resolução", numeroAtoIni: "42", anoAtoIni: "2022" }),
+    "Ato legal de criação: Resolução · nº 42/2022");
+  assert.match(catalogPage, /NcmAttributeOptions options=\{attribute\.domain\}/u);
+  assert.match(catalogPage, /attribute\.subattributes/u);
+  assert.match(catalogPage, /NcmCreationAct act=\{ncm\.creationAct\}/u);
 });
