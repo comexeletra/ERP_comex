@@ -147,7 +147,12 @@ function headerValue(sheet: Worksheet, label: string): string {
   const expected = normalizeHeader(label);
   for (let row = 1; row <= Math.min(sheet.rowCount, 25); row += 1) {
     for (let column = 1; column <= sheet.columnCount; column += 1) {
-      if (normalizeHeader(textOf(sheet.getRow(row).getCell(column))) !== expected) continue;
+      const headerText = textOf(sheet.getRow(row).getCell(column));
+      if (headerText.toLocaleUpperCase("en-US").startsWith(label.toLocaleUpperCase("en-US"))) {
+        const inlineValue = headerText.slice(label.length).replace(/^[\s:.]+/u, "").trim();
+        if (inlineValue) return inlineValue;
+      }
+      if (normalizeHeader(headerText) !== expected) continue;
       const cell = sheet.getRow(row).getCell(column + 1);
       const value = valueOf(cell);
       if (expected === "date" && typeof value === "number" && Number.isFinite(value)) {
@@ -165,7 +170,7 @@ function invoiceDate(value: string): string {
   const brazilian = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/u.exec(text);
   const months: Record<string, number> = { JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6,
     JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12 };
-  const english = /^([A-Za-z]{3})\.?\s+(\d{1,2}),?\s+(\d{4})$/u.exec(text);
+  const english = /^([A-Za-z]{3})[.,]?\s+(\d{1,2})\s*(?:st|nd|rd|th|of)?[,]?\s+(\d{4})$/iu.exec(text);
   const year = iso ? Number(iso[1]) : brazilian ? Number(brazilian[3]) : english ? Number(english[3]) : 0;
   const month = iso ? Number(iso[2]) : brazilian ? Number(brazilian[2]) : english ? months[english[1].toUpperCase()] : 0;
   const day = iso ? Number(iso[3]) : brazilian ? Number(brazilian[1]) : english ? Number(english[2]) : 0;
@@ -264,6 +269,14 @@ export async function parseChinaInvoiceXlsx(file: File): Promise<ChinaInvoiceDra
     lines.push(parseLine(sheet, row, columns));
   }
   if (!lines.length) throw new Error("Não encontrei produtos na aba INV.");
+  const lastLineRow = lines.at(-1)!.sourceRow;
+  for (let row = lastLineRow + 1; row <= Math.min(sheet.rowCount, lastLineRow + 10); row += 1) {
+    if (["qty pcs kgs mts", "net weight kg", "gross weight kg", "total cny"]
+      .every(key => decimalValue(decimalCell(sheet.getRow(row).getCell(columns.get(key)!))) !== null)) {
+      totalRow = row;
+      break;
+    }
+  }
 
   const sum = (select: (line: ChinaInvoiceLine) => string) => {
     const total = lines.reduce((sumValue, line) => {

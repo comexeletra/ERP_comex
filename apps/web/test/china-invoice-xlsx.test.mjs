@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ExcelJS from "exceljs";
 import { parseChinaInvoiceXlsx, parseInvoicePoAssignments } from "../lib/china-invoice-xlsx.ts";
-import { invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
+import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
   invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping.ts";
 
 test("suggests only an unambiguous invoice item and reports code/supplier divergences", () => {
@@ -26,6 +27,15 @@ test("identifies unit and CNY price differences for each PO destination", () => 
   assert.equal(invoicePoPriceDiffers("0.2232524272", "0.22325243", "CNY"), false);
   assert.equal(invoicePoPriceDiffers("2", "3", "CNY"), true);
   assert.equal(invoicePoPriceDiffers("2", "3", "USD"), false);
+});
+
+test("classifies missing PO, missing product, and insufficient balance by invoice row", () => {
+  const matching = [{ id: "a", productCode: "A", remainingQuantity: "3" }];
+  assert.equal(classifyInvoiceDestination([], false, "A", "5", "").kind, "PO_NOT_REGISTERED");
+  assert.equal(classifyInvoiceDestination(matching, true, "B", "5", "").kind, "ITEM_NOT_FOUND");
+  assert.deepEqual(classifyInvoiceDestination(matching, true, "A", "5", ""),
+    { kind: "INSUFFICIENT_BALANCE", requested: "5", available: "3" });
+  assert.equal(classifyInvoiceDestination(matching, true, "A", "3", "a"), null);
 });
 
 test("rebuilds invoice PO assignments after an importer is selected manually", () => {
@@ -154,6 +164,52 @@ test("accepts ISO and English month dates", async () => {
     const result = await parseChinaInvoiceXlsx(await fixtureWorkbook({ mutate(sheet) { sheet.getCell("K6").value = input; } }));
     assert.equal(result.invoiceDate, expected);
   }
+});
+
+test("reads INV labels and values combined in one cell, including comma month dates", async () => {
+  const result = await parseChinaInvoiceXlsx(await fixtureWorkbook({ mutate(sheet) {
+    sheet.getCell("J4").value = "IP REF.:  IPH034B/2026";
+    sheet.getCell("K4").value = null;
+    sheet.getCell("J5").value = "INVOICE: PWBR260205-10B";
+    sheet.getCell("K5").value = null;
+    sheet.getCell("J6").value = "DATE:OCT, 15 th 2026";
+    sheet.getCell("K6").value = null;
+  } }));
+  assert.equal(result.ipNumber, "IPH034B/2026");
+  assert.equal(result.invoiceNumber, "PWBR260205-10B");
+  assert.equal(result.invoiceDate, "2026-10-15");
+});
+
+test("reads English month dates with an 'of' separator", async () => {
+  const result = await parseChinaInvoiceXlsx(await fixtureWorkbook({ mutate(sheet) {
+    sheet.getCell("J6").value = "DATE:OCT, 09 of 2026";
+    sheet.getCell("K6").value = null;
+  } }));
+  assert.equal(result.invoiceDate, "2026-10-09");
+});
+
+test("reads formula totals immediately after the last product before later TOTAL text", async () => {
+  const result = await parseChinaInvoiceXlsx(await fixtureWorkbook({ mutate(sheet) {
+    sheet.getCell("D18").value = null;
+    for (const [column, value] of [["I", 1450], ["L", 9.7], ["M", 14.04], ["N", 895.86]]) {
+      sheet.getCell(`${column}18`).value = { formula: `SUM(${column}16:${column}17)`, result: value };
+    }
+    sheet.getCell("A22").value = "TOTAL CARTONS";
+    sheet.getCell("O22").value = "TOTAL IGNORE OUTSIDE A:N";
+  } }));
+  assert.deepEqual(result.issues, []);
+});
+
+test("parses the anonymized A:N layout derived from the long INV example", async () => {
+  const bytes = await readFile(new URL("./fixtures/inv-layout-a-n-anonymized.xlsx", import.meta.url));
+  const result = await parseChinaInvoiceXlsx(new File([bytes], "inv-layout-a-n-anonymized.xlsx"));
+  assert.equal(result.lines.length, 91);
+  assert.equal(result.ipNumber, "IPH-ANON-2026");
+  assert.equal(result.invoiceDate, "2026-10-15");
+  assert.equal(result.totalQuantity, "91");
+  assert.equal(result.totalAmount, "182");
+  assert.deepEqual(result.issues, []);
+  assert.equal(result.lines.reduce((count, line) => count + line.issues.length, 0), 0);
 });
 
 test("reports invalid NCM and warns when net weight exceeds gross weight", async () => {
