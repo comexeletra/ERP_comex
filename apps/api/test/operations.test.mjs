@@ -8,6 +8,88 @@ const poId = "00000000-0000-4000-8000-000000000001";
 const body = { importer: "ELETRA MATRIZ", number: "PO-TESTE", supplierText: "SUP-TESTE",
   orderDate: null, notes: "", reason: "Pedido conferido" };
 
+async function invoiceImportApp(t, client) {
+  const pool = {
+    async query(sql, params) {
+      if (sql.includes("SELECT DISTINCT importer FROM procurement.purchase_order")) {
+        return { rows: [{ importer: "ELETRA MATRIZ" }] };
+      }
+      return { rows: [{ role: params[1] === "reader" ? "Consulta" : "Importa\u00e7\u00e3o",
+        importer_code: "ELETRA MATRIZ" }] };
+    },
+    async connect() { return client; },
+  };
+  const app = Fastify();
+  t.after(() => app.close());
+  app.decorateRequest("authContext", null);
+  await registerAuthorization(app, pool);
+  app.addHook("onRequest", async request => {
+    if (request.headers["x-test-subject"] === "writer") request.authContext = {
+      issuer: "ci", subject: "writer", userId: poId, displayName: null, sessionToken: "ci",
+    };
+  });
+  await registerOperationalRoutes(app, pool);
+  return app;
+}
+
+function invoicePayload() {
+  return {
+    process: { importer: "ELETRA MATRIZ", ipNumber: "IPH/TEST", supplierText: "Exporter Ltd",
+      logisticsStatus: "WAITING SHIPMENT", priority: null, notes: "", reason: "Invoice review" },
+    invoice: { fileName: "invoice.xlsx", number: "INV-1", issueDate: null, amount: "10", currency: "CNY",
+      metadata: { importerCnpj: "12345678000190", ipNumberFromInvoice: "IPH/TEST", exporterText: "Exporter Ltd",
+        lines: [{ sourceRow: 16, productCode: "PO-CODE", quantity: "5", poCell: "PO030201" }],
+        assignments: [{ itemId: poId, sourceRow: 16, sourcePoNumber: "PO030201", poNumber: "PO030201",
+          poProductCode: "PO-CODE", productCode: "PO-CODE", quantity: "5", confirmCodeMismatch: false,
+          confirmSupplierMismatch: false }], catalogUpdates: { products: [], poItems: [] } } },
+    allocations: [{ itemId: poId, quantity: "5", notes: "Invoice row 16" }],
+  };
+}
+
+function invoiceImportClient({ revision = false } = {}) {
+  const processId = "00000000-0000-4000-8000-000000000021";
+  const oldDocumentId = "00000000-0000-4000-8000-000000000022";
+  const oldAllocationId = "00000000-0000-4000-8000-000000000023";
+  const queries = [];
+  const client = {
+    async query(sql, params) {
+      queries.push({ sql, params });
+      if (sql.includes("SELECT payload_sha256")) return { rows: [], rowCount: 0 };
+      if (sql.includes("UNION SELECT importer FROM imports.import_process")) {
+        return { rows: [{ importer: "ELETRA MATRIZ" }], rowCount: 1 };
+      }
+      if (sql.includes("FROM catalog.operational_value")) return { rows: [{ ok: true }], rowCount: 1 };
+      if (sql.includes("FROM procurement.purchase_order_item item JOIN procurement.purchase_order po")) {
+        return { rows: [{ id: poId, purchase_order_id: "00000000-0000-4000-8000-000000000002",
+          number: "PO030201", importer: "ELETRA MATRIZ", quantity: "10", product_code: "PO-CODE",
+          supplier_entry_id: "00000000-0000-4000-8000-000000000003", supplier_text: "Exporter Ltd",
+          supplier_name: "Exporter Ltd", supplier_code: "EXPORTER" }], rowCount: 1 };
+      }
+      if (sql.includes("SELECT * FROM imports.import_process WHERE normalized_ip_number")) {
+        return revision ? { rows: [{ id: processId, importer: "ELETRA MATRIZ", ip_number: "IPH/TEST",
+          normalized_ip_number: "IPH/TEST", record_status: "ACTIVE", lifecycle_status: "OPEN", version: "2" }], rowCount: 1 }
+          : { rows: [], rowCount: 0 };
+      }
+      if (sql.includes("SELECT 1 FROM imports.process_document")) return { rows: [], rowCount: 0 };
+      if (sql.includes("SELECT * FROM imports.process_document") && sql.includes("kind = 'INVOICE'")) {
+        return revision ? { rows: [{ id: oldDocumentId, process_id: processId, kind: "INVOICE", status: "ACTIVE" }], rowCount: 1 }
+          : { rows: [], rowCount: 0 };
+      }
+      if (sql.includes("SELECT * FROM procurement.po_item_allocation WHERE process_id")) {
+        return revision ? { rows: [{ id: oldAllocationId, process_id: processId,
+          purchase_order_item_id: poId, quantity: "5", status: "ACTIVE" }], rowCount: 1 }
+          : { rows: [], rowCount: 0 };
+      }
+      if (sql.includes("SELECT item.id, item.ordered_quantity::text")) {
+        return { rows: [{ id: poId, ordered_quantity: "10", allocated_quantity: "0" }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 1 };
+    },
+    release() {},
+  };
+  return { client, queries, processId, oldDocumentId, oldAllocationId };
+}
+
 test("operational commands reject reader, invalid quantity, foreign importer and missing version before database writes", async t => {
   let connections = 0;
   const pool = {
@@ -253,6 +335,47 @@ test("invoice import requires explicit confirmation for a PO supplier mismatch",
   assert.equal(response.statusCode, 400);
   assert.equal(response.json().code, "INVOICE_SUPPLIER_MISMATCH_UNCONFIRMED");
   assert.equal(queries.some(sql => /^\s*(?:UPDATE|INSERT)\b/u.test(sql)), false);
+});
+
+test("invoice approval creates an active IP and allocates the invoice quantity from its PO", async t => {
+  const { client, queries } = invoiceImportClient();
+  const app = await invoiceImportApp(t, client);
+  const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-create-success" },
+    payload: invoicePayload(),
+  });
+
+  assert.equal(response.statusCode, 201, response.body);
+  assert.equal(typeof response.json().id, "string");
+  assert.equal(typeof response.json().documentId, "string");
+  assert.equal(response.json().allocations, 1);
+  assert.equal(response.json().ipNumber, "IPH/TEST");
+  assert.equal(response.json().revision, false);
+  assert.ok(queries.some(query => query.sql.includes("INSERT INTO imports.import_process")
+    && query.sql.includes("'WAITING SHIPMENT'") && query.sql.includes("'ACTIVE'")));
+  assert.ok(queries.some(query => query.sql.includes("INSERT INTO procurement.po_item_allocation")
+    && query.params[3] === 5));
+  assert.ok(queries.some(query => query.sql.includes("INSERT INTO imports.process_document")
+    && query.sql.includes("'INVOICE'")));
+  assert.ok(queries.some(query => query.sql.includes("INSERT INTO audit.audit_log")));
+  assert.ok(queries.some(query => query.sql.includes("INSERT INTO audit.outbox_message")));
+});
+
+test("invoice revision cancels the previous allocation and invoice before replacing them", async t => {
+  const { client, queries, processId } = invoiceImportClient({ revision: true });
+  const app = await invoiceImportApp(t, client);
+  const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-revision-success" },
+    payload: invoicePayload(),
+  });
+
+  assert.equal(response.statusCode, 201, response.body);
+  assert.equal(response.json().id, processId);
+  assert.equal(response.json().revision, true);
+  assert.equal(queries.some(query => query.sql.includes("UPDATE imports.process_document SET status = 'CANCELLED'")), true);
+  assert.equal(queries.some(query => query.sql.includes("UPDATE procurement.po_item_allocation SET status = 'CANCELLED'")), true);
+  assert.equal(queries.some(query => query.sql.includes("INSERT INTO imports.import_process")), false);
+  assert.equal(queries.filter(query => query.sql.includes("INSERT INTO procurement.po_item_allocation")).length, 1);
 });
 
 test("invoice candidates include PO supplier details even when they differ from the Exporter", async t => {
