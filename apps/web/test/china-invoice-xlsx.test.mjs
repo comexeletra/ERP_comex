@@ -51,7 +51,7 @@ test("rejects incomplete, malformed, and inconsistent multi-PO assignments", () 
   assert.throws(() => parseInvoicePoAssignments("PO 030321 = 0 unit", "0"), /quantidade total válida/);
 });
 
-async function fixtureWorkbook({ includeInv = true, includeIpReference = true } = {}) {
+async function fixtureWorkbook({ includeInv = true, includeIpReference = true, mutate } = {}) {
   const workbook = new ExcelJS.Workbook();
   const sheet = includeInv ? workbook.addWorksheet("INV") : workbook.addWorksheet("Other");
   if (!includeInv) return new File([Buffer.from(await workbook.xlsx.writeBuffer())], "invoice.xlsx");
@@ -75,6 +75,12 @@ async function fixtureWorkbook({ includeInv = true, includeIpReference = true } 
   sheet.getCell("C109").value = "75 days";
   sheet.getRow(16).values = [undefined, 1, 39269090, 3011100110, "Part A", "Maker", "Factory Road", "CHINA", 1030, "PCS", 0.2232524272, 9.3, 13.54, 229.95, "PO030321"];
   sheet.getRow(17).values = [undefined, 2, 40169300, 3080702860, "Part B", "Maker", "Factory Road", "CHINA", 420, "PCS", 1.5855, 0.4, 0.5, 665.91, "PO 030321 = 412 unit\nPO 032025 = 8 unit"];
+  sheet.getCell("D18").value = "TOTAL";
+  sheet.getCell("I18").value = 1450;
+  sheet.getCell("L18").value = 9.7;
+  sheet.getCell("M18").value = 14.04;
+  sheet.getCell("N18").value = 895.86;
+  mutate?.(sheet);
   workbook.addWorksheet("Ignored").getCell("K4").value = "SHOULD NOT BE USED";
   return new File([Buffer.from(await workbook.xlsx.writeBuffer())], "invoice.xlsx");
 }
@@ -93,7 +99,69 @@ test("maps header and product fields from INV and expands PO splits", async () =
   assert.equal(result.lines[1].issues.length, 0);
   assert.equal(result.totalQuantity, "1450");
   assert.equal(result.totalAmount, "895.86");
+  assert.match(result.fileSha256, /^[a-f0-9]{64}$/);
   assert.match(result.warnings[0], /mais de uma PO/);
+});
+
+test("keeps numbered rows with missing material and reports total discrepancies", async () => {
+  const file = await fixtureWorkbook({ mutate(sheet) {
+    sheet.getCell("D17").value = null;
+    sheet.getCell("I18").value = 1451;
+  } });
+  const result = await parseChinaInvoiceXlsx(file);
+  assert.equal(result.lines.length, 2);
+  assert.match(result.lines[1].issues.join(" "), /Material Code/);
+  assert.match(result.issues.join(" "), /TOTAL.*quantidade/);
+});
+
+test("finds header labels outside J/K and reads textual dates and party labels", async () => {
+  const result = await parseChinaInvoiceXlsx(await fixtureWorkbook({ mutate(sheet) {
+    for (const row of [4, 5, 6, 7, 9, 10, 11, 12, 13, 14]) {
+      sheet.getCell(row, 3).value = sheet.getCell(row, 10).value;
+      sheet.getCell(row, 4).value = sheet.getCell(row, 11).value;
+      sheet.getCell(row, 10).value = null;
+      sheet.getCell(row, 11).value = null;
+    }
+    sheet.getCell("D6").value = "15/10/2026";
+    sheet.getCell("A6").value = null;
+    sheet.getCell("E6").value = null;
+    sheet.getCell("B2").value = "Exporter:";
+    sheet.getCell("C2").value = "Exporter Ltd";
+    sheet.getCell("F2").value = "Importer:";
+    sheet.getCell("G2").value = "Importer Ltd CNPJ 12.345.678/0001-90";
+    sheet.getCell("C109").value = null;
+    sheet.getCell("B3").value = "Payment terms:";
+    sheet.getCell("C3").value = "75 days";
+  } }));
+  assert.equal(result.ipNumber, "IPH034B/2026");
+  assert.equal(result.invoiceDate, "2026-10-15");
+  assert.equal(result.exporterText, "Exporter Ltd");
+  assert.equal(result.importerCnpj, "12345678000190");
+  assert.equal(result.paymentTerms, "75 days");
+});
+
+test("accepts ISO and English month dates", async () => {
+  for (const [input, expected] of [["2026-10-15", "2026-10-15"], ["OCT. 15, 2026", "2026-10-15"]]) {
+    const result = await parseChinaInvoiceXlsx(await fixtureWorkbook({ mutate(sheet) { sheet.getCell("K6").value = input; } }));
+    assert.equal(result.invoiceDate, expected);
+  }
+});
+
+test("reports invalid NCM and warns when net weight exceeds gross weight", async () => {
+  const result = await parseChinaInvoiceXlsx(await fixtureWorkbook({ mutate(sheet) {
+    sheet.getCell("C16").value = 123;
+    sheet.getCell("L16").value = 14;
+    sheet.getCell("L18").value = 14.4;
+  } }));
+  assert.match(result.lines[0].issues.join(" "), /NCM.*8 dígitos/);
+  assert.match(result.warnings.join(" "), /peso líquido.*bruto/);
+});
+
+test("rejects price and total columns in a currency other than CNY", async () => {
+  await assert.rejects(parseChinaInvoiceXlsx(await fixtureWorkbook({ mutate(sheet) {
+    sheet.getCell("K15").value = "Price (USD)";
+    sheet.getCell("N15").value = "Total (USD)";
+  } })), /CNY/);
 });
 
 test("requires the INV sheet and an XLSX file", async () => {

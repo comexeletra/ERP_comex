@@ -26,6 +26,7 @@ export type ChinaInvoiceLine = {
 
 export type ChinaInvoiceDraft = {
   fileName: string;
+  fileSha256: string;
   ipNumber: string;
   importerText: string;
   importerCnpj: string;
@@ -45,6 +46,7 @@ export type ChinaInvoiceDraft = {
   totalNetWeightKg: string;
   totalGrossWeightKg: string;
   totalAmount: string;
+  issues: string[];
   warnings: string[];
 };
 
@@ -135,7 +137,7 @@ function headerColumns(sheet: Worksheet): { row: number; columns: Map<string, nu
       const name = normalizeHeader(textOf(cell));
       if (name && !columns.has(name)) columns.set(name, column);
     });
-    if (["no", "ncm", "material code", "product description", "qty unit", "total cny", "po"]
+    if (["no", "ncm", "material code", "product description", "qty unit", "po"]
       .every(name => columns.has(name))) return { row, columns };
   }
   return null;
@@ -143,10 +145,10 @@ function headerColumns(sheet: Worksheet): { row: number; columns: Map<string, nu
 
 function headerValue(sheet: Worksheet, label: string): string {
   const expected = normalizeHeader(label);
-  const exactLabel = label.trim().toLocaleLowerCase("en");
   for (let row = 1; row <= Math.min(sheet.rowCount, 25); row += 1) {
-    if (textOf(sheet.getRow(row).getCell(10)).trim().toLocaleLowerCase("en") === exactLabel) {
-      const cell = sheet.getRow(row).getCell(11);
+    for (let column = 1; column <= sheet.columnCount; column += 1) {
+      if (normalizeHeader(textOf(sheet.getRow(row).getCell(column))) !== expected) continue;
+      const cell = sheet.getRow(row).getCell(column + 1);
       const value = valueOf(cell);
       if (expected === "date" && typeof value === "number" && Number.isFinite(value)) {
         return new Date(Math.round((value - 25569) * 86_400_000)).toISOString().slice(0, 10);
@@ -154,12 +156,22 @@ function headerValue(sheet: Worksheet, label: string): string {
       return textOf(cell);
     }
   }
-  for (let row = 1; row <= Math.min(sheet.rowCount, 25); row += 1) {
-    if (normalizeHeader(textOf(sheet.getRow(row).getCell(10))) === expected) {
-      return textOf(sheet.getRow(row).getCell(11));
-    }
-  }
   return "";
+}
+
+function invoiceDate(value: string): string {
+  const text = value.trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(text);
+  const brazilian = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/u.exec(text);
+  const months: Record<string, number> = { JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6,
+    JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12 };
+  const english = /^([A-Za-z]{3})\.?\s+(\d{1,2}),?\s+(\d{4})$/u.exec(text);
+  const year = iso ? Number(iso[1]) : brazilian ? Number(brazilian[3]) : english ? Number(english[3]) : 0;
+  const month = iso ? Number(iso[2]) : brazilian ? Number(brazilian[2]) : english ? months[english[1].toUpperCase()] : 0;
+  const day = iso ? Number(iso[3]) : brazilian ? Number(brazilian[1]) : english ? Number(english[2]) : 0;
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return year >= 1900 && parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1
+    && parsed.getUTCDate() === day ? `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}` : "";
 }
 
 function cnpjDigits(value: string): string {
@@ -183,6 +195,7 @@ function parseLine(sheet: Worksheet, rowNumber: number, columns: Map<string, num
       ? String(amountNumber / quantityNumber) : "";
 
   if (!get("material code")) issues.push("Material Code aus der invoice está vazio.");
+  if (!/^\d{8}$/u.test(get("ncm"))) issues.push("O NCM precisa conter 8 dígitos.");
   if (!get("product description")) issues.push("A descrição do produto está vazia.");
   if (!quantityNumber || quantityNumber <= 0) issues.push("A quantidade precisa ser maior que zero.");
   if (!get("qty unit")) issues.push("A unidade está vazia.");
@@ -221,13 +234,17 @@ export async function parseChinaInvoiceXlsx(file: File): Promise<ChinaInvoiceDra
 
   const { default: ExcelJS } = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
-  try { await workbook.xlsx.load(await file.arrayBuffer()); }
+  const bytes = await file.arrayBuffer();
+  try { await workbook.xlsx.load(bytes); }
   catch { throw new Error("Não foi possível ler a planilha. Salve-a como .xlsx e tente novamente."); }
   const sheet = workbook.getWorksheet("INV");
   if (!sheet) throw new Error("Não encontrei a aba obrigatória INV.");
   const header = headerColumns(sheet);
   if (!header) throw new Error("Não encontrei o cabeçalho de produtos esperado na aba INV.");
   const { row: headerRow, columns } = header;
+  if (!columns.has("price cny") || !columns.has("total cny")) {
+    throw new Error("As colunas Price (CNY) e Total (CNY) são obrigatórias; outras moedas não são aceitas.");
+  }
   const required = ["no", "ncm", "material code", "product description", "manufacturer",
     "manufacturer s address", "manufacturer s country", "qty pcs kgs mts", "qty unit", "price cny",
     "net weight kg", "gross weight kg", "total cny", "po"];
@@ -235,10 +252,15 @@ export async function parseChinaInvoiceXlsx(file: File): Promise<ChinaInvoiceDra
   if (missingHeaders.length) throw new Error(`A aba INV está sem colunas obrigatórias: ${missingHeaders.join(", ")}.`);
 
   const lines: ChinaInvoiceLine[] = [];
+  let totalRow = 0;
   for (let row = headerRow + 1; row <= sheet.rowCount; row += 1) {
+    let hasTotal = false;
+    sheet.getRow(row).eachCell({ includeEmpty: false }, cell => {
+      if (normalizeHeader(textOf(cell)) === "total") hasTotal = true;
+    });
+    if (hasTotal && !totalRow) totalRow = row;
     const lineNo = textOf(sheet.getRow(row).getCell(columns.get("no")!));
-    const material = textOf(sheet.getRow(row).getCell(columns.get("material code")!));
-    if (!/^\d+$/u.test(lineNo) || !material) continue;
+    if (!/^\d+$/u.test(lineNo)) continue;
     lines.push(parseLine(sheet, row, columns));
   }
   if (!lines.length) throw new Error("Não encontrei produtos na aba INV.");
@@ -251,9 +273,32 @@ export async function parseChinaInvoiceXlsx(file: File): Promise<ChinaInvoiceDra
     return String(Number(total.toFixed(8)));
   };
   const warnings: string[] = [];
+  const issues: string[] = [];
+  if (!totalRow) issues.push("A linha TOTAL da invoice não foi encontrada.");
+  else for (const [column, value, label] of [
+    ["qty pcs kgs mts", sum(line => line.quantity), "quantidade"],
+    ["net weight kg", sum(line => line.netWeightKg), "peso líquido"],
+    ["gross weight kg", sum(line => line.grossWeightKg), "peso bruto"],
+    ["total cny", sum(line => line.amount), "valor"],
+  ] as const) {
+    const declared = decimalValue(decimalCell(sheet.getRow(totalRow).getCell(columns.get(column)!)));
+    if (declared === null || Math.abs(declared - Number(value)) > 0.011) {
+      issues.push(`O TOTAL de ${label} não confere com a soma das linhas.`);
+    }
+  }
+  for (const line of lines) {
+    const net = decimalValue(line.netWeightKg);
+    const gross = decimalValue(line.grossWeightKg);
+    if (net !== null && gross !== null && net > gross) {
+      warnings.push(`Linha ${line.sourceRow}: o peso líquido é maior que o peso bruto.`);
+    }
+  }
   const ipNumber = headerValue(sheet, "IP REF.");
   if (!ipNumber.trim()) throw new Error("The IP REF header is required on the INV sheet.");
-  const importerText = textOf(sheet.getCell("E6"));
+  const importerText = headerValue(sheet, "Importer:") || textOf(sheet.getCell("E6"));
+  const exporterText = headerValue(sheet, "Exporter:") || textOf(sheet.getCell("A6"));
+  if (!importerText) issues.push("Importador não identificado no cabeçalho.");
+  if (!exporterText) issues.push("Exporter não identificado no cabeçalho.");
   const headerPoNumber = headerValue(sheet, "PO REF.");
   const poNumbers = new Set(lines.flatMap(line => line.poAssignments.map(item => item.poNumber)));
   const normalizedHeaderPo = headerPoNumber.replace(/\D/gu, "");
@@ -263,15 +308,17 @@ export async function parseChinaInvoiceXlsx(file: File): Promise<ChinaInvoiceDra
 
   return {
     fileName: file.name,
+    fileSha256: Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)))
+      .map(value => value.toString(16).padStart(2, "0")).join(""),
     ipNumber, importerText, importerCnpj: cnpjDigits(importerText),
-    exporterText: textOf(sheet.getCell("A6")), invoiceNumber: headerValue(sheet, "INVOICE:"),
-    invoiceDate: headerValue(sheet, "DATE:"), headerPoNumber, originText: headerValue(sheet, "FROM:"),
+    exporterText, invoiceNumber: headerValue(sheet, "INVOICE:"),
+    invoiceDate: invoiceDate(headerValue(sheet, "DATE:")), headerPoNumber, originText: headerValue(sheet, "FROM:"),
     destinationText: headerValue(sheet, "TO:"), incoterm: headerValue(sheet, "INCOTERM 2020:"),
     countryOfOrigin: headerValue(sheet, "COUNTRY OF ORIGIN:"),
     countryOfAcquisition: headerValue(sheet, "COUNTRY OF ACQUISITION:"),
     countryOfPrecedence: headerValue(sheet, "COUNTRY OF PRECEDENCE:"),
-    paymentTerms: textOf(sheet.getCell("C109")), lines,
+    paymentTerms: headerValue(sheet, "Payment terms:") || textOf(sheet.getCell("C109")), lines,
     totalQuantity: sum(line => line.quantity), totalNetWeightKg: sum(line => line.netWeightKg),
-    totalGrossWeightKg: sum(line => line.grossWeightKg), totalAmount: sum(line => line.amount), warnings,
+    totalGrossWeightKg: sum(line => line.grossWeightKg), totalAmount: sum(line => line.amount), issues, warnings,
   };
 }

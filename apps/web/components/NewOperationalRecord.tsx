@@ -274,7 +274,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
             ? "O CNPJ não corresponde a uma importadora cadastrada. Selecione manualmente e confirme a divergência."
             : "";
       const lineIssues = draft.lines.flatMap(line => line.issues.map(issue => `Linha ${line.sourceRow}: ${issue}`));
-      if (lineIssues.length) { setInvoiceError(lineIssues.join(" ")); return; }
+      if (lineIssues.length || draft.issues.length) { setInvoiceError([...draft.issues, ...lineIssues].join(" ")); return; }
 
       if (invoiceImporter) {
         const query = new URLSearchParams({ ipNumber: draft.ipNumber.trim(), importer: invoiceImporter, page: "1", pageSize: "200" });
@@ -590,6 +590,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
           invoice: { fileName: invoiceDraft.fileName, number: invoiceDraft.invoiceNumber,
             issueDate: /^\d{4}-\d{2}-\d{2}$/u.test(invoiceDraft.invoiceDate) ? invoiceDraft.invoiceDate : null,
             amount: invoiceDraft.totalAmount, currency: "CNY", metadata: {
+              fileSha256: invoiceDraft.fileSha256,
               invoiceDateText: invoiceDraft.invoiceDate, ipNumberFromInvoice: invoiceDraft.ipNumber,
               importerCnpj: invoiceDraft.importerCnpj,
               confirmImporterCnpjMismatch,
