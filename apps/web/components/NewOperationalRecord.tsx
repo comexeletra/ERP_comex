@@ -57,7 +57,7 @@ type InvoiceItemCandidate = { id: string; lineNumber: number; productCode: strin
 type InvoiceMatch = { key: string; sourceRow: number; sourcePoNumber: string; poNumber: string; quantity: string;
   productCode: string; description: string; itemId: string; candidates: InvoiceItemCandidate[];
   updateProduct: boolean; updatePoItem: boolean; confirmCodeMismatch: boolean; confirmSupplierMismatch: boolean };
-type InvoiceDuplicate = { id: string; ipNumber: string; recordStatus: string;
+type InvoiceDuplicate = { id: string; ipNumber: string; recordStatus: string; version: string;
   logisticsStatus: string | null; lifecycleStatus: string };
 
 type InvoiceImporterOption = { code: string; cnpj: string | null };
@@ -277,7 +277,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
 
       if (invoiceImporter) {
         const query = new URLSearchParams({ ipNumber: draft.ipNumber.trim(), importer: invoiceImporter, page: "1", pageSize: "200" });
-        const existing = await readResponse<{ items: Array<{ id: string; ipNumber: string; recordStatus: string;
+        const existing = await readResponse<{ items: Array<{ id: string; ipNumber: string; recordStatus: string; version: string;
           logisticsStatus: string | null; lifecycleStatus: string }> }>(
           await apiFetch(`/api/v1/processes?${query}`, { cache: "no-store" }));
         const duplicate = existing.items.find(item => item.ipNumber.trim().toLocaleUpperCase("en-US")
@@ -329,7 +329,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
     setInvoiceLoading(true); setInvoiceError("");
     try {
       const duplicateQuery = new URLSearchParams({ ipNumber: invoiceDraft.ipNumber.trim(), importer, page: "1", pageSize: "200" });
-      const existing = await readResponse<{ items: Array<{ id: string; ipNumber: string; recordStatus: string;
+      const existing = await readResponse<{ items: Array<{ id: string; ipNumber: string; recordStatus: string; version: string;
         logisticsStatus: string | null; lifecycleStatus: string }> }>(
         await apiFetch(`/api/v1/processes?${duplicateQuery}`, { cache: "no-store" }));
       const duplicate = existing.items.find(item => item.ipNumber.trim().toLocaleUpperCase("en-US")
@@ -620,7 +620,8 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
             notes: `Invoice ${invoiceDraft.invoiceNumber || invoiceDraft.fileName}, linha ${match.sourceRow}` })),
         };
         const result = await readResponse<{ id: string; revision?: boolean }>(await apiFetch("/api/v1/processes/import-invoice", {
-          method: "POST", headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+          method: "POST", headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID(),
+            ...(invoiceDuplicate ? { "X-Record-Version": invoiceDuplicate.version } : {}) },
           body: JSON.stringify(payload),
         }));
         router.push(`/processes/${result.id}`);

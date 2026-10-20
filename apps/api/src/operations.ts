@@ -334,16 +334,16 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const supplierIdsForProcess = new Set([...supplierByItemId.values()].map(item => item.supplierEntryId));
         const processSupplierEntryId = [...supplierByItemId.values()].every(item => item.matchesExporter && item.supplierEntryId)
           && supplierIdsForProcess.size === 1 ? [...supplierIdsForProcess][0] : null;
+        const invoiceSupplierDivergence = processSupplierEntryId === null;
         const previousProcess = await client.query<Record<string, unknown>>(
-          `SELECT * FROM imports.import_process WHERE normalized_ip_number = upper(btrim($1)) FOR UPDATE`,
-          [body.process.ipNumber]);
+          `SELECT * FROM imports.import_process
+           WHERE normalized_ip_number = upper(btrim($1)) AND importer = $2 FOR UPDATE`,
+          [body.process.ipNumber, body.process.importer]);
         let processId: string;
         let isRevision = false;
         if (previousProcess.rows[0]) {
           const previous = previousProcess.rows[0];
-          if (previous.importer !== body.process.importer) {
-            throw new BusinessError(409, "IP_REFERENCE_CONFLICT", "IP REF already belongs to another importer.");
-          }
+          checkVersion(previous, versionFrom(request));
           if (previous.record_status === "CANCELLED") {
             throw new BusinessError(409, "CANCELLED_IP_REFERENCE", "A cancelled IP cannot be revised.");
           }
@@ -378,32 +378,36 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
             `UPDATE imports.import_process SET record_status = 'ACTIVE', source_kind = 'CHINA_INVOICE',
                logistics_status = 'WAITING SHIPMENT', priority = $2, notes = $3, supplier_text = $4,
                supplier_entry_id = $5, incoterm = $6, port_loading = $7, port_discharge = $8,
-               version = version + 1, updated_at = now() WHERE id = $1`,
+               invoice_supplier_divergence = $9, version = version + 1, updated_at = now() WHERE id = $1`,
             [processId, body.process.priority, body.process.notes, exporterText, processSupplierEntryId,
               typeof body.invoice.metadata.incoterm === "string" ? body.invoice.metadata.incoterm : null,
               typeof body.invoice.metadata.originText === "string" ? body.invoice.metadata.originText : null,
-              typeof body.invoice.metadata.destinationText === "string" ? body.invoice.metadata.destinationText : null]);
+              typeof body.invoice.metadata.destinationText === "string" ? body.invoice.metadata.destinationText : null,
+              invoiceSupplierDivergence]);
           await record(client, "IMPORT_PROCESS", processId, "IMPORT_PROCESS", processId, "REVISION", previous,
             { ...body.process, logisticsStatus: "WAITING SHIPMENT", recordStatus: "ACTIVE",
               source: "CHINA_INVOICE", invoiceNumber: body.invoice.number,
-              invoiceImporterCnpj, confirmedImporterCnpjMismatch: confirmImporterCnpjMismatch }, auth.actor, body.process.reason);
+              invoiceImporterCnpj, confirmedImporterCnpjMismatch: confirmImporterCnpjMismatch,
+              invoiceSupplierDivergence }, auth.actor, body.process.reason);
         } else {
           processId = randomUUID();
           await client.query(
             `INSERT INTO imports.import_process
              (id,importer,ip_number,normalized_ip_number,logistics_status,priority,notes,source_kind,version,supplier_text,supplier_entry_id,
-              incoterm,port_loading,port_discharge,record_status)
-             VALUES ($1,$2,$3,upper(btrim($3)),'WAITING SHIPMENT',$4,$5,'CHINA_INVOICE',1,$6,$7,$8,$9,$10,'ACTIVE')`,
+              incoterm,port_loading,port_discharge,record_status,invoice_supplier_divergence)
+             VALUES ($1,$2,$3,upper(btrim($3)),'WAITING SHIPMENT',$4,$5,'CHINA_INVOICE',1,$6,$7,$8,$9,$10,'ACTIVE',$11)`,
             [processId, body.process.importer, body.process.ipNumber, body.process.priority, body.process.notes,
               exporterText, processSupplierEntryId,
               typeof body.invoice.metadata.incoterm === "string" ? body.invoice.metadata.incoterm : null,
               typeof body.invoice.metadata.originText === "string" ? body.invoice.metadata.originText : null,
-              typeof body.invoice.metadata.destinationText === "string" ? body.invoice.metadata.destinationText : null],
+              typeof body.invoice.metadata.destinationText === "string" ? body.invoice.metadata.destinationText : null,
+              invoiceSupplierDivergence],
           );
           await record(client, "IMPORT_PROCESS", processId, "IMPORT_PROCESS", processId, "CREATE", null,
             { ...body.process, logisticsStatus: "WAITING SHIPMENT", recordStatus: "ACTIVE",
               source: "CHINA_INVOICE", invoiceNumber: body.invoice.number,
-              invoiceImporterCnpj, confirmedImporterCnpjMismatch: confirmImporterCnpjMismatch }, auth.actor, body.process.reason);
+              invoiceImporterCnpj, confirmedImporterCnpjMismatch: confirmImporterCnpjMismatch,
+              invoiceSupplierDivergence }, auth.actor, body.process.reason);
         }
         const available = await client.query<{ id: string; ordered_quantity: string; allocated_quantity: string }>(
           `SELECT item.id, item.ordered_quantity::text,
@@ -882,12 +886,15 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const destinationIds = new Map<string, string>();
         for (const [normalized, ipNumber] of newDestinations) {
           const destinationId = randomUUID();
+          const destinationSupplierEntryId = process.supplier_entry_id ? String(process.supplier_entry_id) : null;
+          const destinationSupplierText = destinationSupplierEntryId ? process.supplier_text : null;
           await client.query(
             `INSERT INTO imports.import_process
              (id,importer,ip_number,normalized_ip_number,logistics_status,priority,notes,source_kind,version,supplier_text,supplier_entry_id,record_status)
              VALUES ($1,$2,$3,$4,NULL,NULL,$5,'CANCELLATION_TRANSFER',1,$6,$7,'DRAFT')`,
             [destinationId, process.importer, ipNumber, normalized,
-              `Criado no cancelamento do IP ${process.ip_number}; aguardando invoice.`, process.supplier_text, process.supplier_entry_id]);
+              `Criado no cancelamento do IP ${process.ip_number}; aguardando invoice.`,
+              destinationSupplierText, destinationSupplierEntryId]);
           destinationIds.set(normalized, destinationId);
           await record(client, "IMPORT_PROCESS", destinationId, "IMPORT_PROCESS", destinationId, "CREATE", null,
             { ipNumber, recordStatus: "DRAFT", source: "CANCELLATION_TRANSFER", sourceProcessId: id.data }, auth.actor, parsed.data.reason);

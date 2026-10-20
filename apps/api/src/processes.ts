@@ -49,6 +49,7 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
          SELECT process.id, process.ip_number, process.importer, process.supplier_entry_id,
            coalesce(supplier.code, process.supplier_text) AS supplier_text, supplier.name AS supplier_name,
            process.logistics_status, process.lifecycle_status, process.record_status, process.quality_status,
+           process.version,
            (SELECT count(*)::int FROM procurement.process_purchase_order AS link
             JOIN procurement.purchase_order AS po ON po.id = link.purchase_order_id
             WHERE link.process_id = process.id AND po.importer = ANY($1::text[])) AS purchase_order_count,
@@ -75,6 +76,7 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
            'supplierEntryId', page.supplier_entry_id, 'supplierText', page.supplier_text, 'supplierName', page.supplier_name,
            'logisticsStatus', page.logistics_status, 'lifecycleStatus', page.lifecycle_status,
            'recordStatus', page.record_status,
+           'version', page.version::text,
            'qualityStatus', page.quality_status,
            'purchaseOrderCount', page.purchase_order_count,
            'historicalLineCount', page.historical_line_count,
@@ -96,6 +98,7 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
          'id', process.id, 'ipNumber', process.ip_number, 'importer', process.importer,
          'supplierEntryId', process.supplier_entry_id,
          'supplierText', coalesce(supplier.code, process.supplier_text), 'supplierName', supplier.name,
+          'invoiceSupplierDivergence', process.invoice_supplier_divergence,
          'logisticsStatus', process.logistics_status, 'qualityStatus', process.quality_status,
          'recordStatus', process.record_status,
          'sourceKind', process.source_kind, 'priority', process.priority,

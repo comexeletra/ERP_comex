@@ -20,7 +20,7 @@ type Allocation = { id: string; allocationQuantity: string; purchaseOrder: { id:
 type Event = { id: string; entityType: string; entityId: string; operation: string; oldValue: Record<string, Value> | null;
   newValue: Record<string, Value> | null; occurredAt: string; reason: string | null; actorId: string;
   purchaseOrderNumber?: string; productCode?: string; productDescription?: string; lineNumber?: number; unit?: string | null };
-type Data = { process: Row & { id: string; ipNumber: string; version: string; lifecycleStatus: "OPEN" | "CLOSED"; recordStatus?: "DRAFT" | "ACTIVE" | "CANCELLED" };
+type Data = { process: Row & { id: string; ipNumber: string; version: string; lifecycleStatus: "OPEN" | "CLOSED"; recordStatus?: "DRAFT" | "ACTIVE" | "CANCELLED"; invoiceSupplierDivergence?: boolean };
   purchaseOrders: { id: string; number: string; importer: string; linkSource: string }[];
   allocations: Allocation[]; documents: Document[];
   invoiceTotals: { amounts: { currency: string; amount: string }[]; incompleteLines: number }; events: Event[] };
@@ -233,6 +233,7 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
         </tbody></table></div>}
     </>}
     {!loading && data && <>
+      {data.process.invoiceSupplierDivergence && <p className="notice" role="status">O Exporter da invoice diverge do fornecedor de uma ou mais POs; os dois valores permanecem preservados.</p>}
       <h3>POs nesta operação</h3>
       {data.purchaseOrders.length === 0 ? <p>Nenhuma PO vinculada ao IP.</p> :
         <ul>{data.purchaseOrders.map(po => <li key={po.id}><Link className="text-link" href={`/purchase-orders/${po.id}`}>PO {po.number}</Link> · {po.importer}</li>)}</ul>}

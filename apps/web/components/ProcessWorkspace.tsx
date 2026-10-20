@@ -18,6 +18,7 @@ type PurchaseOrderItemChoice = { id: string; lineNumber: number; productCode: st
 type OperationalAllocation = { id: string; poId: string; poNumber: string; productCode: string; quantity: string;
   unit: string; poItemRemainingQuantity?: string };
 type Process = { id: string; ipNumber: string; importer: string; supplierEntryId?: string | null; supplierText: string | null; supplierName?: string | null; logisticsStatus: string | null;
+  invoiceSupplierDivergence?: boolean;
   qualityStatus: string; sourceKind: string; priority: string | null; notes: string;
   version: string; lifecycleStatus?: "OPEN" | "CLOSED"; recordStatus?: "DRAFT" | "ACTIVE" | "CANCELLED"; closedAt: string | null;
   closedBy: string | null; closeReason: string | null;
@@ -320,6 +321,7 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
       {compatibilityWarning && <p className="notice" role="status">{compatibilityWarning}</p>}
       {process.recordStatus === "DRAFT" && <p className="notice" role="status">IP criado durante o cancelamento. As POs ficam sem saldo reservado ate a invoice ser carregada.</p>}
       {process.recordStatus === "CANCELLED" && <p className="notice" role="status">IP cancelado. As distribuicoes foram liberadas e as POs encaminhadas conforme a decisao registrada.</p>}
+      {process.invoiceSupplierDivergence && <p className="notice" role="status">O Exporter da invoice difere do fornecedor de uma ou mais POs. Os valores originais foram preservados na invoice e nas POs.</p>}
       <section className="metric-grid"><Metric label="POs vinculadas" value={process.purchaseOrders.length} /><Metric label="Linhas históricas" value={lines.totalCount} /><Metric label="Custos históricos" value={process.historicalCosts.length} /></section>
       <section className="card"><h2>Dados operacionais do IP</h2>
         <p>Prioridade: {process.priority ?? "não informada"}. Observações: {process.notes || "—"}.</p>

@@ -32,7 +32,7 @@ async function invoiceImportApp(t, client) {
   return app;
 }
 
-function invoicePayload() {
+function invoicePayload({ confirmSupplierMismatch = false } = {}) {
   return {
     process: { importer: "ELETRA MATRIZ", ipNumber: "IPH/TEST", supplierText: "Exporter Ltd",
       logisticsStatus: "WAITING SHIPMENT", priority: null, notes: "", reason: "Invoice review" },
@@ -41,12 +41,12 @@ function invoicePayload() {
         lines: [{ sourceRow: 16, productCode: "PO-CODE", quantity: "5", poCell: "PO030201" }],
         assignments: [{ itemId: poId, sourceRow: 16, sourcePoNumber: "PO030201", poNumber: "PO030201",
           poProductCode: "PO-CODE", productCode: "PO-CODE", quantity: "5", confirmCodeMismatch: false,
-          confirmSupplierMismatch: false }], catalogUpdates: { products: [], poItems: [] } } },
+          confirmSupplierMismatch }], catalogUpdates: { products: [], poItems: [] } } },
     allocations: [{ itemId: poId, quantity: "5", notes: "Invoice row 16" }],
   };
 }
 
-function invoiceImportClient({ revision = false } = {}) {
+function invoiceImportClient({ revision = false, supplierMatchesExporter = true } = {}) {
   const processId = "00000000-0000-4000-8000-000000000021";
   const oldDocumentId = "00000000-0000-4000-8000-000000000022";
   const oldAllocationId = "00000000-0000-4000-8000-000000000023";
@@ -62,10 +62,12 @@ function invoiceImportClient({ revision = false } = {}) {
       if (sql.includes("FROM procurement.purchase_order_item item JOIN procurement.purchase_order po")) {
         return { rows: [{ id: poId, purchase_order_id: "00000000-0000-4000-8000-000000000002",
           number: "PO030201", importer: "ELETRA MATRIZ", quantity: "10", product_code: "PO-CODE",
-          supplier_entry_id: "00000000-0000-4000-8000-000000000003", supplier_text: "Exporter Ltd",
-          supplier_name: "Exporter Ltd", supplier_code: "EXPORTER" }], rowCount: 1 };
+          supplier_entry_id: "00000000-0000-4000-8000-000000000003",
+          supplier_text: supplierMatchesExporter ? "Exporter Ltd" : "PO Supplier",
+          supplier_name: supplierMatchesExporter ? "Exporter Ltd" : "PO Supplier Ltd",
+          supplier_code: supplierMatchesExporter ? "EXPORTER" : "PO-SUP" }], rowCount: 1 };
       }
-      if (sql.includes("SELECT * FROM imports.import_process WHERE normalized_ip_number")) {
+      if (sql.includes("normalized_ip_number = upper(btrim($1))")) {
         return revision ? { rows: [{ id: processId, importer: "ELETRA MATRIZ", ip_number: "IPH/TEST",
           normalized_ip_number: "IPH/TEST", record_status: "ACTIVE", lifecycle_status: "OPEN", version: "2" }], rowCount: 1 }
           : { rows: [], rowCount: 0 };
@@ -212,6 +214,9 @@ test("guided cancellation releases allocations and routes POs to idle, existing 
   assert.equal(queries.some(query => query.sql.includes("SET record_status = 'CANCELLED'")), true);
   assert.equal(queries.some(query => query.sql.includes("'DRAFT')")), true);
   assert.equal(queries.some(query => query.sql.includes("UPDATE procurement.po_item_allocation SET status = 'CANCELLED'")), true);
+  const draftInsert = queries.find(query => query.sql.includes("'CANCELLATION_TRANSFER'") && query.sql.includes("INSERT INTO imports.import_process"));
+  assert.equal(draftInsert.params[5], null);
+  assert.equal(draftInsert.params[6], null);
 });
 
 test("invoice import rejects a header CNPJ that does not map to the selected importer", async t => {
@@ -361,11 +366,26 @@ test("invoice approval creates an active IP and allocates the invoice quantity f
   assert.ok(queries.some(query => query.sql.includes("INSERT INTO audit.outbox_message")));
 });
 
+test("confirmed invoice supplier divergence is persisted for the database constraint", async t => {
+  const { client, queries } = invoiceImportClient({ supplierMatchesExporter: false });
+  const app = await invoiceImportApp(t, client);
+  const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-supplier-divergence" },
+    payload: invoicePayload({ confirmSupplierMismatch: true }),
+  });
+
+  assert.equal(response.statusCode, 201, response.body);
+  const processInsert = queries.find(query => query.sql.includes("INSERT INTO imports.import_process"));
+  assert.equal(processInsert.params[6], null);
+  assert.equal(processInsert.params[10], true);
+  assert.ok(processInsert.sql.includes("invoice_supplier_divergence"));
+});
+
 test("invoice revision cancels the previous allocation and invoice before replacing them", async t => {
   const { client, queries, processId } = invoiceImportClient({ revision: true });
   const app = await invoiceImportApp(t, client);
   const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
-    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-revision-success" },
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-revision-success", "x-record-version": '"2"' },
     payload: invoicePayload(),
   });
 
@@ -376,6 +396,21 @@ test("invoice revision cancels the previous allocation and invoice before replac
   assert.equal(queries.some(query => query.sql.includes("UPDATE procurement.po_item_allocation SET status = 'CANCELLED'")), true);
   assert.equal(queries.some(query => query.sql.includes("INSERT INTO imports.import_process")), false);
   assert.equal(queries.filter(query => query.sql.includes("INSERT INTO procurement.po_item_allocation")).length, 1);
+});
+
+test("invoice revision requires the version read by the client", async t => {
+  const { client, queries } = invoiceImportClient({ revision: true });
+  const app = await invoiceImportApp(t, client);
+  const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-revision-without-version" },
+    payload: invoicePayload(),
+  });
+
+  assert.equal(response.statusCode, 428, response.body);
+  assert.equal(response.json().code, "PRECONDITION_REQUIRED");
+  assert.equal(queries.some(query => query.sql.includes("UPDATE imports.process_document")), false);
+  const processLookup = queries.find(query => query.sql.includes("normalized_ip_number = upper(btrim($1))"));
+  assert.ok(processLookup.sql.includes("AND importer = $2"));
 });
 
 test("invoice candidates include PO supplier details even when they differ from the Exporter", async t => {
