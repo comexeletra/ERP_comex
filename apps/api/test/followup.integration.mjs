@@ -15,17 +15,30 @@ test("followup persists item/IP inputs and individual documents in an isolated r
   const actor = await client.query("SELECT id FROM identity.erp_user LIMIT 1");
   assert.ok(actor.rows[0], "isolated copy needs an audit actor");
   const importer = "FOLLOWUP CI";
+  const supplierCode = `FOLLOWUP-CI-${randomUUID().slice(0, 8)}`;
+  const invoiceSupplierCode = `FOLLOWUP-INV-${randomUUID().slice(0, 8)}`;
+  for (const [code, name] of [[supplierCode, `Fornecedor CI ${supplierCode}`],
+    [invoiceSupplierCode, `Fornecedor Invoice CI ${invoiceSupplierCode}`]]) {
+    await client.query(`INSERT INTO catalog.entry
+      (id,importer,kind,code,name,evidence,created_by,updated_by)
+      VALUES ($1,NULL,'SUPPLIER',$2,$3,'Follow-up CI regression fixture',$4,$4)`,
+      [randomUUID(), code, name, actor.rows[0].id]);
+  }
   const poId = randomUUID(); const itemId = randomUUID(); const secondItemId = randomUUID(); const processId = randomUUID();
   const secondProcessId = randomUUID(); const historicalIpId = randomUUID();
   const allocationId = randomUUID(); const secondAllocationId = randomUUID();
   await client.query(`INSERT INTO procurement.purchase_order
-    (id,importer,external_number,normalized_number,source_kind,version) VALUES ($1,$2,'PO-CI','PO-CI','MANUAL_TOTVS_REFERENCE',1)`, [poId, importer]);
+    (id,importer,external_number,normalized_number,source_kind,version,supplier_text)
+    VALUES ($1,$2,'PO-CI','PO-CI','MANUAL_TOTVS_REFERENCE',1,$3)`, [poId, importer, supplierCode]);
   await client.query(`INSERT INTO imports.import_process
-    (id,importer,ip_number,normalized_ip_number,source_kind,version) VALUES ($1,$2,'IP-CI','IP-CI','MANUAL',1)`, [processId, importer]);
+    (id,importer,ip_number,normalized_ip_number,source_kind,version,supplier_text)
+    VALUES ($1,$2,'IP-CI','IP-CI','MANUAL',1,$3)`, [processId, importer, supplierCode]);
   await client.query(`INSERT INTO imports.import_process
-    (id,importer,ip_number,normalized_ip_number,source_kind,version) VALUES ($1,$2,'IP-CI-2','IP-CI-2','MANUAL',1)`, [secondProcessId, importer]);
+    (id,importer,ip_number,normalized_ip_number,source_kind,version,supplier_text)
+    VALUES ($1,$2,'IP-CI-2','IP-CI-2','MANUAL',1,$3)`, [secondProcessId, importer, supplierCode]);
   await client.query(`INSERT INTO imports.import_process
-    (id,importer,ip_number,normalized_ip_number,source_kind,version) VALUES ($1,$2,'IP-HIST','IP-HIST','HISTORICAL_EXCEL',1)`, [historicalIpId, importer]);
+    (id,importer,ip_number,normalized_ip_number,source_kind,version,supplier_text)
+    VALUES ($1,$2,'IP-HIST','IP-HIST','HISTORICAL_EXCEL',1,$3)`, [historicalIpId, importer, supplierCode]);
   await client.query(`INSERT INTO procurement.purchase_order_item
     (id,purchase_order_id,line_number,product_code,description,ordered_quantity,unit,unit_price,currency_code)
     VALUES ($1,$2,1,'PROD-CI','Produto',100,'PC',12.5,'USD')`, [itemId, poId]);
@@ -199,7 +212,7 @@ test("followup persists item/IP inputs and individual documents in an isolated r
 
   const completeNumber = `PO-COMPLETE-${randomUUID().slice(0, 8)}`;
   const completeBody = {
-    header: { importer, number: completeNumber, supplierText: "Fornecedor CI",
+    header: { importer, number: completeNumber, supplierText: supplierCode,
       orderDate: "2026-10-05", notes: "PO completa", reason: "Cadastro integrado" },
     items: ["A", "B"].map((suffix, index) => ({
       base: { externalLineReference: suffix, productCode: `PRODUCT-${suffix}`,
@@ -230,6 +243,32 @@ test("followup persists item/IP inputs and individual documents in an isolated r
   assert.deepEqual(replayComplete.json().itemIds, complete.json().itemIds);
   assert.equal((await client.query("SELECT count(*)::int AS count FROM procurement.purchase_order WHERE id=$1",
     [completePoId])).rows[0].count, 1);
+
+  const linkedScId = randomUUID();
+  await client.query(`INSERT INTO procurement.purchase_request
+    (id,importer,sc_number,normalized_sc_number,requester,created_by,supplier_text)
+    VALUES ($1,$2,'SC-UNLINK-CI','SC-UNLINK-CI','Analista CI','ci#followup',$3)`,
+    [linkedScId, importer, supplierCode]);
+  await client.query("UPDATE procurement.purchase_order SET purchase_request_id=$2 WHERE id=$1",
+    [completePoId, linkedScId]);
+  const unlinkBody = { header: { number: completeNumber, supplierText: invoiceSupplierCode,
+    orderDate: null, notes: "PO sem vínculo com SC", purchaseRequestId: null,
+    reason: "Desvincular SC para ajustar fornecedor" },
+    itemIds: complete.json().itemIds,
+    fields: { scNumber: null, scDate: null, scApprovalDate: null,
+      commercialPlanReceivedDate: null, requester: null } };
+  const unlinkedSc = await call("PATCH", `/api/v1/purchase-orders/${completePoId}/complete`, unlinkBody,
+    { "if-match": '"1"' });
+  assert.equal(unlinkedSc.statusCode, 200, unlinkedSc.body);
+  assert.equal(unlinkedSc.json().version, "2");
+  const savedUnlink = await client.query(`SELECT purchase_request_id,supplier_text,external_number,
+    (SELECT count(*)::int FROM procurement.purchase_order_item item
+      WHERE item.purchase_order_id=po.id AND item.sc_number IS NULL AND item.requester IS NULL) AS cleared_items
+    FROM procurement.purchase_order po WHERE id=$1`, [completePoId]);
+  assert.equal(savedUnlink.rows[0].purchase_request_id, null);
+  assert.equal(savedUnlink.rows[0].supplier_text, invoiceSupplierCode);
+  assert.equal(savedUnlink.rows[0].external_number, completeNumber);
+  assert.equal(savedUnlink.rows[0].cleared_items, 2);
 
   const appendBody = { base: { externalLineReference: "C", productCode: "PRODUCT-C",
     description: "Produto C", orderedQuantity: "30", unit: "PC", unitPrice: null,

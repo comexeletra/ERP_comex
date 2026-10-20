@@ -274,8 +274,15 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
         }
         const header = parsed.data.header;
         await validatePurchaseRequest(client, header.purchaseRequestId, String(po.importer));
-        const updated = await client.query<{ version: string }>(`UPDATE procurement.purchase_order
-          SET external_number=$2,normalized_number=upper($2::text),supplier_text=$3,
+        const updated = await client.query<{ version: string }>(`UPDATE procurement.purchase_order AS po
+          SET external_number=$2::text,normalized_number=upper($2::text),supplier_text=$3::text,
+            supplier_entry_id=CASE WHEN $3::text IS NULL THEN NULL
+              WHEN $3::text IS DISTINCT FROM po.supplier_text THEN (
+                SELECT CASE WHEN count(*)=1 THEN min(supplier.id::text)::uuid END
+                FROM catalog.entry supplier WHERE supplier.kind='SUPPLIER' AND supplier.importer IS NULL
+                  AND (supplier.normalized_code=upper(btrim($3::text))
+                    OR upper(btrim(supplier.name))=upper(btrim($3::text))))
+              ELSE po.supplier_entry_id END,
             notes=$4,purchase_request_id=CASE WHEN $5::boolean THEN $6::uuid ELSE purchase_request_id END,
             version=version+1,updated_at=now() WHERE id=$1 RETURNING version::text`,
           [poId.data, header.number, header.supplierText, header.notes,

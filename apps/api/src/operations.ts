@@ -643,7 +643,14 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           await validatePurchaseRequest(client, parsed.data.purchaseRequestId, String(before.importer));
         }
         const result = await client.query<Record<string, unknown>>(
-          `UPDATE procurement.purchase_order SET supplier_text = $2,
+          `UPDATE procurement.purchase_order AS po SET supplier_text = $2::text,
+            supplier_entry_id = CASE WHEN $2::text IS NULL THEN NULL
+              WHEN $2::text IS DISTINCT FROM po.supplier_text THEN (
+                SELECT CASE WHEN count(*)=1 THEN min(supplier.id::text)::uuid END
+                FROM catalog.entry supplier WHERE supplier.kind='SUPPLIER' AND supplier.importer IS NULL
+                  AND (supplier.normalized_code=upper(btrim($2::text))
+                    OR upper(btrim(supplier.name))=upper(btrim($2::text))))
+              ELSE po.supplier_entry_id END,
             notes = $3, external_number = $4::text, normalized_number = upper($4::text),
             purchase_request_id = CASE WHEN $5::boolean THEN $6::uuid ELSE purchase_request_id END,
             version = version + 1, updated_at = now()
