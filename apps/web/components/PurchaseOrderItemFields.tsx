@@ -1,6 +1,7 @@
 "use client";
 
 import { OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
+import { SearchableSelect } from "./SearchableSelect";
 
 export type OperationalField = {
   key: string;
@@ -69,8 +70,9 @@ export function OperationalFieldsEditor({ fields, values, setValues, options }:
   { fields: OperationalField[]; values: OperationalFieldDraft; setValues: (value: OperationalFieldDraft) => void;
     options: OperationalOption[] }) {
   return <div className="operational-fields">{fields.map(field => <label key={field.key}>{field.label}
-    {field.type === "boolean" ? <select value={values[field.key] ?? ""} onChange={event => setValues({ ...values, [field.key]: event.target.value })}>
-      <option value="">Não informado</option><option value="true">Sim</option><option value="false">Não</option></select> :
+    {field.type === "boolean" ? <SearchableSelect ariaLabel={field.label} placeholder="" value={values[field.key] ?? ""}
+      onChange={value => setValues({ ...values, [field.key]: value })}
+      options={[{ value: "", label: "Não informado" }, { value: "true", label: "Sim" }, { value: "false", label: "Não" }]} /> :
       field.type === "select" ? <OperationalOptionSelect entity={field.entity ?? ""} value={values[field.key] ?? ""} values={options}
         onChange={value => setValues({ ...values, [field.key]: value })} /> :
       <input type={field.type === "date" ? "date" : field.type === "number" ? "number" : "text"}

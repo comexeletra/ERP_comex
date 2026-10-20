@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../lib/api";
 import { automaticAuditReason } from "../../lib/audit";
 import { formatUsDate, formatUsDateTime, parseUsDate } from "../../lib/date-format";
+import { SearchableSelect } from "../../components/SearchableSelect";
 
 type Resource = "products" | "ncms";
 type Candidate = { rawCode: string; observationCount: number;
@@ -198,7 +199,9 @@ export default function CatalogPage() {
     {editing && <section className="card"><h2>Editar {editing.code}</h2><p className="muted">Versão {editing.version}. Inativação preserva o histórico e o código original.</p>
       <form className="stack-form" onSubmit={event => void saveEdit(event)}>
         <label>Nome<input required maxLength={2000} value={editDraft.name} onChange={event => setEditDraft(value => ({ ...value, name: event.target.value }))} /></label>
-        <label>Situação<select value={editDraft.status} onChange={event => setEditDraft(value => ({ ...value, status: event.target.value }))}><option value="ACTIVE">Ativo</option><option value="INACTIVE">Inativo</option></select></label>
+        <label>Situação<SearchableSelect ariaLabel="Situação" placeholder="" value={editDraft.status}
+          onChange={status => setEditDraft(value => ({ ...value, status }))}
+          options={[{ value: "ACTIVE", label: "Ativo" }, { value: "INACTIVE", label: "Inativo" }]} /></label>
         {resource === "ncms" && <label>Evid\u00eancia<textarea required minLength={8} value={editDraft.evidence} onChange={event => setEditDraft(value => ({ ...value, evidence: event.target.value }))} /></label>}
         <div><button className="button" disabled={saving} type="submit">Salvar alteração</button><button className="button secondary" type="button" onClick={() => setEditing(undefined)}>Cancelar</button></div>
       </form></section>}

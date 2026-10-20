@@ -8,6 +8,7 @@ import { formatNumber } from "../lib/format-number";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 import { purchaseOrderItemFields } from "./PurchaseOrderItemFields";
 import { calculatedTotal } from "./PurchaseOrderCalculatedFields";
+import { SearchableSelect } from "./SearchableSelect";
 
 type Field = { key: string; label: string; type?: "date" | "number" | "money" | "boolean" | "select"; max?: number; entity?: string };
 const processFields: Field[] = [
@@ -72,8 +73,9 @@ function payload(fields: Field[], values: Draft) {
 }
 function FieldEditor({ fields, values, setValues, options }: { fields: Field[]; values: Draft; setValues: (value: Draft) => void; options: OperationalOption[] }) {
   return <div className="operational-fields">{fields.map(field => <label key={field.key}>{field.label}
-    {field.type === "boolean" ? <select value={values[field.key] ?? ""} onChange={event => setValues({ ...values, [field.key]: event.target.value })}>
-      <option value="">Não informado</option><option value="true">Sim</option><option value="false">Não</option></select> :
+    {field.type === "boolean" ? <SearchableSelect ariaLabel={field.label} placeholder="" value={values[field.key] ?? ""}
+      onChange={value => setValues({ ...values, [field.key]: value })}
+      options={[{ value: "", label: "Não informado" }, { value: "true", label: "Sim" }, { value: "false", label: "Não" }]} /> :
       field.type === "select" ? <OperationalOptionSelect entity={field.entity ?? ""} value={values[field.key] ?? ""} values={options}
         onChange={value => setValues({ ...values, [field.key]: value })} /> :
       <input type={field.type === "date" ? "date" : field.type === "number" ? "number" : "text"}
@@ -315,14 +317,16 @@ export default function FollowupPanel({ id }: { id: string }) {
             {editable && <form className="stack-form" onSubmit={event => saveDoc(event, p.id, entry.documents)}>
               <h4>{editingDoc[p.id] ? "Editar documento" : "Adicionar documento"}</h4>
               {!editingDoc[p.id] && <div className="operational-fields">
-                <label>Tipo<select value={documentDraft.kind} onChange={event => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, kind: event.target.value as DocDraft["kind"] } }))}>
-                  <option value="INVOICE">Invoice</option><option value="BL">BL</option><option value="NF">NF</option></select></label>
-                <label>Item relacionado<select value={documentDraft.purchaseOrderItemId} onChange={event => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, purchaseOrderItemId: event.target.value } }))}>
-                  <option value="">Documento geral do IP</option>
-                  {data.shipments.filter(shipment => shipment.process.id === p.id).map(shipment => {
+                <label>Tipo<SearchableSelect ariaLabel="Tipo do documento" placeholder="" value={documentDraft.kind}
+                  onChange={kind => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, kind: kind as DocDraft["kind"] } }))}
+                  options={[{ value: "INVOICE", label: "Invoice" }, { value: "BL", label: "BL" }, { value: "NF", label: "NF" }]} /></label>
+                <label>Item relacionado<SearchableSelect ariaLabel="Item relacionado" placeholder="Documento geral do IP"
+                  value={documentDraft.purchaseOrderItemId} onChange={purchaseOrderItemId => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, purchaseOrderItemId } }))}
+                  options={data.shipments.filter(shipment => shipment.process.id === p.id).flatMap(shipment => {
                     const item = data.items.find(row => row.id === shipment.itemId);
-                    return item && <option key={item.id} value={item.id}>{item.productCode} · linha {item.lineNumber}</option>;
-                  })}</select></label>
+                    return item ? [{ value: item.id, label: `${item.productCode} · linha ${item.lineNumber}`,
+                      searchText: item.description == null ? "" : String(item.description) }] : [];
+                  })} /></label>
               </div>}
               <div className="operational-fields">
                 <label>Número<input required maxLength={120} value={documentDraft.number} onChange={event => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, number: event.target.value } }))} /></label>

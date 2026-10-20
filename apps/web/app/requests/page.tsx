@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api";
 import { formatUsDateTime } from "../../lib/date-format";
 import { canWriteRequests } from "../../lib/request-permissions";
+import { SearchableSelect } from "../../components/SearchableSelect";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "../../components/OperationalOptionSelect";
 
 type RequestLine = { id: string; lineNumber: number; description: string; purposeText: string | null; costCenterText: string | null };
@@ -93,9 +94,8 @@ export default function RequestsPage() {
       <h2>Nova solicitação</h2>
       <details className="request-guidance"><summary>Como preencher</summary><p>O número da solicitação é gerado pelo sistema. Os itens e referências informados são registrados como foram enviados e podem precisar de confirmação operacional.</p></details>
       <form className="stack-form request-form" onSubmit={submit}>
-        <label>Importador<select required value={importer} onChange={event => setImporter(event.target.value)}>
-          <option value="">Selecione</option>{importers.map(value => <option key={value.code} value={value.code}>{value.code}</option>)}
-        </select></label>
+        <label>Importador<SearchableSelect ariaLabel="Importador" required value={importer} onChange={setImporter}
+          options={importers.map(value => ({ value: value.code, label: value.code }))} /></label>
         <label>Solicitante / referência<OperationalOptionSelect required entity="requester" value={requesterReference}
           values={options} onChange={setRequesterReference} /></label>
         <label>Motivo da solicitação<textarea required minLength={8} maxLength={2000} value={reason} onChange={event => setReason(event.target.value)} /></label>

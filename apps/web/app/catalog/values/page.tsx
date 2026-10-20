@@ -9,6 +9,7 @@ import { createNcmCatalogUrl, createNcmPayload, readNcmRefreshStart, updateNcmPa
 import { parseProductCatalogJson, type ProductCatalogImport } from "../../../lib/catalog-products-json";
 import { filterImporterCatalog, sortImporterCatalog } from "../../../lib/catalog-importers";
 import { createSupplierCatalogUrl } from "../../../lib/catalog-suppliers";
+import { SearchableSelect } from "../../../components/SearchableSelect";
 import { describeNcmAttributeCondition, describeNcmCreationAct, describeNcmDomainOption,
   describeNcmFillType, type NcmCreationAct, type NcmDomainOption } from "../../../lib/catalog-ncm-attributes";
 import { NcmTaxTreatments } from "./NcmTaxTreatments";
@@ -699,9 +700,8 @@ export default function OperationalValuesPage() {
     {notice && <p className="notice success" role="status">{notice}</p>}
     <section className="card entity-values-card">
       <h2>Campo e opções</h2>
-      <label>Campo<select value={entity} onChange={event => chooseEntity(event.target.value)}>
-        {entities.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-      </select></label>
+      <label>Campo<SearchableSelect ariaLabel="Campo" placeholder="" value={entity} onChange={chooseEntity}
+        options={entities.map(([key, label]) => ({ value: String(key), label: String(label) }))} /></label>
       <p className="muted">Cada produto é cadastrado com seu código e sua descrição.</p>
       <h3>Produtos cadastrados &middot; {productTotalCount}</h3>
       <label className="product-catalog-search">Pesquisar por c&oacute;digo ou descri&ccedil;&atilde;o
@@ -713,10 +713,9 @@ export default function OperationalValuesPage() {
             <p className="product-catalog-code"><strong>C&oacute;digo do produto</strong><span>{product.code}</span></p>
             <label>Descri&ccedil;&atilde;o do produto<textarea required maxLength={2000} rows={4} value={editProductDraft.description}
               onChange={event => setEditProductDraft(current => ({ ...current, description: event.target.value }))} /></label>
-            <label>Situa&ccedil;&atilde;o<select value={editProductDraft.status}
-              onChange={event => setEditProductDraft(current => ({ ...current, status: event.target.value }))}>
-              <option value="ACTIVE">Ativo</option><option value="INACTIVE">Inativo</option>
-            </select></label>
+            <label>Situa&ccedil;&atilde;o<SearchableSelect ariaLabel="Situação" placeholder="" value={editProductDraft.status}
+              onChange={status => setEditProductDraft(current => ({ ...current, status }))}
+              options={[{ value: "ACTIVE", label: "Ativo" }, { value: "INACTIVE", label: "Inativo" }]} /></label>
             <div className="product-catalog-actions">
               <button className="button" disabled={busy || !editProductDraft.description.trim()}>{busy ? "Salvando..." : "Salvar"}</button>
               <button className="button secondary" type="button" disabled={busy} onClick={cancelEditingProduct}>Cancelar</button>
@@ -767,9 +766,8 @@ export default function OperationalValuesPage() {
     {notice && <p className="notice success" role="status">{notice}</p>}
     <section className="card entity-values-card">
       <h2>Campo e opções</h2>
-      <label>Campo<select value={entity} onChange={event => chooseEntity(event.target.value)}>
-        {entities.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-      </select></label>
+      <label>Campo<SearchableSelect ariaLabel="Campo" placeholder="" value={entity} onChange={chooseEntity}
+        options={entities.map(([key, label]) => ({ value: String(key), label: String(label) }))} /></label>
       <p className="muted">NCMs são um catálogo fiscal global, sem vínculo com importadora.</p>
       <p className="muted">A pesquisa usa o último catálogo Siscomex sincronizado. Se uma nova consulta falhar, a cópia anterior permanece disponível e os NCMs cadastrados não são alterados.</p>
       {canWriteNcm && <button className="button secondary ncm-refresh-button" type="button"
@@ -794,10 +792,9 @@ export default function OperationalValuesPage() {
             <p className="product-catalog-code"><strong>Código NCM</strong><span>{ncm.code}</span></p>
             <label>Descrição NCM<textarea required maxLength={2000} rows={3} value={ncmDraft.description}
               onChange={event => setNcmDraft(current => ({ ...current, description: event.target.value }))} /></label>
-            <label>Situação<select value={ncmDraft.status}
-              onChange={event => setNcmDraft(current => ({ ...current, status: event.target.value as NcmDraft["status"] }))}>
-              <option value="ACTIVE">Ativo</option><option value="INACTIVE">Inativo</option>
-            </select></label>
+            <label>Situação<SearchableSelect ariaLabel="Situação" placeholder="" value={ncmDraft.status}
+              onChange={status => setNcmDraft(current => ({ ...current, status: status as NcmDraft["status"] }))}
+              options={[{ value: "ACTIVE", label: "Ativo" }, { value: "INACTIVE", label: "Inativo" }]} /></label>
             <div className="catalog-validity-fields">
               <label>Início da vigência<input type="date" required={ncmDraft.status === "ACTIVE"} value={ncmDraft.validFrom}
                 onChange={event => setNcmDraft(current => ({ ...current, validFrom: event.target.value }))} /></label>
@@ -903,9 +900,8 @@ export default function OperationalValuesPage() {
     {notice && <p className="notice success" role="status">{notice}</p>}
     <section className="card entity-values-card">
       <h2>Campo e opções</h2>
-      <label>Campo<select value={entity} onChange={event => chooseEntity(event.target.value)}>
-        {entities.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-      </select></label>
+      <label>Campo<SearchableSelect ariaLabel="Campo" placeholder="" value={entity} onChange={chooseEntity}
+        options={entities.map(([key, label]) => ({ value: String(key), label: String(label) }))} /></label>
       <p className="muted">Fornecedores são entidades globais, compartilhadas entre importadoras. O mesmo cadastro é usado nas POs e nos IPs.</p>
       <h3>Fornecedores cadastrados · {supplierTotalCount}</h3>
       <label className="supplier-search" htmlFor="supplier-search">Pesquisar por código ou razão social
@@ -920,10 +916,9 @@ export default function OperationalValuesPage() {
               onChange={event => setSupplierEditDraft(current => ({ ...current, code: event.target.value }))} /></label>
             <label>Razão social<input required maxLength={240} value={supplierEditDraft.name}
               onChange={event => setSupplierEditDraft(current => ({ ...current, name: event.target.value }))} /></label>
-            <label>Status<select value={supplierEditDraft.status}
-              onChange={event => setSupplierEditDraft(current => ({ ...current, status: event.target.value as "ACTIVE" | "INACTIVE" }))}>
-              <option value="ACTIVE">Ativo</option><option value="INACTIVE">Inativo</option>
-            </select></label>
+            <label>Status<SearchableSelect ariaLabel="Status" placeholder="" value={supplierEditDraft.status}
+              onChange={status => setSupplierEditDraft(current => ({ ...current, status: status as "ACTIVE" | "INACTIVE" }))}
+              options={[{ value: "ACTIVE", label: "Ativo" }, { value: "INACTIVE", label: "Inativo" }]} /></label>
             <div className="supplier-edit-actions">
               <button className="button entity-value-action" disabled={busy || !supplierEditDraft.code.trim() || !supplierEditDraft.name.trim()}>
                 {busy ? "Salvando…" : "Salvar"}
@@ -965,9 +960,8 @@ export default function OperationalValuesPage() {
     {notice && <p className="notice success" role="status">{notice}</p>}
     <section className="card entity-values-card">
       <h2>Campo e opções</h2>
-      <label>Campo<select value={entity} onChange={event => chooseEntity(event.target.value)}>
-        {entities.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-      </select></label>
+      <label>Campo<SearchableSelect ariaLabel="Campo" placeholder="" value={entity} onChange={chooseEntity}
+        options={entities.map(([key, label]) => ({ value: String(key), label: String(label) }))} /></label>
       <h3>Valores cadastrados · {visible.length}</h3>
       {entity === "importer" && <label>Buscar importadora<input type="search" value={importerSearch}
         onChange={event => setImporterSearch(event.target.value)} placeholder="Codigo, nome, tipo ou CNPJ" /></label>}

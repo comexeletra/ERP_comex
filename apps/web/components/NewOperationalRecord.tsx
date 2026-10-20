@@ -5,6 +5,7 @@ import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, isMissingApiRoute, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
+import { SearchableSelect } from "./SearchableSelect";
 import {
   blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsEditor,
   purchaseOrderCommonItemFields, purchaseOrderSpecificFields, purchaseOrderItemFieldsPayload,
@@ -661,15 +662,14 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
           <p className="muted">Informe a importadora e os dados que identificam a PO no TOTVS.</p>
           <div className="operational-fields po-header-fields">
             <PurchaseRequestSelect importer={importer} value={purchaseRequestId} choices={purchaseRequests} onChange={selectPurchaseRequest} />
-            <label>Importadora<select required disabled={Boolean(purchaseRequestId || invoiceDraft)} value={importer} onChange={event => {
-              setImporter(event.target.value); selectPurchaseRequest("");
-            }}>
-              <option value="">Selecione</option>{importers.map(value => <option key={value} value={value}>{value}</option>)}
-            </select>{purchaseRequestId ? <small className="po-field-hint">Definida pela SC vinculada.</small> : null}</label>
+            <label>Importadora<SearchableSelect ariaLabel="Importadora" required disabled={Boolean(purchaseRequestId || invoiceDraft)}
+              value={importer} onChange={value => {
+              setImporter(value); selectPurchaseRequest("");
+            }} options={importers.map(value => ({ value, label: value }))} />{purchaseRequestId ? <small className="po-field-hint">Definida pela SC vinculada.</small> : null}</label>
             <label>Número da PO no TOTVS<input required maxLength={80} value={number} onChange={event => setNumber(event.target.value)} /></label>
-            <label>Fornecedor<select required disabled={Boolean(purchaseRequestId)} value={supplier} onChange={event => setSupplier(event.target.value)}>
-              <option value="">Selecione</option>{suppliers.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
-            </select>{purchaseRequestId ? <small className="po-field-hint">Preenchido pela SC vinculada.</small> : null}</label>
+            <label>Fornecedor<SearchableSelect ariaLabel="Fornecedor" required disabled={Boolean(purchaseRequestId)} value={supplier}
+              onChange={setSupplier} options={suppliers.map(item => ({ value: item.code, label: `${item.code} · ${item.name}` }))} />
+              {purchaseRequestId ? <small className="po-field-hint">Preenchido pela SC vinculada.</small> : null}</label>
             <label>Data da PO<input type="text" value="Automática ao salvar" readOnly aria-readonly="true" /></label>
           </div>
           <label>Observações do pedido<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
@@ -800,17 +800,17 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
                     <small>{formatNumber(String(allocated))} / {formatNumber(sourceLine?.quantity ?? "0")} {sourceLine?.unit}</small>
                     {!balanced && <small className="notice error">A soma distribuída difere da quantidade da invoice.</small>}
                   </td>
-                  <td><select required value={match.itemId} onChange={event => setInvoiceMatches(current => current.map(item => {
-                    if (item.key !== match.key) return item;
-                    const candidate = item.candidates.find(value => value.id === event.target.value);
-                    return { ...item, itemId: event.target.value, poNumber: candidate?.poNumber ?? "",
-                      updateProduct: false, updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false };
-                  }))}>
-                    <option value="">Selecione PO e item</option>{match.candidates.map(candidate => <option key={candidate.id} value={candidate.id}
-                      disabled={Number(candidate.remainingQuantity) < Number(match.quantity)}>
-                      PO {candidate.poNumber} | {candidate.productCode} | linha {candidate.lineNumber} | saldo {formatNumber(candidate.remainingQuantity)} {candidate.unit}
-                    </option>)}
-                  </select>
+                  <td><SearchableSelect ariaLabel={`Item da invoice ${match.sourceRow}`} required value={match.itemId}
+                    placeholder="Selecione PO e item" searchPlaceholder="Buscar PO, código ou item"
+                    onChange={selectedId => setInvoiceMatches(current => current.map(item => {
+                      if (item.key !== match.key) return item;
+                      const candidate = item.candidates.find(value => value.id === selectedId);
+                      return { ...item, itemId: selectedId, poNumber: candidate?.poNumber ?? "",
+                        updateProduct: false, updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false };
+                    }))} options={match.candidates.map(candidate => ({ value: candidate.id,
+                      label: `PO ${candidate.poNumber} | ${candidate.productCode} | linha ${candidate.lineNumber} | saldo ${formatNumber(candidate.remainingQuantity)} ${candidate.unit ?? ""}`,
+                      searchText: candidate.description,
+                      disabled: Number(candidate.remainingQuantity) < Number(match.quantity) }))} />
                     {selectedCandidate && <small>{selectedCandidate.description}</small>}
                     {codeMismatch && selectedCandidate && <div className="notice error" role="alert">
                       <p>Código divergente: invoice {match.productCode}; produto da PO {selectedCandidate.productCode}. A distribuição usará o produto da PO indicada e manterá o código original da invoice.</p>
@@ -854,16 +854,13 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
         </div>
         <div className="ip-entry-grid">
         {invoiceDraft ? <label>Fornecedor (Exporter da invoice)<input readOnly value={invoiceDraft.exporterText} /></label> :
-          <label>Supplier<select required value={supplier} onChange={event => setSupplier(event.target.value)}>
-            <option value="">Selecione</option>{suppliers.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
-          </select></label>}
-        <label>Importadora<select required value={importer} onChange={event => {
-          setImporter(event.target.value); setConfirmImporterCnpjMismatch(false); setInvoiceDuplicate(null); setInvoiceError("");
+          <label>Supplier<SearchableSelect ariaLabel="Fornecedor" required value={supplier} onChange={setSupplier}
+            options={suppliers.map(item => ({ value: item.code, label: `${item.code} · ${item.name}` }))} /></label>}
+        <label>Importadora<SearchableSelect ariaLabel="Importadora" required value={importer} onChange={value => {
+          setImporter(value); setConfirmImporterCnpjMismatch(false); setInvoiceDuplicate(null); setInvoiceError("");
           setInvoiceMatches(current => current.map(match => ({ ...match, itemId: "", candidates: [],
             updateProduct: false, updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false })));
-        }}>
-          <option value="">Selecione</option>{importers.map(value => <option key={value} value={value}>{value}</option>)}
-        </select></label>
+        }} options={importers.map(value => ({ value, label: value }))} /></label>
         <label>IP Reference<input required maxLength={80} readOnly={Boolean(invoiceDraft)}
           value={invoiceDraft?.ipNumber ?? number} onChange={event => setNumber(event.target.value)} /></label>
         {invoiceDraft ? <label>Logistics status<input readOnly value="WAITING SHIPMENT" /></label> :

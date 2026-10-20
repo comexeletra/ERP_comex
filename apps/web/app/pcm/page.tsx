@@ -5,6 +5,7 @@ import { apiFetch, readApiJson } from "../../lib/api";
 import { automaticAuditReason } from "../../lib/audit";
 import { PurchaseRequestChoice } from "../../components/PurchaseRequestSelect";
 import { CatalogChoice, loadCatalogChoices, loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "../../components/OperationalOptionSelect";
+import { SearchableSelect } from "../../components/SearchableSelect";
 
 type Importer = { code: string };
 type PurchaseRequestHistory = {
@@ -182,14 +183,11 @@ export default function PcmPage() {
       <h2>{editingId ? "Editar SC" : "Cadastrar SC"}</h2>
       <form className="stack-form" onSubmit={save}>
         <div className="operational-fields">
-          <label>Importadora<select required value={importer} onChange={event => setImporter(event.target.value)}>
-            <option value="">Selecione</option>{importers.map(item => <option key={item.code} value={item.code}>{item.code}</option>)}
-          </select></label>
+          <label>Importadora<SearchableSelect ariaLabel="Importadora" required value={importer} onChange={setImporter}
+            options={importers.map(item => ({ value: item.code, label: item.code }))} /></label>
           <label>Número da SC<input required maxLength={80} value={scNumber} onChange={event => setScNumber(event.target.value)} /></label>
-          <label>Fornecedor<select required value={supplierText} onChange={event => setSupplierText(event.target.value)}>
-            <option value="">Selecione</option>{!suppliers.some(item => item.code === supplierText) && supplierText && <option value={supplierText}>{supplierText} (valor atual)</option>}
-            {suppliers.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
-          </select></label>
+          <label>Fornecedor<SearchableSelect ariaLabel="Fornecedor" required value={supplierText} onChange={setSupplierText}
+            options={suppliers.map(item => ({ value: item.code, label: `${item.code} · ${item.name}` }))} /></label>
           <label>Data da SC<input required type="date" value={scDate} onChange={event => setScDate(event.target.value)} /></label>
           <label>Data de recebimento do plano comercial<input type="date" value={commercialPlanReceivedDate}
             onChange={event => setCommercialPlanReceivedDate(event.target.value)} /></label>
@@ -207,9 +205,8 @@ export default function PcmPage() {
     </section>}
     {!loading && <section className="card">
       <h2>SCs cadastradas</h2>
-      <label className="sc-list-filter">Importadora<select disabled={Boolean(editingId)} value={importerFilter} onChange={event => setImporterFilter(event.target.value)}>
-        <option value="">Selecione</option>{importers.map(item => <option key={item.code} value={item.code}>{item.code}</option>)}
-      </select></label>
+      <label className="sc-list-filter">Importadora<SearchableSelect ariaLabel="Filtrar por importadora" disabled={Boolean(editingId)}
+        value={importerFilter} onChange={setImporterFilter} options={importers.map(item => ({ value: item.code, label: item.code }))} /></label>
       {purchaseRequestsLoading ? <p role="status">Carregando SCs…</p> : items.length === 0 ? <p>
         {importerFilter ? "Nenhuma SC cadastrada para esta importadora." : "Nenhuma SC cadastrada."}
       </p> :

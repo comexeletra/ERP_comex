@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api";
 import { formatUsDateTime } from "../../lib/date-format";
 import { canResolveQuality } from "../../lib/quality-permissions";
+import { SearchableSelect } from "../../components/SearchableSelect";
 
 type Review = { id: string; outcome: string; reviewer: string; notes: string; evidence: Record<string, unknown>; proposedPurchaseOrder?: string; proposedIpNumber?: string; recordedAt: string };
 type QualityItem = { id: string; sourceRowId: string; code: string; severity: string; status: string; evidence: Record<string, unknown>; fieldName?: string; sheetName?: string; sourceRowNumber?: number; sourceValues: Record<string, unknown>; sourceColumnHeaders: Record<string, string>; latestReview?: Review; reviewHistory?: Review[] };
@@ -76,7 +77,8 @@ export default function QualityPage() {
     {error && <p className="notice error">{error}</p>}
     {roles && !canResolveQuality(roles) && <p className="notice">{"Seu perfil permite apenas consultar a fila. Para solicitar permiss\u00e3o para revisar pend\u00eancias, entre em contato com o administrador do sistema."}</p>}
     <section className="metric-grid quality-metrics" aria-label="Resumo da fila de qualidade"><Metric label="Pendências abertas" value={data?.openCount ?? "…"} /><Metric label="Pendências resolvidas" value={data?.resolvedCount ?? "…"} /><Metric label="Itens no filtro" value={data?.totalCount ?? "…"} /></section>
-    <section className="card"><form className="quality-filter" onSubmit={applyFilter}><label>Status<select value={status} onChange={event => setStatus(event.target.value)}><option value="open">Abertas</option><option value="resolved">Resolvidas</option><option value="all">Todas</option></select></label><label>Código<input value={code} onChange={event => setCode(event.target.value)} placeholder="EXCEL_ERROR" /></label><button className="button" type="submit">Filtrar</button></form></section>
+    <section className="card"><form className="quality-filter" onSubmit={applyFilter}><label>Status<SearchableSelect ariaLabel="Status" placeholder="" value={status} onChange={setStatus}
+      options={[{ value: "open", label: "Abertas" }, { value: "resolved", label: "Resolvidas" }, { value: "all", label: "Todas" }]} /></label><label>Código<input value={code} onChange={event => setCode(event.target.value)} placeholder="EXCEL_ERROR" /></label><button className="button" type="submit">Filtrar</button></form></section>
     {!data && !error && <p>Carregando fila…</p>}
     {data?.items.length === 0 && <section className="card"><p>Nenhuma pendência encontrada para este filtro.</p></section>}
     {data?.items.map(item => <details className="card quality-item" key={item.id}><summary className="quality-summary"><span><small>{item.sheetName ?? "Origem indisponível"} - linha {item.sourceRowNumber ?? "--"}</small><strong>{item.code}</strong></span><span className={`quality-status ${item.status}`}>{item.status}</span></summary><div className="quality-item-content">      <p>Severidade: <strong>{item.severity}</strong></p>{item.fieldName && <p className="muted">Campo de origem: <strong>{item.fieldName}</strong></p>}

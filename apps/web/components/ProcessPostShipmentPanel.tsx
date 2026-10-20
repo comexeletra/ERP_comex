@@ -6,6 +6,7 @@ import { apiFetch, hasIpLifecycleSupport, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
 import { formatNumber } from "../lib/format-number";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
+import { SearchableSelect } from "./SearchableSelect";
 
 type Value = string | number | boolean | null;
 type Row = Record<string, Value>;
@@ -243,8 +244,9 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
           await send(`/api/v1/processes/${id}/followup`, "PATCH", { fields: makePayload(draft), reason: automaticAuditReason }, data.process.version);
         }, "Dados do Pós Embarque atualizados.")}>
           <div className="operational-fields">{fields.map(field => <label key={field.key}>{field.label}
-            {field.type === "boolean" ? <select value={draft[field.key] ?? ""} onChange={event => setDraft({ ...draft, [field.key]: event.target.value })}>
-              <option value="">Não informado</option><option value="true">Sim</option><option value="false">Não</option></select> :
+            {field.type === "boolean" ? <SearchableSelect ariaLabel={field.label} placeholder="" value={String(draft[field.key] ?? "")}
+              onChange={value => setDraft({ ...draft, [field.key]: value })}
+              options={[{ value: "", label: "Não informado" }, { value: "true", label: "Sim" }, { value: "false", label: "Não" }]} /> :
               field.type === "select" ? <OperationalOptionSelect entity={field.entity ?? ""} value={draft[field.key] ?? ""} values={options}
                 onChange={value => setDraft({ ...draft, [field.key]: value })} /> :
                 <input type={field.type === "date" ? "date" : field.type === "number" ? "number" : "text"}
@@ -300,11 +302,14 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
       }, "Documento cadastrado.")}>
         <h4>{editingDoc ? "Edite o documento selecionado acima" : "Adicionar documento ao IP"}</h4>
         {!editingDoc && <><div className="operational-fields">
-          <label>Tipo<select value={docDraft.kind} onChange={event => setDocDraft({ ...docDraft, kind: event.target.value as DocDraft["kind"] })}>
-            <option value="INVOICE">Invoice</option><option value="BL">BL</option><option value="NF">NF</option></select></label>
-          <label>Item relacionado<select value={docDraft.purchaseOrderItemId} onChange={event => setDocDraft({ ...docDraft, purchaseOrderItemId: event.target.value })}>
-            <option value="">Documento geral do IP</option>{data.allocations.map(allocation => <option key={allocation.item.id} value={allocation.item.id}>
-              PO {allocation.purchaseOrder.number} · {allocation.item.productCode} · linha {allocation.item.lineNumber}</option>)}</select></label>
+          <label>Tipo<SearchableSelect ariaLabel="Tipo do documento" placeholder="" value={docDraft.kind}
+            onChange={kind => setDocDraft({ ...docDraft, kind: kind as DocDraft["kind"] })}
+            options={[{ value: "INVOICE", label: "Invoice" }, { value: "BL", label: "BL" }, { value: "NF", label: "NF" }]} /></label>
+          <label>Item relacionado<SearchableSelect ariaLabel="Item relacionado" placeholder="Documento geral do IP"
+            value={docDraft.purchaseOrderItemId} onChange={purchaseOrderItemId => setDocDraft({ ...docDraft, purchaseOrderItemId })}
+            options={data.allocations.map(allocation => ({ value: allocation.item.id,
+              label: `PO ${allocation.purchaseOrder.number} · ${allocation.item.productCode} · linha ${allocation.item.lineNumber}`,
+              searchText: allocation.item.description }))} /></label>
           <label>Número<input required maxLength={120} value={docDraft.number} onChange={event => setDocDraft({ ...docDraft, number: event.target.value })} /></label>
           <label>Emissão<input type="date" value={docDraft.issueDate} onChange={event => setDocDraft({ ...docDraft, issueDate: event.target.value })} /></label>
           {docDraft.kind === "NF" && <label>Homologação<input type="date" value={docDraft.homologationDate} onChange={event => setDocDraft({ ...docDraft, homologationDate: event.target.value })} /></label>}

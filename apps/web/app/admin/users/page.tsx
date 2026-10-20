@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../../../lib/api";
+import { SearchableSelect } from "../../../components/SearchableSelect";
 
 const roles = ["Administrador", "PCM", "Importação", "Compras", "Fiscal", "Logística", "Gestor", "Consulta"] as const;
 type Role = typeof roles[number];
@@ -140,9 +141,8 @@ export default function UsersPage() {
       <form className="stack-form" onSubmit={(event) => void save(event)}>
         <label>E-mail<input type="email" value={email} disabled={Boolean(editingId)} required onChange={(event) => setEmail(event.target.value)} /></label>
         <label>Nome<input value={displayName} required minLength={2} maxLength={200} onChange={(event) => setDisplayName(event.target.value)} /></label>
-        <label>Papel<select value={role} onChange={(event) => setRole(event.target.value as Role)}>
-          {roles.map((item) => <option key={item} value={item}>{item}</option>)}
-        </select></label>
+        <label>Papel<SearchableSelect ariaLabel="Papel" placeholder="" value={role} onChange={value => setRole(value as Role)}
+          options={roles.map(item => ({ value: item, label: item }))} /></label>
         <fieldset className="scope-list"><legend>Importadoras permitidas</legend>
           {importers.map((importer) => <label key={importer}><input type="checkbox" checked={scopes.includes(importer)} onChange={(event) => setScopes((old) => event.target.checked ? [...old, importer] : old.filter((item) => item !== importer))} /> {importer}</label>)}
           {importers.length === 0 && <p className="muted">Nenhuma importadora encontrada nos dados TOTVS. Você pode criar o usuário agora e atribuir escopos após importar os dados; até lá, ele não verá POs.</p>}

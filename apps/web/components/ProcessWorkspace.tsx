@@ -6,6 +6,7 @@ import { apiFetch, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
 import { matchesPurchaseOrderNumber } from "../lib/portfolio-query";
 import { formatNumber } from "../lib/format-number";
+import { SearchableSelect } from "./SearchableSelect";
 import ProcessPostShipmentPanel from "./ProcessPostShipmentPanel";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 
@@ -335,13 +336,10 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
         </>}
         {canWrite && process.lifecycleStatus === "OPEN" && process.recordStatus === "ACTIVE" && <>
           <details className="process-action"><summary className="process-action-trigger">Editar IP</summary><form className="stack-form" onSubmit={saveProcess}>
-          <label>Importadora<select required disabled={process.sourceKind !== "MANUAL" || process.purchaseOrders.length > 0
+          <label>Importadora<SearchableSelect ariaLabel="Importadora" required disabled={process.sourceKind !== "MANUAL" || process.purchaseOrders.length > 0
             || process.operationalAllocations.length > 0 || process.historicalCosts.length > 0
-            || (process.processDocumentCount ?? 0) > 0 || lines.totalCount > 0}
-            value={importerDraft} onChange={event => setImporterDraft(event.target.value)}>
-            {!importers.some(option => option.code === importerDraft) && <option value={importerDraft}>{importerDraft}</option>}
-            {importers.map(option => <option key={option.code} value={option.code}>{option.code}</option>)}
-          </select></label>
+            || (process.processDocumentCount ?? 0) > 0 || lines.totalCount > 0} value={importerDraft} onChange={setImporterDraft}
+            options={importers.map(option => ({ value: option.code, label: option.code }))} /></label>
           <label>Número do IP<input required maxLength={80} disabled={process.sourceKind !== "MANUAL"}
             value={ipNumberDraft} onChange={event => setIpNumberDraft(event.target.value)} /></label>
           <label>Status logístico<OperationalOptionSelect entity="logistics_status" value={logisticsStatusDraft}
@@ -372,16 +370,15 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
               return <div className="operational-fields" key={order.id}>
                 <strong>PO {order.number}</strong>
                 <small>{quantities.length ? "Quantidades alocadas: " + quantities.join("; ") : "Nenhuma quantidade ativa alocada."}</small>
-                <label>Destino<select value={route.type} onChange={event => setCancellationRoutes(current => ({
-                  ...current, [order.id]: event.target.value === "EXISTING" ? { type: "EXISTING", processId: "" }
-                    : event.target.value === "NEW" ? { type: "NEW", ipNumber: "" } : { type: "IDLE" },
-                }))}>
-                  <option value="IDLE">Deixar sem vinculo</option><option value="EXISTING">IP existente</option><option value="NEW">Criar IP em rascunho</option>
-                </select></label>
-                {route.type === "EXISTING" && <label>IP de destino<select required value={route.processId}
-                  onChange={event => setCancellationRoutes(current => ({ ...current, [order.id]: { type: "EXISTING", processId: event.target.value } }))}>
-                  <option value="">Selecione</option>{destinationIps.map(target => <option key={target.id} value={target.id}>{target.ipNumber} · {target.recordStatus}</option>)}
-                </select></label>}
+                <label>Destino<SearchableSelect ariaLabel="Destino" placeholder="" value={route.type}
+                  onChange={type => setCancellationRoutes(current => ({
+                    ...current, [order.id]: type === "EXISTING" ? { type: "EXISTING", processId: "" }
+                      : type === "NEW" ? { type: "NEW", ipNumber: "" } : { type: "IDLE" },
+                  }))} options={[{ value: "IDLE", label: "Deixar sem vínculo" }, { value: "EXISTING", label: "IP existente" },
+                    { value: "NEW", label: "Criar IP em rascunho" }]} /></label>
+                {route.type === "EXISTING" && <label>IP de destino<SearchableSelect ariaLabel="IP de destino" required value={route.processId}
+                  onChange={processId => setCancellationRoutes(current => ({ ...current, [order.id]: { type: "EXISTING", processId } }))}
+                  options={destinationIps.map(target => ({ value: target.id, label: `${target.ipNumber} · ${target.recordStatus ?? ""}` }))} /></label>}
                 {route.type === "NEW" && <label>Novo IP REF<input required maxLength={80} value={route.ipNumber}
                   onChange={event => setCancellationRoutes(current => ({ ...current, [order.id]: { type: "NEW", ipNumber: event.target.value } }))} /></label>}
               </div>;
@@ -430,13 +427,13 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
           {selectedPoId && <form className="allocation-distribution" onSubmit={distributeItemToProcess}>
             <div className="allocation-step-title"><span>2</span><div><h4>Escolha o item e a quantidade</h4>
               <p>Somente itens com saldo disponível aparecem nesta lista.</p></div></div>
-            <label>Item da PO<select required value={selectedPoItemId} disabled={searchingPos || poItems.length === 0}
-              onChange={event => { setSelectedPoItemId(event.target.value); setAllocationQuantity(""); }}>
-              <option value="">{poItems.length ? "Selecione um item" : "Nenhum item com saldo disponível"}</option>
-              {poItems.map(item => <option key={item.id} value={item.id}>
-                {item.productCode} · linha {item.lineNumber} · saldo {formatQuantityUnits(quantityUnits(item.remainingQuantity) ?? 0n)}{item.unit ? ` ${item.unit}` : ""}
-              </option>)}
-            </select></label>
+            <label>Item da PO<SearchableSelect ariaLabel="Item da PO" required value={selectedPoItemId}
+              disabled={searchingPos || poItems.length === 0}
+              placeholder={poItems.length ? "Selecione um item" : "Nenhum item com saldo disponível"}
+              onChange={value => { setSelectedPoItemId(value); setAllocationQuantity(""); }}
+              options={poItems.map(item => ({ value: item.id,
+                label: `${item.productCode} · linha ${item.lineNumber} · saldo ${formatQuantityUnits(quantityUnits(item.remainingQuantity) ?? 0n)}${item.unit ? ` ${item.unit}` : ""}`,
+                searchText: item.description }))} /></label>
             {selectedPoItem && <>
               <div className="allocation-balance" aria-live="polite">
                 <div><span>Saldo disponível na PO</span><strong>{formatQuantityUnits(remainingUnits ?? 0n)}{selectedPoItem.unit ? ` ${selectedPoItem.unit}` : ""}</strong></div>

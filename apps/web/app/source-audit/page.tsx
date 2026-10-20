@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { apiFetch } from "../../lib/api";
 import { formatUsDate } from "../../lib/date-format";
 import { formatCount } from "../../lib/format-count";
+import { SearchableSelect } from "../../components/SearchableSelect";
 
 type Sheet = "all" | "Pré Embarque" | "Pós Embarque";
 type Gap = "all" | "without-ip" | "without-po" | "quality" | "any";
@@ -403,13 +404,13 @@ export default function SourceAuditPage() {
       aria-labelledby={`source-sheet-tab-${Math.max(0, sheetOptions.findIndex(option => option.value === sheet))}`} tabIndex={0}>
     <section className="card source-audit-controls">
       <form className="source-audit-filter" onSubmit={applyFilters}>
-        <label>Importador<select value={draft.importer} onChange={event => setDraft(value => ({ ...value, importer: event.target.value }))}>
-          <option value="">Todos no meu escopo</option>{importers.map(importer => <option key={importer.code} value={importer.code}>{importer.code}</option>)}
-        </select></label>
+        <label>Importador<SearchableSelect ariaLabel="Importador" placeholder="Todos no meu escopo" value={draft.importer}
+          onChange={importer => setDraft(value => ({ ...value, importer }))}
+          options={importers.map(importer => ({ value: importer.code, label: importer.code }))} /></label>
         <label>Busca geral<input value={draft.search} onChange={event => setDraft(value => ({ ...value, search: event.target.value }))} placeholder="Texto em qualquer coluna" /></label>
-        <label>Sinais de auditoria<select value={draft.gap} onChange={event => setDraft(value => ({ ...value, gap: event.target.value as Gap }))}>
-          {gapOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select></label>
+        <label>Sinais de auditoria<SearchableSelect ariaLabel="Sinais de auditoria" placeholder="" value={draft.gap}
+          onChange={gap => setDraft(value => ({ ...value, gap: gap as Gap }))}
+          options={gapOptions.map(option => ({ value: option.value, label: option.label }))} /></label>
         <button className="button" type="submit">Aplicar filtros</button>
         <button className="button secondary" type="button" onClick={clearFilters}>Limpar</button>
       </form>

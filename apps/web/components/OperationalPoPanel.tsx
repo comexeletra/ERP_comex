@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
+import { SearchableSelect } from "./SearchableSelect";
 import { blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsEditor,
   purchaseOrderCommonItemFields, purchaseOrderSpecificFields, purchaseOrderItemFields,
   purchaseOrderItemFieldsPayload } from "./PurchaseOrderItemFields";
@@ -460,10 +461,9 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
           <form className="stack-form" onSubmit={saveHeader}>
             <label>Número da PO no TOTVS<input required maxLength={80} disabled={data.sourceKind !== "MANUAL_TOTVS_REFERENCE"}
               value={number} onChange={event => setNumber(event.target.value)} /></label>
-            <label>Fornecedor<select required disabled={Boolean(purchaseRequestId)} value={supplier} onChange={event => setSupplier(event.target.value)}>
-              <option value="">Selecione</option>{!suppliers.some(item => item.code === supplier) && supplier && <option value={supplier}>{supplier} (valor atual)</option>}
-              {suppliers.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
-            </select>{purchaseRequestId ? <small className="po-field-hint">Preenchido pela SC vinculada.</small> : null}</label>
+            <label>Fornecedor<SearchableSelect ariaLabel="Fornecedor" required disabled={Boolean(purchaseRequestId)} value={supplier}
+              onChange={setSupplier} options={suppliers.map(item => ({ value: item.code, label: `${item.code} · ${item.name}` }))} />
+              {purchaseRequestId ? <small className="po-field-hint">Preenchido pela SC vinculada.</small> : null}</label>
             <label>Data da PO<input type="date" value={orderDate} readOnly aria-readonly="true" /></label>
             <PurchaseRequestSelect importer={data.importer} value={purchaseRequestId} choices={purchaseRequests}
               onChange={selectPurchaseRequest} />
@@ -600,11 +600,9 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             {creatingIp ? "Fechar cadastro de IP" : "Cadastrar IP nesta PO"}</button>
         </form>}
         {ipSearchMessage && <p className="notice" role="status">{ipSearchMessage}</p>}
-        {!editingAllocation && ipOptions.length > 0 && <label>IP encontrado<select required value={processId}
-          onChange={event => setProcessId(event.target.value)}>
-          <option value="">Selecione um IP</option>{ipOptions.map(item =>
-            <option key={item.id} value={item.id}>{item.ipNumber}</option>)}
-        </select></label>}
+        {!editingAllocation && ipOptions.length > 0 && <label>IP encontrado<SearchableSelect ariaLabel="IP encontrado" required
+          value={processId} placeholder="Selecione um IP" onChange={setProcessId}
+          options={ipOptions.map(item => ({ value: item.id, label: item.ipNumber }))} /></label>}
         {!editingAllocation && creatingIp && <form className="stack-form inline-ip-form" onSubmit={createIp}>
           <h5>Novo IP · importadora {data.importer}</h5>
           <div className="operational-fields">
@@ -620,9 +618,12 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
           <button className="button" disabled={saving || commonFieldsTouched.size > 0}>Cadastrar IP e selecionar</button>
         </form>}
         <form className="stack-form" onSubmit={saveAllocation}>
-          <label>Item<select required value={itemId} disabled={Boolean(editingAllocation)} onChange={event => setItemId(event.target.value)}>
-            {data.items.map(item => <option key={item.id} value={item.id} disabled={item.sourceStatus?.toUpperCase() === "CANCELLED" || item.sourceStatus?.toUpperCase() === "CANCELED"}>{item.productCode} · item {item.lineNumber} · {item.sourceStatus?.toUpperCase() === "CANCELLED" || item.sourceStatus?.toUpperCase() === "CANCELED" ? "cancelado" : `saldo ${formatItemQuantity(item.remainingQuantity)}${item.unit ? ` ${item.unit}` : ""}`}</option>)}
-          </select></label>
+          <label>Item<SearchableSelect ariaLabel="Item" required value={itemId} disabled={Boolean(editingAllocation)}
+            onChange={setItemId} options={data.items.map(item => {
+              const cancelled = item.sourceStatus?.toUpperCase() === "CANCELLED" || item.sourceStatus?.toUpperCase() === "CANCELED";
+              return { value: item.id, label: `${item.productCode} · item ${item.lineNumber} · ${cancelled ? "cancelado" : `saldo ${formatItemQuantity(item.remainingQuantity)}${item.unit ? ` ${item.unit}` : ""}`}`,
+                searchText: item.description, disabled: cancelled };
+            })} /></label>
           <label>Quantidade neste IP<input required inputMode="decimal" value={allocationQuantity}
             onChange={event => setAllocationQuantity(event.target.value)} placeholder="Ex.: 40" /></label>
           <label>Observações<textarea maxLength={2000} value={allocationNotes}

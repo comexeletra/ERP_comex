@@ -1,6 +1,7 @@
 "use client";
 
 import { apiFetch, readApiJson } from "../lib/api";
+import { SearchableSelect } from "./SearchableSelect";
 export { purchaseRequestOperationalFields } from "../lib/purchase-request-fields";
 
 export type PurchaseRequestChoice = {
@@ -30,12 +31,10 @@ export async function loadPurchaseRequests(importer: string, signal?: AbortSigna
 export function PurchaseRequestSelect({ importer, value, choices, onChange, disabled = false }:
   { importer: string; value: string; choices: PurchaseRequestChoice[]; onChange: (value: string) => void; disabled?: boolean }) {
   return <div className="pcm-sc-selector">
-    <label>SC<select disabled={disabled} value={value} onChange={event => onChange(event.target.value)}>
-      <option value="">Sem SC</option>
-      {choices.map(choice => <option key={choice.id} value={choice.id}>
-        {choice.scNumber}
-      </option>)}
-    </select></label>
+    <label>SC<SearchableSelect ariaLabel="SC" disabled={disabled} value={value} placeholder="Sem SC"
+      searchPlaceholder="Buscar número da SC ou fornecedor" onChange={onChange}
+      options={choices.map(choice => ({ value: choice.id, label: choice.scNumber,
+        searchText: [choice.supplierText, choice.supplierName, choice.scDate, choice.requester].filter(Boolean).join(" ") }))} /></label>
     {choices.length === 0 && importer ?
       <p className="muted">Nenhuma SC cadastrada para esta importadora. O PCM pode cadastrá-la na seção PCM.</p> : null}
   </div>;
