@@ -32,12 +32,14 @@ async function invoiceImportApp(t, client) {
   return app;
 }
 
-function invoicePayload({ confirmSupplierMismatch = false } = {}) {
+function invoicePayload({ confirmSupplierMismatch = false, fileSha256 = "a".repeat(64),
+  confirmDuplicateInvoice = false } = {}) {
   return {
+    confirmDuplicateInvoice,
     process: { importer: "ELETRA MATRIZ", ipNumber: "IPH/TEST", supplierText: "Exporter Ltd",
       logisticsStatus: "WAITING SHIPMENT", priority: null, notes: "", reason: "Invoice review" },
     invoice: { fileName: "invoice.xlsx", number: "INV-1", issueDate: null, amount: "10", currency: "CNY",
-      metadata: { importerCnpj: "12345678000190", ipNumberFromInvoice: "IPH/TEST", exporterText: "Exporter Ltd",
+      metadata: { importerCnpj: "12345678000190", ipNumberFromInvoice: "IPH/TEST", exporterText: "Exporter Ltd", fileSha256,
         lines: [{ sourceRow: 16, productCode: "PO-CODE", quantity: "5", poCell: "PO030201" }],
         assignments: [{ itemId: poId, sourceRow: 16, sourcePoNumber: "PO030201", poNumber: "PO030201",
           poProductCode: "PO-CODE", productCode: "PO-CODE", quantity: "5", confirmCodeMismatch: false,
@@ -46,7 +48,52 @@ function invoicePayload({ confirmSupplierMismatch = false } = {}) {
   };
 }
 
-function invoiceImportClient({ revision = false, supplierMatchesExporter = true } = {}) {
+test("invoice import recalculates line amounts and header totals", async t => {
+  const { client } = invoiceImportClient();
+  const app = await invoiceImportApp(t, client);
+  const fullPayload = invoicePayload();
+  fullPayload.invoice.metadata.lines[0] = { ...fullPayload.invoice.metadata.lines[0],
+    amount: "10", unitPrice: "2", ncm: "39269090", unit: "PCS", description: "Part A" };
+  fullPayload.invoice.metadata.totalQuantity = "5";
+  for (const [name, change, expectedCode] of [
+    ["header amount", payload => { payload.invoice.amount = "11"; }, "INVOICE_TOTAL_MISMATCH"],
+    ["line price", payload => { payload.invoice.metadata.lines[0].unitPrice = "3"; }, "INVOICE_LINE_AMOUNT_MISMATCH"],
+    ["header quantity", payload => { payload.invoice.metadata.totalQuantity = "6"; }, "INVOICE_TOTAL_MISMATCH"],
+    ["invalid NCM", payload => { payload.invoice.metadata.lines[0].ncm = "123"; }, "INVALID_INVOICE_LINES"],
+    ["non-CNY", payload => { payload.invoice.currency = "USD"; }, "INVALID_INVOICE_CURRENCY"],
+  ]) {
+    const payload = structuredClone(fullPayload);
+    change(payload);
+    const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+      headers: { "x-test-subject": "writer", "idempotency-key": `invoice-total-${name.replaceAll(" ", "-")}` }, payload });
+    assert.equal(response.statusCode, 400, `${name}: ${response.body}`);
+    assert.equal(response.json().code, expectedCode, name);
+  }
+  const valid = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-total-valid" }, payload: fullPayload });
+  assert.equal(valid.statusCode, 201, valid.body);
+});
+
+test("invoice import validates SHA-256 and stores it in document metadata", async t => {
+  const { client, queries } = invoiceImportClient();
+  const app = await invoiceImportApp(t, client);
+  const invalid = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-invalid-hash" },
+    payload: invoicePayload({ fileSha256: "not-a-sha256" }),
+  });
+  assert.equal(invalid.statusCode, 400, invalid.body);
+  assert.equal(invalid.json().code, "INVALID_INVOICE_FILE_HASH");
+  const valid = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-valid-hash" },
+    payload: invoicePayload(),
+  });
+  assert.equal(valid.statusCode, 201, valid.body);
+  const document = queries.find(query => query.sql.includes("INSERT INTO imports.process_document"));
+  assert.equal(JSON.parse(document.params[6]).fileSha256, "a".repeat(64));
+});
+
+function invoiceImportClient({ revision = false, supplierMatchesExporter = true, otherImporterIp = false,
+  canceledItem = false, duplicateKind = null } = {}) {
   const processId = "00000000-0000-4000-8000-000000000021";
   const oldDocumentId = "00000000-0000-4000-8000-000000000022";
   const oldAllocationId = "00000000-0000-4000-8000-000000000023";
@@ -59,15 +106,25 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true 
         return { rows: [{ importer: "ELETRA MATRIZ" }], rowCount: 1 };
       }
       if (sql.includes("FROM catalog.operational_value")) return { rows: [{ ok: true }], rowCount: 1 };
+      if (sql.includes("FROM imports.process_document document") && sql.includes("document.notes LIKE")) {
+        return duplicateKind ? { rows: [{ number: duplicateKind === "number" ? "INV-1" : "OTHER-INV",
+          notes: JSON.stringify({ fileSha256: duplicateKind === "hash" ? "a".repeat(64) : "b".repeat(64) }),
+          ip_number: "IPH/OTHER", importer: "ELETRA MATRIZ", supplier_text: "Exporter Ltd" }], rowCount: 1 }
+          : { rows: [], rowCount: 0 };
+      }
       if (sql.includes("FROM procurement.purchase_order_item item JOIN procurement.purchase_order po")) {
         return { rows: [{ id: poId, purchase_order_id: "00000000-0000-4000-8000-000000000002",
           number: "PO030201", importer: "ELETRA MATRIZ", quantity: "10", product_code: "PO-CODE",
+          source_status: canceledItem ? "CANCELLED" : null,
           supplier_entry_id: "00000000-0000-4000-8000-000000000003",
           supplier_text: supplierMatchesExporter ? "Exporter Ltd" : "PO Supplier",
           supplier_name: supplierMatchesExporter ? "Exporter Ltd" : "PO Supplier Ltd",
           supplier_code: supplierMatchesExporter ? "EXPORTER" : "PO-SUP" }], rowCount: 1 };
       }
       if (sql.includes("normalized_ip_number = upper(btrim($1))")) {
+        if (otherImporterIp && !sql.includes("AND importer = $2")) {
+          return { rows: [{ id: processId, importer: "OTHER IMPORTER", ip_number: "IPH/TEST" }], rowCount: 1 };
+        }
         return revision ? { rows: [{ id: processId, importer: "ELETRA MATRIZ", ip_number: "IPH/TEST",
           normalized_ip_number: "IPH/TEST", record_status: "ACTIVE", lifecycle_status: "OPEN", version: "2" }], rowCount: 1 }
           : { rows: [], rowCount: 0 };
@@ -91,6 +148,51 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true 
   };
   return { client, queries, processId, oldDocumentId, oldAllocationId };
 }
+
+for (const duplicateKind of ["hash", "number"]) {
+  test(`invoice import requires audited confirmation for duplicate ${duplicateKind}`, async t => {
+    const { client, queries } = invoiceImportClient({ duplicateKind });
+    const app = await invoiceImportApp(t, client);
+    const unconfirmed = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+      headers: { "x-test-subject": "writer", "idempotency-key": `duplicate-${duplicateKind}` },
+      payload: invoicePayload(),
+    });
+    assert.equal(unconfirmed.statusCode, 409, unconfirmed.body);
+    assert.equal(unconfirmed.json().code, "INVOICE_DUPLICATE_UNCONFIRMED");
+    assert.equal(queries.some(query => query.sql.includes("INSERT INTO imports.import_process")), false);
+    const confirmed = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+      headers: { "x-test-subject": "writer", "idempotency-key": `duplicate-${duplicateKind}-confirmed` },
+      payload: invoicePayload({ confirmDuplicateInvoice: true }),
+    });
+    assert.equal(confirmed.statusCode, 201, confirmed.body);
+    assert.equal(queries.some(query => query.sql.includes("INSERT INTO audit.audit_log")
+      && query.params.some(value => typeof value === "string" && value.includes('"confirmedDuplicateInvoice":true'))), true);
+  });
+}
+
+test("invoice import rejects an item canceled at its source", async t => {
+  const { client, queries } = invoiceImportClient({ canceledItem: true });
+  const app = await invoiceImportApp(t, client);
+  const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-canceled-item" },
+    payload: invoicePayload(),
+  });
+  assert.equal(response.statusCode, 409, response.body);
+  assert.equal(response.json().code, "PO_ITEM_MISMATCH");
+  assert.equal(queries.some(query => query.sql.includes("INSERT INTO procurement.po_item_allocation")), false);
+});
+
+test("invoice import reports an IP reference already owned by another importer", async t => {
+  const { client, queries } = invoiceImportClient({ otherImporterIp: true });
+  const app = await invoiceImportApp(t, client);
+  const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-other-importer" },
+    payload: invoicePayload(),
+  });
+  assert.equal(response.statusCode, 409, response.body);
+  assert.equal(response.json().code, "IP_REFERENCE_OTHER_IMPORTER");
+  assert.equal(queries.some(query => query.sql.includes("INSERT INTO imports.import_process")), false);
+});
 
 test("operational commands reject reader, invalid quantity, foreign importer and missing version before database writes", async t => {
   let connections = 0;
@@ -410,7 +512,8 @@ test("invoice revision requires the version read by the client", async t => {
   assert.equal(response.json().code, "PRECONDITION_REQUIRED");
   assert.equal(queries.some(query => query.sql.includes("UPDATE imports.process_document")), false);
   const processLookup = queries.find(query => query.sql.includes("normalized_ip_number = upper(btrim($1))"));
-  assert.ok(processLookup.sql.includes("AND importer = $2"));
+  assert.equal(processLookup.sql.includes("AND importer = $2"), false);
+  assert.deepEqual(processLookup.params, ["IPH/TEST"]);
 });
 
 test("invoice candidates include PO supplier details even when they differ from the Exporter", async t => {

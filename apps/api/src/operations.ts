@@ -8,6 +8,17 @@ const quantity = z.string().trim().regex(/^(?:0|[1-9]\d{0,15})(?:[.,]\d{1,8})?$/
   .refine(value => !/^0(?:[.,]0+)?$/u.test(value)).transform(value => value.replace(",", "."));
 const nonnegative = z.string().trim().regex(/^(?:0|[1-9]\d{0,15})(?:[.,]\d{1,8})?$/u)
   .transform(value => value.replace(",", "."));
+const invoiceUnitPrice = z.string().trim().regex(/^(?:0|[1-9]\d{0,15})(?:[.,]\d{1,18})?$/u)
+  .transform(value => value.replace(",", "."));
+function decimalUnits(value: string): bigint {
+  const [whole, fraction = ""] = value.replace(",", ".").split(".");
+  return BigInt(whole) * 100_000_000n + BigInt(fraction.padEnd(8, "0") || "0");
+}
+function priceUnits(value: string): bigint {
+  const [whole, fraction = ""] = value.replace(",", ".").split(".");
+  return BigInt(whole) * 1_000_000_000_000_000_000n + BigInt(fraction.padEnd(18, "0") || "0");
+}
+function absoluteUnits(value: bigint): bigint { return value < 0n ? -value : value; }
 const nullableText = (limit: number) => z.string().trim().max(limit).nullable();
 const poFields = z.object({
   number: z.string().trim().min(1).max(80),
@@ -30,6 +41,7 @@ const createProcess = processFields.extend({
   supplierText: z.string().trim().min(1).max(240),
 });
 const invoiceImport = z.object({
+  confirmDuplicateInvoice: z.boolean().optional(),
   process: createProcess,
   invoice: z.object({
     fileName: z.string().trim().min(1).max(255), number: z.string().trim().min(1).max(120),
@@ -239,6 +251,10 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         if (!invoiceIpReference || invoiceIpReference.toLocaleUpperCase("en-US") !== body.process.ipNumber.trim().toLocaleUpperCase("en-US")) {
           throw new BusinessError(400, "INVOICE_IP_REFERENCE_MISMATCH", "IP REF must match the invoice header.");
         }
+        const fileSha256 = body.invoice.metadata.fileSha256;
+        if (fileSha256 !== undefined && (typeof fileSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(fileSha256))) {
+          throw new BusinessError(400, "INVALID_INVOICE_FILE_HASH", "O SHA-256 do arquivo da invoice é inválido.");
+        }
         const invoiceAssignments = z.array(z.object({ itemId: z.uuid(), poNumber: z.string().trim().min(1).max(80),
           sourcePoNumber: z.string().trim().min(1).max(80), poProductCode: z.string().trim().min(1).max(120),
           confirmCodeMismatch: z.boolean(), confirmSupplierMismatch: z.boolean(), quantity,
@@ -247,10 +263,44 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           .min(1).max(2000).safeParse(body.invoice.metadata.assignments);
         if (!invoiceAssignments.success) throw new BusinessError(400, "INVALID_INVOICE_ASSIGNMENTS", "Invoice assignments are required.");
         const invoiceLines = z.array(z.object({ sourceRow: z.number().int().positive(),
-          productCode: z.string().trim().min(1).max(120), quantity, poCell: z.string() }).passthrough())
+          productCode: z.string().trim().min(1).max(120), quantity, poCell: z.string(),
+          amount: nonnegative.optional(), unitPrice: invoiceUnitPrice.optional(),
+          ncm: z.string().regex(/^\d{8}$/u).optional(),
+          unit: z.string().trim().min(1).max(32).optional(),
+          description: z.string().trim().min(1).max(1000).optional() }).passthrough())
           .min(1).max(2000).safeParse(body.invoice.metadata.lines);
         if (!invoiceLines.success) throw new BusinessError(400, "INVALID_INVOICE_LINES", "Invoice lines are required.");
+        if (body.invoice.currency !== "CNY") {
+          throw new BusinessError(400, "INVALID_INVOICE_CURRENCY", "A carga de invoice aceita somente CNY.");
+        }
         const lineByRow = new Map(invoiceLines.data.map(line => [line.sourceRow, line]));
+        if (lineByRow.size !== invoiceLines.data.length) {
+          throw new BusinessError(400, "INVALID_INVOICE_LINES", "A invoice contém linhas repetidas.");
+        }
+        const linesWithAmounts = invoiceLines.data.filter(line => line.amount !== undefined);
+        if (linesWithAmounts.length) {
+          const lineAmountTotal = linesWithAmounts.reduce((total, line) => total + decimalUnits(line.amount!), 0n);
+          if (linesWithAmounts.length !== invoiceLines.data.length
+            || absoluteUnits(lineAmountTotal - decimalUnits(body.invoice.amount)) > 1_000_000n) {
+            throw new BusinessError(400, "INVOICE_TOTAL_MISMATCH", "O valor da invoice não confere com a soma das linhas.");
+          }
+        }
+        for (const line of invoiceLines.data) {
+          if (line.amount === undefined || line.unitPrice === undefined) continue;
+          const calculated = (decimalUnits(line.quantity) * priceUnits(line.unitPrice)
+            + 500_000_000_000_000_000n) / 1_000_000_000_000_000_000n;
+          if (absoluteUnits(calculated - decimalUnits(line.amount)) > 1_100_000n) {
+            throw new BusinessError(400, "INVOICE_LINE_AMOUNT_MISMATCH",
+              `Linha ${line.sourceRow}: quantidade × preço unitário não confere com o valor.`);
+          }
+        }
+        if (body.invoice.metadata.totalQuantity !== undefined) {
+          const totalQuantity = nonnegative.safeParse(body.invoice.metadata.totalQuantity);
+          if (!totalQuantity.success || absoluteUnits(invoiceLines.data.reduce((total, line) => total + decimalUnits(line.quantity), 0n)
+            - decimalUnits(totalQuantity.data)) > 1n) {
+            throw new BusinessError(400, "INVOICE_TOTAL_MISMATCH", "A quantidade total não confere com as linhas.");
+          }
+        }
         const assignedByRow = new Map<number, number>();
         for (const assignment of invoiceAssignments.data) {
           const sourceLine = lineByRow.get(assignment.sourceRow);
@@ -300,9 +350,39 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         if (!exporterText || body.process.supplierText?.trim() !== exporterText) {
           throw new BusinessError(400, "INVOICE_EXPORTER_REQUIRED", "O supplier do IP deve corresponder ao campo Exporter da invoice.");
         }
-        const matchedItems = await client.query<{ id: string; purchase_order_id: string; number: string; importer: string; quantity: string; product_code: string; supplier_entry_id: string | null; supplier_text: string | null; supplier_name: string | null; supplier_code: string | null }>(
+        const duplicateLocks = [
+          `invoice-number:${normalizeSupplier(body.invoice.number)}:${normalizeSupplier(exporterText)}`,
+          ...(fileSha256 ? [`invoice-file:${fileSha256}`] : []),
+        ].sort();
+        for (const lock of duplicateLocks) {
+          await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [lock]);
+        }
+        const potentialDuplicates = await client.query<{ number: string; notes: string; ip_number: string;
+          importer: string; supplier_text: string | null }>(
+          `SELECT document.number, document.notes, process.ip_number, process.importer, process.supplier_text
+           FROM imports.process_document document
+           JOIN imports.import_process process ON process.id = document.process_id
+           WHERE document.kind = 'INVOICE' AND document.status = 'ACTIVE'
+             AND process.record_status = 'ACTIVE'
+             AND process.normalized_ip_number <> upper(btrim($3))
+             AND (regexp_replace(upper(document.number), '[^A-Z0-9]', '', 'g') = $1
+               OR ($2::text IS NOT NULL AND document.notes LIKE '%' || $2 || '%'))`,
+          [normalizeSupplier(body.invoice.number), fileSha256 ?? null, body.process.ipNumber]);
+        const duplicateIpNumbers = potentialDuplicates.rows.filter(candidate => {
+          let savedHash: unknown;
+          try { savedHash = JSON.parse(candidate.notes).fileSha256; } catch { savedHash = undefined; }
+          return Boolean(fileSha256 && savedHash === fileSha256)
+            || (normalizeSupplier(candidate.number) === normalizeSupplier(body.invoice.number)
+              && normalizeSupplier(candidate.supplier_text) === normalizeSupplier(exporterText));
+        }).map(candidate => candidate.ip_number);
+        if (duplicateIpNumbers.length && !body.confirmDuplicateInvoice) {
+          throw new BusinessError(409, "INVOICE_DUPLICATE_UNCONFIRMED",
+            "Esta invoice já está associada a outro IP ativo. Confirme a duplicidade para continuar.");
+        }
+        const matchedItems = await client.query<{ id: string; purchase_order_id: string; number: string; importer: string; quantity: string; product_code: string; source_status: string | null; supplier_entry_id: string | null; supplier_text: string | null; supplier_name: string | null; supplier_code: string | null }>(
           `SELECT item.id, item.purchase_order_id, po.external_number AS number, po.importer,
-                  item.ordered_quantity::text AS quantity, item.product_code, po.supplier_entry_id, po.supplier_text,
+                  item.ordered_quantity::text AS quantity, item.product_code, item.source_status,
+                  po.supplier_entry_id, po.supplier_text,
                   supplier.name AS supplier_name, supplier.code AS supplier_code
            FROM procurement.purchase_order_item item JOIN procurement.purchase_order po ON po.id = item.purchase_order_id
            LEFT JOIN catalog.entry supplier ON supplier.id = po.supplier_entry_id
@@ -310,6 +390,9 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         );
         if (matchedItems.rowCount !== aggregated.size || matchedItems.rows.some(item => item.importer !== body.process.importer)) {
           throw new BusinessError(409, "PO_ITEM_MISMATCH", "Uma ou mais linhas selecionadas não pertencem à importadora do IP.");
+        }
+        if (matchedItems.rows.some(item => ["CANCELLED", "CANCELED"].includes(item.source_status?.toUpperCase() ?? ""))) {
+          throw new BusinessError(409, "PO_ITEM_MISMATCH", "A invoice contém item cancelado na PO de origem.");
         }
         const byItemId = new Map(matchedItems.rows.map(item => [item.id, item]));
         const supplierByItemId = new Map(matchedItems.rows.map(item => [item.id, {
@@ -337,8 +420,12 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const invoiceSupplierDivergence = processSupplierEntryId === null;
         const previousProcess = await client.query<Record<string, unknown>>(
           `SELECT * FROM imports.import_process
-           WHERE normalized_ip_number = upper(btrim($1)) AND importer = $2 FOR UPDATE`,
-          [body.process.ipNumber, body.process.importer]);
+           WHERE normalized_ip_number = upper(btrim($1)) FOR UPDATE`,
+          [body.process.ipNumber]);
+        if (previousProcess.rows[0] && previousProcess.rows[0].importer !== body.process.importer) {
+          throw new BusinessError(409, "IP_REFERENCE_OTHER_IMPORTER",
+            "O IP REF da invoice já pertence a outra importadora.");
+        }
         let processId: string;
         let isRevision = false;
         if (previousProcess.rows[0]) {
@@ -387,6 +474,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           await record(client, "IMPORT_PROCESS", processId, "IMPORT_PROCESS", processId, "REVISION", previous,
             { ...body.process, logisticsStatus: "WAITING SHIPMENT", recordStatus: "ACTIVE",
               source: "CHINA_INVOICE", invoiceNumber: body.invoice.number,
+              confirmedDuplicateInvoice: Boolean(duplicateIpNumbers.length && body.confirmDuplicateInvoice),
               invoiceImporterCnpj, confirmedImporterCnpjMismatch: confirmImporterCnpjMismatch,
               invoiceSupplierDivergence }, auth.actor, body.process.reason);
         } else {
@@ -406,6 +494,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           await record(client, "IMPORT_PROCESS", processId, "IMPORT_PROCESS", processId, "CREATE", null,
             { ...body.process, logisticsStatus: "WAITING SHIPMENT", recordStatus: "ACTIVE",
               source: "CHINA_INVOICE", invoiceNumber: body.invoice.number,
+              confirmedDuplicateInvoice: Boolean(duplicateIpNumbers.length && body.confirmDuplicateInvoice),
               invoiceImporterCnpj, confirmedImporterCnpjMismatch: confirmImporterCnpjMismatch,
               invoiceSupplierDivergence }, auth.actor, body.process.reason);
         }
