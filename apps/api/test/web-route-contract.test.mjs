@@ -43,6 +43,7 @@ const webRoutes = [
   ["GET", "/api/v1/processes/:id/items"], ["GET", "/api/v1/processes/:id/followup"],
   ["POST", "/api/v1/processes"], ["PATCH", "/api/v1/processes/:id"],
   ["POST", "/api/v1/processes/import-invoice"],
+  ["GET", "/api/v1/processes/invoice-duplicates"],
   ["PATCH", "/api/v1/processes/:id/followup"],
   ["POST", "/api/v1/processes/:id/close"], ["POST", "/api/v1/processes/:id/reopen"],
   ["POST", "/api/v1/processes/:id/cancel"],

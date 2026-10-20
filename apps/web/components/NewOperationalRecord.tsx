@@ -20,7 +20,7 @@ import { parseTotvsPoXlsx, TotvsPoProductRow } from "../lib/totvs-po-xlsx";
 import { formatNumber } from "../lib/format-number";
 import { ChinaInvoiceDraft, parseChinaInvoiceXlsx } from "../lib/china-invoice-xlsx";
 import { clearInvoiceCommandKey, invoiceCommandKey } from "../lib/invoice-command-key";
-import { invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
+import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
   invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping";
 
 const poRoles = new Set(["Master", "Administrador", "Importação", "Compras"]);
@@ -59,6 +59,7 @@ type InvoiceItemCandidate = { id: string; lineNumber: number; productCode: strin
   manufacturer: string | null; manufacturerAddress: string | null; manufacturerCountry: string | null };
 type InvoiceMatch = { key: string; sourceRow: number; sourcePoNumber: string; poNumber: string; quantity: string;
   productCode: string; description: string; itemId: string; candidates: InvoiceItemCandidate[];
+  poExists: boolean; poId: string | null;
   updateProduct: boolean; updatePoItem: boolean; confirmCodeMismatch: boolean; confirmSupplierMismatch: boolean;
   confirmUnitMismatch: boolean; confirmPriceMismatch: boolean };
 type InvoiceDuplicate = { id: string; ipNumber: string; recordStatus: string; version: string;
@@ -115,6 +116,17 @@ function isLegacyImporterOnlyDraft(draft: Partial<PoDraft>): boolean {
 async function readResponse<T>(response: Response): Promise<T> {
   return readApiJson<T>(response);
 }
+type InvoicePreflight = { ipNumbers: string[]; ipReferenceOtherImporter: boolean };
+async function loadInvoicePreflight(importer: string, draft: ChinaInvoiceDraft): Promise<InvoicePreflight> {
+  if (!importer || !draft.invoiceNumber.trim() || !draft.exporterText.trim()) {
+    return { ipNumbers: [], ipReferenceOtherImporter: false };
+  }
+  const params = new URLSearchParams({ importer, ipNumber: draft.ipNumber.trim(),
+    invoiceNumber: draft.invoiceNumber.trim(), exporterText: draft.exporterText.trim(),
+    fileSha256: draft.fileSha256 });
+  return readResponse<InvoicePreflight>(await apiFetch(
+    `/api/v1/processes/invoice-duplicates?${params}`, { cache: "no-store" }));
+}
 
 export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId }: {
   kind: "po" | "ip"; returnHref?: string; reviewInvoiceId?: string }) {
@@ -149,6 +161,9 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   const [invoiceDraft, setInvoiceDraft] = useState<ChinaInvoiceDraft | null>(null);
   const [invoiceMatches, setInvoiceMatches] = useState<InvoiceMatch[]>([]);
   const [invoiceDuplicate, setInvoiceDuplicate] = useState<InvoiceDuplicate | null>(null);
+  const [duplicateInvoiceIps, setDuplicateInvoiceIps] = useState<string[]>([]);
+  const [ipReferenceOtherImporter, setIpReferenceOtherImporter] = useState(false);
+  const [confirmDuplicateInvoice, setConfirmDuplicateInvoice] = useState(false);
   const [invoiceExistingProcess, setInvoiceExistingProcess] = useState<InvoiceExistingProcess | null>(null);
   const [reviewTarget, setReviewTarget] = useState<InvoiceExistingProcess | null>(null);
   const [orphanPoDecisions, setOrphanPoDecisions] = useState<Record<string, "KEEP" | "REMOVE">>({});
@@ -267,6 +282,9 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     return candidate ? [candidate.purchaseOrderId] : [];
   }));
   const orphanPos = invoiceExistingProcess?.purchaseOrders.filter(order => !allocatedPoIds.has(order.id)) ?? [];
+  const destinationIssues = invoiceMatches.map(match => ({ match, issue: classifyInvoiceDestination(
+    match.candidates, match.poExists, match.productCode, match.quantity, match.itemId) }))
+    .filter(entry => entry.issue !== null);
   const importerCnpjMismatch = Boolean(invoiceDraft && importer
     && (normalizeCnpj(invoiceDraft.importerCnpj).length !== 14
       || normalizeCnpj(importerCnpjs[importer]) !== normalizeCnpj(invoiceDraft.importerCnpj)));
@@ -290,6 +308,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     if (!file) return;
     clearInvoiceCommandKey(sessionStorage);
     setInvoiceError(""); setInvoiceDraft(null); setInvoiceMatches([]); setInvoiceDuplicate(null);
+    setDuplicateInvoiceIps([]); setConfirmDuplicateInvoice(false); setIpReferenceOtherImporter(false);
     setInvoiceExistingProcess(null); setOrphanPoDecisions({}); setInvoiceLoading(true);
     try {
       const draft = await parseChinaInvoiceXlsx(file);
@@ -318,6 +337,9 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       if (lineIssues.length || draft.issues.length) { setInvoiceError([...draft.issues, ...lineIssues].join(" ")); return; }
 
       if (invoiceImporter) {
+        const preflight = await loadInvoicePreflight(invoiceImporter, draft);
+        setDuplicateInvoiceIps(preflight.ipNumbers);
+        setIpReferenceOtherImporter(preflight.ipReferenceOtherImporter);
         const query = new URLSearchParams({ ipNumber: draft.ipNumber.trim(), importer: invoiceImporter, page: "1", pageSize: "200" });
         const existing = await readResponse<{ items: Array<{ id: string; ipNumber: string; recordStatus: string; version: string;
           logisticsStatus: string | null; lifecycleStatus: string }> }>(
@@ -347,26 +369,26 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       for (const assignment of assignments) candidateRequests.set(candidateKey(assignment.productCode, assignment.sourcePoNumber), {
         productCode: assignment.productCode, sourcePoNumber: assignment.sourcePoNumber,
       });
-      const candidatesByAssignment = new Map<string, InvoiceItemCandidate[]>();
+      const candidatesByAssignment = new Map<string, { items: InvoiceItemCandidate[]; poExists: boolean; purchaseOrderId: string | null }>();
       if (invoiceImporter) await forEachInBatches([...candidateRequests], 8, async ([key, candidateRequest]) => {
         const params = new URLSearchParams({ importer: invoiceImporter, productCode: candidateRequest.productCode,
           sourcePoNumber: candidateRequest.sourcePoNumber,
           revisingIpNumber: draft.ipNumber.trim() });
-        const result = await readResponse<{ items: InvoiceItemCandidate[] }>(
+        const result = await readResponse<{ items: InvoiceItemCandidate[]; poExists: boolean; purchaseOrderId: string | null }>(
           await apiFetch(`/api/v1/purchase-orders/invoice-candidates?${params}`, { cache: "no-store" }));
-        candidatesByAssignment.set(key, result.items);
+        candidatesByAssignment.set(key, result);
       });
       const matches = assignments.map(assignment => {
-        const candidates = candidatesByAssignment.get(candidateKey(assignment.productCode, assignment.sourcePoNumber)) ?? [];
+        const lookup = candidatesByAssignment.get(candidateKey(assignment.productCode, assignment.sourcePoNumber));
+        const candidates = lookup?.items ?? [];
         const suggestion = suggestInvoicePoItem(candidates, assignment.productCode, assignment.quantity);
-        return { ...assignment, candidates, itemId: suggestion?.id ?? "", updateProduct: false,
+        return { ...assignment, candidates, poExists: lookup?.poExists ?? false,
+          poId: lookup?.purchaseOrderId ?? null, itemId: suggestion?.id ?? "", updateProduct: false,
           updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
           confirmUnitMismatch: false, confirmPriceMismatch: false };
       });
       setInvoiceMatches(matches);
-      setInvoiceError(!invoiceImporter ? importerWarning : matches.some(match => match.candidates.length === 0)
-        ? "Nao foi encontrado item na PO indicada. Confira a PO da linha da invoice e o cadastro de produtos."
-        : "");
+      setInvoiceError(!invoiceImporter ? importerWarning : "");
     } catch (cause) { setInvoiceError(cause instanceof Error ? cause.message : "Não foi possível processar a invoice."); }
     finally { setInvoiceLoading(false); }
   }
@@ -386,6 +408,10 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         throw new Error("O IP selecionado para revisão não foi encontrado nesta importadora.");
       }
       setInvoiceDuplicate(duplicate ?? null);
+      const preflight = await loadInvoicePreflight(importer, invoiceDraft);
+      setDuplicateInvoiceIps(preflight.ipNumbers);
+      setIpReferenceOtherImporter(preflight.ipReferenceOtherImporter);
+      setConfirmDuplicateInvoice(false);
       if (duplicate?.recordStatus === "CANCELLED" || duplicate?.lifecycleStatus === "CLOSED") {
         setInvoiceError("Este IP está cancelado ou encerrado. Reabra-o ou use o IP REF correto.");
         return;
@@ -393,7 +419,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       setInvoiceExistingProcess(duplicate ? await readResponse<InvoiceExistingProcess>(
         await apiFetch(`/api/v1/processes/${duplicate.id}`, { cache: "no-store" })) : null);
       const assignments = invoiceMatches.length > 0 ? invoiceMatches : invoiceAssignmentsFromLines(invoiceDraft.lines).map(match => ({
-        ...match, candidates: [] as InvoiceItemCandidate[], itemId: "", updateProduct: false,
+        ...match, candidates: [] as InvoiceItemCandidate[], poExists: false, poId: null as string | null,
+        itemId: "", updateProduct: false,
         updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
         confirmUnitMismatch: false, confirmPriceMismatch: false,
       }));
@@ -403,30 +430,31 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       for (const match of assignments) requests.set(candidateKey(match.productCode, match.sourcePoNumber), {
         productCode: match.productCode, sourcePoNumber: match.sourcePoNumber,
       });
-      const byAssignment = new Map<string, InvoiceItemCandidate[]>();
+      const byAssignment = new Map<string, { items: InvoiceItemCandidate[]; poExists: boolean; purchaseOrderId: string | null }>();
       await forEachInBatches([...requests], 8, async ([key, candidateRequest]) => {
         const params = new URLSearchParams({ importer, productCode: candidateRequest.productCode,
           sourcePoNumber: candidateRequest.sourcePoNumber,
           revisingIpNumber: invoiceDraft.ipNumber.trim() });
-        const result = await readResponse<{ items: InvoiceItemCandidate[] }>(
+        const result = await readResponse<{ items: InvoiceItemCandidate[]; poExists: boolean; purchaseOrderId: string | null }>(
           await apiFetch(`/api/v1/purchase-orders/invoice-candidates?${params}`, { cache: "no-store" }));
-        byAssignment.set(key, result.items);
+        byAssignment.set(key, result);
       });
       const refreshed = assignments.map(match => {
-        const candidates = byAssignment.get(candidateKey(match.productCode, match.sourcePoNumber)) ?? [];
+        const lookup = byAssignment.get(candidateKey(match.productCode, match.sourcePoNumber));
+        const candidates = lookup?.items ?? [];
         const suggestion = suggestInvoicePoItem(candidates, match.productCode, match.quantity);
         const previous = candidates.find(item => item.id === match.itemId
           && normalizePoNumber(item.poNumber) === normalizePoNumber(match.sourcePoNumber)
           && Number(item.remainingQuantity) >= Number(match.quantity));
         const selected = previous ?? suggestion;
-        return { ...match, candidates, poNumber: selected?.poNumber ?? match.sourcePoNumber,
+        return { ...match, candidates, poExists: lookup?.poExists ?? false,
+          poId: lookup?.purchaseOrderId ?? null, poNumber: selected?.poNumber ?? match.sourcePoNumber,
           itemId: selected?.id ?? "", confirmCodeMismatch: Boolean(previous && match.confirmCodeMismatch),
           confirmSupplierMismatch: Boolean(previous && match.confirmSupplierMismatch),
           confirmUnitMismatch: Boolean(previous && match.confirmUnitMismatch),
           confirmPriceMismatch: Boolean(previous && match.confirmPriceMismatch) };
       });
       setInvoiceMatches(refreshed);
-      if (refreshed.some(match => !match.candidates.length)) setInvoiceError("Nao foi encontrado item na PO indicada. Confira a PO da linha da invoice e o cadastro de produtos.");
     } catch (cause) { setInvoiceError(cause instanceof Error ? cause.message : "Não foi possível revalidar as distribuições da invoice."); }
     finally { setInvoiceLoading(false); }
   }
@@ -604,6 +632,20 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         return;
       }
       if (invoiceDraft) {
+        const preflight = await loadInvoicePreflight(importer, invoiceDraft);
+        const currentDuplicateIps = preflight.ipNumbers;
+        setIpReferenceOtherImporter(preflight.ipReferenceOtherImporter);
+        if (preflight.ipReferenceOtherImporter) {
+          throw new Error("O IP REF da invoice já pertence a outra importadora.");
+        }
+        if (JSON.stringify([...currentDuplicateIps].sort()) !== JSON.stringify([...duplicateInvoiceIps].sort())) {
+          setDuplicateInvoiceIps(currentDuplicateIps);
+          setConfirmDuplicateInvoice(false);
+          throw new Error("A lista de IPs com esta invoice mudou. Revise a duplicidade e confirme novamente.");
+        }
+        if (currentDuplicateIps.length && !confirmDuplicateInvoice) {
+          throw new Error("Confirme a invoice duplicada antes de continuar.");
+        }
         const invoiceAllocationTotals = new Map<number, number>();
         for (const match of invoiceMatches) {
           invoiceAllocationTotals.set(match.sourceRow,
@@ -642,6 +684,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
             ncmCode: /^\d{8}$/u.test(line.ncm) ? line.ncm : null });
         }
         const payload = {
+          confirmDuplicateInvoice: currentDuplicateIps.length > 0 && confirmDuplicateInvoice,
           orphanPoDecisions: orphanPos.map(order => ({ purchaseOrderId: order.id, action: orphanPoDecisions[order.id] })),
           process: { importer, supplierText: invoiceDraft.exporterText, ipNumber: invoiceDraft.ipNumber.trim(), logisticsStatus: "WAITING SHIPMENT",
             priority: priority || null, notes, reason: automaticAuditReason },
@@ -825,6 +868,14 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                  ? `O IP REF ${invoiceDraft.ipNumber} já existe como rascunho. Esta carga preencherá esse cadastro e aplicará as distribuições revisadas.`
                  : `O IP REF ${invoiceDraft.ipNumber} já existe. Ao confirmar, será criada uma revisão e as distribuições ativas anteriores serão substituídas.`}
             </p>}
+            {duplicateInvoiceIps.length > 0 && <div className="notice error" role="alert">
+              <p>Esta invoice já está associada aos IPs ativos: {duplicateInvoiceIps.join(", ")}.</p>
+              <label><input type="checkbox" checked={confirmDuplicateInvoice}
+                onChange={event => setConfirmDuplicateInvoice(event.target.checked)} />Confirmo a duplicidade desta invoice.</label>
+            </div>}
+            {ipReferenceOtherImporter && <p className="notice error" role="alert">
+              O IP REF da invoice já pertence a outra importadora. Confira o número antes de continuar.
+            </p>}
             {importerCnpjMismatch && <div className="notice error" role="alert">
               <p>O CNPJ da invoice ({invoiceDraft.importerCnpj || "não identificado"}) diverge do CNPJ cadastrado para {importer} ({importerCnpjs[importer] || "não cadastrado"}).</p>
               <label><input type="checkbox" checked={confirmImporterCnpjMismatch}
@@ -832,7 +883,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
             </div>}
             <div className="operational-fields invoice-header-fields">
               <label>Número da invoice<input required maxLength={120} value={invoiceDraft.invoiceNumber}
-                onChange={event => setInvoiceDraft(current => current ? { ...current, invoiceNumber: event.target.value } : current)} /></label>
+                onChange={event => { setDuplicateInvoiceIps([]); setConfirmDuplicateInvoice(false);
+                  setInvoiceDraft(current => current ? { ...current, invoiceNumber: event.target.value } : current); }} /></label>
               <label>Data da invoice<input required type="date" value={/^\d{4}-\d{2}-\d{2}$/u.test(invoiceDraft.invoiceDate) ? invoiceDraft.invoiceDate : ""}
                 onChange={event => setInvoiceDraft(current => current ? { ...current, invoiceDate: event.target.value } : current)} /></label>
               <label>Total da invoice (CNY)<input required inputMode="decimal" value={invoiceDraft.totalAmount}
@@ -840,6 +892,12 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
             </div>
             <p className="muted">A PO informada em cada linha da INV determina o destino. O sistema sugere o produto cadastrado nessa PO; divergências de código exigem confirmação e podem ser ajustadas manualmente dentro da própria PO. A quantidade original da PO permanece registrada.</p>
             {invoiceDraft.warnings.map(warning => <p className="notice" key={warning}>{warning}</p>)}
+            {destinationIssues.length > 0 && <div className="notice error" role="alert">
+              <p>{destinationIssues.length} destino(s) da invoice precisam de ação antes de gravar:</p>
+              <p>{destinationIssues.filter(entry => entry.issue?.kind === "PO_NOT_REGISTERED").length} PO(s) não cadastrada(s),
+                {" "}{destinationIssues.filter(entry => entry.issue?.kind === "ITEM_NOT_FOUND").length} item(ns) não encontrado(s),
+                {" "}{destinationIssues.filter(entry => entry.issue?.kind === "INSUFFICIENT_BALANCE").length} saldo(s) insuficiente(s).</p>
+            </div>}
             <div className="totvs-import-actions"><button className="button secondary" type="button" disabled={invoiceLoading || !importer}
               onClick={() => void revalidateInvoiceMatches()}>Revalidar POs e saldos</button></div>
             <div className="totvs-import-table-wrap invoice-match-table-wrap"><table className="totvs-import-table invoice-match-table">
@@ -855,6 +913,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                   && invoicePoUnitDiffers(sourceLine.unit, selectedCandidate.unit));
                 const priceMismatch = Boolean(selectedCandidate && sourceLine
                   && invoicePoPriceDiffers(sourceLine.unitPrice, selectedCandidate.unitPrice, selectedCandidate.currency));
+                const destinationIssue = classifyInvoiceDestination(match.candidates, match.poExists,
+                  match.productCode, match.quantity, match.itemId);
                 return <tr key={match.key}>
                   <td>{match.sourceRow}<small>INV: PO {match.sourcePoNumber || "?"}</small></td>
                   <td>{match.productCode}<small>{match.description}</small></td>
@@ -878,6 +938,14 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                       label: `PO ${candidate.poNumber} | ${candidate.productCode} | linha ${candidate.lineNumber} | saldo ${formatNumber(candidate.remainingQuantity)} ${candidate.unit ?? ""}`,
                       searchText: candidate.description,
                       disabled: Number(candidate.remainingQuantity) < Number(match.quantity) }))} />
+                    {destinationIssue && <div className="notice error" role="alert">
+                      <p>Linha {match.sourceRow}, PO {match.sourcePoNumber}: {destinationIssue.kind === "PO_NOT_REGISTERED"
+                        ? "PO não cadastrada." : destinationIssue.kind === "ITEM_NOT_FOUND"
+                          ? `Item/produto ${match.productCode} não encontrado na PO.`
+                          : `Saldo insuficiente: quantidade pedida ${formatNumber(destinationIssue.requested)}, disponível ${formatNumber(destinationIssue.available)}.`}</p>
+                      {match.poId ? <Link href={`/purchase-orders/${match.poId}`} target="_blank" rel="noopener noreferrer">Abrir PO para ajustar</Link>
+                        : <Link href="/purchase-orders/new" target="_blank" rel="noopener noreferrer">Cadastrar PO em nova aba</Link>}
+                    </div>}
                     {selectedCandidate && <small>{selectedCandidate.description}</small>}
                     {codeMismatch && selectedCandidate && <div className="notice error" role="alert">
                       <p>Código divergente: invoice {match.productCode}; produto da PO {selectedCandidate.productCode}. A distribuição usará o produto da PO indicada e manterá o código original da invoice.</p>
@@ -949,6 +1017,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
             <button className="button secondary" type="button" disabled={saving} onClick={() => {
               clearInvoiceCommandKey(sessionStorage);
               setInvoiceDraft(null); setInvoiceMatches([]); setInvoiceDuplicate(null);
+              setDuplicateInvoiceIps([]); setConfirmDuplicateInvoice(false); setIpReferenceOtherImporter(false);
               setInvoiceExistingProcess(null); setOrphanPoDecisions({}); setInvoiceError("");
             }}>Remover invoice e continuar manualmente</button>
           </>}
@@ -960,6 +1029,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
             options={suppliers.map(item => ({ value: item.code, label: `${item.code} · ${item.name}` }))} /></label>}
         <label>Importadora<SearchableSelect ariaLabel="Importadora" required disabled={Boolean(reviewInvoiceId)} value={importer} onChange={value => {
           setImporter(value); setConfirmImporterCnpjMismatch(false); setInvoiceDuplicate(null); setInvoiceError("");
+          setDuplicateInvoiceIps([]); setConfirmDuplicateInvoice(false); setIpReferenceOtherImporter(false);
           setInvoiceMatches(current => current.map(match => ({ ...match, itemId: "", candidates: [],
             updateProduct: false, updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
             confirmUnitMismatch: false, confirmPriceMismatch: false })));
@@ -977,6 +1047,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
             || Number(match.quantity) > Number(match.candidates.find(candidate => candidate.id === match.itemId)?.remainingQuantity ?? 0))
           || invoiceHasUnconfirmedCodeMismatch || invoiceHasUnconfirmedSupplierMismatch
           || invoiceHasUnconfirmedUnitMismatch || invoiceHasUnconfirmedPriceMismatch
+          || ipReferenceOtherImporter || (duplicateInvoiceIps.length > 0 && !confirmDuplicateInvoice)
           || orphanPos.some(order => !orphanPoDecisions[order.id])
           || (importerCnpjMismatch && !confirmImporterCnpjMismatch)
           || invoiceDraft.lines.some(line => Math.abs(invoiceMatches.filter(match => match.sourceRow === line.sourceRow)

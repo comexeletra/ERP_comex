@@ -8,11 +8,18 @@ const poId = "00000000-0000-4000-8000-000000000001";
 const body = { importer: "ELETRA MATRIZ", number: "PO-TESTE", supplierText: "SUP-TESTE",
   orderDate: null, notes: "", reason: "Pedido conferido" };
 
-async function invoiceImportApp(t, client) {
+async function invoiceImportApp(t, client, { preflightDuplicate = false, preflightOtherImporterIp = false } = {}) {
   const pool = {
     async query(sql, params) {
       if (sql.includes("SELECT DISTINCT importer FROM procurement.purchase_order")) {
         return { rows: [{ importer: "ELETRA MATRIZ" }] };
+      }
+      if (sql.includes("FROM imports.process_document document") && sql.includes("document.notes LIKE")) {
+        return { rows: preflightDuplicate ? [{ number: "INV-1", notes: JSON.stringify({ fileSha256: "a".repeat(64) }),
+          ip_number: "IPH/OTHER", importer: "OTHER IMPORTER", supplier_text: "Exporter Ltd" }] : [] };
+      }
+      if (sql.includes("SELECT importer FROM imports.import_process") && sql.includes("normalized_ip_number")) {
+        return { rows: preflightOtherImporterIp ? [{ importer: "OTHER IMPORTER" }] : [] };
       }
       return { rows: [{ role: params[1] === "reader" ? "Consulta" : "Importa\u00e7\u00e3o",
         importer_code: "ELETRA MATRIZ" }] };
@@ -94,7 +101,7 @@ test("invoice import validates SHA-256 and stores it in document metadata", asyn
 
 function invoiceImportClient({ revision = false, supplierMatchesExporter = true, otherImporterIp = false,
   canceledItem = false, duplicateKind = null, poUnit = null, poUnitPrice = null, poCurrency = null,
-  linkedOrphanPo = false, draft = false } = {}) {
+  linkedOrphanPo = false, draft = false, insufficientBalance = false } = {}) {
   const processId = "00000000-0000-4000-8000-000000000021";
   const oldDocumentId = "00000000-0000-4000-8000-000000000022";
   const oldAllocationId = "00000000-0000-4000-8000-000000000023";
@@ -147,7 +154,8 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true,
           : { rows: [], rowCount: 0 };
       }
       if (sql.includes("SELECT item.id, item.ordered_quantity::text")) {
-        return { rows: [{ id: poId, ordered_quantity: "10", allocated_quantity: "0" }], rowCount: 1 };
+        return { rows: [{ id: poId, ordered_quantity: insufficientBalance ? "3" : "10",
+          allocated_quantity: "0" }], rowCount: 1 };
       }
       return { rows: [], rowCount: 1 };
     },
@@ -226,6 +234,7 @@ for (const duplicateKind of ["hash", "number"]) {
     });
     assert.equal(unconfirmed.statusCode, 409, unconfirmed.body);
     assert.equal(unconfirmed.json().code, "INVOICE_DUPLICATE_UNCONFIRMED");
+    assert.deepEqual(unconfirmed.json().ipNumbers, ["IPH/OTHER"]);
     assert.equal(queries.some(query => query.sql.includes("INSERT INTO imports.import_process")), false);
     const confirmed = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
       headers: { "x-test-subject": "writer", "idempotency-key": `duplicate-${duplicateKind}-confirmed` },
@@ -236,6 +245,17 @@ for (const duplicateKind of ["hash", "number"]) {
       && query.params.some(value => typeof value === "string" && value.includes('"confirmedDuplicateInvoice":true'))), true);
   });
 }
+
+test("invoice duplicate preflight includes IPs outside the selected importer", async t => {
+  const { client } = invoiceImportClient();
+  const app = await invoiceImportApp(t, client, { preflightDuplicate: true, preflightOtherImporterIp: true });
+  const response = await app.inject({ method: "GET",
+    url: `/api/v1/processes/invoice-duplicates?importer=ELETRA%20MATRIZ&ipNumber=IPH%2FTEST&invoiceNumber=INV-1&exporterText=Exporter%20Ltd&fileSha256=${"a".repeat(64)}`,
+    headers: { "x-test-subject": "writer" } });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.deepEqual(response.json().ipNumbers, ["IPH/OTHER"]);
+  assert.equal(response.json().ipReferenceOtherImporter, true);
+});
 
 test("invoice import rejects an item canceled at its source", async t => {
   const { client, queries } = invoiceImportClient({ canceledItem: true });
@@ -620,4 +640,40 @@ test("invoice candidates include PO supplier details even when they differ from 
   assert.equal(response.json().items[0].supplierText, "PO Supplier");
   assert.equal(response.json().items[0].supplierName, "PO Supplier Ltd");
   assert.equal(response.json().items[0].supplierCode, "PO-SUP");
+  assert.equal(response.json().poExists, true);
+  assert.equal(response.json().purchaseOrderId, "po-1");
+});
+
+test("invoice candidate lookup distinguishes an unregistered PO from an empty registered PO", async t => {
+  let exists = false;
+  const pool = {
+    async query(sql, params) {
+      if (sql.includes("SELECT DISTINCT importer FROM procurement.purchase_order")) return { rows: [{ importer: "ELETRA MATRIZ" }] };
+      if (sql.includes("FROM procurement.purchase_order_item item")) return { rows: [], rowCount: 0 };
+      if (sql.includes("SELECT id FROM procurement.purchase_order")) return { rows: exists ? [{ id: poId }] : [], rowCount: exists ? 1 : 0 };
+      return { rows: [{ role: "Importação", importer_code: "ELETRA MATRIZ" }] };
+    }, async connect() { throw new Error("read only"); },
+  };
+  const app = Fastify(); t.after(() => app.close()); app.decorateRequest("authContext", null);
+  await registerAuthorization(app, pool);
+  app.addHook("onRequest", async request => { request.authContext = {
+    issuer: "ci", subject: "writer", userId: poId, displayName: null, sessionToken: "ci" }; });
+  await registerOperationalRoutes(app, pool);
+  const url = "/api/v1/purchase-orders/invoice-candidates?importer=ELETRA%20MATRIZ&productCode=A&sourcePoNumber=PO030201";
+  const missing = await app.inject({ method: "GET", url });
+  assert.equal(missing.json().poExists, false);
+  exists = true;
+  const empty = await app.inject({ method: "GET", url });
+  assert.equal(empty.json().poExists, true);
+  assert.equal(empty.json().purchaseOrderId, poId);
+});
+
+test("invoice balance errors identify the affected invoice row", async t => {
+  const { client } = invoiceImportClient({ insufficientBalance: true });
+  const app = await invoiceImportApp(t, client);
+  const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-insufficient-line" }, payload: invoicePayload() });
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.json().code, "PO_BALANCE_CHANGED");
+  assert.match(response.json().detail, /linha 16/i);
 });

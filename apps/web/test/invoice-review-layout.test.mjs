@@ -24,3 +24,12 @@ test("IP review entry fixes the IP and shows allocation changes and orphan PO ch
   assert.match(component, /Manter vínculo sem alocação/u);
   assert.match(component, /Remover vínculo/u);
 });
+
+test("invoice review shows per-row PO action and duplicate confirmation", () => {
+  assert.match(component, /classifyInvoiceDestination\(match\.candidates, match\.poExists/u);
+  assert.match(component, /Saldo insuficiente: quantidade pedida/u);
+  assert.match(component, /href=\{`\/purchase-orders\/\$\{match\.poId\}`\} target="_blank"/u);
+  assert.match(component, /href="\/purchase-orders\/new" target="_blank"/u);
+  assert.match(component, /Revalidar POs e saldos/u);
+  assert.match(component, /Confirmo a duplicidade desta invoice/u);
+});

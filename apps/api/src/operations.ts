@@ -53,6 +53,9 @@ const invoiceImport = z.object({
   allocations: z.array(z.object({ itemId: z.uuid(), quantity, notes: z.string().trim().max(2000).default("") }).strict())
     .min(1).max(1000),
 }).strict();
+const invoiceDuplicateQuery = z.object({ importer: z.string().trim().min(1).max(120),
+  ipNumber: z.string().trim().min(1).max(80), invoiceNumber: z.string().trim().min(1).max(120),
+  exporterText: z.string().trim().min(1).max(240), fileSha256: z.string().regex(/^[a-f0-9]{64}$/u).optional() });
 const updateProcessFields = processFields.extend({
   importer: z.string().trim().min(1).max(120).optional(),
 });
@@ -100,17 +103,40 @@ const invoiceCatalogUpdates = z.object({
 const uuid = z.uuid();
 
 export class BusinessError extends Error {
-  constructor(readonly status: number, readonly code: string, message: string) { super(message); }
+  constructor(readonly status: number, readonly code: string, message: string,
+    readonly ipNumbers?: string[]) { super(message); }
 }
-export function problem(reply: FastifyReply, status: number, code: string, detail: string) {
+export function problem(reply: FastifyReply, status: number, code: string, detail: string, ipNumbers?: string[]) {
   return reply.code(status).send({ type: "about:blank", title: detail, status, detail,
-    instance: reply.request.url.split("?", 1)[0], traceId: reply.request.id, code });
+    instance: reply.request.url.split("?", 1)[0], traceId: reply.request.id, code,
+    ...(ipNumbers ? { ipNumbers } : {}) });
 }
 function normalizePoNumber(value: string): string {
   return value.toLocaleUpperCase("en-US").replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "");
 }
 function normalizeSupplier(value: string | null | undefined): string {
   return (value ?? "").toLocaleUpperCase("en-US").replace(/[^A-Z0-9]/gu, "");
+}
+async function findDuplicateInvoiceIpNumbers(queryable: Pool | PoolClient, invoiceNumber: string,
+  exporterText: string, fileSha256: string | undefined, ipNumber: string): Promise<string[]> {
+  const potentialDuplicates = await queryable.query<{ number: string; notes: string; ip_number: string;
+    supplier_text: string | null }>(
+    `SELECT document.number, document.notes, process.ip_number, process.supplier_text
+     FROM imports.process_document document
+     JOIN imports.import_process process ON process.id = document.process_id
+     WHERE document.kind = 'INVOICE' AND document.status = 'ACTIVE'
+       AND process.record_status = 'ACTIVE'
+       AND process.normalized_ip_number <> upper(btrim($3))
+       AND (regexp_replace(upper(document.number), '[^A-Z0-9]', '', 'g') = $1
+         OR ($2::text IS NOT NULL AND document.notes LIKE '%' || $2 || '%'))`,
+    [normalizeSupplier(invoiceNumber), fileSha256 ?? null, ipNumber]);
+  return [...new Set(potentialDuplicates.rows.filter(candidate => {
+    let savedHash: unknown;
+    try { savedHash = JSON.parse(candidate.notes).fileSha256; } catch { savedHash = undefined; }
+    return Boolean(fileSha256 && savedHash === fileSha256)
+      || (normalizeSupplier(candidate.number) === normalizeSupplier(invoiceNumber)
+        && normalizeSupplier(candidate.supplier_text) === normalizeSupplier(exporterText));
+  }).map(candidate => candidate.ip_number))];
 }
 export function keyFrom(request: FastifyRequest): string {
   const key = request.headers["idempotency-key"];
@@ -146,7 +172,7 @@ export async function transaction<T>(pool: Pool, reply: FastifyReply, fn: (clien
     return reply.code(status).send(result);
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
-    if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message);
+    if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message, error.ipNumbers);
     const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
     if (code === "23505") return problem(reply, 409, "DUPLICATE_RECORD", "Já existe um registro com essa identidade ou vínculo.");
     if (code === "23514") return problem(reply, 409, "BUSINESS_CONSTRAINT", "A quantidade ou o vínculo viola uma regra do pedido.");
@@ -220,6 +246,22 @@ export function checkVersion(row: Record<string, unknown>, expected: string) {
 }
 
 export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool): Promise<void> {
+  app.get("/api/v1/processes/invoice-duplicates", { config: permissionConfig("processes.write") },
+    async (request, reply) => {
+      const parsed = invoiceDuplicateQuery.safeParse(request.query);
+      if (!parsed.success) return problem(reply, 400, "INVALID_INVOICE_DUPLICATE_QUERY", "Informe os dados da invoice.");
+      try { inScope(parsed.data.importer, request.authorizationContext?.importerScopes ?? []); }
+      catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
+      const [ipNumbers, existing] = await Promise.all([
+        findDuplicateInvoiceIpNumbers(pool, parsed.data.invoiceNumber,
+          parsed.data.exporterText, parsed.data.fileSha256, parsed.data.ipNumber),
+        pool.query<{ importer: string }>(`SELECT importer FROM imports.import_process
+          WHERE normalized_ip_number = upper(btrim($1)) LIMIT 1`, [parsed.data.ipNumber]),
+      ]);
+      return { ipNumbers, ipReferenceOtherImporter: Boolean(existing.rows[0]
+        && existing.rows[0].importer !== parsed.data.importer) };
+    });
+
   app.post("/api/v1/processes/import-invoice", { config: permissionConfig("processes.write") },
     async (request, reply) => {
       const parsed = invoiceImport.safeParse(request.body);
@@ -360,27 +402,11 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         for (const lock of duplicateLocks) {
           await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [lock]);
         }
-        const potentialDuplicates = await client.query<{ number: string; notes: string; ip_number: string;
-          importer: string; supplier_text: string | null }>(
-          `SELECT document.number, document.notes, process.ip_number, process.importer, process.supplier_text
-           FROM imports.process_document document
-           JOIN imports.import_process process ON process.id = document.process_id
-           WHERE document.kind = 'INVOICE' AND document.status = 'ACTIVE'
-             AND process.record_status = 'ACTIVE'
-             AND process.normalized_ip_number <> upper(btrim($3))
-             AND (regexp_replace(upper(document.number), '[^A-Z0-9]', '', 'g') = $1
-               OR ($2::text IS NOT NULL AND document.notes LIKE '%' || $2 || '%'))`,
-          [normalizeSupplier(body.invoice.number), fileSha256 ?? null, body.process.ipNumber]);
-        const duplicateIpNumbers = potentialDuplicates.rows.filter(candidate => {
-          let savedHash: unknown;
-          try { savedHash = JSON.parse(candidate.notes).fileSha256; } catch { savedHash = undefined; }
-          return Boolean(fileSha256 && savedHash === fileSha256)
-            || (normalizeSupplier(candidate.number) === normalizeSupplier(body.invoice.number)
-              && normalizeSupplier(candidate.supplier_text) === normalizeSupplier(exporterText));
-        }).map(candidate => candidate.ip_number);
+        const duplicateIpNumbers = await findDuplicateInvoiceIpNumbers(client, body.invoice.number,
+          exporterText, fileSha256, body.process.ipNumber);
         if (duplicateIpNumbers.length && !body.confirmDuplicateInvoice) {
           throw new BusinessError(409, "INVOICE_DUPLICATE_UNCONFIRMED",
-            "Esta invoice já está associada a outro IP ativo. Confirme a duplicidade para continuar.");
+            "Esta invoice já está associada a outro IP ativo. Confirme a duplicidade para continuar.", duplicateIpNumbers);
         }
         const matchedItems = await client.query<{ id: string; purchase_order_id: string; number: string; importer: string; quantity: string; product_code: string; source_status: string | null; unit: string; unit_price: string | null; currency_code: string | null; supplier_entry_id: string | null; supplier_text: string | null; supplier_name: string | null; supplier_code: string | null }>(
           `SELECT item.id, item.purchase_order_id, po.external_number AS number, po.importer,
@@ -393,10 +419,15 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
            WHERE item.id = ANY($1::uuid[]) ORDER BY item.id FOR UPDATE OF item, po`, [[...aggregated.keys()]],
         );
         if (matchedItems.rowCount !== aggregated.size || matchedItems.rows.some(item => item.importer !== body.process.importer)) {
-          throw new BusinessError(409, "PO_ITEM_MISMATCH", "Uma ou mais linhas selecionadas não pertencem à importadora do IP.");
+          const offending = invoiceAssignments.data.find(assignment => !matchedItems.rows.some(item =>
+            item.id === assignment.itemId && item.importer === body.process.importer));
+          throw new BusinessError(409, "PO_ITEM_MISMATCH",
+            `Linha ${offending?.sourceRow ?? "?"} da invoice: item de PO não encontrado na importadora do IP.`);
         }
         if (matchedItems.rows.some(item => ["CANCELLED", "CANCELED"].includes(item.source_status?.toUpperCase() ?? ""))) {
-          throw new BusinessError(409, "PO_ITEM_MISMATCH", "A invoice contém item cancelado na PO de origem.");
+          const canceled = matchedItems.rows.find(item => ["CANCELLED", "CANCELED"].includes(item.source_status?.toUpperCase() ?? ""));
+          const row = invoiceAssignments.data.find(assignment => assignment.itemId === canceled?.id)?.sourceRow;
+          throw new BusinessError(409, "PO_ITEM_MISMATCH", `Linha ${row ?? "?"} da invoice: item cancelado na PO de origem.`);
         }
         const byItemId = new Map(matchedItems.rows.map(item => [item.id, item]));
         const supplierByItemId = new Map(matchedItems.rows.map(item => [item.id, {
@@ -410,7 +441,8 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           if (!item || item.product_code !== assignment.poProductCode
             || normalizePoNumber(item.number) !== normalizePoNumber(assignment.poNumber)
             || normalizePoNumber(item.number) !== normalizePoNumber(assignment.sourcePoNumber)) {
-            throw new BusinessError(409, "PO_ITEM_MISMATCH", "O item selecionado não corresponde à PO e ao produto indicados na invoice.");
+            throw new BusinessError(409, "PO_ITEM_MISMATCH",
+              `Linha ${assignment.sourceRow} da invoice: o item selecionado não corresponde à PO e ao produto indicados.`);
           }
           const supplier = supplierByItemId.get(assignment.itemId)!;
           if (!supplier.matchesExporter && !assignment.confirmSupplierMismatch) {
@@ -552,7 +584,12 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           [[...aggregated.keys()], processId]);
         if (available.rowCount !== aggregated.size || available.rows.some(item =>
           aggregated.get(item.id)! > Number(item.ordered_quantity) - Number(item.allocated_quantity) + 0.00000001)) {
-          throw new BusinessError(409, "PO_BALANCE_CHANGED", "Saldo da PO alterado durante a revisao. Recarregue e ajuste a distribuicao.");
+          const insufficient = available.rows.find(item => aggregated.get(item.id)! >
+            Number(item.ordered_quantity) - Number(item.allocated_quantity) + 0.00000001);
+          const missingId = [...aggregated.keys()].find(id => !available.rows.some(item => item.id === id));
+          const row = invoiceAssignments.data.find(assignment => assignment.itemId === (insufficient?.id ?? missingId))?.sourceRow;
+          throw new BusinessError(409, "PO_BALANCE_CHANGED",
+            `Linha ${row ?? "?"} da invoice: saldo da PO alterado. Revalide POs e saldos e ajuste a distribuição.`);
         }
         for (const item of matchedItems.rows) {
           const allocationId = randomUUID();
@@ -662,7 +699,15 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           parsed.data.sourcePoNumber, parsed.data.revisingIpNumber || null,
           request.authorizationContext?.importerScopes ?? []],
       );
-      return { items: result.rows };
+      const matchingPo = result.rows[0] ? null : await pool.query<{ id: string }>(
+        `SELECT id FROM procurement.purchase_order
+         WHERE importer = $1 AND importer = ANY($3::text[])
+           AND regexp_replace(regexp_replace(upper(external_number), '[^A-Z0-9]', '', 'g'), '^PO', '')
+             = regexp_replace(regexp_replace(upper($2), '[^A-Z0-9]', '', 'g'), '^PO', '')
+         LIMIT 1`, [parsed.data.importer, parsed.data.sourcePoNumber,
+          request.authorizationContext?.importerScopes ?? []]);
+      const purchaseOrderId = result.rows[0]?.purchaseOrderId ?? matchingPo?.rows[0]?.id ?? null;
+      return { items: result.rows, poExists: purchaseOrderId !== null, purchaseOrderId };
     });
 
   app.get<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/operational",
