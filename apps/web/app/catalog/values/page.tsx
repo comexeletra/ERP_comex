@@ -11,6 +11,7 @@ import { filterImporterCatalog, sortImporterCatalog } from "../../../lib/catalog
 import { createSupplierCatalogUrl } from "../../../lib/catalog-suppliers";
 import { describeNcmAttributeCondition, describeNcmCreationAct, describeNcmDomainOption,
   describeNcmFillType, type NcmCreationAct, type NcmDomainOption } from "../../../lib/catalog-ncm-attributes";
+import { NcmTaxTreatments } from "./NcmTaxTreatments";
 
 const entities = [
   ["importer", "Importadora"], ["incoterm", "Incoterm"], ["transport_mode", "Modal"], ["port_loading", "POL / porto de origem"],
@@ -823,6 +824,7 @@ export default function OperationalValuesPage() {
                 aria-label={`Editar NCM ${ncm.code}`} onClick={() => startEditingNcm(ncm)}>Editar</button>}
             </div>
             <NcmMandatoryAttributes attributes={ncm.mandatoryImportAttributes ?? []} />
+            <NcmTaxTreatments id={ncm.id} code={ncm.code} />
           </>}
         </li>)}
       </ul> : <p className="muted">{ncmSearch.trim() ? "Nenhum NCM corresponde à pesquisa." : "Ainda não há NCMs cadastrados."}</p>}

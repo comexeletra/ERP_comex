@@ -8,6 +8,7 @@ import { registerProcessReadRoutes } from "../dist/processes.js";
 import { registerDataIssueRoutes } from "../dist/data-issues.js";
 import { registerAdminUserRoutes } from "../dist/admin-users.js";
 import { registerCatalogRoutes } from "../dist/catalog.js";
+import { registerTaxTreatmentRoutes } from "../dist/tax-treatments.js";
 import { registerRequestRoutes } from "../dist/requests.js";
 import { registerSourceAuditRoutes } from "../dist/source-audit.js";
 import { registerAdminOutboxRoutes } from "../dist/admin-outbox.js";
@@ -20,6 +21,7 @@ const webRoutes = [
   ["GET", "/auth/me"], ["GET", "/auth/csrf"], ["POST", "/auth/local/login"],
   ["POST", "/auth/local/password"], ["POST", "/auth/logout"],
   ["GET", "/api/v1/importers"],
+  ["GET", "/api/v1/ncms/:id/tax-treatments"],
   ["GET", "/api/v1/purchase-orders"], ["GET", "/api/v1/purchase-orders/summary"],
   ["GET", "/api/v1/purchase-orders/:id/overview"],
   ["GET", "/api/v1/purchase-orders/:id/history-items"],
@@ -82,6 +84,7 @@ test("all Next.js API calls have a registered API method and path", async t => {
   await registerDataIssueRoutes(app, unusedPool);
   await registerAdminUserRoutes(app, unusedPool);
   await registerCatalogRoutes(app, unusedPool);
+  await registerTaxTreatmentRoutes(app, unusedPool);
   await registerRequestRoutes(app, unusedPool);
   await registerSourceAuditRoutes(app, unusedPool);
   await registerAdminOutboxRoutes(app, unusedPool);

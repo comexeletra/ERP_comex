@@ -11,6 +11,7 @@ import { registerProcessReadRoutes } from "./processes.js";
 import { registerDataIssueRoutes } from "./data-issues.js";
 import { registerAdminUserRoutes } from "./admin-users.js";
 import { registerCatalogRoutes } from "./catalog.js";
+import { registerTaxTreatmentRoutes } from "./tax-treatments.js";
 import { registerRequestRoutes } from "./requests.js";
 import { registerSourceAuditRoutes } from "./source-audit.js";
 import { registerAdminOutboxRoutes } from "./admin-outbox.js";
@@ -85,6 +86,12 @@ await registerProcessReadRoutes(app, pool);
 await registerDataIssueRoutes(app, pool);
 await registerAdminUserRoutes(app, pool);
 await registerCatalogRoutes(app, pool, { ncmAutoRefreshTime });
+await registerTaxTreatmentRoutes(app, pool, {
+  credentials: isHomologationDatabase && process.env.TTCE_CLIENT_ID
+    && process.env.TTCE_CLIENT_SECRET && process.env.TTCE_ROLE_TYPE
+    ? { clientId: process.env.TTCE_CLIENT_ID, clientSecret: process.env.TTCE_CLIENT_SECRET,
+      roleType: process.env.TTCE_ROLE_TYPE, origin: process.env.TTCE_ORIGIN } : undefined,
+});
 await registerRequestRoutes(app, pool);
 await registerSourceAuditRoutes(app, pool);
 await registerAdminOutboxRoutes(app, pool);

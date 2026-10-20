@@ -1,7 +1,44 @@
 # Consulta tributária por NCM e estimativa no despacho
 
-**Estado:** proposta para implementação futura. Este documento não representa uma
-integração, cálculo ou alíquota já entregue. Pesquisa e revisão inicial: 19/10/2026.
+**Estado:** etapa 1 implementada na branch `homologacao`: consulta parcial dos
+tratamentos tributários por NCM, data, país de origem, UF e município de destino.
+O acesso efetivo ao TTCE ainda depende de credenciais do Portal Único; até sua
+configuração, a API informa indisponibilidade sem chamar o Portal. Não há cálculo
+de imposto, alíquota definitiva, vínculo produto–NCM ou estimativa no despacho.
+Pesquisa e implementação: 19/10/2026.
+
+### Entrega atual e ativação
+
+- A tela de NCM cadastrada oferece **Consultar tratamentos tributários** em área
+  expansível. A rota de leitura é
+  `GET /api/v1/ncms/{id}/tax-treatments?date=AAAA-MM-DD&originCountry=...&destinationUf=...&destinationCity=...`.
+  O retorno é sempre marcado como **parcial**, porque o download em lote não contém
+  todos os fundamentos normais, alíquotas ou valores calculados. Resultado vazio
+  não significa imposto zero. A consulta exige permissão `catalog.read`.
+- O cliente TTCE usa autenticação por chave de acesso, token e CSRF da API oficial.
+  Configurar, **somente na API HML**, `TTCE_CLIENT_ID`, `TTCE_CLIENT_SECRET` e
+  `TTCE_ROLE_TYPE` no arquivo de ambiente protegido já usado pelo serviço; opcionalmente
+  `TTCE_ORIGIN` para escolher um dos hosts oficiais aceitos. Obter as credenciais
+  pelo procedimento do Portal Único; não colocá-las no Git ou no navegador.
+  Sem configuração, a rota retorna `503` e explica a pendência. Depois de
+  configurar, reiniciar o serviço API HML uma vez e validar uma NCM de teste com
+  data, origem e destino reais. **Esta etapa não modifica variáveis da VPS.**
+- A migration `M058_ttce_chapter_cache.sql` cria cache independente em
+  `catalog.ttce_chapter_cache`, retendo versões por data, capítulo e hash. O cliente
+  consulta o hash por capítulo, baixa somente quando ele muda e compartilha
+  consultas simultâneas. Em falha, mantém a última versão válida, marcada como
+  desatualizada. Respostas `422`, `429` e `503` suspendem novas consultas pelo
+  período indicado pelo Portal ou por pelo menos uma hora.
+- A busca, inclusão, atualização manual e sincronização automática de nomenclatura
+  e atributos NCM continuam em suas rotas e módulos existentes. A rota TTCE usa
+  somente sua tabela própria e lê `catalog.entry` para identificar o NCM; ela não
+  chama os downloads NCM nem escreve em seus snapshots. Esta separação é requisito
+  de regressão obrigatório em qualquer manutenção futura.
+- Por decisão do usuário, o vínculo produto–NCM e a estimativa no despacho ficam
+  para etapas posteriores. Quando houver revisão de classificação ou benefícios,
+  apenas o perfil **Master/Administrador** poderá marcá-la como revisada. Antes de
+  implementar cálculo, definir fonte oficial de alíquotas, premissas e regras com
+  a área fiscal; não derivar imposto devido somente do TTCE.
 
 ## Objetivo e regra de apresentação
 
@@ -35,7 +72,7 @@ deve ser apresentada como benefício já concedido. A interface deve separar
 
 ## Requisito obrigatório: preservar a consulta Siscomex existente
 
-Este é um critério de aceite da futura implementação, não apenas uma preferência
+Este é um critério de aceite da implementação, não apenas uma preferência
 de arquitetura. A consulta tributária TTCE deve ser **independente** do fluxo já
 em uso para nomenclatura e atributos NCM. Ao implementar:
 
@@ -127,7 +164,7 @@ Fontes oficiais consultadas:
    Indexar sem gravar um registro de tributação único e permanente na NCM.
 4. Criar rota de leitura própria, por exemplo
    `GET /api/v1/ncms/{id}/tax-treatments?date=...&originCountry=...&destinationUf=...&destinationCity=...`.
-   Este é um contrato **proposto**, ainda inexistente. Retornar dados aplicáveis,
+   Este é o contrato implementado na primeira etapa. Retornar dados aplicáveis,
    dados que faltam, fonte/versão, idade do cache e erro/retentativa quando houver.
    Manter autorização e escopo do catálogo.
 5. Na tela da NCM, explicar “quais tributos e condições podem se aplicar”,
@@ -207,8 +244,8 @@ alíquotas específicas antes de liberar totais completos.
    entrega. Fazer commits pequenos e publicar apenas `homologacao` no remoto
    `production`, seguindo os gates de HML/Preview de `AGENTS.md`.
 
-**Decisão pendente antes do cálculo:** confirmar com a equipe fiscal quais
-operações entram na primeira versão (DI, Duimp ou ambas), quais tributos entram
-no total, como obter as alíquotas/regras oficiais por data e quem pode aprovar
-classificação, regime e benefícios. A consulta de tratamentos pode começar
-independentemente dessa decisão.
+**Próximas decisões:** o escopo atual é apenas consulta por NCM. Antes de iniciar
+as etapas de produto ou despacho, definir com a equipe fiscal as operações (DI,
+Duimp ou ambas), os tributos, as alíquotas/regras oficiais por data e o fluxo de
+revisão do perfil Master/Administrador. A consulta TTCE poderá ser ativada na HML
+quando as credenciais forem disponibilizadas.
