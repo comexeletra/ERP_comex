@@ -291,6 +291,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 :root[data-theme="dark"] .catalog-product-option[aria-selected="true"] { background: #202f39; }
 :root[data-theme="dark"] .totvs-po-import > label { color: #b0c2ca; }
 :root[data-theme="dark"] .totvs-po-import > label input { background: #19262f; border-color: #465c68; color: #e4edf2; }
+:root[data-theme="dark"] .invoice-summary { background: #203a42; border-color: #35545c; color: #d4e9ec; }
+:root[data-theme="dark"] .invoice-match-table tbody tr:nth-child(even) td { background: #1d2b34; }
+:root[data-theme="dark"] .invoice-match-table tbody tr:hover td { background: #263c46; }
+:root[data-theme="dark"] .invoice-match-table td small { color: #afc0c8; }
 :root[data-theme="dark"] .totvs-import-table th { background: #1a2831; color: #e4edf2; }
 :root[data-theme="dark"] .totvs-import-table td { border-color: #344650; color: #d4e0e6; }
 :root[data-theme="dark"] .source-grid thead .source-grid-filters th { background: #1a2831; }
@@ -672,8 +676,29 @@ input[readonly] { background: #f3f6f8; color: #617581; }
 .stack-form { gap: 18px; }
 .stack-form > label, .ip-entry-grid > label, .operational-fields > label { color: #405966; font-size: .83rem; line-height: 1.4; }
 .stack-form > button { justify-self: start; min-width: 170px; }
-.ip-entry-section { display: grid; gap: 20px; max-width: 920px; }
+.ip-entry-section { display: grid; gap: 20px; max-width: none; min-width: 0; width: 100%; }
+.ip-entry-section > .totvs-po-import { gap: 16px; min-width: 0; padding: clamp(18px, 2vw, 28px); }
+.invoice-summary { background: #edf6f6; border-color: #d6e9e9; color: #244b55; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
+.invoice-importer { margin: -6px 0 0; overflow-wrap: anywhere; }
+.invoice-header-fields { grid-template-columns: repeat(3, minmax(180px, 1fr)); max-width: 920px; }
+.invoice-match-table-wrap { max-height: min(62vh, 720px); }
+.invoice-match-table { min-width: 0; table-layout: fixed; width: 100%; }
+.invoice-match-table th { line-height: 1.3; white-space: normal; }
+.invoice-match-table th:nth-child(1) { width: 9%; }
+.invoice-match-table th:nth-child(2) { width: 23%; }
+.invoice-match-table th:nth-child(3) { width: 15%; }
+.invoice-match-table th:nth-child(4) { width: 53%; }
+.invoice-match-table td { overflow-wrap: anywhere; white-space: normal; }
+.invoice-match-table tbody tr:nth-child(even) td { background: #f7fafb; }
+.invoice-match-table tbody tr:hover td { background: #edf6f6; }
+.invoice-match-table td small { color: #627987; display: block; font-size: .78rem; line-height: 1.45; margin-top: 5px; }
+.invoice-match-table td:nth-child(3) input { max-width: 100%; min-width: 0; width: 100%; }
+.invoice-match-table td:nth-child(3) .notice { font-size: .78rem; line-height: 1.4; margin: 8px 0 0; padding: 8px; }
+.invoice-match-table td:nth-child(4) > .operational-fields { gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 10px; }
+.invoice-match-table td:nth-child(4) > .operational-fields > label { align-items: flex-start; display: flex; font-size: .78rem; gap: 7px; line-height: 1.35; }
+.invoice-match-table td:nth-child(4) > .operational-fields input[type="checkbox"] { flex: 0 0 auto; margin-top: 2px; }
 .ip-entry-grid { display: grid; gap: 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.invoice-ip-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .ip-entry-grid > label { display: grid; gap: 7px; }
 .ip-entry-grid > label:last-of-type { grid-column: 1 / -1; }
 .ip-entry-section > .button { justify-self: start; min-width: 150px; }
@@ -688,7 +713,8 @@ input[readonly] { background: #f3f6f8; color: #617581; }
 td .button + .button { margin-left: 6px; }
 @media (max-width: 900px) { .catalog-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) {
-  .catalog-controls, .ip-entry-grid { grid-template-columns: 1fr; }
+  .catalog-controls, .ip-entry-grid, .invoice-header-fields { grid-template-columns: 1fr; }
+  .invoice-match-table { min-width: 760px; }
   .entity-value-form .stack-form { grid-template-columns: 1fr; }
   .ip-entry-grid > label:last-of-type { grid-column: auto; }
   .catalog-links .button { flex: 1 1 100%; }

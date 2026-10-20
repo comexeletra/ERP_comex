@@ -757,8 +757,8 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
             disabled={invoiceLoading || saving} onChange={event => void selectChinaInvoice(event)} /></label>
           {invoiceLoading && <p role="status">Lendo INV e conferindo as POs cadastradas, sem limitar pela idade do pedido…</p>}
           {invoiceDraft && <>
-            <p className="notice" role="status">{invoiceDraft.fileName}: {invoiceDraft.lines.length} linhas, {invoiceMatches.length} destinos, {formatNumber(invoiceDraft.totalQuantity)} unidades, {formatNumber(invoiceDraft.totalAmount)} CNY.</p>
-              <p className="muted">CNPJ do importador: {invoiceDraft.importerCnpj || "não identificado"} → {importer || "sem correspondência no cadastro"}.</p>
+            <p className="notice invoice-summary" role="status">{invoiceDraft.fileName}: {invoiceDraft.lines.length} linhas, {invoiceMatches.length} destinos, {formatNumber(invoiceDraft.totalQuantity)} unidades, {formatNumber(invoiceDraft.totalAmount)} CNY.</p>
+              <p className="muted invoice-importer">CNPJ do importador: {invoiceDraft.importerCnpj || "não identificado"} → {importer || "sem correspondência no cadastro"}.</p>
             {invoiceDuplicate && <p className="notice" role="alert">
                {invoiceDuplicate.recordStatus === "DRAFT"
                  ? `O IP REF ${invoiceDraft.ipNumber} já existe como rascunho. Esta carga preencherá esse cadastro e aplicará as distribuições revisadas.`
@@ -769,7 +769,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
               <label><input type="checkbox" checked={confirmImporterCnpjMismatch}
                 onChange={event => setConfirmImporterCnpjMismatch(event.target.checked)} />Confirmo a importadora selecionada apesar da divergencia de CNPJ.</label>
             </div>}
-            <div className="operational-fields">
+            <div className="operational-fields invoice-header-fields">
               <label>Número da invoice<input required maxLength={120} value={invoiceDraft.invoiceNumber}
                 onChange={event => setInvoiceDraft(current => current ? { ...current, invoiceNumber: event.target.value } : current)} /></label>
               <label>Data da invoice<input required type="date" value={/^\d{4}-\d{2}-\d{2}$/u.test(invoiceDraft.invoiceDate) ? invoiceDraft.invoiceDate : ""}
@@ -781,7 +781,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
             {invoiceDraft.warnings.map(warning => <p className="notice" key={warning}>{warning}</p>)}
             <div className="totvs-import-actions"><button className="button secondary" type="button" disabled={invoiceLoading || !importer}
               onClick={() => void revalidateInvoiceMatches()}>Revalidar POs e saldos</button></div>
-            <div className="totvs-import-table-wrap"><table className="totvs-import-table">
+            <div className="totvs-import-table-wrap invoice-match-table-wrap"><table className="totvs-import-table invoice-match-table">
               <thead><tr><th>Linha / PO da INV</th><th>Produto da INV</th><th>Quantidade destinada</th><th>Produto cadastrado na PO indicada</th></tr></thead>
               <tbody>{invoiceMatches.map(match => {
                 const sourceLine = invoiceDraft.lines.find(line => line.sourceRow === match.sourceRow);
@@ -852,7 +852,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
           </>}
           {invoiceError && <p className="notice error" role="alert">{invoiceError}</p>}
         </div>
-        <div className="ip-entry-grid">
+        <div className="ip-entry-grid invoice-ip-fields">
         {invoiceDraft ? <label>Fornecedor (Exporter da invoice)<input readOnly value={invoiceDraft.exporterText} /></label> :
           <label>Supplier<SearchableSelect ariaLabel="Fornecedor" required value={supplier} onChange={setSupplier}
             options={suppliers.map(item => ({ value: item.code, label: `${item.code} · ${item.name}` }))} /></label>}
