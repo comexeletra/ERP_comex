@@ -19,6 +19,7 @@ import { registerOperationalRoutes } from "./operations.js";
 import { registerFollowupRoutes } from "./followup.js";
 import { registerPurchaseRequestRoutes } from "./purchase-requests.js";
 import { registerExportJobRoutes } from "./export-jobs.js";
+import { apiErrorDetails } from "./api-error-details.js";
 
 const gatewayToken = process.env.GATEWAY_TOKEN;
 const connectionString = process.env.DATABASE_URL;
@@ -119,7 +120,7 @@ app.setErrorHandler(async (error, request, reply) => {
   const code = typeof error === "object" && error !== null && "code" in error
     ? String(error.code)
     : "UNEXPECTED";
-  request.log.error({ code }, "Falha ao processar requisição");
+  request.log.error({ code, ...apiErrorDetails(error) }, "Falha ao processar requisição");
   return reply.code(500).send({ error: "Erro inesperado." });
 });
 
