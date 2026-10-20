@@ -93,7 +93,7 @@ test("invoice import validates SHA-256 and stores it in document metadata", asyn
 });
 
 function invoiceImportClient({ revision = false, supplierMatchesExporter = true, otherImporterIp = false,
-  canceledItem = false, duplicateKind = null } = {}) {
+  canceledItem = false, duplicateKind = null, poUnit = null, poUnitPrice = null, poCurrency = null } = {}) {
   const processId = "00000000-0000-4000-8000-000000000021";
   const oldDocumentId = "00000000-0000-4000-8000-000000000022";
   const oldAllocationId = "00000000-0000-4000-8000-000000000023";
@@ -116,6 +116,7 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true,
         return { rows: [{ id: poId, purchase_order_id: "00000000-0000-4000-8000-000000000002",
           number: "PO030201", importer: "ELETRA MATRIZ", quantity: "10", product_code: "PO-CODE",
           source_status: canceledItem ? "CANCELLED" : null,
+          unit: poUnit, unit_price: poUnitPrice, currency_code: poCurrency,
           supplier_entry_id: "00000000-0000-4000-8000-000000000003",
           supplier_text: supplierMatchesExporter ? "Exporter Ltd" : "PO Supplier",
           supplier_name: supplierMatchesExporter ? "Exporter Ltd" : "PO Supplier Ltd",
@@ -148,6 +149,38 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true,
   };
   return { client, queries, processId, oldDocumentId, oldAllocationId };
 }
+
+test("invoice import requires unit and CNY price confirmations per destination", async t => {
+  const { client, queries } = invoiceImportClient({ poUnit: "KG", poUnitPrice: "3", poCurrency: "CNY" });
+  const app = await invoiceImportApp(t, client);
+  const payload = invoicePayload();
+  Object.assign(payload.invoice.metadata.lines[0], { amount: "10", unitPrice: "2", unit: "PCS" });
+  const request = (key, nextPayload) => app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": key }, payload: nextPayload });
+  const unit = await request("invoice-unit-mismatch", payload);
+  assert.equal(unit.statusCode, 400, unit.body);
+  assert.equal(unit.json().code, "INVOICE_UNIT_MISMATCH_UNCONFIRMED");
+  payload.invoice.metadata.assignments[0].confirmUnitMismatch = true;
+  const price = await request("invoice-price-mismatch", payload);
+  assert.equal(price.statusCode, 400, price.body);
+  assert.equal(price.json().code, "INVOICE_PRICE_MISMATCH_UNCONFIRMED");
+  payload.invoice.metadata.assignments[0].confirmPriceMismatch = true;
+  const confirmed = await request("invoice-mismatch-confirmed", payload);
+  assert.equal(confirmed.statusCode, 201, confirmed.body);
+  assert.equal(queries.some(query => query.sql.includes("INSERT INTO audit.audit_log")
+    && query.params.some(value => typeof value === "string" && value.includes('"confirmedUnitMismatch":true')
+      && value.includes('"confirmedPriceMismatch":true'))), true);
+});
+
+test("invoice import does not require a price confirmation for a non-CNY PO", async t => {
+  const { client } = invoiceImportClient({ poUnit: "PCS", poUnitPrice: "3", poCurrency: "USD" });
+  const app = await invoiceImportApp(t, client);
+  const payload = invoicePayload();
+  Object.assign(payload.invoice.metadata.lines[0], { amount: "10", unitPrice: "2", unit: "PCS" });
+  const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-usd-price" }, payload });
+  assert.equal(response.statusCode, 201, response.body);
+});
 
 for (const duplicateKind of ["hash", "number"]) {
   test(`invoice import requires audited confirmation for duplicate ${duplicateKind}`, async t => {

@@ -21,12 +21,21 @@ export function suggestInvoicePoItem<T extends InvoicePoItemCandidate>(
   const exact = enough.filter(candidate => candidate.productCode.trim().toLocaleUpperCase("en-US")
     === invoiceProductCode.trim().toLocaleUpperCase("en-US"));
   if (exact.length === 1) return exact[0];
-  return exact.length === 0 && enough.length === 1 ? enough[0] : undefined;
+  return undefined;
 }
 
 export function invoicePoCodeDiffers(invoiceProductCode: string, poProductCode: string): boolean {
   return invoiceProductCode.trim().toLocaleUpperCase("en-US")
     !== poProductCode.trim().toLocaleUpperCase("en-US");
+}
+
+export function invoicePoUnitDiffers(invoiceUnit: string, poUnit: string): boolean {
+  return invoiceUnit.trim().toLocaleUpperCase("en-US") !== poUnit.trim().toLocaleUpperCase("en-US");
+}
+
+export function invoicePoPriceDiffers(invoicePrice: string, poPrice: string | null, poCurrency: string | null): boolean {
+  return poCurrency === "CNY" && poPrice !== null && Number.isFinite(Number(invoicePrice))
+    && Number.isFinite(Number(poPrice)) && Math.abs(Number(invoicePrice) - Number(poPrice)) > 0.00000001;
 }
 
 export function invoiceSupplierMatchesExporter(

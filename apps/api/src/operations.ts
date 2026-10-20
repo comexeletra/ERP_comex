@@ -257,7 +257,8 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         }
         const invoiceAssignments = z.array(z.object({ itemId: z.uuid(), poNumber: z.string().trim().min(1).max(80),
           sourcePoNumber: z.string().trim().min(1).max(80), poProductCode: z.string().trim().min(1).max(120),
-          confirmCodeMismatch: z.boolean(), confirmSupplierMismatch: z.boolean(), quantity,
+          confirmCodeMismatch: z.boolean(), confirmSupplierMismatch: z.boolean(),
+          confirmUnitMismatch: z.boolean().optional(), confirmPriceMismatch: z.boolean().optional(), quantity,
           productCode: z.string().trim().min(1).max(120),
           sourceRow: z.number().int().positive() }).strict())
           .min(1).max(2000).safeParse(body.invoice.metadata.assignments);
@@ -379,9 +380,10 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           throw new BusinessError(409, "INVOICE_DUPLICATE_UNCONFIRMED",
             "Esta invoice já está associada a outro IP ativo. Confirme a duplicidade para continuar.");
         }
-        const matchedItems = await client.query<{ id: string; purchase_order_id: string; number: string; importer: string; quantity: string; product_code: string; source_status: string | null; supplier_entry_id: string | null; supplier_text: string | null; supplier_name: string | null; supplier_code: string | null }>(
+        const matchedItems = await client.query<{ id: string; purchase_order_id: string; number: string; importer: string; quantity: string; product_code: string; source_status: string | null; unit: string; unit_price: string | null; currency_code: string | null; supplier_entry_id: string | null; supplier_text: string | null; supplier_name: string | null; supplier_code: string | null }>(
           `SELECT item.id, item.purchase_order_id, po.external_number AS number, po.importer,
                   item.ordered_quantity::text AS quantity, item.product_code, item.source_status,
+                  item.unit, item.unit_price::text, item.currency_code,
                   po.supplier_entry_id, po.supplier_text,
                   supplier.name AS supplier_name, supplier.code AS supplier_code
            FROM procurement.purchase_order_item item JOIN procurement.purchase_order po ON po.id = item.purchase_order_id
@@ -412,6 +414,18 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           if (!supplier.matchesExporter && !assignment.confirmSupplierMismatch) {
             throw new BusinessError(400, "INVOICE_SUPPLIER_MISMATCH_UNCONFIRMED",
               "Confirme a divergencia entre o Exporter da invoice e o fornecedor da PO.");
+          }
+          const sourceLine = lineByRow.get(assignment.sourceRow);
+          if (sourceLine?.unit && item.unit && sourceLine.unit.trim().toUpperCase() !== item.unit.trim().toUpperCase()
+            && assignment.confirmUnitMismatch !== true) {
+            throw new BusinessError(400, "INVOICE_UNIT_MISMATCH_UNCONFIRMED",
+              `Linha ${assignment.sourceRow}: confirme a divergência de unidade com a PO.`);
+          }
+          if (sourceLine?.unitPrice && item.unit_price && item.currency_code === "CNY"
+            && absoluteUnits(priceUnits(sourceLine.unitPrice) - priceUnits(item.unit_price)) > 10_000_000_000n
+            && assignment.confirmPriceMismatch !== true) {
+            throw new BusinessError(400, "INVOICE_PRICE_MISMATCH_UNCONFIRMED",
+              `Linha ${assignment.sourceRow}: confirme a divergência de preço com a PO.`);
           }
         }
         const supplierIdsForProcess = new Set([...supplierByItemId.values()].map(item => item.supplierEntryId));
@@ -531,7 +545,9 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
                   poSupplierText: supplierByItemId.get(item.id)?.supplierText,
                   poSupplierName: supplierByItemId.get(item.id)?.supplierName,
                   poSupplierCode: supplierByItemId.get(item.id)?.supplierCode,
-                  confirmedSupplierMismatch: assignment.confirmSupplierMismatch })) }, auth.actor, body.process.reason);
+                  confirmedSupplierMismatch: assignment.confirmSupplierMismatch,
+                  confirmedUnitMismatch: assignment.confirmUnitMismatch === true,
+                  confirmedPriceMismatch: assignment.confirmPriceMismatch === true })) }, auth.actor, body.process.reason);
         }
         const documentId = randomUUID();
         await client.query(

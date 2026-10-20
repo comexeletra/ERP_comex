@@ -19,7 +19,8 @@ import { loadPurchaseRequests, purchaseRequestOperationalFields, PurchaseRequest
 import { parseTotvsPoXlsx, TotvsPoProductRow } from "../lib/totvs-po-xlsx";
 import { formatNumber } from "../lib/format-number";
 import { ChinaInvoiceDraft, parseChinaInvoiceXlsx } from "../lib/china-invoice-xlsx";
-import { invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping";
+import { invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
+  invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping";
 
 const poRoles = new Set(["Master", "Administrador", "Importação", "Compras"]);
 const ipRoles = new Set(["Master", "Administrador", "Importação"]);
@@ -57,7 +58,8 @@ type InvoiceItemCandidate = { id: string; lineNumber: number; productCode: strin
   manufacturer: string | null; manufacturerAddress: string | null; manufacturerCountry: string | null };
 type InvoiceMatch = { key: string; sourceRow: number; sourcePoNumber: string; poNumber: string; quantity: string;
   productCode: string; description: string; itemId: string; candidates: InvoiceItemCandidate[];
-  updateProduct: boolean; updatePoItem: boolean; confirmCodeMismatch: boolean; confirmSupplierMismatch: boolean };
+  updateProduct: boolean; updatePoItem: boolean; confirmCodeMismatch: boolean; confirmSupplierMismatch: boolean;
+  confirmUnitMismatch: boolean; confirmPriceMismatch: boolean };
 type InvoiceDuplicate = { id: string; ipNumber: string; recordStatus: string; version: string;
   logisticsStatus: string | null; lifecycleStatus: string };
 
@@ -232,6 +234,17 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
     return Boolean(candidate && !supplierMatchesExporter(candidate, invoiceDraft?.exporterText ?? "")
       && !match.confirmSupplierMismatch);
   });
+  const invoiceHasUnconfirmedUnitMismatch = invoiceMatches.some(match => {
+    const candidate = match.candidates.find(value => value.id === match.itemId);
+    const line = invoiceDraft?.lines.find(value => value.sourceRow === match.sourceRow);
+    return Boolean(candidate && line && invoicePoUnitDiffers(line.unit, candidate.unit) && !match.confirmUnitMismatch);
+  });
+  const invoiceHasUnconfirmedPriceMismatch = invoiceMatches.some(match => {
+    const candidate = match.candidates.find(value => value.id === match.itemId);
+    const line = invoiceDraft?.lines.find(value => value.sourceRow === match.sourceRow);
+    return Boolean(candidate && line && invoicePoPriceDiffers(line.unitPrice, candidate.unitPrice, candidate.currency)
+      && !match.confirmPriceMismatch);
+  });
   const importerCnpjMismatch = Boolean(invoiceDraft && importer
     && (normalizeCnpj(invoiceDraft.importerCnpj).length !== 14
       || normalizeCnpj(importerCnpjs[importer]) !== normalizeCnpj(invoiceDraft.importerCnpj)));
@@ -314,7 +327,8 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
         const candidates = candidatesByAssignment.get(candidateKey(assignment.productCode, assignment.sourcePoNumber)) ?? [];
         const suggestion = suggestInvoicePoItem(candidates, assignment.productCode, assignment.quantity);
         return { ...assignment, candidates, itemId: suggestion?.id ?? "", updateProduct: false,
-          updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false };
+          updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
+          confirmUnitMismatch: false, confirmPriceMismatch: false };
       });
       setInvoiceMatches(matches);
       setInvoiceError(!invoiceImporter ? importerWarning : matches.some(match => match.candidates.length === 0)
@@ -343,6 +357,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
       const assignments = invoiceMatches.length > 0 ? invoiceMatches : invoiceAssignmentsFromLines(invoiceDraft.lines).map(match => ({
         ...match, candidates: [] as InvoiceItemCandidate[], itemId: "", updateProduct: false,
         updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
+        confirmUnitMismatch: false, confirmPriceMismatch: false,
       }));
       const candidateKey = (productCode: string, sourcePoNumber: string) =>
         `${normalizePoNumber(sourcePoNumber)}|${productCode.trim().toLocaleUpperCase("en-US")}`;
@@ -368,7 +383,9 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
         const selected = previous ?? suggestion;
         return { ...match, candidates, poNumber: selected?.poNumber ?? match.sourcePoNumber,
           itemId: selected?.id ?? "", confirmCodeMismatch: Boolean(previous && match.confirmCodeMismatch),
-          confirmSupplierMismatch: Boolean(previous && match.confirmSupplierMismatch) };
+          confirmSupplierMismatch: Boolean(previous && match.confirmSupplierMismatch),
+          confirmUnitMismatch: Boolean(previous && match.confirmUnitMismatch),
+          confirmPriceMismatch: Boolean(previous && match.confirmPriceMismatch) };
       });
       setInvoiceMatches(refreshed);
       if (refreshed.some(match => !match.candidates.length)) setInvoiceError("Nao foi encontrado item na PO indicada. Confira a PO da linha da invoice e o cadastro de produtos.");
@@ -566,6 +583,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
         if (invoiceMatches.length === 0 || invoiceMatches.some(match => !match.itemId || !Number(match.quantity)
           || Number(match.quantity) > Number(match.candidates.find(candidate => candidate.id === match.itemId)?.remainingQuantity ?? 0))
           || hasUnconfirmedCodeMismatch || hasUnconfirmedSupplierMismatch
+          || invoiceHasUnconfirmedUnitMismatch || invoiceHasUnconfirmedPriceMismatch
           || (importerCnpjMismatch && !confirmImporterCnpjMismatch)
           || invoiceDraft.lines.some(line => Math.abs((invoiceAllocationTotals.get(line.sourceRow) ?? 0) - Number(line.quantity)) > 0.00000001))
           throw new Error("Revise e selecione o item de PO para todas as linhas da invoice.");
@@ -612,6 +630,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
                 return { sourceRow: match.sourceRow, sourcePoNumber: match.sourcePoNumber, poNumber: candidate.poNumber,
                   quantity: match.quantity, productCode: match.productCode, poProductCode: candidate.productCode,
                   confirmCodeMismatch: match.confirmCodeMismatch, confirmSupplierMismatch: match.confirmSupplierMismatch,
+                  confirmUnitMismatch: match.confirmUnitMismatch, confirmPriceMismatch: match.confirmPriceMismatch,
                   poSupplierText: candidate.supplierText, poSupplierName: candidate.supplierName,
                   poSupplierCode: candidate.supplierCode,
                   itemId: match.itemId };
@@ -791,13 +810,18 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
                 const balanced = sourceLine ? Math.abs(allocated - Number(sourceLine.quantity)) <= 0.00000001 : false;
                 const selectedCandidate = match.candidates.find(candidate => candidate.id === match.itemId);
                 const codeMismatch = Boolean(selectedCandidate && invoicePoCodeDiffers(match.productCode, selectedCandidate.productCode));
+                const unitMismatch = Boolean(selectedCandidate && sourceLine
+                  && invoicePoUnitDiffers(sourceLine.unit, selectedCandidate.unit));
+                const priceMismatch = Boolean(selectedCandidate && sourceLine
+                  && invoicePoPriceDiffers(sourceLine.unitPrice, selectedCandidate.unitPrice, selectedCandidate.currency));
                 return <tr key={match.key}>
                   <td>{match.sourceRow}<small>INV: PO {match.sourcePoNumber || "?"}</small></td>
                   <td>{match.productCode}<small>{match.description}</small></td>
                   <td><input aria-label={`Quantidade destinada da linha ${match.sourceRow}`} inputMode="decimal" value={match.quantity}
                     onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
                       ? { ...item, quantity: event.target.value.replace(",", "."), itemId: "", updateProduct: false,
-                        updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false } : item))} />
+                        updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
+                        confirmUnitMismatch: false, confirmPriceMismatch: false } : item))} />
                     <small>{formatNumber(String(allocated))} / {formatNumber(sourceLine?.quantity ?? "0")} {sourceLine?.unit}</small>
                     {!balanced && <small className="notice error">A soma distribuída difere da quantidade da invoice.</small>}
                   </td>
@@ -807,7 +831,8 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
                       if (item.key !== match.key) return item;
                       const candidate = item.candidates.find(value => value.id === selectedId);
                       return { ...item, itemId: selectedId, poNumber: candidate?.poNumber ?? "",
-                        updateProduct: false, updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false };
+                        updateProduct: false, updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
+                        confirmUnitMismatch: false, confirmPriceMismatch: false };
                     }))} options={match.candidates.map(candidate => ({ value: candidate.id,
                       label: `PO ${candidate.poNumber} | ${candidate.productCode} | linha ${candidate.lineNumber} | saldo ${formatNumber(candidate.remainingQuantity)} ${candidate.unit ?? ""}`,
                       searchText: candidate.description,
@@ -825,6 +850,20 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
                         onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
                           ? { ...item, confirmSupplierMismatch: event.target.checked } : item))} />Confirmo a divergencia de fornecedor e aprovo a distribuicao.</label>
                     </div>}
+                    {unitMismatch && selectedCandidate && sourceLine && <div className="notice error" role="alert">
+                      <p>Unidade divergente: invoice {sourceLine.unit}; item da PO {selectedCandidate.unit}.</p>
+                      <label><input type="checkbox" checked={match.confirmUnitMismatch}
+                        onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
+                          ? { ...item, confirmUnitMismatch: event.target.checked } : item))} />Confirmo a divergência de unidade deste destino.</label>
+                    </div>}
+                    {priceMismatch && selectedCandidate && sourceLine && <div className="notice error" role="alert">
+                      <p>Preço divergente: invoice {sourceLine.unitPrice} CNY; item da PO {selectedCandidate.unitPrice} CNY.</p>
+                      <label><input type="checkbox" checked={match.confirmPriceMismatch}
+                        onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
+                          ? { ...item, confirmPriceMismatch: event.target.checked } : item))} />Confirmo a divergência de preço deste destino.</label>
+                    </div>}
+                    {selectedCandidate && selectedCandidate.currency && selectedCandidate.currency !== "CNY"
+                      && <p className="notice">Preço da PO em {selectedCandidate.currency}: a comparação com CNY requer análise manual.</p>}
                     {match.itemId && <details><summary>Comparar invoice e cadastros</summary>
                       {(() => {
                         const candidate = match.candidates.find(value => value.id === match.itemId);
@@ -860,7 +899,8 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
         <label>Importadora<SearchableSelect ariaLabel="Importadora" required value={importer} onChange={value => {
           setImporter(value); setConfirmImporterCnpjMismatch(false); setInvoiceDuplicate(null); setInvoiceError("");
           setInvoiceMatches(current => current.map(match => ({ ...match, itemId: "", candidates: [],
-            updateProduct: false, updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false })));
+            updateProduct: false, updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
+            confirmUnitMismatch: false, confirmPriceMismatch: false })));
         }} options={importers.map(value => ({ value, label: value }))} /></label>
         <label>IP Reference<input required maxLength={80} readOnly={Boolean(invoiceDraft)}
           value={invoiceDraft?.ipNumber ?? number} onChange={event => setNumber(event.target.value)} /></label>
@@ -874,6 +914,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
           || invoiceMatches.some(match => !match.itemId || !Number(match.quantity)
             || Number(match.quantity) > Number(match.candidates.find(candidate => candidate.id === match.itemId)?.remainingQuantity ?? 0))
           || invoiceHasUnconfirmedCodeMismatch || invoiceHasUnconfirmedSupplierMismatch
+          || invoiceHasUnconfirmedUnitMismatch || invoiceHasUnconfirmedPriceMismatch
           || (importerCnpjMismatch && !confirmImporterCnpjMismatch)
           || invoiceDraft.lines.some(line => Math.abs(invoiceMatches.filter(match => match.sourceRow === line.sourceRow)
             .reduce((total, match) => total + (Number(match.quantity) || 0), 0) - Number(line.quantity)) > 0.00000001)))}>

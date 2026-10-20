@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import ExcelJS from "exceljs";
 import { parseChinaInvoiceXlsx, parseInvoicePoAssignments } from "../lib/china-invoice-xlsx.ts";
-import { invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping.ts";
+import { invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
+  invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping.ts";
 
 test("suggests only an unambiguous invoice item and reports code/supplier divergences", () => {
   const candidates = [
@@ -11,12 +12,20 @@ test("suggests only an unambiguous invoice item and reports code/supplier diverg
   ];
   assert.equal(suggestInvoicePoItem(candidates, "3011100110", "25")?.id, "a");
   assert.equal(suggestInvoicePoItem(candidates, "NEW-CODE", "15"), undefined);
-  assert.equal(suggestInvoicePoItem([candidates[1]], "NEW-CODE", "15")?.id, "b");
+  assert.equal(suggestInvoicePoItem([candidates[1]], "NEW-CODE", "15"), undefined);
   assert.equal(suggestInvoicePoItem(candidates, "3011100110", "31"), undefined);
   assert.equal(invoicePoCodeDiffers(" abc-1 ", "ABC-1"), false);
   assert.equal(invoicePoCodeDiffers("ABC-1", "ABC-2"), true);
   assert.equal(invoiceSupplierMatchesExporter(["SUP.001", "Exporter Ltd"], "exporter ltd"), true);
   assert.equal(invoiceSupplierMatchesExporter(["SUP.001"], "Other Ltd"), false);
+});
+
+test("identifies unit and CNY price differences for each PO destination", () => {
+  assert.equal(invoicePoUnitDiffers("PCS", " pcs "), false);
+  assert.equal(invoicePoUnitDiffers("PCS", "KG"), true);
+  assert.equal(invoicePoPriceDiffers("0.2232524272", "0.22325243", "CNY"), false);
+  assert.equal(invoicePoPriceDiffers("2", "3", "CNY"), true);
+  assert.equal(invoicePoPriceDiffers("2", "3", "USD"), false);
 });
 
 test("rebuilds invoice PO assignments after an importer is selected manually", () => {
