@@ -326,6 +326,9 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
       <section className="metric-grid"><Metric label="POs vinculadas" value={process.purchaseOrders.length} /><Metric label="Linhas históricas" value={lines.totalCount} /><Metric label="Custos históricos" value={process.historicalCosts.length} /></section>
       <section className="card"><h2>Dados operacionais do IP</h2>
         <p>Prioridade: {process.priority ?? "não informada"}. Observações: {process.notes || "—"}.</p>
+        {canWrite && process.lifecycleStatus === "OPEN" && (process.sourceKind === "CHINA_INVOICE" || process.recordStatus === "DRAFT")
+          && <p><Link className="button secondary" href={`/processes/new?reviewInvoice=${encodeURIComponent(id)}`}>
+            {process.recordStatus === "DRAFT" ? "Carregar invoice" : "Revisar invoice"}</Link></p>}
         {notice && <p className="notice success" role="status">{notice}</p>}
         {saveError && <p className="notice error" role="alert">{saveError}</p>}
         {process.lifecycleStatus === "CLOSED" && <>

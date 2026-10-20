@@ -42,6 +42,8 @@ const createProcess = processFields.extend({
 });
 const invoiceImport = z.object({
   confirmDuplicateInvoice: z.boolean().optional(),
+  orphanPoDecisions: z.array(z.object({ purchaseOrderId: z.uuid(),
+    action: z.enum(["KEEP", "REMOVE"]) }).strict()).max(200).optional(),
   process: createProcess,
   invoice: z.object({
     fileName: z.string().trim().min(1).max(255), number: z.string().trim().min(1).max(120),
@@ -440,6 +442,23 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           throw new BusinessError(409, "IP_REFERENCE_OTHER_IMPORTER",
             "O IP REF da invoice já pertence a outra importadora.");
         }
+        const linkedPos = previousProcess.rows[0] ? await client.query<{
+          purchase_order_id: string; external_number: string; source_kind: string }>(
+          `SELECT link.purchase_order_id, po.external_number, link.source_kind
+           FROM procurement.process_purchase_order link
+           JOIN procurement.purchase_order po ON po.id = link.purchase_order_id
+           WHERE link.process_id = $1 FOR UPDATE OF link`, [previousProcess.rows[0].id]) : { rows: [] };
+        const newPoIds = new Set(matchedItems.rows.map(item => item.purchase_order_id));
+        const orphanLinks = linkedPos.rows.filter(link => !newPoIds.has(link.purchase_order_id));
+        const orphanDecisions = new Map((body.orphanPoDecisions ?? []).map(decision => [decision.purchaseOrderId, decision.action]));
+        if (orphanLinks.some(link => !orphanDecisions.has(link.purchase_order_id))) {
+          throw new BusinessError(409, "INVOICE_ORPHAN_PO_DECISION_REQUIRED",
+            "Escolha manter ou remover cada PO vinculada que ficará sem alocação.");
+        }
+        if (orphanDecisions.size !== orphanLinks.length) {
+          throw new BusinessError(400, "INVALID_INVOICE_ORPHAN_PO_DECISIONS",
+            "As decisões de PO não correspondem aos vínculos sem alocação.");
+        }
         let processId: string;
         let isRevision = false;
         if (previousProcess.rows[0]) {
@@ -511,6 +530,16 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
               confirmedDuplicateInvoice: Boolean(duplicateIpNumbers.length && body.confirmDuplicateInvoice),
               invoiceImporterCnpj, confirmedImporterCnpjMismatch: confirmImporterCnpjMismatch,
               invoiceSupplierDivergence }, auth.actor, body.process.reason);
+        }
+        for (const link of orphanLinks) {
+          const action = orphanDecisions.get(link.purchase_order_id)!;
+          if (action === "REMOVE") {
+            await client.query(`DELETE FROM procurement.process_purchase_order
+              WHERE purchase_order_id = $1 AND process_id = $2`, [link.purchase_order_id, processId]);
+          }
+          await record(client, "IMPORT_PROCESS", processId, "PROCESS_PURCHASE_ORDER", link.purchase_order_id,
+            action, link, { purchaseOrderId: link.purchase_order_id, action, linked: action === "KEEP" },
+            auth.actor, body.process.reason);
         }
         const available = await client.query<{ id: string; ordered_quantity: string; allocated_quantity: string }>(
           `SELECT item.id, item.ordered_quantity::text,

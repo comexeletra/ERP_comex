@@ -93,7 +93,8 @@ test("invoice import validates SHA-256 and stores it in document metadata", asyn
 });
 
 function invoiceImportClient({ revision = false, supplierMatchesExporter = true, otherImporterIp = false,
-  canceledItem = false, duplicateKind = null, poUnit = null, poUnitPrice = null, poCurrency = null } = {}) {
+  canceledItem = false, duplicateKind = null, poUnit = null, poUnitPrice = null, poCurrency = null,
+  linkedOrphanPo = false, draft = false } = {}) {
   const processId = "00000000-0000-4000-8000-000000000021";
   const oldDocumentId = "00000000-0000-4000-8000-000000000022";
   const oldAllocationId = "00000000-0000-4000-8000-000000000023";
@@ -126,8 +127,13 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true,
         if (otherImporterIp && !sql.includes("AND importer = $2")) {
           return { rows: [{ id: processId, importer: "OTHER IMPORTER", ip_number: "IPH/TEST" }], rowCount: 1 };
         }
-        return revision ? { rows: [{ id: processId, importer: "ELETRA MATRIZ", ip_number: "IPH/TEST",
-          normalized_ip_number: "IPH/TEST", record_status: "ACTIVE", lifecycle_status: "OPEN", version: "2" }], rowCount: 1 }
+        return revision || draft ? { rows: [{ id: processId, importer: "ELETRA MATRIZ", ip_number: "IPH/TEST",
+          normalized_ip_number: "IPH/TEST", record_status: draft ? "DRAFT" : "ACTIVE", lifecycle_status: "OPEN", version: "2" }], rowCount: 1 }
+          : { rows: [], rowCount: 0 };
+      }
+      if (sql.includes("FROM procurement.process_purchase_order link") && sql.includes("link.process_id")) {
+        return linkedOrphanPo ? { rows: [{ purchase_order_id: "00000000-0000-4000-8000-000000000004",
+          external_number: "PO-ORPHAN", source_kind: draft ? "CANCELLATION_TRANSFER" : "CHINA_INVOICE" }], rowCount: 1 }
           : { rows: [], rowCount: 0 };
       }
       if (sql.includes("SELECT 1 FROM imports.process_document")) return { rows: [], rowCount: 0 };
@@ -148,6 +154,34 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true,
     release() {},
   };
   return { client, queries, processId, oldDocumentId, oldAllocationId };
+}
+
+for (const draft of [false, true]) {
+  test(`invoice ${draft ? "DRAFT fill" : "revision"} requires explicit orphan PO decisions`, async t => {
+    const { client, queries } = invoiceImportClient({ revision: !draft, draft, linkedOrphanPo: true });
+    const app = await invoiceImportApp(t, client);
+    const request = (key, payload) => app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+      headers: { "x-test-subject": "writer", "idempotency-key": key, "x-record-version": '"2"' }, payload });
+    const missing = await request(`invoice-orphan-${draft}-missing`, invoicePayload());
+    assert.equal(missing.statusCode, 409, missing.body);
+    assert.equal(missing.json().code, "INVOICE_ORPHAN_PO_DECISION_REQUIRED");
+    assert.equal(queries.some(query => query.sql.includes("DELETE FROM procurement.process_purchase_order")), false);
+    const removePayload = { ...invoicePayload(), orphanPoDecisions: [
+      { purchaseOrderId: "00000000-0000-4000-8000-000000000004", action: "REMOVE" }] };
+    const removed = await request(`invoice-orphan-${draft}-remove`, removePayload);
+    assert.equal(removed.statusCode, 201, removed.body);
+    assert.equal(queries.some(query => query.sql.includes("DELETE FROM procurement.process_purchase_order")), true);
+    assert.equal(queries.some(query => query.sql.includes("INSERT INTO audit.audit_log")
+      && query.params.some(value => typeof value === "string" && value.includes('"action":"REMOVE"'))), true);
+    const deletesBeforeKeep = queries.filter(query => query.sql.includes("DELETE FROM procurement.process_purchase_order")).length;
+    const kept = await request(`invoice-orphan-${draft}-keep`, { ...invoicePayload(), orphanPoDecisions: [
+      { purchaseOrderId: "00000000-0000-4000-8000-000000000004", action: "KEEP" }] });
+    assert.equal(kept.statusCode, 201, kept.body);
+    assert.equal(queries.filter(query => query.sql.includes("DELETE FROM procurement.process_purchase_order")).length,
+      deletesBeforeKeep);
+    assert.equal(queries.some(query => query.sql.includes("INSERT INTO audit.audit_log")
+      && query.params.some(value => typeof value === "string" && value.includes('"action":"KEEP"'))), true);
+  });
 }
 
 test("invoice import requires unit and CNY price confirmations per destination", async t => {
