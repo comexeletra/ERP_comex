@@ -20,7 +20,7 @@ type Allocation = { id: string; allocationQuantity: string; purchaseOrder: { id:
 type Event = { id: string; entityType: string; entityId: string; operation: string; oldValue: Record<string, Value> | null;
   newValue: Record<string, Value> | null; occurredAt: string; reason: string | null; actorId: string;
   purchaseOrderNumber?: string; productCode?: string; productDescription?: string; lineNumber?: number; unit?: string | null };
-type Data = { process: Row & { id: string; ipNumber: string; version: string; lifecycleStatus: "OPEN" | "CLOSED" };
+type Data = { process: Row & { id: string; ipNumber: string; version: string; lifecycleStatus: "OPEN" | "CLOSED"; recordStatus?: "DRAFT" | "ACTIVE" | "CANCELLED" };
   purchaseOrders: { id: string; number: string; importer: string; linkSource: string }[];
   allocations: Allocation[]; documents: Document[];
   invoiceTotals: { amounts: { currency: string; amount: string }[]; incompleteLines: number }; events: Event[] };
@@ -190,7 +190,9 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [id, reload]);
-  const canWrite = Boolean(data && data.process.lifecycleStatus === "OPEN" && roles.some(role => ["Master", "Administrador", "Importação"].includes(role)));
+  const canWrite = Boolean(data && data.process.lifecycleStatus === "OPEN"
+    && data.process.recordStatus !== "CANCELLED" && data.process.recordStatus !== "DRAFT"
+    && roles.some(role => ["Master", "Administrador", "Importação"].includes(role)));
   async function send(path: string, method: string, body: unknown, version?: string) {
     const response = await apiFetch(path, { method, headers: { "content-type": "application/json",
       ...(version ? { "X-Record-Version": version } : { "Idempotency-Key": crypto.randomUUID() }) }, body: JSON.stringify(body) });

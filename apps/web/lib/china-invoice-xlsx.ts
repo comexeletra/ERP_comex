@@ -28,6 +28,7 @@ export type ChinaInvoiceDraft = {
   fileName: string;
   ipNumber: string;
   importerText: string;
+  importerCnpj: string;
   exporterText: string;
   invoiceNumber: string;
   invoiceDate: string;
@@ -161,6 +162,11 @@ function headerValue(sheet: Worksheet, label: string): string {
   return "";
 }
 
+function cnpjDigits(value: string): string {
+  const match = value.match(/\b(?:\d{2}[.]?\d{3}[.]?\d{3}\/?\d{4}-?\d{2}|\d{14})\b/u);
+  return match ? match[0].replace(/\D/gu, "") : "";
+}
+
 function parseLine(sheet: Worksheet, rowNumber: number, columns: Map<string, number>): ChinaInvoiceLine {
   const get = (key: string) => textOf(sheet.getRow(rowNumber).getCell(columns.get(key)!));
   const issues: string[] = [];
@@ -245,6 +251,9 @@ export async function parseChinaInvoiceXlsx(file: File): Promise<ChinaInvoiceDra
     return String(Number(total.toFixed(8)));
   };
   const warnings: string[] = [];
+  const ipNumber = headerValue(sheet, "IP REF.");
+  if (!ipNumber.trim()) throw new Error("The IP REF header is required on the INV sheet.");
+  const importerText = textOf(sheet.getCell("E6"));
   const headerPoNumber = headerValue(sheet, "PO REF.");
   const poNumbers = new Set(lines.flatMap(line => line.poAssignments.map(item => item.poNumber)));
   const normalizedHeaderPo = headerPoNumber.replace(/\D/gu, "");
@@ -254,7 +263,7 @@ export async function parseChinaInvoiceXlsx(file: File): Promise<ChinaInvoiceDra
 
   return {
     fileName: file.name,
-    ipNumber: headerValue(sheet, "IP REF."), importerText: textOf(sheet.getCell("E6")),
+    ipNumber, importerText, importerCnpj: cnpjDigits(importerText),
     exporterText: textOf(sheet.getCell("A6")), invoiceNumber: headerValue(sheet, "INVOICE:"),
     invoiceDate: headerValue(sheet, "DATE:"), headerPoNumber, originText: headerValue(sheet, "FROM:"),
     destinationText: headerValue(sheet, "TO:"), incoterm: headerValue(sheet, "INCOTERM 2020:"),

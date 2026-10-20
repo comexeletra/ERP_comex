@@ -18,6 +18,7 @@ import { loadPurchaseRequests, purchaseRequestOperationalFields, PurchaseRequest
 import { parseTotvsPoXlsx, TotvsPoProductRow } from "../lib/totvs-po-xlsx";
 import { formatNumber } from "../lib/format-number";
 import { ChinaInvoiceDraft, parseChinaInvoiceXlsx } from "../lib/china-invoice-xlsx";
+import { invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping";
 
 const poRoles = new Set(["Master", "Administrador", "Importação", "Compras"]);
 const ipRoles = new Set(["Master", "Administrador", "Importação"]);
@@ -48,9 +49,36 @@ const poDraftKey = "new-operational-record:po:v1";
 const poCommandKey = "new-operational-record:po-command:v1";
 
 type InvoiceItemCandidate = { id: string; lineNumber: number; productCode: string; description: string;
-  unit: string; remainingQuantity: string };
-type InvoiceMatch = { key: string; sourceRow: number; poNumber: string; quantity: string;
-  productCode: string; description: string; itemId: string; candidates: InvoiceItemCandidate[] };
+  unit: string; remainingQuantity: string; purchaseOrderId: string; poNumber: string;
+  supplierEntryId: string | null; supplierText: string | null; supplierName: string | null; supplierCode: string | null;
+  orderedQuantity: string; unitPrice: string | null; currency: string | null; poNcmCode: string | null;
+  productId: string | null; productName: string | null; productNcmCode: string | null;
+  manufacturer: string | null; manufacturerAddress: string | null; manufacturerCountry: string | null };
+type InvoiceMatch = { key: string; sourceRow: number; sourcePoNumber: string; poNumber: string; quantity: string;
+  productCode: string; description: string; itemId: string; candidates: InvoiceItemCandidate[];
+  updateProduct: boolean; updatePoItem: boolean; confirmCodeMismatch: boolean; confirmSupplierMismatch: boolean };
+type InvoiceDuplicate = { id: string; ipNumber: string; recordStatus: string;
+  logisticsStatus: string | null; lifecycleStatus: string };
+
+type InvoiceImporterOption = { code: string; cnpj: string | null };
+
+function normalizeCnpj(value: string | null | undefined): string {
+  return (value ?? "").replace(/\D/gu, "");
+}
+
+function supplierMatchesExporter(candidate: InvoiceItemCandidate, exporter: string): boolean {
+  return invoiceSupplierMatchesExporter([candidate.supplierText, candidate.supplierName, candidate.supplierCode], exporter);
+}
+
+function normalizePoNumber(value: string): string {
+  return value.toLocaleUpperCase("en-US").replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "");
+}
+
+async function forEachInBatches<T>(items: readonly T[], size: number, action: (item: T) => Promise<void>): Promise<void> {
+  for (let offset = 0; offset < items.length; offset += size) {
+    await Promise.all(items.slice(offset, offset + size).map(action));
+  }
+}
 
 function blankPoItem(): PoItemDraft {
   return { externalLineReference: "", productCode: "", description: "", orderedQuantity: "",
@@ -84,6 +112,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
   const router = useRouter();
   const [roles, setRoles] = useState<string[]>([]);
   const [importers, setImporters] = useState<string[]>([]);
+  const [importerCnpjs, setImporterCnpjs] = useState<Record<string, string>>({});
   const [importer, setImporter] = useState("");
   const [purchaseRequestId, setPurchaseRequestId] = useState("");
   const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequestChoice[]>([]);
@@ -110,7 +139,9 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
   const [createdPoId, setCreatedPoId] = useState("");
   const [invoiceDraft, setInvoiceDraft] = useState<ChinaInvoiceDraft | null>(null);
   const [invoiceMatches, setInvoiceMatches] = useState<InvoiceMatch[]>([]);
+  const [invoiceDuplicate, setInvoiceDuplicate] = useState<InvoiceDuplicate | null>(null);
   const [invoiceError, setInvoiceError] = useState("");
+  const [confirmImporterCnpjMismatch, setConfirmImporterCnpjMismatch] = useState(false);
   const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
   const specificItemFields = purchaseOrderSpecificFields(supportsGroup);
@@ -152,11 +183,13 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
       .then(async ([identity, list, operationalCatalog]) => {
         if (!identity.ok || !list.ok) throw new Error("Não foi possível consultar suas permissões e importadoras.");
         const user = await identity.json() as { roles: string[] };
-        const data = await list.json() as { items: Array<{ code: string }> };
+        const data = await list.json() as { items: InvoiceImporterOption[] };
         setRoles(user.roles);
         setOptions(operationalCatalog.items);
         setSupportsGroup(operationalCatalog.purchaseOrderGroup);
         setImporters(data.items.map(item => item.code));
+        setImporterCnpjs(Object.fromEntries(data.items.filter(item => item.cnpj)
+          .map(item => [item.code, normalizeCnpj(item.cnpj)])));
       })
       .catch(cause => setError(cause instanceof Error ? cause.message : "Erro inesperado."))
       .finally(() => setLoading(false));
@@ -189,6 +222,18 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
   }, [kind]);
 
   const allowed = roles.some(role => (kind === "po" ? poRoles : ipRoles).has(role));
+  const invoiceHasUnconfirmedCodeMismatch = invoiceMatches.some(match => {
+    const candidate = match.candidates.find(value => value.id === match.itemId);
+    return Boolean(candidate && invoicePoCodeDiffers(match.productCode, candidate.productCode) && !match.confirmCodeMismatch);
+  });
+  const invoiceHasUnconfirmedSupplierMismatch = invoiceMatches.some(match => {
+    const candidate = match.candidates.find(value => value.id === match.itemId);
+    return Boolean(candidate && !supplierMatchesExporter(candidate, invoiceDraft?.exporterText ?? "")
+      && !match.confirmSupplierMismatch);
+  });
+  const importerCnpjMismatch = Boolean(invoiceDraft && importer
+    && (normalizeCnpj(invoiceDraft.importerCnpj).length !== 14
+      || normalizeCnpj(importerCnpjs[importer]) !== normalizeCnpj(invoiceDraft.importerCnpj)));
 
   function updateItem(index: number, change: Partial<PoItemDraft>) {
     setItems(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...change } : item));
@@ -207,79 +252,126 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
   async function selectChinaInvoice(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0]; event.currentTarget.value = "";
     if (!file) return;
-    if (!importer) { setInvoiceError("Selecione a importadora do IP antes de carregar a invoice."); return; }
-    setInvoiceError(""); setInvoiceDraft(null); setInvoiceMatches([]); setInvoiceLoading(true);
+    setInvoiceError(""); setInvoiceDraft(null); setInvoiceMatches([]); setInvoiceDuplicate(null); setInvoiceLoading(true);
     try {
       const draft = await parseChinaInvoiceXlsx(file);
       setInvoiceDraft(draft);
-      const supplierOptions = await loadCatalogChoices("suppliers", importer);
-      setSuppliers(supplierOptions);
+      if (!draft.ipNumber.trim()) throw new Error("IP REF vazio no cabeçalho da aba INV.");
+      setNumber(draft.ipNumber.trim());
+      setStatus("WAITING SHIPMENT");
+      const cnpj = normalizeCnpj(draft.importerCnpj);
+      const cnpjMatches = cnpj.length === 14 ? importers.filter(code => importerCnpjs[code] === cnpj) : [];
+      const invoiceImporter = cnpjMatches.length === 1 ? cnpjMatches[0] : "";
+      setImporter(invoiceImporter);
+      setConfirmImporterCnpjMismatch(false);
+      if (invoiceImporter) setSuppliers(await loadCatalogChoices("suppliers", invoiceImporter));
+      const importerWarning = !cnpj || cnpj.length !== 14
+        ? "O CNPJ do importador não foi identificado. Selecione manualmente a importadora e confirme a divergência."
+        : cnpjMatches.length > 1
+          ? "O CNPJ corresponde a mais de uma importadora. Selecione manualmente a correta."
+          : cnpjMatches.length === 0
+            ? "O CNPJ não corresponde a uma importadora cadastrada. Selecione manualmente e confirme a divergência."
+            : "";
       const lineIssues = draft.lines.flatMap(line => line.issues.map(issue => `Linha ${line.sourceRow}: ${issue}`));
       if (lineIssues.length) { setInvoiceError(lineIssues.join(" ")); return; }
-      const normalized = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "");
-      const assignments = draft.lines.flatMap(line => line.poAssignments.map((assignment, index) => ({
-        key: `${line.sourceRow}:${index}`, sourceRow: line.sourceRow, poNumber: assignment.poNumber,
-        quantity: assignment.quantity, productCode: line.productCode, description: line.description,
-      })));
-      const poByNumber = new Map<string, Promise<InvoiceItemCandidate[]>>();
-      for (const assignment of assignments) {
-        const key = normalized(assignment.poNumber);
-        if (!poByNumber.has(key)) poByNumber.set(key, (async () => {
-          const query = new URLSearchParams({ number: assignment.poNumber, importer, page: "1", pageSize: "200" });
-          const response = await apiFetch(`/api/v1/purchase-orders?${query}`, { cache: "no-store" });
-          const list = await readResponse<{ items: Array<{ id: string; number: string }> }>(response);
-          const records = await Promise.all(list.items.filter(po => normalized(po.number) === key).map(async po => {
-            const detail = await readResponse<{ supplierText: string | null; items: InvoiceItemCandidate[] }>(await apiFetch(`/api/v1/purchase-orders/${po.id}/operational`, { cache: "no-store" }));
-            const supplier = supplierOptions.find(option => option.code.toLocaleUpperCase("en-US") === detail.supplierText?.trim().toLocaleUpperCase("en-US"));
-            const matchesExporter = [detail.supplierText, supplier?.name].some(value =>
-              value?.trim().toLocaleUpperCase("en-US") === draft.exporterText.trim().toLocaleUpperCase("en-US"));
-            return matchesExporter ? detail.items : [];
-          }));
-          return records.flat().filter(item => Number(item.remainingQuantity) > 0);
-        })());
+
+      if (invoiceImporter) {
+        const query = new URLSearchParams({ ipNumber: draft.ipNumber.trim(), importer: invoiceImporter, page: "1", pageSize: "200" });
+        const existing = await readResponse<{ items: Array<{ id: string; ipNumber: string; recordStatus: string;
+          logisticsStatus: string | null; lifecycleStatus: string }> }>(
+          await apiFetch(`/api/v1/processes?${query}`, { cache: "no-store" }));
+        const duplicate = existing.items.find(item => item.ipNumber.trim().toLocaleUpperCase("en-US")
+          === draft.ipNumber.trim().toLocaleUpperCase("en-US"));
+        setInvoiceDuplicate(duplicate ?? null);
+        if (duplicate?.recordStatus === "CANCELLED" || duplicate?.lifecycleStatus === "CLOSED") {
+          setInvoiceError("Este IP está cancelado ou encerrado. Reabra-o ou use o IP REF correto.");
+          return;
+        }
       }
-      const matches = await Promise.all(assignments.map(async assignment => {
-        const candidates = (await poByNumber.get(normalized(assignment.poNumber))!).filter(item => item.productCode === assignment.productCode);
-        const qty = Number(assignment.quantity);
-        const exact = candidates.filter(item => Number(item.remainingQuantity) >= qty);
-        return { ...assignment, candidates, itemId: exact.length === 1 ? exact[0].id : "" };
-      }));
+
+      const assignments = draft.lines.flatMap(line => line.poAssignments.map((assignment, index) => ({
+        key: `${line.sourceRow}:${index}`, sourceRow: line.sourceRow, sourcePoNumber: assignment.poNumber,
+        poNumber: assignment.poNumber, quantity: assignment.quantity, productCode: line.productCode,
+        description: line.description,
+      })));
+      const candidateKey = (productCode: string, sourcePoNumber: string) =>
+        `${normalizePoNumber(sourcePoNumber)}|${productCode.trim().toLocaleUpperCase("en-US")}`;
+      const candidateRequests = new Map<string, { productCode: string; sourcePoNumber: string }>();
+      for (const assignment of assignments) candidateRequests.set(candidateKey(assignment.productCode, assignment.sourcePoNumber), {
+        productCode: assignment.productCode, sourcePoNumber: assignment.sourcePoNumber,
+      });
+      const candidatesByAssignment = new Map<string, InvoiceItemCandidate[]>();
+      if (invoiceImporter) await forEachInBatches([...candidateRequests], 8, async ([key, candidateRequest]) => {
+        const params = new URLSearchParams({ importer: invoiceImporter, productCode: candidateRequest.productCode,
+          sourcePoNumber: candidateRequest.sourcePoNumber,
+          revisingIpNumber: draft.ipNumber.trim() });
+        const result = await readResponse<{ items: InvoiceItemCandidate[] }>(
+          await apiFetch(`/api/v1/purchase-orders/invoice-candidates?${params}`, { cache: "no-store" }));
+        candidatesByAssignment.set(key, result.items);
+      });
+      const matches = assignments.map(assignment => {
+        const candidates = candidatesByAssignment.get(candidateKey(assignment.productCode, assignment.sourcePoNumber)) ?? [];
+        const suggestion = suggestInvoicePoItem(candidates, assignment.productCode, assignment.quantity);
+        return { ...assignment, candidates, itemId: suggestion?.id ?? "", updateProduct: false,
+          updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false };
+      });
       setInvoiceMatches(matches);
-      if (matches.some(match => match.candidates.length === 0)) setInvoiceError("Há linhas sem correspondência de PO e código de produto. Confira o cadastro da PO antes de salvar.");
-      else if (matches.some(match => !match.itemId)) setInvoiceError("Revise as linhas com mais de uma opção ou saldo insuficiente e selecione o item correto.");
+      setInvoiceError(!invoiceImporter ? importerWarning : matches.some(match => match.candidates.length === 0)
+        ? "Nao foi encontrado item na PO indicada. Confira a PO da linha da invoice e o cadastro de produtos."
+        : "");
     } catch (cause) { setInvoiceError(cause instanceof Error ? cause.message : "Não foi possível processar a invoice."); }
     finally { setInvoiceLoading(false); }
   }
 
   async function revalidateInvoiceMatches() {
+    if (!invoiceDraft) return;
+    if (!importer) { setInvoiceError("Selecione uma importadora antes de carregar as POs."); return; }
     setInvoiceLoading(true); setInvoiceError("");
     try {
-      const normalized = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "");
-      const byPo = new Map<string, Promise<InvoiceItemCandidate[]>>();
-      for (const match of invoiceMatches) {
-        const key = normalized(match.poNumber);
-        if (!byPo.has(key)) byPo.set(key, (async () => {
-          const query = new URLSearchParams({ number: match.poNumber, importer, page: "1", pageSize: "200" });
-          const list = await readResponse<{ items: Array<{ id: string; number: string }> }>(await apiFetch(`/api/v1/purchase-orders?${query}`, { cache: "no-store" }));
-          const records = await Promise.all(list.items.filter(po => normalized(po.number) === key).map(async po => readResponse<{ supplierText: string | null; items: InvoiceItemCandidate[] }>(
-            await apiFetch(`/api/v1/purchase-orders/${po.id}/operational`, { cache: "no-store" }))));
-          const exporter = invoiceDraft?.exporterText.trim().toLocaleUpperCase("en-US") ?? "";
-          return records.filter(record => {
-            const supplier = suppliers.find(option => option.code.toLocaleUpperCase("en-US") === record.supplierText?.trim().toLocaleUpperCase("en-US"));
-            return [record.supplierText, supplier?.name].some(value => value?.trim().toLocaleUpperCase("en-US") === exporter);
-          }).flatMap(record => record.items).filter(item => Number(item.remainingQuantity) > 0);
-        })());
+      const duplicateQuery = new URLSearchParams({ ipNumber: invoiceDraft.ipNumber.trim(), importer, page: "1", pageSize: "200" });
+      const existing = await readResponse<{ items: Array<{ id: string; ipNumber: string; recordStatus: string;
+        logisticsStatus: string | null; lifecycleStatus: string }> }>(
+        await apiFetch(`/api/v1/processes?${duplicateQuery}`, { cache: "no-store" }));
+      const duplicate = existing.items.find(item => item.ipNumber.trim().toLocaleUpperCase("en-US")
+        === invoiceDraft.ipNumber.trim().toLocaleUpperCase("en-US"));
+      setInvoiceDuplicate(duplicate ?? null);
+      if (duplicate?.recordStatus === "CANCELLED" || duplicate?.lifecycleStatus === "CLOSED") {
+        setInvoiceError("Este IP está cancelado ou encerrado. Reabra-o ou use o IP REF correto.");
+        return;
       }
-      const refreshed = await Promise.all(invoiceMatches.map(async match => {
-        const candidates = (await byPo.get(normalized(match.poNumber))!).filter(item => item.productCode === match.productCode);
-        const current = candidates.find(item => item.id === match.itemId && Number(item.remainingQuantity) >= Number(match.quantity));
-        const enough = candidates.filter(item => Number(item.remainingQuantity) >= Number(match.quantity));
-        return { ...match, candidates, itemId: current?.id ?? (enough.length === 1 ? enough[0].id : "") };
+      const assignments = invoiceMatches.length > 0 ? invoiceMatches : invoiceAssignmentsFromLines(invoiceDraft.lines).map(match => ({
+        ...match, candidates: [] as InvoiceItemCandidate[], itemId: "", updateProduct: false,
+        updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
       }));
+      const candidateKey = (productCode: string, sourcePoNumber: string) =>
+        `${normalizePoNumber(sourcePoNumber)}|${productCode.trim().toLocaleUpperCase("en-US")}`;
+      const requests = new Map<string, { productCode: string; sourcePoNumber: string }>();
+      for (const match of assignments) requests.set(candidateKey(match.productCode, match.sourcePoNumber), {
+        productCode: match.productCode, sourcePoNumber: match.sourcePoNumber,
+      });
+      const byAssignment = new Map<string, InvoiceItemCandidate[]>();
+      await forEachInBatches([...requests], 8, async ([key, candidateRequest]) => {
+        const params = new URLSearchParams({ importer, productCode: candidateRequest.productCode,
+          sourcePoNumber: candidateRequest.sourcePoNumber,
+          revisingIpNumber: invoiceDraft.ipNumber.trim() });
+        const result = await readResponse<{ items: InvoiceItemCandidate[] }>(
+          await apiFetch(`/api/v1/purchase-orders/invoice-candidates?${params}`, { cache: "no-store" }));
+        byAssignment.set(key, result.items);
+      });
+      const refreshed = assignments.map(match => {
+        const candidates = byAssignment.get(candidateKey(match.productCode, match.sourcePoNumber)) ?? [];
+        const suggestion = suggestInvoicePoItem(candidates, match.productCode, match.quantity);
+        const previous = candidates.find(item => item.id === match.itemId
+          && normalizePoNumber(item.poNumber) === normalizePoNumber(match.sourcePoNumber)
+          && Number(item.remainingQuantity) >= Number(match.quantity));
+        const selected = previous ?? suggestion;
+        return { ...match, candidates, poNumber: selected?.poNumber ?? match.sourcePoNumber,
+          itemId: selected?.id ?? "", confirmCodeMismatch: Boolean(previous && match.confirmCodeMismatch),
+          confirmSupplierMismatch: Boolean(previous && match.confirmSupplierMismatch) };
+      });
       setInvoiceMatches(refreshed);
-      if (refreshed.some(match => !match.candidates.length)) setInvoiceError("Ainda há linhas sem correspondência para a PO e o código informados.");
-      else if (refreshed.some(match => !match.itemId)) setInvoiceError("Selecione o item correto da PO em cada linha pendente.");
-    } catch (cause) { setInvoiceError(cause instanceof Error ? cause.message : "Não foi possível conferir novamente as associações."); }
+      if (refreshed.some(match => !match.candidates.length)) setInvoiceError("Nao foi encontrado item na PO indicada. Confira a PO da linha da invoice e o cadastro de produtos.");
+    } catch (cause) { setInvoiceError(cause instanceof Error ? cause.message : "Não foi possível revalidar as distribuições da invoice."); }
     finally { setInvoiceLoading(false); }
   }
 
@@ -456,15 +548,50 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
         return;
       }
       if (invoiceDraft) {
-        if (invoiceMatches.length === 0 || invoiceMatches.some(match => !match.itemId))
+        const invoiceAllocationTotals = new Map<number, number>();
+        for (const match of invoiceMatches) {
+          invoiceAllocationTotals.set(match.sourceRow,
+            (invoiceAllocationTotals.get(match.sourceRow) ?? 0) + Number(match.quantity));
+        }
+        const hasUnconfirmedCodeMismatch = invoiceMatches.some(match => {
+          const candidate = match.candidates.find(value => value.id === match.itemId);
+          return Boolean(candidate && invoicePoCodeDiffers(match.productCode, candidate.productCode) && !match.confirmCodeMismatch);
+        });
+        const hasUnconfirmedSupplierMismatch = invoiceMatches.some(match => {
+          const candidate = match.candidates.find(value => value.id === match.itemId);
+          return Boolean(candidate && !supplierMatchesExporter(candidate, invoiceDraft.exporterText)
+            && !match.confirmSupplierMismatch);
+        });
+        if (invoiceMatches.length === 0 || invoiceMatches.some(match => !match.itemId || !Number(match.quantity)
+          || Number(match.quantity) > Number(match.candidates.find(candidate => candidate.id === match.itemId)?.remainingQuantity ?? 0))
+          || hasUnconfirmedCodeMismatch || hasUnconfirmedSupplierMismatch
+          || (importerCnpjMismatch && !confirmImporterCnpjMismatch)
+          || invoiceDraft.lines.some(line => Math.abs((invoiceAllocationTotals.get(line.sourceRow) ?? 0) - Number(line.quantity)) > 0.00000001))
           throw new Error("Revise e selecione o item de PO para todas as linhas da invoice.");
+        const productUpdates = new Map<string, Record<string, unknown>>();
+        const poItemUpdates = new Map<string, Record<string, unknown>>();
+        for (const match of invoiceMatches) {
+          const line = invoiceDraft.lines.find(source => source.sourceRow === match.sourceRow);
+          const candidate = match.candidates.find(value => value.id === match.itemId);
+          if (!line || !candidate) continue;
+          if (match.updateProduct && candidate.productId) productUpdates.set(candidate.productCode.toLocaleUpperCase("en-US"), {
+            productCode: candidate.productCode, name: line.description, ncmCode: /^\d{8}$/u.test(line.ncm) ? line.ncm : null,
+            manufacturer: line.manufacturer || null, manufacturerAddress: line.manufacturerAddress || null,
+            manufacturerCountry: line.manufacturerCountry || null,
+          });
+          if (match.updatePoItem) poItemUpdates.set(match.itemId, { itemId: match.itemId,
+            description: line.description, unitPrice: line.unitPrice, currency: "CNY",
+            ncmCode: /^\d{8}$/u.test(line.ncm) ? line.ncm : null });
+        }
         const payload = {
-          process: { importer, supplierText: invoiceDraft.exporterText, ipNumber: number, logisticsStatus: status || null,
+          process: { importer, supplierText: invoiceDraft.exporterText, ipNumber: invoiceDraft.ipNumber.trim(), logisticsStatus: "WAITING SHIPMENT",
             priority: priority || null, notes, reason: automaticAuditReason },
           invoice: { fileName: invoiceDraft.fileName, number: invoiceDraft.invoiceNumber,
             issueDate: /^\d{4}-\d{2}-\d{2}$/u.test(invoiceDraft.invoiceDate) ? invoiceDraft.invoiceDate : null,
             amount: invoiceDraft.totalAmount, currency: "CNY", metadata: {
               invoiceDateText: invoiceDraft.invoiceDate, ipNumberFromInvoice: invoiceDraft.ipNumber,
+              importerCnpj: invoiceDraft.importerCnpj,
+              confirmImporterCnpjMismatch,
               importerText: invoiceDraft.importerText, exporterText: invoiceDraft.exporterText,
               headerPoNumber: invoiceDraft.headerPoNumber, originText: invoiceDraft.originText,
               destinationText: invoiceDraft.destinationText, incoterm: invoiceDraft.incoterm,
@@ -478,13 +605,21 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
                 manufacturerCountry: line.manufacturerCountry, quantity: line.quantity, unit: line.unit,
                 unitPrice: line.unitPrice, netWeightKg: line.netWeightKg, grossWeightKg: line.grossWeightKg,
                 amount: line.amount, poCell: line.poCell })),
-              assignments: invoiceMatches.map(({ sourceRow, poNumber, quantity, productCode, itemId }) =>
-                ({ sourceRow, poNumber, quantity, productCode, itemId })),
+              assignments: invoiceMatches.map(match => {
+                const candidate = match.candidates.find(value => value.id === match.itemId)!;
+                return { sourceRow: match.sourceRow, sourcePoNumber: match.sourcePoNumber, poNumber: candidate.poNumber,
+                  quantity: match.quantity, productCode: match.productCode, poProductCode: candidate.productCode,
+                  confirmCodeMismatch: match.confirmCodeMismatch, confirmSupplierMismatch: match.confirmSupplierMismatch,
+                  poSupplierText: candidate.supplierText, poSupplierName: candidate.supplierName,
+                  poSupplierCode: candidate.supplierCode,
+                  itemId: match.itemId };
+              }),
+              catalogUpdates: { products: [...productUpdates.values()], poItems: [...poItemUpdates.values()] },
             } },
           allocations: invoiceMatches.map(match => ({ itemId: match.itemId, quantity: match.quantity,
             notes: `Invoice ${invoiceDraft.invoiceNumber || invoiceDraft.fileName}, linha ${match.sourceRow}` })),
         };
-        const result = await readResponse<{ id: string }>(await apiFetch("/api/v1/processes/import-invoice", {
+        const result = await readResponse<{ id: string; revision?: boolean }>(await apiFetch("/api/v1/processes/import-invoice", {
           method: "POST", headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
           body: JSON.stringify(payload),
         }));
@@ -525,7 +660,7 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
           <p className="muted">Informe a importadora e os dados que identificam a PO no TOTVS.</p>
           <div className="operational-fields po-header-fields">
             <PurchaseRequestSelect importer={importer} value={purchaseRequestId} choices={purchaseRequests} onChange={selectPurchaseRequest} />
-            <label>Importadora<select required disabled={Boolean(purchaseRequestId)} value={importer} onChange={event => {
+            <label>Importadora<select required disabled={Boolean(purchaseRequestId || invoiceDraft)} value={importer} onChange={event => {
               setImporter(event.target.value); selectPurchaseRequest("");
             }}>
               <option value="">Selecione</option>{importers.map(value => <option key={value} value={value}>{value}</option>)}
@@ -621,7 +756,18 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
             disabled={invoiceLoading || saving} onChange={event => void selectChinaInvoice(event)} /></label>
           {invoiceLoading && <p role="status">Lendo INV e conferindo as POs cadastradas, sem limitar pela idade do pedido…</p>}
           {invoiceDraft && <>
-            <p className="notice" role="status">{invoiceDraft.fileName}: {invoiceDraft.lines.length} linhas, {invoiceMatches.length} associações, {formatNumber(invoiceDraft.totalQuantity)} unidades, {formatNumber(invoiceDraft.totalAmount)} CNY.</p>
+            <p className="notice" role="status">{invoiceDraft.fileName}: {invoiceDraft.lines.length} linhas, {invoiceMatches.length} destinos, {formatNumber(invoiceDraft.totalQuantity)} unidades, {formatNumber(invoiceDraft.totalAmount)} CNY.</p>
+              <p className="muted">CNPJ do importador: {invoiceDraft.importerCnpj || "não identificado"} → {importer || "sem correspondência no cadastro"}.</p>
+            {invoiceDuplicate && <p className="notice" role="alert">
+               {invoiceDuplicate.recordStatus === "DRAFT"
+                 ? `O IP REF ${invoiceDraft.ipNumber} já existe como rascunho. Esta carga preencherá esse cadastro e aplicará as distribuições revisadas.`
+                 : `O IP REF ${invoiceDraft.ipNumber} já existe. Ao confirmar, será criada uma revisão e as distribuições ativas anteriores serão substituídas.`}
+            </p>}
+            {importerCnpjMismatch && <div className="notice error" role="alert">
+              <p>O CNPJ da invoice ({invoiceDraft.importerCnpj || "não identificado"}) diverge do CNPJ cadastrado para {importer} ({importerCnpjs[importer] || "não cadastrado"}).</p>
+              <label><input type="checkbox" checked={confirmImporterCnpjMismatch}
+                onChange={event => setConfirmImporterCnpjMismatch(event.target.checked)} />Confirmo a importadora selecionada apesar da divergencia de CNPJ.</label>
+            </div>}
             <div className="operational-fields">
               <label>Número da invoice<input required maxLength={120} value={invoiceDraft.invoiceNumber}
                 onChange={event => setInvoiceDraft(current => current ? { ...current, invoiceNumber: event.target.value } : current)} /></label>
@@ -630,52 +776,108 @@ export default function NewOperationalRecord({ kind, returnHref }: { kind: "po" 
               <label>Total da invoice (CNY)<input required inputMode="decimal" value={invoiceDraft.totalAmount}
                 onChange={event => setInvoiceDraft(current => current ? { ...current, totalAmount: event.target.value.replace(",", ".") } : current)} /></label>
             </div>
-            <p className="muted">Corrija PO, código ou quantidade nos campos da prévia e use “Revalidar associações” para carregar as linhas e saldos da PO atualizada.</p>
+            <p className="muted">A PO informada em cada linha da INV determina o destino. O sistema sugere o produto cadastrado nessa PO; divergências de código exigem confirmação e podem ser ajustadas manualmente dentro da própria PO. A quantidade original da PO permanece registrada.</p>
             {invoiceDraft.warnings.map(warning => <p className="notice" key={warning}>{warning}</p>)}
-            <div className="totvs-import-actions"><button className="button secondary" type="button" disabled={invoiceLoading || !invoiceMatches.length}
-              onClick={() => void revalidateInvoiceMatches()}>Revalidar associações</button></div>
+            <div className="totvs-import-actions"><button className="button secondary" type="button" disabled={invoiceLoading || !importer}
+              onClick={() => void revalidateInvoiceMatches()}>Revalidar POs e saldos</button></div>
             <div className="totvs-import-table-wrap"><table className="totvs-import-table">
-              <thead><tr><th>Linha</th><th>PO</th><th>Produto</th><th>Quantidade</th><th>Item operacional</th></tr></thead>
-              <tbody>{invoiceMatches.map(match => <tr key={match.key}>
-                <td>{match.sourceRow}</td><td><input aria-label={`PO da linha ${match.sourceRow}`} value={match.poNumber}
-                  onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key ? { ...item, poNumber: event.target.value, itemId: "" } : item))} /></td>
-                <td><input aria-label={`Código do produto da linha ${match.sourceRow}`} value={match.productCode}
-                  onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key ? { ...item, productCode: event.target.value, itemId: "" } : item))} />
-                  <small>{match.description}</small></td>
-                <td><input aria-label={`Quantidade da linha ${match.sourceRow}`} inputMode="decimal" value={match.quantity}
-                  onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key ? { ...item, quantity: event.target.value.replace(",", "."), itemId: "" } : item))} /></td>
-                <td><select required value={match.itemId} onChange={event => setInvoiceMatches(current => {
-                  const next = current.map(item => item.key === match.key ? { ...item, itemId: event.target.value } : item);
-                  if (next.every(item => item.itemId)) setInvoiceError("");
-                  return next;
-                })}>
-                  <option value="">Selecione o item da PO</option>{match.candidates.map(candidate => <option key={candidate.id} value={candidate.id}>
-                    Linha {candidate.lineNumber}: {candidate.productCode} · saldo {formatNumber(candidate.remainingQuantity)} {candidate.unit}
-                  </option>)}
-                </select></td>
-              </tr>)}</tbody>
+              <thead><tr><th>Linha / PO da INV</th><th>Produto da INV</th><th>Quantidade destinada</th><th>Produto cadastrado na PO indicada</th></tr></thead>
+              <tbody>{invoiceMatches.map(match => {
+                const sourceLine = invoiceDraft.lines.find(line => line.sourceRow === match.sourceRow);
+                const rowParts = invoiceMatches.filter(item => item.sourceRow === match.sourceRow);
+                const allocated = rowParts.reduce((total, item) => total + (Number(item.quantity) || 0), 0);
+                const balanced = sourceLine ? Math.abs(allocated - Number(sourceLine.quantity)) <= 0.00000001 : false;
+                const selectedCandidate = match.candidates.find(candidate => candidate.id === match.itemId);
+                const codeMismatch = Boolean(selectedCandidate && invoicePoCodeDiffers(match.productCode, selectedCandidate.productCode));
+                return <tr key={match.key}>
+                  <td>{match.sourceRow}<small>INV: PO {match.sourcePoNumber || "?"}</small></td>
+                  <td>{match.productCode}<small>{match.description}</small></td>
+                  <td><input aria-label={`Quantidade destinada da linha ${match.sourceRow}`} inputMode="decimal" value={match.quantity}
+                    onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
+                      ? { ...item, quantity: event.target.value.replace(",", "."), itemId: "", updateProduct: false,
+                        updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false } : item))} />
+                    <small>{formatNumber(String(allocated))} / {formatNumber(sourceLine?.quantity ?? "0")} {sourceLine?.unit}</small>
+                    {!balanced && <small className="notice error">A soma distribuída difere da quantidade da invoice.</small>}
+                  </td>
+                  <td><select required value={match.itemId} onChange={event => setInvoiceMatches(current => current.map(item => {
+                    if (item.key !== match.key) return item;
+                    const candidate = item.candidates.find(value => value.id === event.target.value);
+                    return { ...item, itemId: event.target.value, poNumber: candidate?.poNumber ?? "",
+                      updateProduct: false, updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false };
+                  }))}>
+                    <option value="">Selecione PO e item</option>{match.candidates.map(candidate => <option key={candidate.id} value={candidate.id}
+                      disabled={Number(candidate.remainingQuantity) < Number(match.quantity)}>
+                      PO {candidate.poNumber} | {candidate.productCode} | linha {candidate.lineNumber} | saldo {formatNumber(candidate.remainingQuantity)} {candidate.unit}
+                    </option>)}
+                  </select>
+                    {selectedCandidate && <small>{selectedCandidate.description}</small>}
+                    {codeMismatch && selectedCandidate && <div className="notice error" role="alert">
+                      <p>Código divergente: invoice {match.productCode}; produto da PO {selectedCandidate.productCode}. A distribuição usará o produto da PO indicada e manterá o código original da invoice.</p>
+                      <label><input type="checkbox" checked={match.confirmCodeMismatch}
+                        onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
+                          ? { ...item, confirmCodeMismatch: event.target.checked } : item))} />Confirmo esta divergencia e aprovo a distribuicao.</label>
+                    </div>}
+                    {selectedCandidate && !supplierMatchesExporter(selectedCandidate, invoiceDraft.exporterText) && <div className="notice error" role="alert">
+                      <p>Fornecedor divergente: PO {selectedCandidate.poNumber} — {[selectedCandidate.supplierName, selectedCandidate.supplierText, selectedCandidate.supplierCode].filter(Boolean).join(" · ") || "sem fornecedor cadastrado"}; Exporter da invoice — {invoiceDraft.exporterText}. Os dois valores serão preservados.</p>
+                      <label><input type="checkbox" checked={match.confirmSupplierMismatch}
+                        onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
+                          ? { ...item, confirmSupplierMismatch: event.target.checked } : item))} />Confirmo a divergencia de fornecedor e aprovo a distribuicao.</label>
+                    </div>}
+                    {match.itemId && <details><summary>Comparar invoice e cadastros</summary>
+                      {(() => {
+                        const candidate = match.candidates.find(value => value.id === match.itemId);
+                        return candidate ? <>
+                          <p>Cadastro do produto: {candidate.productName ?? "não cadastrado"} | NCM {candidate.productNcmCode ?? "—"} | {candidate.manufacturer ?? "fabricante não cadastrado"}</p>
+                          <p>Invoice: {sourceLine?.description} | NCM {sourceLine?.ncm || "—"} | {sourceLine?.manufacturer || "fabricante não informado"}</p>
+                          <p>Item da PO: {candidate.description} | unidade {candidate.unit} | NCM {candidate.poNcmCode ?? "—"} | {candidate.unitPrice ?? "—"} {candidate.currency ?? ""}</p>
+                          <p>Linha da invoice: {sourceLine?.unitPrice} CNY por {sourceLine?.unit} | NCM {sourceLine?.ncm || "—"}</p>
+                        </> : null;
+                      })()}
+                    </details>}
+                    {match.itemId && <div className="operational-fields">
+                      <label><input type="checkbox" disabled={!match.candidates.find(candidate => candidate.id === match.itemId)?.productId}
+                        checked={match.updateProduct} onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
+                          ? { ...item, updateProduct: event.target.checked } : item))} />Atualizar cadastro do produto</label>
+                      <label><input type="checkbox" checked={match.updatePoItem} onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
+                        ? { ...item, updatePoItem: event.target.checked } : item))} />Atualizar este item da PO</label>
+                    </div>}
+                  </td>
+                </tr>;
+              })}</tbody>
             </table></div>
             <button className="button secondary" type="button" disabled={saving} onClick={() => {
-              setInvoiceDraft(null); setInvoiceMatches([]); setInvoiceError("");
+              setInvoiceDraft(null); setInvoiceMatches([]); setInvoiceDuplicate(null); setInvoiceError("");
             }}>Remover invoice e continuar manualmente</button>
           </>}
           {invoiceError && <p className="notice error" role="alert">{invoiceError}</p>}
         </div>
         <div className="ip-entry-grid">
-        {invoiceDraft ? <label>Supplier (Exporter da invoice)<input readOnly value={invoiceDraft.exporterText} /></label> :
+        {invoiceDraft ? <label>Fornecedor (Exporter da invoice)<input readOnly value={invoiceDraft.exporterText} /></label> :
           <label>Supplier<select required value={supplier} onChange={event => setSupplier(event.target.value)}>
             <option value="">Selecione</option>{suppliers.map(item => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
           </select></label>}
-        <label>Importadora<select required value={importer} onChange={event => setImporter(event.target.value)}>
+        <label>Importadora<select required value={importer} onChange={event => {
+          setImporter(event.target.value); setConfirmImporterCnpjMismatch(false); setInvoiceDuplicate(null); setInvoiceError("");
+          setInvoiceMatches(current => current.map(match => ({ ...match, itemId: "", candidates: [],
+            updateProduct: false, updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false })));
+        }}>
           <option value="">Selecione</option>{importers.map(value => <option key={value} value={value}>{value}</option>)}
         </select></label>
-        <label>Número do IP<input required maxLength={80} value={number} onChange={event => setNumber(event.target.value)} /></label>
-        <label>Status logístico<OperationalOptionSelect entity="logistics_status" value={status} values={options} onChange={setStatus} /></label>
+        <label>IP Reference<input required maxLength={80} readOnly={Boolean(invoiceDraft)}
+          value={invoiceDraft?.ipNumber ?? number} onChange={event => setNumber(event.target.value)} /></label>
+        {invoiceDraft ? <label>Logistics status<input readOnly value="WAITING SHIPMENT" /></label> :
+          <label>Logistics status<OperationalOptionSelect entity="logistics_status" value={status} values={options} onChange={setStatus} /></label>}
         <label>Prioridade<OperationalOptionSelect entity="priority" value={priority} values={options}
           onChange={setPriority} /></label>
         <label>Observações<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
         </div>
-        <button className="button" disabled={saving || !importer || Boolean(invoiceDraft && (invoiceError || invoiceMatches.some(match => !match.itemId)))}>
+        <button className="button" disabled={saving || !importer || Boolean(invoiceDraft && (invoiceError
+          || invoiceMatches.some(match => !match.itemId || !Number(match.quantity)
+            || Number(match.quantity) > Number(match.candidates.find(candidate => candidate.id === match.itemId)?.remainingQuantity ?? 0))
+          || invoiceHasUnconfirmedCodeMismatch || invoiceHasUnconfirmedSupplierMismatch
+          || (importerCnpjMismatch && !confirmImporterCnpjMismatch)
+          || invoiceDraft.lines.some(line => Math.abs(invoiceMatches.filter(match => match.sourceRow === line.sourceRow)
+            .reduce((total, match) => total + (Number(match.quantity) || 0), 0) - Number(line.quantity)) > 0.00000001)))}>
           {saving ? "Salvando…" : invoiceDraft ? "Criar IP, distribuir POs e registrar invoice" : "Salvar IP"}</button>
       </section>}
     </form>}

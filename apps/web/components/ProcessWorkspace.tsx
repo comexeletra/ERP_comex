@@ -12,13 +12,14 @@ import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } fr
 type Cost = { id: string; type: string; currency: string; amount: string; status: string; sourceSheetName: string; sourceRowNumber: number; sourceColumn: string };
 type Order = { id: string; number: string; importer: string; linkSource: string };
 type PurchaseOrderChoice = { id: string; number: string; importer: string };
+type CancellationDestination = { type: "IDLE" } | { type: "EXISTING"; processId: string } | { type: "NEW"; ipNumber: string };
 type PurchaseOrderItemChoice = { id: string; lineNumber: number; productCode: string; description: string;
   orderedQuantity: string; remainingQuantity: string; unit: string | null; sourceStatus: string | null };
 type OperationalAllocation = { id: string; poId: string; poNumber: string; productCode: string; quantity: string;
   unit: string; poItemRemainingQuantity?: string };
 type Process = { id: string; ipNumber: string; importer: string; supplierEntryId?: string | null; supplierText: string | null; supplierName?: string | null; logisticsStatus: string | null;
   qualityStatus: string; sourceKind: string; priority: string | null; notes: string;
-  version: string; lifecycleStatus?: "OPEN" | "CLOSED"; closedAt: string | null;
+  version: string; lifecycleStatus?: "OPEN" | "CLOSED"; recordStatus?: "DRAFT" | "ACTIVE" | "CANCELLED"; closedAt: string | null;
   closedBy: string | null; closeReason: string | null;
   processDocumentCount?: number;
   purchaseOrders: Order[]; historicalCosts: Cost[];
@@ -71,6 +72,9 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
   const [saving, setSaving] = useState(false);
   const [closing, setClosing] = useState(false);
   const [reopening, setReopening] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancellationRoutes, setCancellationRoutes] = useState<Record<string, CancellationDestination>>({});
+  const [destinationIps, setDestinationIps] = useState<Array<{ id: string; ipNumber: string; recordStatus?: string }>>([]);
   const [notice, setNotice] = useState("");
   async function readSavedProcess(): Promise<Process> {
     const response = await apiFetch(`/api/v1/processes/${id}`, { cache: "no-store" });
@@ -193,10 +197,19 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
       if (detail.status === 404 || items.status === 404) throw new Error("IP não encontrado ou fora do seu escopo.");
       if (!detail.ok || !items.ok || !identity.ok) throw new Error("Não foi possível carregar o IP.");
       const [processValue, lineValue, user] = await Promise.all([detail.json() as Promise<Process>, items.json() as Promise<LinePage>, identity.json() as Promise<{ roles: string[] }>]);
+      const destinationQuery = new URLSearchParams({ importer: processValue.importer, page: "1", pageSize: "200" });
+      const destinationResponse = await apiFetch(`/api/v1/processes?${destinationQuery}`, { signal: controller.signal });
+      const destinations = destinationResponse.ok
+        ? (await destinationResponse.json() as { items: Array<{ id: string; ipNumber: string; importer: string;
+          recordStatus?: string; lifecycleStatus?: string }> }).items
+        : [];
       if (!controller.signal.aborted) {
         setCompatibilityWarning(processValue.lifecycleStatus === "OPEN" || processValue.lifecycleStatus === "CLOSED"
           ? "" : "A API do IP está desatualizada. O ciclo e as ações de edição ficarão indisponíveis até sua atualização.");
         setProcess(processValue); setLines(lineValue); setRoles(user.roles);
+        setDestinationIps(destinations.filter(value => value.id !== processValue.id && value.importer === processValue.importer
+          && value.lifecycleStatus !== "CLOSED" && value.recordStatus !== "CANCELLED"));
+        setCancellationRoutes(Object.fromEntries(processValue.purchaseOrders.map(order => [order.id, { type: "IDLE" as const }])));
         setIpNumberDraft(processValue.ipNumber);
         setImporterDraft(processValue.importer);
         setLogisticsStatusDraft(processValue.logisticsStatus ?? "");
@@ -234,6 +247,36 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
       setNotice("IP atualizado."); setRetry(value => value + 1);
     } catch (cause) { setSaveError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setSaving(false); }
+  }
+  async function cancelProcess(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!process) return;
+    setCancelling(true); setSaveError(undefined); setNotice("");
+    try {
+      const purchaseOrders = process.purchaseOrders.map(order => {
+        const destination = cancellationRoutes[order.id] ?? { type: "IDLE" as const };
+        if (destination.type === "EXISTING") return { purchaseOrderId: order.id, destinationType: "EXISTING" as const, processId: destination.processId };
+        if (destination.type === "NEW") return { purchaseOrderId: order.id, destinationType: "NEW" as const, ipNumber: destination.ipNumber.trim() };
+        return { purchaseOrderId: order.id, destinationType: "IDLE" as const };
+      });
+      if (purchaseOrders.some(item => item.destinationType === "NEW" && !item.ipNumber)) throw new Error("Informe o IP REF para cada novo destino.");
+      if (purchaseOrders.some(item => item.destinationType === "EXISTING" && !item.processId)) throw new Error("Selecione um IP para cada PO encaminhada.");
+      const response = await apiFetch("/api/v1/processes/" + id + "/cancel", { method: "POST",
+        headers: { "content-type": "application/json", "X-Record-Version": process.version },
+        body: JSON.stringify({ reason: automaticAuditReason, purchaseOrders }) });
+      const result = await readApiJson<{ status: string; createdDraftIps: number; releasedAllocations: number }>(response);
+      if ((await readSavedProcess()).recordStatus !== "CANCELLED") throw new Error("O IP nao aparece como cancelado na releitura.");
+      const routeSummary = purchaseOrders.map(route => {
+        const order = process.purchaseOrders.find(item => item.id === route.purchaseOrderId);
+        const destination = route.destinationType === "IDLE" ? "sem vinculo"
+          : route.destinationType === "EXISTING" ? destinationIps.find(item => item.id === route.processId)?.ipNumber ?? "IP existente"
+            : route.ipNumber;
+        return "PO " + (order?.number ?? route.purchaseOrderId) + " -> " + destination;
+      }).join("; ");
+      setNotice("IP cancelado. " + result.releasedAllocations + " distribuicao(oes) liberada(s); "
+        + result.createdDraftIps + " novo(s) IP(s) aguardando invoice. " + routeSummary);
+      setRetry(value => value + 1);
+    } catch (cause) { setSaveError(cause instanceof Error ? cause.message : "Nao foi possivel cancelar o IP."); }
+    finally { setCancelling(false); }
   }
   async function closeProcess(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!process) return;
@@ -275,6 +318,8 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
     {!loading && !error && process && lines && <>
       <header className="page-header"><p className="eyebrow">IP · {process.importer} · Fornecedor: {process.supplierName ? `${process.supplierText} · ${process.supplierName}` : process.supplierText ?? "não informado"}</p><h1>{process.ipNumber}</h1><p>Status logístico: {process.logisticsStatus ?? "não informado"}. Ciclo do IP: {process.lifecycleStatus === "CLOSED" ? "encerrado" : process.lifecycleStatus === "OPEN" ? "aberto" : "indisponível"}. Qualidade: {process.qualityStatus}. Origem: {process.sourceKind}.</p></header>
       {compatibilityWarning && <p className="notice" role="status">{compatibilityWarning}</p>}
+      {process.recordStatus === "DRAFT" && <p className="notice" role="status">IP criado durante o cancelamento. As POs ficam sem saldo reservado ate a invoice ser carregada.</p>}
+      {process.recordStatus === "CANCELLED" && <p className="notice" role="status">IP cancelado. As distribuicoes foram liberadas e as POs encaminhadas conforme a decisao registrada.</p>}
       <section className="metric-grid"><Metric label="POs vinculadas" value={process.purchaseOrders.length} /><Metric label="Linhas históricas" value={lines.totalCount} /><Metric label="Custos históricos" value={process.historicalCosts.length} /></section>
       <section className="card"><h2>Dados operacionais do IP</h2>
         <p>Prioridade: {process.priority ?? "não informada"}. Observações: {process.notes || "—"}.</p>
@@ -286,7 +331,7 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
             <button className="button" disabled={reopening}>{reopening ? "Reabrindo…" : "Reabrir IP"}</button>
           </form></details>}
         </>}
-        {canWrite && process.lifecycleStatus === "OPEN" && <>
+        {canWrite && process.lifecycleStatus === "OPEN" && process.recordStatus === "ACTIVE" && <>
           <details className="process-action"><summary className="process-action-trigger">Editar IP</summary><form className="stack-form" onSubmit={saveProcess}>
           <label>Importadora<select required disabled={process.sourceKind !== "MANUAL" || process.purchaseOrders.length > 0
             || process.operationalAllocations.length > 0 || process.historicalCosts.length > 0
@@ -313,7 +358,36 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
       <section className="card"><h2>POs vinculadas</h2><p className="muted">Vínculos históricos e operacionais. O IP pode atender várias POs, e uma PO pode aparecer em vários IPs.</p>
         {process.purchaseOrders.length === 0 && <p>Nenhuma PO vinculada. Linhas sem PO podem aparecer nas observações.</p>}
         {process.purchaseOrders.map(order => <p key={order.id}><Link className="text-link" href={`/purchase-orders/${order.id}`}>PO {order.number} →</Link> · {order.importer} · {order.linkSource}</p>)}
-        {canWrite && process.lifecycleStatus === "OPEN" && <div className="operational-allocation">
+        {canWrite && process.lifecycleStatus === "OPEN" && process.recordStatus !== "CANCELLED" && <details className="process-action">
+          <summary className="process-action-trigger">Cancelar IP e encaminhar POs</summary>
+          <form className="stack-form" onSubmit={cancelProcess}>
+            <p>Escolha para cada PO se ela fica sem vinculo, segue para um IP existente ou aguarda invoice em um novo IP. O encaminhamento nao reserva quantidades; a invoice informara a distribuicao.</p>
+            {process.purchaseOrders.length === 0 && <p>Este IP nao tem POs vinculadas.</p>}
+            {process.purchaseOrders.map(order => {
+              const route = cancellationRoutes[order.id] ?? { type: "IDLE" as const };
+              const quantities = process.operationalAllocations.filter(allocation => allocation.poId === order.id)
+                .map(allocation => allocation.productCode + ": " + formatNumber(allocation.quantity) + " " + allocation.unit);
+              return <div className="operational-fields" key={order.id}>
+                <strong>PO {order.number}</strong>
+                <small>{quantities.length ? "Quantidades alocadas: " + quantities.join("; ") : "Nenhuma quantidade ativa alocada."}</small>
+                <label>Destino<select value={route.type} onChange={event => setCancellationRoutes(current => ({
+                  ...current, [order.id]: event.target.value === "EXISTING" ? { type: "EXISTING", processId: "" }
+                    : event.target.value === "NEW" ? { type: "NEW", ipNumber: "" } : { type: "IDLE" },
+                }))}>
+                  <option value="IDLE">Deixar sem vinculo</option><option value="EXISTING">IP existente</option><option value="NEW">Criar IP em rascunho</option>
+                </select></label>
+                {route.type === "EXISTING" && <label>IP de destino<select required value={route.processId}
+                  onChange={event => setCancellationRoutes(current => ({ ...current, [order.id]: { type: "EXISTING", processId: event.target.value } }))}>
+                  <option value="">Selecione</option>{destinationIps.map(target => <option key={target.id} value={target.id}>{target.ipNumber} · {target.recordStatus}</option>)}
+                </select></label>}
+                {route.type === "NEW" && <label>Novo IP REF<input required maxLength={80} value={route.ipNumber}
+                  onChange={event => setCancellationRoutes(current => ({ ...current, [order.id]: { type: "NEW", ipNumber: event.target.value } }))} /></label>}
+              </div>;
+            })}
+            <button className="button" disabled={cancelling}>{cancelling ? "Cancelando..." : "Cancelar IP e confirmar destinos"}</button>
+          </form>
+        </details>}
+        {canWrite && process.lifecycleStatus === "OPEN" && process.recordStatus === "ACTIVE" && <div className="operational-allocation">
           <div className="allocation-heading">
             <div><h3>Distribuir item de uma PO</h3>
               <p>Escolha o item, confira o saldo e defina quanto ficará neste IP. A PO será vinculada ao confirmar.</p>

@@ -62,6 +62,27 @@ const updateAllocation = z.object({
   || value.factoryShipDate !== undefined);
 const cancelAllocation = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
 const closeProcess = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
+const cancelProcess = z.object({
+  reason: z.string().trim().min(3).max(1000),
+  purchaseOrders: z.array(z.discriminatedUnion("destinationType", [
+    z.object({ purchaseOrderId: z.uuid(), destinationType: z.literal("IDLE") }).strict(),
+    z.object({ purchaseOrderId: z.uuid(), destinationType: z.literal("EXISTING"), processId: z.uuid() }).strict(),
+    z.object({ purchaseOrderId: z.uuid(), destinationType: z.literal("NEW"), ipNumber: z.string().trim().min(1).max(80) }).strict(),
+  ])).max(200),
+}).strict();
+const invoiceCandidateQuery = z.object({
+  importer: z.string().trim().min(1).max(120),
+  productCode: z.string().trim().min(1).max(120),
+  sourcePoNumber: z.string().trim().min(1).max(80),
+  revisingIpNumber: z.string().trim().max(80).optional(),
+}).strict();
+const invoiceCatalogUpdates = z.object({
+  products: z.array(z.object({ productCode: z.string().trim().min(1).max(120),
+    name: z.string().trim().min(1).max(2000), ncmCode: z.string().regex(/^\d{8}$/u).nullable(),
+    manufacturer: nullableText(240), manufacturerAddress: nullableText(500), manufacturerCountry: nullableText(120) }).strict()).max(1000),
+  poItems: z.array(z.object({ itemId: z.uuid(), description: z.string().trim().min(1).max(1000),
+    unitPrice: nonnegative, currency: z.string().regex(/^[A-Z]{3}$/u), ncmCode: z.string().regex(/^\d{8}$/u).nullable() }).strict()).max(1000),
+}).strict();
 const uuid = z.uuid();
 
 export class BusinessError extends Error {
@@ -70,6 +91,12 @@ export class BusinessError extends Error {
 export function problem(reply: FastifyReply, status: number, code: string, detail: string) {
   return reply.code(status).send({ type: "about:blank", title: detail, status, detail,
     instance: reply.request.url.split("?", 1)[0], traceId: reply.request.id, code });
+}
+function normalizePoNumber(value: string): string {
+  return value.toLocaleUpperCase("en-US").replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "");
+}
+function normalizeSupplier(value: string | null | undefined): string {
+  return (value ?? "").toLocaleUpperCase("en-US").replace(/[^A-Z0-9]/gu, "");
 }
 export function keyFrom(request: FastifyRequest): string {
   const key = request.headers["idempotency-key"];
@@ -195,10 +222,64 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const command = await receipt(client, auth.actor.userId, key, "IP_INVOICE_IMPORT", body);
         if (command.existingId) return { id: command.existingId, replayed: true };
         await knownImporter(client, body.process.importer);
+        const invoiceImporterCnpj = typeof body.invoice.metadata.importerCnpj === "string"
+          ? body.invoice.metadata.importerCnpj.replace(/\D/gu, "") : "";
+        const importerCnpj = invoiceImporterCnpj.length === 14 ? await client.query(
+          `SELECT 1 FROM catalog.operational_value
+           WHERE entity_key = 'IMPORTER' AND value = $1
+             AND regexp_replace(coalesce(cnpj, ''), '[^0-9]', '', 'g') = $2`,
+          [body.process.importer, invoiceImporterCnpj]) : { rowCount: 0 };
+        const confirmImporterCnpjMismatch = body.invoice.metadata.confirmImporterCnpjMismatch === true;
+        if (!importerCnpj.rowCount && !confirmImporterCnpjMismatch) {
+          throw new BusinessError(409, "INVOICE_IMPORTER_CNPJ_MISMATCH",
+            "Confirme a selecao manual quando o CNPJ do cabecalho nao corresponder a importadora selecionada.");
+        }
+        const invoiceIpReference = typeof body.invoice.metadata.ipNumberFromInvoice === "string"
+          ? body.invoice.metadata.ipNumberFromInvoice.trim() : "";
+        if (!invoiceIpReference || invoiceIpReference.toLocaleUpperCase("en-US") !== body.process.ipNumber.trim().toLocaleUpperCase("en-US")) {
+          throw new BusinessError(400, "INVOICE_IP_REFERENCE_MISMATCH", "IP REF must match the invoice header.");
+        }
         const invoiceAssignments = z.array(z.object({ itemId: z.uuid(), poNumber: z.string().trim().min(1).max(80),
-          quantity, productCode: z.string().trim().min(1).max(120), sourceRow: z.number().int().positive() }).strict())
+          sourcePoNumber: z.string().trim().min(1).max(80), poProductCode: z.string().trim().min(1).max(120),
+          confirmCodeMismatch: z.boolean(), confirmSupplierMismatch: z.boolean(), quantity,
+          productCode: z.string().trim().min(1).max(120),
+          sourceRow: z.number().int().positive() }).strict())
           .min(1).max(2000).safeParse(body.invoice.metadata.assignments);
-        if (!invoiceAssignments.success) throw new BusinessError(400, "INVALID_INVOICE_ASSIGNMENTS", "A invoice precisa identificar a PO e o produto de cada associação.");
+        if (!invoiceAssignments.success) throw new BusinessError(400, "INVALID_INVOICE_ASSIGNMENTS", "Invoice assignments are required.");
+        const invoiceLines = z.array(z.object({ sourceRow: z.number().int().positive(),
+          productCode: z.string().trim().min(1).max(120), quantity, poCell: z.string() }).passthrough())
+          .min(1).max(2000).safeParse(body.invoice.metadata.lines);
+        if (!invoiceLines.success) throw new BusinessError(400, "INVALID_INVOICE_LINES", "Invoice lines are required.");
+        const lineByRow = new Map(invoiceLines.data.map(line => [line.sourceRow, line]));
+        const assignedByRow = new Map<number, number>();
+        for (const assignment of invoiceAssignments.data) {
+          const sourceLine = lineByRow.get(assignment.sourceRow);
+          const sourcePoNumbers = sourceLine
+            ? [...sourceLine.poCell.matchAll(/\bPO\s*([0-9]{3,})/giu)].map(match => normalizePoNumber(match[0])) : [];
+          if (!sourceLine || sourceLine.productCode !== assignment.productCode
+            || !sourcePoNumbers.includes(normalizePoNumber(assignment.sourcePoNumber))
+            || normalizePoNumber(assignment.poNumber) !== normalizePoNumber(assignment.sourcePoNumber)) {
+            throw new BusinessError(400, "INVOICE_LINE_MISMATCH", "Assignment does not match the source invoice line.");
+          }
+          if (assignment.productCode.trim().toLocaleUpperCase("en-US")
+            !== assignment.poProductCode.trim().toLocaleUpperCase("en-US")
+            && !assignment.confirmCodeMismatch) {
+            throw new BusinessError(400, "INVOICE_CODE_MISMATCH_UNCONFIRMED", "Confirm the product code divergence before approving this PO allocation.");
+          }
+          assignedByRow.set(assignment.sourceRow,
+            (assignedByRow.get(assignment.sourceRow) ?? 0) + Number(assignment.quantity));
+        }
+        if (invoiceLines.data.some(line => Math.abs((assignedByRow.get(line.sourceRow) ?? 0) - Number(line.quantity)) > 0.00000001)
+          || assignedByRow.size !== invoiceLines.data.length) {
+          throw new BusinessError(400, "INVOICE_LINE_QUANTITY_MISMATCH", "Assignments must total the source line quantity.");
+        }
+        const parsedCatalogUpdates = invoiceCatalogUpdates.safeParse(body.invoice.metadata.catalogUpdates ?? { products: [], poItems: [] });
+        if (!parsedCatalogUpdates.success) throw new BusinessError(400, "INVALID_INVOICE_CATALOG_UPDATES", "Revise the selected product and PO catalog updates.");
+        const catalogUpdates = parsedCatalogUpdates.data;
+        const poProductCodes = new Set(invoiceAssignments.data.map(item => item.poProductCode.toLocaleUpperCase("en-US")));
+        if (catalogUpdates.products.some(update => !poProductCodes.has(update.productCode.toLocaleUpperCase("en-US")))) {
+          throw new BusinessError(400, "INVOICE_CATALOG_UPDATE_MISMATCH", "Catalog updates must match products and PO items selected for this invoice.");
+        }
         const aggregated = new Map<string, number>();
         for (const allocation of body.allocations) {
           aggregated.set(allocation.itemId, (aggregated.get(allocation.itemId) ?? 0) + Number(allocation.quantity));
@@ -210,6 +291,9 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         if (assignedTotals.size !== aggregated.size || [...aggregated].some(([itemId, total]) =>
           Math.abs(total - (assignedTotals.get(itemId) ?? Number.NaN)) > 0.00000001)) {
           throw new BusinessError(400, "INVOICE_ALLOCATION_MISMATCH", "As quantidades distribuídas não conferem com as associações da invoice.");
+        }
+        if (catalogUpdates.poItems.some(update => !aggregated.has(update.itemId))) {
+          throw new BusinessError(400, "INVOICE_CATALOG_UPDATE_MISMATCH", "PO item updates must match selected invoice allocations.");
         }
         const exporterText = typeof body.invoice.metadata.exporterText === "string"
           ? body.invoice.metadata.exporterText.trim() : "";
@@ -228,35 +312,112 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           throw new BusinessError(409, "PO_ITEM_MISMATCH", "Uma ou mais linhas selecionadas não pertencem à importadora do IP.");
         }
         const byItemId = new Map(matchedItems.rows.map(item => [item.id, item]));
-        const normalizePo = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "");
-        const normalizeSupplier = (value: string | null) => value?.trim().toLocaleUpperCase("en-US") ?? "";
-        const supplierEntityIds = new Set(matchedItems.rows.map(item => item.supplier_entry_id).filter((id): id is string => id !== null));
-        if (supplierEntityIds.size !== 1 || matchedItems.rows.some(item => !item.supplier_entry_id ||
-          (normalizeSupplier(item.supplier_text) !== normalizeSupplier(exporterText)
-            && normalizeSupplier(item.supplier_name) !== normalizeSupplier(exporterText)
-            && normalizeSupplier(item.supplier_code) !== normalizeSupplier(exporterText)))) {
-          throw new BusinessError(409, "PO_SUPPLIER_MISMATCH", "O Exporter da invoice não corresponde ao fornecedor cadastrado na SC/PO de uma ou mais POs selecionadas.");
-        }
+        const supplierByItemId = new Map(matchedItems.rows.map(item => [item.id, {
+          supplierEntryId: item.supplier_entry_id, supplierText: item.supplier_text,
+          supplierName: item.supplier_name, supplierCode: item.supplier_code,
+          matchesExporter: [item.supplier_text, item.supplier_name, item.supplier_code]
+            .some(value => normalizeSupplier(value) === normalizeSupplier(exporterText)),
+        }]));
         for (const assignment of invoiceAssignments.data) {
           const item = byItemId.get(assignment.itemId);
-          if (!item || item.product_code !== assignment.productCode || normalizePo(item.number) !== normalizePo(assignment.poNumber)) {
+          if (!item || item.product_code !== assignment.poProductCode
+            || normalizePoNumber(item.number) !== normalizePoNumber(assignment.poNumber)
+            || normalizePoNumber(item.number) !== normalizePoNumber(assignment.sourcePoNumber)) {
             throw new BusinessError(409, "PO_ITEM_MISMATCH", "O item selecionado não corresponde à PO e ao produto indicados na invoice.");
           }
+          const supplier = supplierByItemId.get(assignment.itemId)!;
+          if (!supplier.matchesExporter && !assignment.confirmSupplierMismatch) {
+            throw new BusinessError(400, "INVOICE_SUPPLIER_MISMATCH_UNCONFIRMED",
+              "Confirme a divergencia entre o Exporter da invoice e o fornecedor da PO.");
+          }
         }
-        const processId = randomUUID();
-        await client.query(
-          `INSERT INTO imports.import_process
-           (id,importer,ip_number,normalized_ip_number,logistics_status,priority,notes,source_kind,version,supplier_text,supplier_entry_id,
-            incoterm,port_loading,port_discharge)
-           VALUES ($1,$2,$3,upper($3),$4,$5,$6,'CHINA_INVOICE',1,$7,$8,$9,$10,$11)`,
-          [processId, body.process.importer, body.process.ipNumber, body.process.logisticsStatus,
-            body.process.priority, body.process.notes, exporterText, [...supplierEntityIds][0],
-            typeof body.invoice.metadata.incoterm === "string" ? body.invoice.metadata.incoterm : null,
-            typeof body.invoice.metadata.originText === "string" ? body.invoice.metadata.originText : null,
-            typeof body.invoice.metadata.destinationText === "string" ? body.invoice.metadata.destinationText : null],
-        );
-        await record(client, "IMPORT_PROCESS", processId, "IMPORT_PROCESS", processId, "CREATE", null,
-          { ...body.process, source: "CHINA_INVOICE", invoiceNumber: body.invoice.number }, auth.actor, body.process.reason);
+        const supplierIdsForProcess = new Set([...supplierByItemId.values()].map(item => item.supplierEntryId));
+        const processSupplierEntryId = [...supplierByItemId.values()].every(item => item.matchesExporter && item.supplierEntryId)
+          && supplierIdsForProcess.size === 1 ? [...supplierIdsForProcess][0] : null;
+        const previousProcess = await client.query<Record<string, unknown>>(
+          `SELECT * FROM imports.import_process WHERE normalized_ip_number = upper(btrim($1)) FOR UPDATE`,
+          [body.process.ipNumber]);
+        let processId: string;
+        let isRevision = false;
+        if (previousProcess.rows[0]) {
+          const previous = previousProcess.rows[0];
+          if (previous.importer !== body.process.importer) {
+            throw new BusinessError(409, "IP_REFERENCE_CONFLICT", "IP REF already belongs to another importer.");
+          }
+          if (previous.record_status === "CANCELLED") {
+            throw new BusinessError(409, "CANCELLED_IP_REFERENCE", "A cancelled IP cannot be revised.");
+          }
+          if (previous.lifecycle_status === "CLOSED") {
+            throw new BusinessError(409, "CLOSED_IP_REVISION", "Reopen the IP before revising its invoice.");
+          }
+          isRevision = previous.record_status !== "DRAFT";
+          processId = String(previous.id);
+          if (isRevision) {
+            const dependentDocuments = await client.query(
+              `SELECT 1 FROM imports.process_document WHERE process_id = $1 AND status = 'ACTIVE'
+                AND kind <> 'INVOICE' AND purchase_order_item_id IS NOT NULL LIMIT 1`, [processId]);
+            if (dependentDocuments.rowCount) {
+              throw new BusinessError(409, "INVOICE_REVISION_HAS_LINKED_DOCUMENTS", "A linked BL/NF document must be reviewed before replacing this invoice.");
+            }
+            const oldDocuments = await client.query<Record<string, unknown>>(
+              `SELECT * FROM imports.process_document WHERE process_id = $1 AND kind = 'INVOICE' AND status = 'ACTIVE' FOR UPDATE`, [processId]);
+            for (const document of oldDocuments.rows) {
+              await client.query(`UPDATE imports.process_document SET status = 'CANCELLED', version = version + 1, updated_at = now() WHERE id = $1`, [document.id]);
+              await record(client, "IMPORT_PROCESS", processId, "PROCESS_DOCUMENT", String(document.id), "REVISION_CANCEL",
+                document, { ...document, status: "CANCELLED" }, auth.actor, "Substituida por nova revisao da invoice.");
+            }
+            const oldAllocations = await client.query<Record<string, unknown>>(
+              `SELECT * FROM procurement.po_item_allocation WHERE process_id = $1 AND status = 'ACTIVE' FOR UPDATE`, [processId]);
+            for (const allocation of oldAllocations.rows) {
+              await client.query(`UPDATE procurement.po_item_allocation SET status = 'CANCELLED', version = version + 1, updated_at = now() WHERE id = $1`, [allocation.id]);
+              await record(client, "IMPORT_PROCESS", processId, "PO_ITEM_ALLOCATION", String(allocation.id), "REVISION_CANCEL",
+                allocation, { ...allocation, status: "CANCELLED" }, auth.actor, "Substituida por nova revisao da invoice.");
+            }
+          }
+          await client.query(
+            `UPDATE imports.import_process SET record_status = 'ACTIVE', source_kind = 'CHINA_INVOICE',
+               logistics_status = 'WAITING SHIPMENT', priority = $2, notes = $3, supplier_text = $4,
+               supplier_entry_id = $5, incoterm = $6, port_loading = $7, port_discharge = $8,
+               version = version + 1, updated_at = now() WHERE id = $1`,
+            [processId, body.process.priority, body.process.notes, exporterText, processSupplierEntryId,
+              typeof body.invoice.metadata.incoterm === "string" ? body.invoice.metadata.incoterm : null,
+              typeof body.invoice.metadata.originText === "string" ? body.invoice.metadata.originText : null,
+              typeof body.invoice.metadata.destinationText === "string" ? body.invoice.metadata.destinationText : null]);
+          await record(client, "IMPORT_PROCESS", processId, "IMPORT_PROCESS", processId, "REVISION", previous,
+            { ...body.process, logisticsStatus: "WAITING SHIPMENT", recordStatus: "ACTIVE",
+              source: "CHINA_INVOICE", invoiceNumber: body.invoice.number,
+              invoiceImporterCnpj, confirmedImporterCnpjMismatch: confirmImporterCnpjMismatch }, auth.actor, body.process.reason);
+        } else {
+          processId = randomUUID();
+          await client.query(
+            `INSERT INTO imports.import_process
+             (id,importer,ip_number,normalized_ip_number,logistics_status,priority,notes,source_kind,version,supplier_text,supplier_entry_id,
+              incoterm,port_loading,port_discharge,record_status)
+             VALUES ($1,$2,$3,upper(btrim($3)),'WAITING SHIPMENT',$4,$5,'CHINA_INVOICE',1,$6,$7,$8,$9,$10,'ACTIVE')`,
+            [processId, body.process.importer, body.process.ipNumber, body.process.priority, body.process.notes,
+              exporterText, processSupplierEntryId,
+              typeof body.invoice.metadata.incoterm === "string" ? body.invoice.metadata.incoterm : null,
+              typeof body.invoice.metadata.originText === "string" ? body.invoice.metadata.originText : null,
+              typeof body.invoice.metadata.destinationText === "string" ? body.invoice.metadata.destinationText : null],
+          );
+          await record(client, "IMPORT_PROCESS", processId, "IMPORT_PROCESS", processId, "CREATE", null,
+            { ...body.process, logisticsStatus: "WAITING SHIPMENT", recordStatus: "ACTIVE",
+              source: "CHINA_INVOICE", invoiceNumber: body.invoice.number,
+              invoiceImporterCnpj, confirmedImporterCnpjMismatch: confirmImporterCnpjMismatch }, auth.actor, body.process.reason);
+        }
+        const available = await client.query<{ id: string; ordered_quantity: string; allocated_quantity: string }>(
+          `SELECT item.id, item.ordered_quantity::text,
+             coalesce(sum(allocation.quantity) FILTER (WHERE allocation.status = 'ACTIVE'
+               AND process.record_status = 'ACTIVE' AND process.id <> $2), 0)::text AS allocated_quantity
+           FROM procurement.purchase_order_item item
+           LEFT JOIN procurement.po_item_allocation allocation ON allocation.purchase_order_item_id = item.id
+           LEFT JOIN imports.import_process process ON process.id = allocation.process_id
+           WHERE item.id = ANY($1::uuid[]) GROUP BY item.id`,
+          [[...aggregated.keys()], processId]);
+        if (available.rowCount !== aggregated.size || available.rows.some(item =>
+          aggregated.get(item.id)! > Number(item.ordered_quantity) - Number(item.allocated_quantity) + 0.00000001)) {
+          throw new BusinessError(409, "PO_BALANCE_CHANGED", "Saldo da PO alterado durante a revisao. Recarregue e ajuste a distribuicao.");
+        }
         for (const item of matchedItems.rows) {
           const allocationId = randomUUID();
           const allocationQuantity = aggregated.get(item.id)!;
@@ -270,7 +431,14 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
               body.allocations.filter(allocation => allocation.itemId === item.id).map(allocation => allocation.notes).filter(Boolean).join("\n")],
           );
           await record(client, "IMPORT_PROCESS", processId, "PO_ITEM_ALLOCATION", allocationId, "CREATE", null,
-            { itemId: item.id, poNumber: item.number, quantity: allocationQuantity }, auth.actor, body.process.reason);
+            { itemId: item.id, poNumber: item.number, poProductCode: item.product_code, quantity: allocationQuantity,
+              invoiceAssignments: invoiceAssignments.data.filter(assignment => assignment.itemId === item.id)
+                .map(assignment => ({ sourceRow: assignment.sourceRow, invoiceProductCode: assignment.productCode,
+                  confirmedCodeMismatch: assignment.confirmCodeMismatch, exporterText,
+                  poSupplierText: supplierByItemId.get(item.id)?.supplierText,
+                  poSupplierName: supplierByItemId.get(item.id)?.supplierName,
+                  poSupplierCode: supplierByItemId.get(item.id)?.supplierCode,
+                  confirmedSupplierMismatch: assignment.confirmSupplierMismatch })) }, auth.actor, body.process.reason);
         }
         const documentId = randomUUID();
         await client.query(
@@ -283,9 +451,80 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         await record(client, "IMPORT_PROCESS", processId, "PROCESS_DOCUMENT", documentId, "CREATE", null,
           { kind: "INVOICE", number: body.invoice.number, issueDate: body.invoice.issueDate,
             amount: body.invoice.amount, currency: body.invoice.currency, fileName: body.invoice.fileName }, auth.actor, body.process.reason);
+        for (const update of catalogUpdates.products) {
+          const found = await client.query<Record<string, unknown>>(
+            `SELECT * FROM catalog.entry WHERE kind = 'PRODUCT' AND importer IS NULL
+              AND normalized_code = upper(btrim($1)) FOR UPDATE`, [update.productCode]);
+          const product = found.rows[0];
+          if (!product) throw new BusinessError(409, "PRODUCT_CATALOG_NOT_FOUND", `Product ${update.productCode} is not registered in the global product catalog.`);
+          const updated = await client.query<Record<string, unknown>>(
+            `UPDATE catalog.entry SET name = $2, product_ncm_code = coalesce($3, product_ncm_code),
+               manufacturer = coalesce($4, manufacturer), manufacturer_address = coalesce($5, manufacturer_address),
+               manufacturer_country = coalesce($6, manufacturer_country), version = version + 1,
+               updated_by = $7, updated_at = now() WHERE id = $1 RETURNING *`,
+            [product.id, update.name, update.ncmCode, update.manufacturer, update.manufacturerAddress,
+              update.manufacturerCountry, auth.actor.userId]);
+          await record(client, "CATALOG_ENTRY", String(product.id), "CATALOG_ENTRY", String(product.id), "UPDATE",
+            product, updated.rows[0], auth.actor, body.process.reason);
+        }
+        for (const update of catalogUpdates.poItems) {
+          const item = byItemId.get(update.itemId);
+          if (!item) throw new BusinessError(409, "PO_ITEM_MISMATCH", "An invoice PO item update is not part of the selected allocation.");
+          const before = await client.query<Record<string, unknown>>(
+            `SELECT * FROM procurement.purchase_order_item WHERE id = $1 FOR UPDATE`, [update.itemId]);
+          const updated = await client.query<Record<string, unknown>>(
+            `UPDATE procurement.purchase_order_item SET description = $2, unit_price = $3,
+               currency_code = $4, ncm = coalesce($5, ncm), updated_at = now() WHERE id = $1 RETURNING *`,
+            [update.itemId, update.description, update.unitPrice, update.currency, update.ncmCode]);
+          await client.query(`UPDATE procurement.purchase_order SET version = version + 1, updated_at = now() WHERE id = $1`, [item.purchase_order_id]);
+          await record(client, "PURCHASE_ORDER", item.purchase_order_id, "PURCHASE_ORDER_ITEM", update.itemId, "UPDATE",
+            before.rows[0], updated.rows[0], auth.actor, body.process.reason);
+        }
         await saveReceipt(client, auth.actor.userId, key, command.hash, "IP_INVOICE_IMPORT", processId);
-        return { id: processId, documentId, allocations: aggregated.size, ipNumber: body.process.ipNumber };
+        return { id: processId, documentId, allocations: aggregated.size, ipNumber: body.process.ipNumber,
+          revision: isRevision };
       }, 201);
+    });
+
+  app.get("/api/v1/purchase-orders/invoice-candidates", { config: permissionConfig("purchase-orders.read") },
+    async (request, reply) => {
+      const parsed = invoiceCandidateQuery.safeParse(request.query);
+      if (!parsed.success) return problem(reply, 400, "INVALID_INVOICE_CANDIDATE_QUERY", "Informe importadora, produto e PO da invoice.");
+      try { inScope(parsed.data.importer, request.authorizationContext?.importerScopes ?? []); }
+      catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
+      const result = await pool.query<Record<string, unknown>>(
+        `SELECT item.id, item.line_number AS "lineNumber", item.product_code AS "productCode",
+                item.description, item.ordered_quantity::text AS "orderedQuantity", item.unit,
+                item.unit_price::text AS "unitPrice", item.currency_code AS currency, item.ncm AS "poNcmCode",
+                po.id AS "purchaseOrderId", po.external_number AS "poNumber",
+                po.supplier_entry_id AS "supplierEntryId", po.supplier_text AS "supplierText",
+                supplier.name AS "supplierName", supplier.code AS "supplierCode",
+                product.id AS "productId", product.name AS "productName",
+                product.product_ncm_code AS "productNcmCode", product.manufacturer,
+                product.manufacturer_address AS "manufacturerAddress",
+                product.manufacturer_country AS "manufacturerCountry",
+                (item.ordered_quantity - coalesce(sum(allocation.quantity) FILTER (WHERE allocation.status = 'ACTIVE'
+                  AND process.record_status = 'ACTIVE'
+                  AND ($4::text IS NULL OR process.normalized_ip_number <> upper(btrim($4)))), 0))::text AS "remainingQuantity"
+         FROM procurement.purchase_order_item item
+         JOIN procurement.purchase_order po ON po.id = item.purchase_order_id
+         LEFT JOIN catalog.entry supplier ON supplier.id = po.supplier_entry_id
+         LEFT JOIN catalog.entry product ON product.kind = 'PRODUCT' AND product.importer IS NULL
+           AND product.normalized_code = upper(btrim(item.product_code))
+         LEFT JOIN procurement.po_item_allocation allocation ON allocation.purchase_order_item_id = item.id
+         LEFT JOIN imports.import_process process ON process.id = allocation.process_id
+         WHERE po.importer = $1 AND po.importer = ANY($5::text[])
+           AND regexp_replace(regexp_replace(upper(po.external_number), '[^A-Z0-9]', '', 'g'), '^PO', '')
+             = regexp_replace(regexp_replace(upper($3), '[^A-Z0-9]', '', 'g'), '^PO', '')
+           AND upper(coalesce(item.source_status, '')) NOT IN ('CANCELLED','CANCELED')
+           GROUP BY item.id, po.id, supplier.id, product.id
+         ORDER BY (upper(btrim(item.product_code)) = upper(btrim($2))) DESC,
+           po.normalized_number, item.line_number`,
+        [parsed.data.importer, parsed.data.productCode,
+          parsed.data.sourcePoNumber, parsed.data.revisingIpNumber || null,
+          request.authorizationContext?.importerScopes ?? []],
+      );
+      return { items: result.rows };
     });
 
   app.get<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/operational",
@@ -513,6 +752,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
            WHERE id = $1 AND importer = ANY($2::text[]) FOR UPDATE`, [id.data, auth.scopes]);
         if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "IP não encontrado.");
         checkVersion(found.rows[0], expected);
+        if (found.rows[0].record_status !== "ACTIVE") throw new BusinessError(409, "IP_NOT_ACTIVE", "Only active IPs can be closed.");
         if (found.rows[0].lifecycle_status === "CLOSED") {
           throw new BusinessError(409, "PROCESS_ALREADY_CLOSED", "Este IP já está encerrado.");
         }
@@ -546,6 +786,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
            WHERE id = $1 AND importer = ANY($2::text[]) FOR UPDATE`, [id.data, auth.scopes]);
         if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "IP não encontrado.");
         checkVersion(found.rows[0], expected);
+        if (found.rows[0].record_status !== "ACTIVE") throw new BusinessError(409, "IP_NOT_ACTIVE", "Only active IPs can be reopened.");
         if (found.rows[0].lifecycle_status !== "CLOSED") {
           throw new BusinessError(409, "PROCESS_NOT_CLOSED", "Este IP não está encerrado.");
         }
@@ -557,6 +798,114 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           found.rows[0], { lifecycleStatus: "OPEN", reason: parsed.data.reason },
           auth.actor, parsed.data.reason);
         return { id: id.data, lifecycleStatus: "OPEN", version: reopened.rows[0].version };
+      });
+    });
+
+  app.post<{ Params: { id: string } }>("/api/v1/processes/:id/cancel",
+    { config: permissionConfig("processes.write") }, async (request, reply) => {
+      const id = uuid.safeParse(request.params.id);
+      const parsed = cancelProcess.safeParse(request.body);
+      if (!id.success || !parsed.success) return problem(reply, 400, "INVALID_PROCESS_CANCELLATION", "Revise o destino das POs e o motivo do cancelamento.");
+      let expected: string; let auth: ReturnType<typeof actorAndScopes>;
+      try { expected = versionFrom(request); auth = actorAndScopes(request); }
+      catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
+      return transaction(pool, reply, async client => {
+        const found = await client.query<Record<string, unknown>>(
+          `SELECT * FROM imports.import_process WHERE id = $1 AND importer = ANY($2::text[]) FOR UPDATE`,
+          [id.data, auth.scopes]);
+        const process = found.rows[0];
+        if (!process) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "IP nÃ£o encontrado.");
+        checkVersion(process, expected);
+        if (process.record_status === "CANCELLED") throw new BusinessError(409, "PROCESS_ALREADY_CANCELLED", "Este IP jÃ¡ foi cancelado.");
+        if (process.lifecycle_status !== "OPEN") throw new BusinessError(409, "PROCESS_CLOSED", "Reabra o IP antes de cancelar e encaminhar suas POs.");
+        const links = await client.query<{ purchase_order_id: string; number: string }>(
+          `SELECT po.id AS purchase_order_id, po.external_number AS number
+           FROM procurement.process_purchase_order link
+           JOIN procurement.purchase_order po ON po.id = link.purchase_order_id
+           WHERE link.process_id = $1 AND po.importer = $2 ORDER BY po.normalized_number FOR UPDATE OF po`,
+          [id.data, process.importer]);
+        const supplied = new Set(parsed.data.purchaseOrders.map(item => item.purchaseOrderId));
+        const current = new Set(links.rows.map(item => item.purchase_order_id));
+        if (supplied.size !== parsed.data.purchaseOrders.length || supplied.size !== current.size
+          || [...current].some(poId => !supplied.has(poId))) {
+          throw new BusinessError(409, "CANCELLATION_PO_LIST_CHANGED", "A lista de POs do IP mudou. Recarregue antes de cancelar.");
+        }
+        const newDestinations = new Map<string, string>();
+        for (const route of parsed.data.purchaseOrders) {
+          if (route.destinationType === "EXISTING") {
+            if (route.processId === id.data) throw new BusinessError(400, "INVALID_CANCELLATION_DESTINATION", "Escolha outro IP como destino.");
+            const target = await client.query<Record<string, unknown>>(
+              `SELECT id, importer, record_status, lifecycle_status FROM imports.import_process
+               WHERE id = $1 AND importer = $2 AND importer = ANY($3::text[]) FOR UPDATE`,
+              [route.processId, process.importer, auth.scopes]);
+            if (!target.rows[0] || target.rows[0].record_status === "CANCELLED" || target.rows[0].lifecycle_status !== "OPEN") {
+              throw new BusinessError(409, "INVALID_CANCELLATION_DESTINATION", "O IP de destino nÃ£o existe, estÃ¡ encerrado ou cancelado.");
+            }
+          } else if (route.destinationType === "NEW") {
+            const normalized = route.ipNumber.trim().toLocaleUpperCase("en-US");
+            if (normalized === String(process.normalized_ip_number).trim().toLocaleUpperCase("en-US")) {
+              throw new BusinessError(400, "INVALID_CANCELLATION_DESTINATION", "O novo IP precisa ter outro IP REF.");
+            }
+            newDestinations.set(normalized, route.ipNumber.trim());
+          }
+        }
+        const preexistingNewIps = await client.query<{ normalized_ip_number: string }>(
+          `SELECT normalized_ip_number FROM imports.import_process
+           WHERE normalized_ip_number = ANY($1::text[])`, [[...newDestinations.keys()]]);
+        if (preexistingNewIps.rowCount) throw new BusinessError(409, "IP_REFERENCE_CONFLICT", "Um dos IP REF informados jÃ¡ existe. Selecione o IP existente como destino.");
+
+        const documents = await client.query<Record<string, unknown>>(
+          `SELECT * FROM imports.process_document WHERE process_id = $1 AND status = 'ACTIVE' FOR UPDATE`, [id.data]);
+        for (const document of documents.rows) {
+          await client.query(`UPDATE imports.process_document SET status = 'CANCELLED', version = version + 1, updated_at = now() WHERE id = $1`, [document.id]);
+          await record(client, "IMPORT_PROCESS", id.data, "PROCESS_DOCUMENT", String(document.id), "CANCEL", document,
+            { ...document, status: "CANCELLED" }, auth.actor, parsed.data.reason);
+        }
+        const allocations = await client.query<Record<string, unknown>>(
+          `SELECT * FROM procurement.po_item_allocation WHERE process_id = $1 AND status = 'ACTIVE' FOR UPDATE`, [id.data]);
+        for (const allocation of allocations.rows) {
+          await client.query(`UPDATE procurement.po_item_allocation SET status = 'CANCELLED', version = version + 1, updated_at = now() WHERE id = $1`, [allocation.id]);
+          await record(client, "IMPORT_PROCESS", id.data, "PO_ITEM_ALLOCATION", String(allocation.id), "CANCEL",
+            allocation, { ...allocation, status: "CANCELLED" }, auth.actor, parsed.data.reason);
+        }
+        await client.query(
+          `UPDATE imports.import_process SET record_status = 'CANCELLED', logistics_status = 'CANCELLED',
+             version = version + 1, updated_at = now() WHERE id = $1`, [id.data]);
+        await record(client, "IMPORT_PROCESS", id.data, "IMPORT_PROCESS", id.data, "CANCEL", process,
+          { recordStatus: "CANCELLED", logisticsStatus: "CANCELLED" }, auth.actor, parsed.data.reason);
+        for (const link of links.rows) {
+          await record(client, "IMPORT_PROCESS", id.data, "PROCESS_PURCHASE_ORDER", link.purchase_order_id, "UNLINK",
+            { purchaseOrderId: link.purchase_order_id, poNumber: link.number }, null, auth.actor, parsed.data.reason);
+        }
+        await client.query(`DELETE FROM procurement.process_purchase_order WHERE process_id = $1`, [id.data]);
+
+        const destinationIds = new Map<string, string>();
+        for (const [normalized, ipNumber] of newDestinations) {
+          const destinationId = randomUUID();
+          await client.query(
+            `INSERT INTO imports.import_process
+             (id,importer,ip_number,normalized_ip_number,logistics_status,priority,notes,source_kind,version,supplier_text,supplier_entry_id,record_status)
+             VALUES ($1,$2,$3,$4,NULL,NULL,$5,'CANCELLATION_TRANSFER',1,$6,$7,'DRAFT')`,
+            [destinationId, process.importer, ipNumber, normalized,
+              `Criado no cancelamento do IP ${process.ip_number}; aguardando invoice.`, process.supplier_text, process.supplier_entry_id]);
+          destinationIds.set(normalized, destinationId);
+          await record(client, "IMPORT_PROCESS", destinationId, "IMPORT_PROCESS", destinationId, "CREATE", null,
+            { ipNumber, recordStatus: "DRAFT", source: "CANCELLATION_TRANSFER", sourceProcessId: id.data }, auth.actor, parsed.data.reason);
+        }
+        let linkedPoCount = 0;
+        for (const route of parsed.data.purchaseOrders) {
+          const targetId = route.destinationType === "EXISTING" ? route.processId
+            : route.destinationType === "NEW" ? destinationIds.get(route.ipNumber.trim().toLocaleUpperCase("en-US")) : undefined;
+          if (!targetId) continue;
+          await client.query(
+            `INSERT INTO procurement.process_purchase_order (purchase_order_id,process_id,source_kind)
+             VALUES ($1,$2,'CANCELLATION_TRANSFER') ON CONFLICT DO NOTHING`, [route.purchaseOrderId, targetId]);
+          linkedPoCount += 1;
+          await record(client, "IMPORT_PROCESS", targetId, "PROCESS_PURCHASE_ORDER", route.purchaseOrderId, "TRANSFER", null,
+            { purchaseOrderId: route.purchaseOrderId, sourceProcessId: id.data }, auth.actor, parsed.data.reason);
+        }
+        return { id: id.data, status: "CANCELLED", releasedAllocations: allocations.rowCount,
+          linkedPurchaseOrders: linkedPoCount, createdDraftIps: destinationIds.size };
       });
     });
 
@@ -576,6 +925,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           [id.data, auth.scopes]);
         if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "IP não encontrado.");
         checkVersion(found.rows[0], expected);
+        if (found.rows[0].record_status !== "ACTIVE") throw new BusinessError(409, "IP_NOT_ACTIVE", "Draft or cancelled IPs cannot be edited here.");
         if (found.rows[0].lifecycle_status === "CLOSED") {
           throw new BusinessError(409, "PROCESS_CLOSED", "Reabra o IP antes de editar seus dados.");
         }
@@ -603,12 +953,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           throw new BusinessError(409, "HISTORICAL_IDENTITY", "A identidade do IP histórico exige reconciliação da origem.");
         }
         if (["CANCELLED", "CANCELED"].includes(body.logisticsStatus?.toUpperCase() ?? "")) {
-          const active = await client.query(
-            `SELECT 1 FROM procurement.po_item_allocation
-             WHERE process_id = $1 AND status = 'ACTIVE' LIMIT 1`, [id.data]);
-          if (active.rowCount) {
-            throw new BusinessError(409, "ACTIVE_ALLOCATIONS", "Cancele ou transfira as distribuições antes de cancelar o IP.");
-          }
+          throw new BusinessError(409, "GUIDED_CANCELLATION_REQUIRED", "Use o cancelamento guiado do IP para liberar e encaminhar as POs.");
         }
         const updated = await client.query<{ version: string }>(
           `UPDATE imports.import_process SET importer = $2, logistics_status = $3, priority = $4,
@@ -643,7 +988,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const process = await client.query(
           `SELECT id FROM imports.import_process WHERE id = $1 AND importer = $2
            AND importer = ANY($3::text[])
-           AND lifecycle_status = 'OPEN'
+            AND lifecycle_status = 'OPEN' AND record_status = 'ACTIVE'
            AND upper(coalesce(logistics_status, '')) NOT IN ('CANCELLED', 'CANCELED')
            FOR UPDATE`,
           [body.processId, po.importer, auth.scopes]);
@@ -686,7 +1031,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
            JOIN procurement.purchase_order_item item ON item.id = a.purchase_order_item_id
            JOIN imports.import_process process ON process.id = a.process_id
            WHERE a.id = $1 AND item.purchase_order_id = $2 AND a.status = 'ACTIVE'
-             AND process.lifecycle_status = 'OPEN' FOR UPDATE OF a, process`,
+             AND process.lifecycle_status = 'OPEN' AND process.record_status = 'ACTIVE' FOR UPDATE OF a, process`,
           [allocationId.data, id.data]);
         if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Distribuição não encontrada ou IP encerrado.");
         checkVersion(found.rows[0], expected);
@@ -724,7 +1069,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
            JOIN procurement.purchase_order_item item ON item.id = a.purchase_order_item_id
            JOIN imports.import_process process ON process.id = a.process_id
            WHERE a.id = $1 AND item.purchase_order_id = $2 AND a.status = 'ACTIVE'
-             AND process.lifecycle_status = 'OPEN' FOR UPDATE OF a, process`,
+             AND process.lifecycle_status = 'OPEN' AND process.record_status = 'ACTIVE' FOR UPDATE OF a, process`,
           [allocationId.data, id.data]);
         if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Distribuição não encontrada ou IP encerrado.");
         checkVersion(found.rows[0], expected);

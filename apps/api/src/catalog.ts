@@ -104,6 +104,8 @@ const ncmPatchBody = patchBody.extend({ name: z.string().trim().min(1).max(2000)
 type Entry = { id: string; importer: string | null; kind: Kind; code: string; name: string;
   status: "ACTIVE" | "INACTIVE"; provenance: string; evidence: string;
   valid_from: string | null; valid_to: string | null; version: string; created_at: Date; updated_at: Date;
+  manufacturer?: string | null; manufacturer_address?: string | null; manufacturer_country?: string | null;
+  product_ncm_code?: string | null;
   mandatory_import_attributes?: OfficialNcm["mandatoryImportAttributes"];
   creation_act?: OfficialNcm["creationAct"];
   source_updated_at?: string | null; attributes_source_version?: string | null; synced_at?: Date | null };
@@ -130,6 +132,9 @@ function present(row: Entry) {
     kind: row.kind, code: row.code, name: row.name,
     status: row.status, provenance: row.provenance, evidence: row.evidence,
     validFrom: row.valid_from, validTo: row.valid_to, version: String(row.version),
+    ...(row.kind === "PRODUCT" ? { manufacturer: row.manufacturer ?? null,
+      manufacturerAddress: row.manufacturer_address ?? null,
+      manufacturerCountry: row.manufacturer_country ?? null, ncmCode: row.product_ncm_code ?? null } : {}),
     createdAt: row.created_at, updatedAt: row.updated_at,
     ...(row.mandatory_import_attributes !== undefined ? { mandatoryImportAttributes: row.mandatory_import_attributes,
       creationAct: row.creation_act ?? null,
@@ -573,17 +578,20 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
   app.get("/api/v1/importers", { config: permissionConfig("catalog.read") }, async (request, reply) => {
     reply.header("cache-control", "no-store");
     const scopes = request.authorizationContext?.importerScopes ?? [];
-    const result = await pool.query<{ importer: string; po_count: number }>(
-      `SELECT available.importer,
+    const result = await pool.query<{ importer: string; cnpj: string | null; po_count: number }>(
+      `SELECT available.importer, importer_ref.cnpj,
               count(po.id) FILTER (WHERE po.source_kind = 'HISTORICAL_EXCEL')::int AS po_count
        FROM (SELECT importer FROM procurement.purchase_order
              UNION SELECT importer FROM imports.import_process
              UNION SELECT value AS importer FROM catalog.operational_value
                     WHERE entity_key = 'IMPORTER' AND value = ANY($1::text[])) AS available
        LEFT JOIN procurement.purchase_order AS po ON po.importer = available.importer
+       LEFT JOIN catalog.operational_value AS importer_ref
+         ON importer_ref.entity_key = 'IMPORTER' AND importer_ref.value = available.importer
        WHERE available.importer = ANY($1::text[])
-       GROUP BY available.importer ORDER BY available.importer`, [scopes]);
+       GROUP BY available.importer, importer_ref.cnpj ORDER BY available.importer`, [scopes]);
     return { items: result.rows.map(row => ({ code: row.importer, historicalPoCount: row.po_count,
+      cnpj: row.cnpj,
       status: "HISTORICAL_OBSERVED", officialTotvsMappingKnown: false })) };
   });
 

@@ -48,7 +48,7 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
       `WITH filtered AS MATERIALIZED (
          SELECT process.id, process.ip_number, process.importer, process.supplier_entry_id,
            coalesce(supplier.code, process.supplier_text) AS supplier_text, supplier.name AS supplier_name,
-           process.logistics_status, process.lifecycle_status, process.quality_status,
+           process.logistics_status, process.lifecycle_status, process.record_status, process.quality_status,
            (SELECT count(*)::int FROM procurement.process_purchase_order AS link
             JOIN procurement.purchase_order AS po ON po.id = link.purchase_order_id
             WHERE link.process_id = process.id AND po.importer = ANY($1::text[])) AS purchase_order_count,
@@ -56,7 +56,8 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
             WHERE source.sheet_name = 'Pré Embarque' AND btrim(source.raw_values->>'F') = process.importer
               AND upper(btrim(source.raw_values->>'AB')) = process.normalized_ip_number) AS historical_line_count,
            (SELECT count(*)::int FROM procurement.po_item_allocation AS allocation
-            WHERE allocation.process_id = process.id AND allocation.status = 'ACTIVE') AS operational_allocation_count,
+            WHERE allocation.process_id = process.id AND allocation.status = 'ACTIVE'
+              AND process.record_status = 'ACTIVE') AS operational_allocation_count,
            (SELECT count(*)::int FROM costs.process_cost AS cost WHERE cost.process_id = process.id) AS historical_cost_count
          FROM imports.import_process AS process
          LEFT JOIN catalog.entry supplier ON supplier.id = process.supplier_entry_id
@@ -73,6 +74,7 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
            'id', page.id, 'ipNumber', page.ip_number, 'importer', page.importer,
            'supplierEntryId', page.supplier_entry_id, 'supplierText', page.supplier_text, 'supplierName', page.supplier_name,
            'logisticsStatus', page.logistics_status, 'lifecycleStatus', page.lifecycle_status,
+           'recordStatus', page.record_status,
            'qualityStatus', page.quality_status,
            'purchaseOrderCount', page.purchase_order_count,
            'historicalLineCount', page.historical_line_count,
@@ -95,6 +97,7 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
          'supplierEntryId', process.supplier_entry_id,
          'supplierText', coalesce(supplier.code, process.supplier_text), 'supplierName', supplier.name,
          'logisticsStatus', process.logistics_status, 'qualityStatus', process.quality_status,
+         'recordStatus', process.record_status,
          'sourceKind', process.source_kind, 'priority', process.priority,
          'notes', process.notes, 'version', process.version::text,
          'lifecycleStatus', process.lifecycle_status, 'closedAt', process.closed_at,
@@ -115,12 +118,15 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
            'poItemRemainingQuantity', (item.ordered_quantity - coalesce((
              SELECT sum(active.quantity) FROM procurement.po_item_allocation AS active
              WHERE active.purchase_order_item_id = item.id AND active.status = 'ACTIVE'
+               AND EXISTS (SELECT 1 FROM imports.import_process active_process
+                 WHERE active_process.id = active.process_id AND active_process.record_status = 'ACTIVE')
            ), 0))::text
          ) ORDER BY po.external_number, item.line_number, allocation.id)
          FROM procurement.po_item_allocation AS allocation
          JOIN procurement.purchase_order_item AS item ON item.id = allocation.purchase_order_item_id
          JOIN procurement.purchase_order AS po ON po.id = item.purchase_order_id
          WHERE allocation.process_id = process.id AND allocation.status = 'ACTIVE'
+           AND process.record_status = 'ACTIVE'
            AND po.importer = ANY($2::text[])), '[]'::jsonb),
          'historicalCosts', coalesce((SELECT jsonb_agg(jsonb_build_object(
            'id', cost.id, 'type', cost.cost_type, 'currency', cost.currency_code,

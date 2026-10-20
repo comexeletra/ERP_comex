@@ -2,6 +2,32 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import ExcelJS from "exceljs";
 import { parseChinaInvoiceXlsx, parseInvoicePoAssignments } from "../lib/china-invoice-xlsx.ts";
+import { invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping.ts";
+
+test("suggests only an unambiguous invoice item and reports code/supplier divergences", () => {
+  const candidates = [
+    { id: "a", productCode: "3011100110", remainingQuantity: "30" },
+    { id: "b", productCode: "OTHER", remainingQuantity: "20" },
+  ];
+  assert.equal(suggestInvoicePoItem(candidates, "3011100110", "25")?.id, "a");
+  assert.equal(suggestInvoicePoItem(candidates, "NEW-CODE", "15"), undefined);
+  assert.equal(suggestInvoicePoItem([candidates[1]], "NEW-CODE", "15")?.id, "b");
+  assert.equal(suggestInvoicePoItem(candidates, "3011100110", "31"), undefined);
+  assert.equal(invoicePoCodeDiffers(" abc-1 ", "ABC-1"), false);
+  assert.equal(invoicePoCodeDiffers("ABC-1", "ABC-2"), true);
+  assert.equal(invoiceSupplierMatchesExporter(["SUP.001", "Exporter Ltd"], "exporter ltd"), true);
+  assert.equal(invoiceSupplierMatchesExporter(["SUP.001"], "Other Ltd"), false);
+});
+
+test("rebuilds invoice PO assignments after an importer is selected manually", () => {
+  assert.deepEqual(invoiceAssignmentsFromLines([{
+    sourceRow: 16, productCode: "INV-01", description: "Part A",
+    poAssignments: [{ poNumber: "PO030201", quantity: "100" }, { poNumber: "PO030205", quantity: "50" }],
+  }]), [
+    { key: "16:0", sourceRow: 16, sourcePoNumber: "PO030201", poNumber: "PO030201", quantity: "100", productCode: "INV-01", description: "Part A" },
+    { key: "16:1", sourceRow: 16, sourcePoNumber: "PO030205", poNumber: "PO030205", quantity: "50", productCode: "INV-01", description: "Part A" },
+  ]);
+});
 
 test("parses one PO with the full line quantity", () => {
   assert.deepEqual(parseInvoicePoAssignments("PO030201", "1030"), [
@@ -25,7 +51,7 @@ test("rejects incomplete, malformed, and inconsistent multi-PO assignments", () 
   assert.throws(() => parseInvoicePoAssignments("PO 030321 = 0 unit", "0"), /quantidade total válida/);
 });
 
-async function fixtureWorkbook({ includeInv = true } = {}) {
+async function fixtureWorkbook({ includeInv = true, includeIpReference = true } = {}) {
   const workbook = new ExcelJS.Workbook();
   const sheet = includeInv ? workbook.addWorksheet("INV") : workbook.addWorksheet("Other");
   if (!includeInv) return new File([Buffer.from(await workbook.xlsx.writeBuffer())], "invoice.xlsx");
@@ -42,6 +68,7 @@ async function fixtureWorkbook({ includeInv = true } = {}) {
     [11, "INCOTERM 2020:", "DAP"], [12, "COUNTRY OF ORIGIN:", "CHINA"],
     [13, "COUNTRY OF ACQUISITION:", "CHINA"], [14, "COUNTRY OF PRECEDENCE:", "CHINA"],
   ]) {
+    if (!includeIpReference && label === "IP REF.:") continue;
     sheet.getCell(row, 10).value = label;
     sheet.getCell(row, 11).value = value;
   }
@@ -59,6 +86,7 @@ test("maps header and product fields from INV and expands PO splits", async () =
   assert.equal(result.invoiceDate, "2026-10-15");
   assert.equal(result.headerPoNumber, "PO030201");
   assert.equal(result.importerText, "Importer Ltd CNPJ 12.345.678/0001-90");
+  assert.equal(result.importerCnpj, "12345678000190");
   assert.equal(result.incoterm, "DAP");
   assert.equal(result.lines.length, 2);
   assert.equal(result.lines[1].poAssignments.length, 2);
@@ -72,4 +100,8 @@ test("requires the INV sheet and an XLSX file", async () => {
   await assert.rejects(parseChinaInvoiceXlsx(await fixtureWorkbook({ includeInv: false })), /aba obrigatória INV/);
   const invalidExtension = new File(["x"], "invoice.csv");
   await assert.rejects(parseChinaInvoiceXlsx(invalidExtension), /formato .xlsx/);
+});
+
+test("requires IP REF in the INV header", async () => {
+  await assert.rejects(parseChinaInvoiceXlsx(await fixtureWorkbook({ includeIpReference: false })), /IP REF header is required/);
 });
