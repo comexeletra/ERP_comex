@@ -6,7 +6,7 @@
 | Branch de trabalho | `homologacao` |
 | Ambiente de validação | HML (VPS `import-erp-hml-api` + banco `erp_po_totvs_hml`) e Preview Vercel |
 | Arquivo de referência | `PO 030201.xlsx` (export TOTVS "1-Pedido de Compras Autoriz", 215 itens) |
-| Status | **Autorização recebida em 2026-10-21. Ciclos 1–4 implementados; testes locais e validação de M065 em cópia restaurada passaram. Aplicação de M065 no HML, release da API e validação do Preview ainda pendentes. E3 permanece fora da implementação até aprovação específica.** |
+| Status | **Autorização recebida em 2026-10-21. Ciclos 1–4 implementados e commit `40ed41e` publicado em `homologacao`; testes locais completos passaram. M065 foi aplicada somente no HML após backup e validação em cópia restaurada; a API HML está ativa. O Preview desse commit está `READY`, mas o domínio e a URL do deployment redirecionam para SSO, impedindo validar a aplicação pela web. A validação autenticada das rotas HML também está pendente: as credenciais Master protegidas não permitiram sessão utilizável. Nenhuma PO foi criada ou alterada nesta validação. E3 permanece excluído, sem aprovação específica.** |
 
 ## Sumário
 
@@ -418,57 +418,62 @@ mudança de API, Preview `Ready` e validação no domínio estável antes de seg
 
 Corrige o que gera dado errado hoje, sem migration.
 
-- [ ] `apps/web/test/totvs-po-xlsx.test.mjs`: fixture sintética no layout TOTVS cobrindo preço
+- [x] `apps/web/test/totvs-po-xlsx.test.mjs`: fixture sintética no layout TOTVS cobrindo preço
       arredondado, `Valor Unitario` 0 com total > 0, total 0, total com mais de 8 casas, código
       numérico × texto, linhas vazias, cabeçalho ausente, `PC / AE` com mais de um valor.
-- [ ] `totvs-po-xlsx.ts`: derivar preço de `Valor Total`; devolver cabeçalho (`PC / AE`, CNPJ,
+- [x] `totvs-po-xlsx.ts`: derivar preço de `Valor Total`; devolver cabeçalho (`PC / AE`, CNPJ,
       fornecedor, `Nro.SC`) e totais além das linhas.
-- [ ] `NewOperationalRecord.tsx`: preencher número, importadora (CNPJ, só importadoras com
+- [x] `NewOperationalRecord.tsx`: preencher número, importadora (CNPJ, só importadoras com
       CNPJ), fornecedor e `scNumber`; moeda CNY padrão com troca para USD; prévia com totais e
       pendências; descrição TOTVS; descrição editável no cadastro manual.
-- [ ] Preenchimento por vínculo na tela (seção 5.3): campo de código do produto digitável no
+- [x] Preenchimento por vínculo na tela (seção 5.3): campo de código do produto digitável no
       cadastro manual e na edição da PO, preenchendo descrição e NCM a partir do catálogo;
       aviso de divergência entre descrição TOTVS e catálogo na prévia.
-- [ ] Ajuste de interop do `exceljs` para permitir o teste em Node, sem mudar o comportamento no
+- [x] Ajuste de interop do `exceljs` para permitir o teste em Node, sem mudar o comportamento no
       bundler (no Node, `import("exceljs")` não expõe `Workbook` como export nomeado).
 - **Aceite:** CA1, CA2, CA6 (lado web).
 
 ### Ciclo 2 — Pré-validação e regras na API
 
-- [ ] Rota de pré-validação (ex.: `GET /api/v1/purchase-orders/preflight?number=&importer=`):
-      PO existente na importadora e nas demais do escopo, fornecedor e produtos fora do catálogo.
-- [ ] `/complete` e rotas de item: importadora com CNPJ, confirmação + justificativa para número
+- [x] Rota de pré-validação (`POST /api/v1/purchase-orders/preflight`): PO existente na
+      importadora e nas demais do escopo, fornecedor e produtos fora do catálogo.
+- [x] `/complete` e rotas de item: importadora com CNPJ, confirmação + justificativa para número
       existente em outra importadora, produto no catálogo global, UM e CC válidos, nome/SHA-256
       do arquivo na auditoria.
-- [ ] `/api/v1/importers`: informar quais importadoras aceitam novas POs.
-- [ ] SC vinculada: a API copia `sc_number`, `sc_date`, `sc_approval_date`, `requester` e
+- [x] `/api/v1/importers`: informar quais importadoras aceitam novas POs.
+- [x] SC vinculada: a API copia `sc_number`, `sc_date`, `sc_approval_date`, `requester` e
       `commercial_plan_received_date` da SC para os itens; bloqueia SC com fornecedor diferente
       do informado ou de outra importadora (R18).
-- [ ] Item criado com NCM do produto quando o catálogo tiver `product_ncm_code`.
-- [ ] Testes de API e de contrato web↔API; deploy na VPS HML e validação da rota.
+- [x] Item criado com NCM do produto quando o catálogo tiver `product_ncm_code`.
+- [x] Testes de API e de contrato web↔API; build e deploy da API na VPS HML.
+- [ ] Validação autenticada da pré-validação e do fluxo de criação no HML. O health respondeu
+      200 e a rota sem sessão respondeu 401; não houve sessão Master utilizável para continuar.
 - **Aceite:** CA3, CA4, CA6 (lado API), CA7.
 
 ### Ciclo 3 — Preço de referência do produto (migration no HML)
 
-- [ ] Migration M065 (somente HML): `catalog.product_price_observation`, índice e trigger em
+- [x] Migration M065 (somente HML): `catalog.product_price_observation`, índice e trigger em
       `purchase_order_item` (seção 7.2). Backup verificável, teste em cópia descartável,
       aplicação, ledger 65/65, conferência de que nenhuma observação foi criada a partir dos
       dados existentes.
-- [ ] API: referência atual em `/products/options`, `/purchase-orders/:id/operational`,
+- [x] API: referência atual em `/products/options`, `/purchase-orders/:id/operational`,
       `/followup` e na pré-validação; histórico no catálogo de produtos.
-- [ ] Web: referência e valor estimado na prévia, no item da PO e no catálogo de produtos.
-- [ ] Guardar a última descrição TOTVS por produto (mesma trigger, seção 7.3) e usá-la no
+- [x] Web: referência e valor estimado na prévia, no item da PO e no catálogo de produtos.
+- [x] Guardar a última descrição TOTVS por produto (mesma trigger, seção 7.3) e usá-la no
       preenchimento por código (D9).
-- [ ] Testes: trigger (preço > 0 grava, 0 não grava, moeda separada, produto fora do catálogo
+- [x] Testes: trigger (preço > 0 grava, 0 não grava, moeda separada, produto fora do catálogo
       ignorado), migration, API e contrato.
 - **Aceite:** CA5.
 
 ### Ciclo 4 — Correção pós-criação
 
-- [ ] Reimportação por planilha com diff por `Item` e aplicação transacional (R14).
-- [ ] Remoção de item sem alocação ativa (R15).
-- [ ] Troca de importadora (R16), validando SC vinculada (a SC é da importadora) e número no destino.
-- [ ] Item novo herda campos compartilhados (E4).
+- [x] Reimportação por planilha com diff por `Item` e aplicação transacional (R14), coberta por testes.
+- [x] Remoção de item sem alocação ativa (R15), coberta por testes.
+- [x] Troca de importadora (R16), validando SC vinculada (a SC é da importadora) e número no destino,
+      coberta por testes.
+- [x] Item novo herda campos compartilhados (E4), coberto por testes.
+- [ ] Validação autenticada no HML da reimportação, remoção e troca de importadora permanece
+      pendente pelo bloqueio de autenticação Master descrito acima.
 - [ ] Avaliar com os consumidores da outbox a consolidação de `FOLLOWUP_UPDATE` por PO (E3);
       implementar só com aprovação.
 - **Aceite:** CA8, CA9.
@@ -484,6 +489,11 @@ Corrige o que gera dado errado hoje, sem migration.
 
 A PO 030201 do HML foi criada pelo upload de `PO 030201.xlsx` com o código atual. Ela fica como
 está e serve de caso de regressão:
+
+Na execução deste plano, a criação e a correção pós-criação foram verificadas por testes locais;
+nenhuma PO foi criada, reimportada, removida ou alterada no banco HML. A contagem conferida após
+M065 permaneceu em 2 POs e 215 itens. O teste de integração autenticado ainda precisa ser feito
+quando houver uma conta Master HML utilizável e acesso ao Preview sem o redirecionamento SSO.
 
 | Uso | Resultado esperado |
 |---|---|
