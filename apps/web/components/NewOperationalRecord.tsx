@@ -23,6 +23,7 @@ import { formatUsDate } from "../lib/date-format";
 import { ChinaInvoiceDraft, parseChinaInvoiceXlsx } from "../lib/china-invoice-xlsx";
 import { clearInvoiceCommandKey, invoiceCommandKey } from "../lib/invoice-command-key";
 import { persistSessionDraft } from "../lib/po-draft-storage";
+import { purchaseOrderNumberBlockMessage } from "../lib/po-lifecycle";
 import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
   invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping";
 
@@ -133,7 +134,7 @@ async function readResponse<T>(response: Response): Promise<T> {
 }
 type InvoicePreflight = { ipNumbers: string[]; ipReferenceOtherImporter: boolean };
 type PurchaseOrderPreflight = { importerAcceptsNewPurchaseOrders: boolean; sameImporterDuplicate: boolean;
-  otherImporterDuplicates: string[]; supplierFound: boolean; missingProducts: string[];
+  sameImporterDeleted?: boolean; otherImporterDuplicates: string[]; supplierFound: boolean; missingProducts: string[];
   missingUnits: string[]; missingCostCenters: string[] };
 async function loadInvoicePreflight(importer: string, draft: ChinaInvoiceDraft): Promise<InvoicePreflight> {
   if (!importer || !draft.invoiceNumber.trim() || !draft.exporterText.trim()) {
@@ -355,7 +356,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     || poPreflight.missingCostCenters.length));
   const poDuplicateNeedsConfirmation = Boolean(poPreflight?.otherImporterDuplicates.length
     && (!confirmDuplicateNumber || duplicateNumberJustification.trim().length < 3));
-  const poPreflightBlocksSave = Boolean(poPreflight?.sameImporterDuplicate || poPreflightHasCatalogIssues || poDuplicateNeedsConfirmation);
+  const poNumberBlockMessage = poPreflight ? purchaseOrderNumberBlockMessage(poPreflight, number) : null;
+  const poPreflightBlocksSave = Boolean(poNumberBlockMessage || poPreflightHasCatalogIssues || poDuplicateNeedsConfirmation);
   const allocatedPoIds = new Set(invoiceMatches.flatMap(match => {
     const candidate = match.candidates.find(value => value.id === match.itemId);
     return candidate ? [candidate.purchaseOrderId] : [];
@@ -613,7 +615,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       if (!preflight.importerAcceptsNewPurchaseOrders) {
         throw new Error("A API aceita novas POs somente para importadoras cadastradas com CNPJ.");
       }
-      if (preflight.sameImporterDuplicate) throw new Error("Já existe uma PO com este número nesta importadora.");
+      const numberBlockMessage = purchaseOrderNumberBlockMessage(preflight, number);
+      if (numberBlockMessage) throw new Error(numberBlockMessage);
       if (!preflight.supplierFound) throw new Error("Selecione um código de fornecedor ativo do catálogo global.");
       if (preflight.missingProducts.length) throw new Error(`Produtos fora do catálogo global: ${preflight.missingProducts.slice(0, 8).join(", ")}.`);
       if (preflight.missingUnits.length) throw new Error(`Unidades fora dos valores operacionais: ${preflight.missingUnits.slice(0, 8).join(", ")}.`);
@@ -1068,7 +1071,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         <section className="card po-entry-section">
           <h2>Confirmação</h2>
           {createdPoId && <p className="notice error">A PO já foi criada. <Link className="text-link" href={`/purchase-orders/${createdPoId}`}>Abrir a PO e continuar o preenchimento</Link>.</p>}
-          {poPreflight?.sameImporterDuplicate && <p className="notice error" role="alert">Já existe uma PO {number} nesta importadora.</p>}
+          {poNumberBlockMessage && <p className="notice error" role="alert">{poNumberBlockMessage}</p>}
           {poPreflight && (!poPreflight.importerAcceptsNewPurchaseOrders || !poPreflight.supplierFound
             || poPreflight.missingProducts.length > 0 || poPreflight.missingUnits.length > 0 || poPreflight.missingCostCenters.length > 0)
             && <p className="notice error" role="alert">A pré-validação encontrou pendências no CNPJ, fornecedor, produto, UM ou centro de custo. Corrija os itens e tente novamente.</p>}

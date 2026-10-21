@@ -4,7 +4,7 @@ import Fastify from "fastify";
 import { registerAuthorization } from "../dist/authorization.js";
 import { registerPurchaseOrderReadRoutes } from "../dist/purchase-orders.js";
 
-async function preflightApp(t) {
+async function preflightApp(t, duplicates = [{ importer: "ELETRA MANAUS", lifecycle_status: "ACTIVE" }]) {
   const pool = { async query(sql, params = []) {
     if (sql.includes("catalog.operational_value")) assert.doesNotMatch(sql, /\bstatus\s*=/iu);
     if (sql.includes("FROM identity.erp_user AS u")) return { rows: [{ role: "Master", importer_code: "ELETRA MATRIZ" }] };
@@ -12,7 +12,8 @@ async function preflightApp(t) {
       return { rows: [{ importer: "ELETRA MATRIZ" }] };
     }
     if (sql.includes("normalized_number")) {
-      return { rows: [{ importer: "ELETRA MANAUS" }] };
+      assert.match(sql, /lifecycle_status/u);
+      return { rows: duplicates };
     }
     if (sql.includes("entity_key='IMPORTER'")) return { rows: [{ cnpj: "12.345.678/0001-90" }] };
     if (sql.includes("kind='SUPPLIER'")) return { rows: [] };
@@ -45,6 +46,7 @@ test("PO preflight returns scoped duplicates and catalog gaps", async t => {
   assert.equal(response.statusCode, 200, response.body);
   assert.deepEqual(response.json().otherImporterDuplicates, ["ELETRA MANAUS"]);
   assert.equal(response.json().sameImporterDuplicate, false);
+  assert.equal(response.json().sameImporterDeleted, false);
   assert.equal(response.json().supplierFound, false);
   assert.deepEqual(response.json().missingProducts, ["MISSING"]);
   assert.deepEqual(response.json().productReferences, [{ productCode: "PRESENT", ncmCode: "39269090",
@@ -52,6 +54,19 @@ test("PO preflight returns scoped duplicates and catalog gaps", async t => {
       purchaseOrderNumber: "PO-1", observedAt: "2026-10-21T12:00:00.000Z" }] }]);
   assert.deepEqual(response.json().missingUnits, ["BOX"]);
   assert.deepEqual(response.json().missingCostCenters, ["999"]);
+});
+
+test("PO preflight ignores deleted POs and reports a deleted PO in the same importer", async t => {
+  const app = await preflightApp(t, [{ importer: "ELETRA MANAUS", lifecycle_status: "DELETED" },
+    { importer: "ELETRA MATRIZ", lifecycle_status: "DELETED" }]);
+  const response = await app.inject({ method: "POST", url: "/api/v1/purchase-orders/preflight",
+    headers: { "content-type": "application/json", "x-test-subject": "master" },
+    payload: { importer: "ELETRA MATRIZ", number: "030201" },
+  });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.deepEqual(response.json().otherImporterDuplicates, []);
+  assert.equal(response.json().sameImporterDuplicate, false);
+  assert.equal(response.json().sameImporterDeleted, true);
 });
 
 test("PO preflight rejects invalid requests and importers outside scope", async t => {

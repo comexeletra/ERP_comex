@@ -283,13 +283,18 @@ export async function validateNewPurchaseOrder(client: PoolClient, header: NewPu
     throw new BusinessError(400, "IMPORTER_CNPJ_REQUIRED", "A nova PO exige uma importadora cadastrada com CNPJ.");
   }
 
-  const duplicates = await client.query<{ importer: string }>(
-    `SELECT importer FROM procurement.purchase_order
+  const duplicates = await client.query<{ importer: string; lifecycle_status: string }>(
+    `SELECT importer,lifecycle_status FROM procurement.purchase_order
      WHERE normalized_number=upper(btrim($1::text)) AND importer=ANY($2::text[])
      ORDER BY importer`, [header.number, scopes]);
-  const duplicateImporters = [...new Set(duplicates.rows.map(row => row.importer))];
+  const duplicateImporters = [...new Set(duplicates.rows
+    .filter(row => row.lifecycle_status !== "DELETED").map(row => row.importer))];
   if (duplicateImporters.includes(header.importer)) {
     throw new BusinessError(409, "PO_NUMBER_EXISTS_IN_IMPORTER", "Já existe uma PO com este número nesta importadora.");
+  }
+  if (duplicates.rows.some(row => row.importer === header.importer)) {
+    throw new BusinessError(409, "PO_NUMBER_DELETED_IN_IMPORTER",
+      "Existe uma PO excluída com este número nesta importadora. Restaure-a pela carteira em vez de criar outra.");
   }
   const otherImporterDuplicates = duplicateImporters.filter(value => value !== header.importer);
   if (otherImporterDuplicates.length && (!header.confirmDuplicateNumber || !header.duplicateNumberJustification?.trim())) {

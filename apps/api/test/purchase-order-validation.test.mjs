@@ -52,6 +52,17 @@ test("same-importer duplicate PO numbers are blocked and cross-importer duplicat
   assert.deepEqual(confirmed.otherImporterDuplicates, ["ELETRA MANAUS"]);
 });
 
+test("deleted PO numbers do not need cross-importer confirmation but must be restored in the same importer", async () => {
+  const other = await validateNewPurchaseOrder(validationClient({
+    duplicates: [{ importer: "ELETRA MANAUS", lifecycle_status: "DELETED" }] }), header, scopes);
+  assert.deepEqual(other.otherImporterDuplicates, []);
+
+  const same = validationClient({ duplicates: [{ importer: "ELETRA MATRIZ", lifecycle_status: "DELETED" }] });
+  await assert.rejects(validateNewPurchaseOrder(same, header, scopes),
+    error => error instanceof BusinessError && error.code === "PO_NUMBER_DELETED_IN_IMPORTER"
+      && error.status === 409);
+});
+
 test("linked SC must have the same importer and supplier", async () => {
   const client = validationClient({ request: { id: "sc-id", importer: "ELETRA MATRIZ", supplier_text: "SUP-2",
     supplier_code: "SUP-2", sc_number: "020028", sc_date: null, approval_date: null,
