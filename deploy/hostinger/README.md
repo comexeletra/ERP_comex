@@ -1,5 +1,30 @@
 # API ERP na VPS Hostinger
 
+## POs excluídas fora da checagem de duplicidade no HML (2026-10-21)
+
+O commit `114fc1d` faz a pré-validação e a criação de PO desconsiderarem POs com
+`lifecycle_status='DELETED'` ao procurar números duplicados. Uma PO excluída na
+mesma importadora continua bloqueando a criação (`PO_NUMBER_DELETED_IN_IMPORTER`),
+pois a unicidade `(importer, normalized_number)` permanece; a orientação é
+restaurá-la. Não houve migration.
+
+O release foi compilado na VPS como `/opt/import-erp/apps/api/hml-release-114fc1d`
+e ativado pelo drop-in
+`/etc/systemd/system/import-erp-hml-api.service.d/zzzzzzzz-release-114fc1d.conf`.
+O drop-in anterior e o `ExecStart` efetivo foram preservados em
+`/var/backups/import-erp/hml-po-deleted-duplicates-114fc1d-predeploy`; para
+rollback, remova o drop-in novo, execute `systemctl daemon-reload` e reinicie
+`import-erp-hml-api` (volta ao `hml-release-6a18999`). Ignorando CRLF, o código
+difere do release anterior somente em `operations.ts` e `purchase-orders.ts`.
+
+O serviço ficou ativo, `/health/live` respondeu 200 por HTTPS e a pré-validação
+sem sessão respondeu 401. A função de validação do release foi executada contra
+`erp_po_totvs_hml`, papel `import_erp_hml_app`, em transação somente leitura com
+rollback: a PO `030201` em `ELETRA CURITIBA` passou da checagem de duplicidade
+(a PO homônima de `Eletra Cwb` está excluída) e a PO sintética excluída
+`HMLVALMVIIAQ73B9DD951D-CREATE` bloqueou a recriação na mesma importadora.
+Nenhum dado foi gravado.
+
 ## Validação das regras de criação de PO no HML (2026-10-21)
 
 O commit `6a18999` foi compilado na VPS como
