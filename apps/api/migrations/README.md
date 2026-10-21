@@ -247,3 +247,5 @@ closed PO can be reopened with a reason. DELETED POs remain in history and are
 excluded from the active portfolio and its export. Validate this migration on
 an isolated restored database and apply it to HML before deploying the matching
 API/UI.
+
+`M064_purchase_order_lifecycle_restore.sql` permits only the planned transitions from CANCELLED or DELETED back to ACTIVE and clears lifecycle metadata on return to ACTIVE. On 2026-10-21, it passed a restored-copy transaction/rollback check and was applied only to `erp_po_totvs_hml`; the ledger is M001–M064. The Cycle 2 API workflow was exercised against the existing HML test PO with audit/outbox verification and unchanged PO counts. Production was not changed; release, backup, and rollback evidence is in `deploy/hostinger/README.md`.

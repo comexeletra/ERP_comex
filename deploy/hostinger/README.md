@@ -435,3 +435,11 @@ Depois, cadastre no escopo Preview da Vercel `PREVIEW_PUBLIC_ORIGIN`,
 `PREVIEW_API_URL=https://api-hml.72-60-250-212.sslip.io` e
 `PREVIEW_API_TOKEN` usando o `GATEWAY_TOKEN` do arquivo HML. A origem da API e
 `PREVIEW_PUBLIC_ORIGIN` devem coincidir exatamente.
+
+## Ciclo de vida da PO — Ciclo 2 (2026-10-21)
+
+M064 foi validada em uma cópia restaurada e aplicada somente ao banco HML `erp_po_totvs_hml`. O backup pré-migration, em formato custom do PostgreSQL, foi validado com `pg_restore --list`: `/var/backups/import-erp/erp_po_totvs_hml-m064-20261021T121429Z.dump`, 466.108.155 bytes, SHA-256 `bec2a90765248535e42b8138fe35cd578634db6a51b64cbcde95d4d74ad4e608`. A cópia descartável `erp_po_hml_m064_check_20261021_503650` recebeu M064; os caminhos permitidos e bloqueados foram exercitados em transação com rollback, e a cópia foi removida. O ledger HML passou de M001–M063 para M001–M064 (64/64).
+
+A integração usou somente a PO de teste criada no Ciclo 1. Pelas rotas da API HML, o fluxo `DELETED → ACTIVE → CANCELLED → ACTIVE → DELETED` foi concluído com versões atuais. As quatro transições tiveram motivo, quatro registros em `audit.audit_log` e os quatro eventos correspondentes em `audit.outbox_message`. A PO terminou `DELETED`; as contagens permaneceram 1 `ACTIVE` e 1 `DELETED`, sem alocações ativas; a outra PO permaneceu `ACTIVE` na mesma versão. O health local e HTTPS autenticado respondeu 200; a rota nova sem sessão respondeu 401. M064 e o release não foram aplicados em produção.
+
+A API HML executa `/opt/import-erp/apps/api/hml-release-cc458b0/dist/server.js` pelo drop-in `/etc/systemd/system/import-erp-hml-api.service.d/zzzzz-release-cc458b0.conf`. Antes da troca, o drop-in e release efetivos (`hml-release-5165ca7`) foram preservados em `/var/backups/import-erp/hml-cycle2-api-cc458b0-predeploy-20261021`. Para rollback somente do código, restaure `zzzz-release-5165ca7.conf` desse backup como drop-in efetivo, remova o drop-in `zzzzz-release-cc458b0.conf`, execute `systemctl daemon-reload` e reinicie `import-erp-hml-api`. M064 deve permanecer aplicada no HML.
