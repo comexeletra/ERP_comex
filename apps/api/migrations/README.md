@@ -1,13 +1,11 @@
 # PostgreSQL migrations
 
-Every ERP database must use the same migration set. The current operational,
-test, and empty homologation databases are all at M001–M034. M032 adds export
-jobs, M033 indexes open issues by source, and M034 stores XLSX export results.
-The separate `erp_po_totvs_gatewayflow_20261010_test` database was upgraded from
-M031 to M034 on 2026-10-15. The empty `erp_po_totvs_hml` database was created
-from migrations without restoring operational data; catalog seed rows were
-cleared after migration. See `deploy/hostinger/README.md` for verification and
-the isolated runtime configuration.
+Every ERP database must receive the migrations required by the code deployed to
+it. As of 2026-10-20, `erp_po_totvs_test` and
+`erp_po_totvs_gatewayflow_20261010_test` are at M001–M034, while
+`erp_po_totvs_hml` is at M001–M063. HML contains business data and is no longer
+empty; the 2026-10-15 setup below records its initial state. See
+`deploy/hostinger/README.md` for M063 backup and validation evidence.
 
 These PostgreSQL migrations are applied by the explicit Node migration runner.
 `M018_operational_po_ip.sql` adds manually transcribed PO items and quantitative

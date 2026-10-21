@@ -1,5 +1,19 @@
 # API ERP na VPS Hostinger
 
+## M063 — ciclo de vida de PO no HML (2026-10-20)
+
+M063 foi aplicada somente a `erp_po_totvs_hml`, que estava em M062. Antes da
+aplicação, o backup
+`/var/backups/import-erp/erp_po_totvs_hml_m063_20261021T001917Z.dump` foi
+verificado e restaurado em uma base descartável. A migration passou na cópia,
+incluindo os gatilhos de transição e bloqueio de alterações para POs fechadas.
+Após a aplicação, o ledger ficou em 63/63, sem pendências; as contagens
+permaneceram em 1 PO, 215 itens, 1 alocação e 2 IPs, com 0 alocações ativas.
+O backup foi verificado com `pg_restore --list`; SHA-256:
+`1b3620cc3a7da676f1b9479e29c100729a886d3dcf1e2615d8ebe1dd097e3a6a`.
+Os bancos `erp_po_totvs_test` e `erp_po_totvs_gatewayflow_20261010_test` não
+foram alterados.
+
 ## Release M032-M034: exportacao Excel em fila (2026-10-15)
 
 A tela ja mostrava a exportacao Excel, mas a VPS ainda estava na API M031:
