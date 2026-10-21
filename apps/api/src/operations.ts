@@ -292,10 +292,10 @@ async function changePurchaseOrderLifecycle(client: PoolClient, id: string, expe
   const actor = `${auth.actor.issuer}#${auth.actor.subject}`;
   const updated = await client.query<{ version: string; lifecycle_changed_at: string | null;
     lifecycle_changed_by: string | null; lifecycle_reason: string | null }>(
-    `UPDATE procurement.purchase_order SET lifecycle_status = $2,
-       lifecycle_changed_at = CASE WHEN $2 = 'ACTIVE' THEN NULL ELSE now() END,
-       lifecycle_changed_by = CASE WHEN $2 = 'ACTIVE' THEN NULL ELSE $3 END,
-       lifecycle_reason = CASE WHEN $2 = 'ACTIVE' THEN NULL ELSE $4 END,
+    `UPDATE procurement.purchase_order SET lifecycle_status = $2::varchar(16),
+       lifecycle_changed_at = CASE WHEN $2::varchar(16) = 'ACTIVE' THEN NULL ELSE now() END,
+       lifecycle_changed_by = CASE WHEN $2::varchar(16) = 'ACTIVE' THEN NULL ELSE $3 END,
+       lifecycle_reason = CASE WHEN $2::varchar(16) = 'ACTIVE' THEN NULL ELSE $4 END,
        version = version + 1, updated_at = now()
      WHERE id = $1 RETURNING version::text, lifecycle_changed_at, lifecycle_changed_by, lifecycle_reason`,
     [id, next, actor, reason]);

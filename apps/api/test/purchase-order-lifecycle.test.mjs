@@ -245,6 +245,9 @@ test("reactivation and restoration audit the previous status, clear active metad
     assert.equal(after.lifecycle_changed_at, null);
     assert.equal(after.lifecycle_changed_by, null);
     assert.equal(after.lifecycle_reason, null);
+    const update = queries.find(query => query.sql.includes("UPDATE procurement.purchase_order SET lifecycle_status"));
+    assert.ok(update);
+    assert.equal((update.sql.match(/\$2::varchar\(16\)/gu) ?? []).length, 4);
     const outbox = queries.find(query => query.sql.includes("INSERT INTO audit.outbox_message"));
     assert.ok(outbox);
     assert.equal(outbox.params[1], `comex.purchase_order.${operation.toLowerCase()}`);
