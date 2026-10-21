@@ -24,8 +24,31 @@ const poFields = z.object({
   number: z.string().trim().min(1).max(80),
   purchaseRequestId: z.uuid().nullable().optional(),
   supplierText: nullableText(240), orderDate: z.iso.date().nullable(), notes: z.string().trim().max(4000),
+  confirmDuplicateNumber: z.boolean().optional(),
+  duplicateNumberJustification: z.string().trim().min(3).max(1000).optional(),
   reason: z.string().trim().min(3).max(1000),
 }).strict();
+const patchPoFields = poFields.extend({ importer: z.string().trim().min(1).max(120).optional() });
+const purchaseOrderReimportFields = z.object({
+  header: z.object({ number: z.string().trim().min(1).max(80) }).strict(),
+  fileName: z.string().trim().min(1).max(255),
+  fileSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+  currency: z.string().regex(/^[A-Z]{3}$/u),
+  items: z.array(z.object({ externalLineReference: z.string().trim().min(1).max(80),
+    productCode: z.string().trim().min(1).max(120), description: z.string().trim().min(1).max(1000),
+    orderedQuantity: quantity, unitPrice: nonnegative }).strict()).min(1).max(500),
+}).strict();
+function validateUniqueReimportRows(value: { items: Array<{ externalLineReference: string }> },
+  context: z.RefinementCtx) {
+  const references = value.items.map(item => item.externalLineReference);
+  if (new Set(references).size !== references.length) {
+    context.addIssue({ code: "custom", path: ["items"], message: "A planilha contém linhas Item repetidas." });
+  }
+}
+const purchaseOrderReimportBody = purchaseOrderReimportFields.extend({
+  reason: z.string().trim().min(3).max(1000),
+}).strict().superRefine(validateUniqueReimportRows);
+const purchaseOrderReimportPreviewBody = purchaseOrderReimportFields.superRefine(validateUniqueReimportRows);
 export const createPo = poFields.extend({
   importer: z.string().trim().min(1).max(120),
   supplierText: z.string().trim().min(1).max(240),
@@ -66,6 +89,10 @@ export const itemFields = z.object({
   currency: z.string().regex(/^[A-Z]{3}$/u).nullable(),
   reason: z.string().trim().min(3).max(1000),
 }).strict().refine(value => (value.unitPrice === null) === (value.currency === null));
+const commonItemColumns: Record<string, string> = {
+  scNumber: "sc_number", scDate: "sc_date", scApprovalDate: "sc_approval_date",
+  requester: "requester", commercialPlanReceivedDate: "commercial_plan_received_date",
+};
 const allocationFields = z.object({
   quantity, notes: z.string().trim().max(2000), reason: z.string().trim().min(3).max(1000),
 }).strict();
@@ -200,6 +227,10 @@ export async function saveReceipt(client: PoolClient, actorId: string, key: stri
      (actor_user_id,idempotency_key,payload_sha256,resource_type,resource_id)
      VALUES ($1,$2,$3,$4,$5)`, [actorId, key, hash, type, id]);
 }
+export async function setPurchaseOrderObservationActor(client: PoolClient,
+  actor: { issuer: string; subject: string }) {
+  await client.query("SELECT set_config('app.actor_id',$1,true)", [`${actor.issuer}#${actor.subject}`]);
+}
 export async function record(client: PoolClient, aggregateType: string, aggregateId: string,
   entityType: string, entityId: string, operation: string, before: unknown, after: unknown,
   actor: { issuer: string; subject: string }, reason: string) {
@@ -227,6 +258,167 @@ async function knownImporter(client: PoolClient, importer: string) {
      LIMIT 1`, [importer]);
   if (!result.rowCount) throw new BusinessError(404, "UNKNOWN_IMPORTER", "Importadora ainda não cadastrada.");
 }
+
+type NewPurchaseOrderHeader = {
+  importer: string;
+  number: string;
+  supplierText: string | null;
+  purchaseRequestId?: string | null;
+  confirmDuplicateNumber?: boolean;
+  duplicateNumberJustification?: string;
+};
+
+function normalizedCode(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLocaleUpperCase("en-US") : "";
+}
+
+export async function validateNewPurchaseOrder(client: PoolClient, header: NewPurchaseOrderHeader,
+  scopes: string[]) {
+  if (header.confirmDuplicateNumber && !header.duplicateNumberJustification?.trim()) {
+    throw new BusinessError(400, "DUPLICATE_PO_JUSTIFICATION_REQUIRED", "Informe a justificativa da duplicidade do número da PO.");
+  }
+  const importer = await client.query<{ cnpj: string | null }>(
+    `SELECT cnpj FROM catalog.operational_value WHERE entity_key='IMPORTER' AND value=$1`, [header.importer]);
+  if (!/^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}$/u.test(importer.rows[0]?.cnpj ?? "")) {
+    throw new BusinessError(400, "IMPORTER_CNPJ_REQUIRED", "A nova PO exige uma importadora cadastrada com CNPJ.");
+  }
+
+  const duplicates = await client.query<{ importer: string }>(
+    `SELECT importer FROM procurement.purchase_order
+     WHERE normalized_number=upper(btrim($1::text)) AND importer=ANY($2::text[])
+     ORDER BY importer`, [header.number, scopes]);
+  const duplicateImporters = [...new Set(duplicates.rows.map(row => row.importer))];
+  if (duplicateImporters.includes(header.importer)) {
+    throw new BusinessError(409, "PO_NUMBER_EXISTS_IN_IMPORTER", "Já existe uma PO com este número nesta importadora.");
+  }
+  const otherImporterDuplicates = duplicateImporters.filter(value => value !== header.importer);
+  if (otherImporterDuplicates.length && (!header.confirmDuplicateNumber || !header.duplicateNumberJustification?.trim())) {
+    throw new BusinessError(409, "PO_NUMBER_OTHER_IMPORTER_CONFIRMATION_REQUIRED",
+      "Este número de PO existe em outra importadora do seu escopo. Confirme e informe uma justificativa.");
+  }
+
+  const supplier = await client.query<{ id: string; code: string; name: string }>(
+    `SELECT id,code,name FROM catalog.entry WHERE kind='SUPPLIER' AND importer IS NULL AND status='ACTIVE'
+     AND normalized_code=upper(btrim($1::text)) LIMIT 2`, [header.supplierText]);
+  if (supplier.rows.length !== 1) {
+    throw new BusinessError(400, "UNKNOWN_SUPPLIER", "Selecione o código de um fornecedor ativo do catálogo global.");
+  }
+
+  const purchaseRequest = await validatePurchaseRequest(client, header.purchaseRequestId,
+    header.importer, header.supplierText);
+  return { supplier: supplier.rows[0], otherImporterDuplicates, purchaseRequest };
+}
+
+export async function validatePurchaseOrderImporterChange(client: PoolClient, options: {
+  id: string; currentImporter: string; destinationImporter: string; number: string;
+  scopes: string[]; roles: string[];
+}) {
+  if (options.destinationImporter === options.currentImporter) return;
+  if (!options.roles.some(role => role === "Master" || role === "Administrador")) {
+    throw new BusinessError(403, "IMPORTER_CHANGE_FORBIDDEN", "Somente Master ou Administrador pode trocar a importadora da PO.");
+  }
+  inScope(options.destinationImporter, options.scopes);
+  const importer = await client.query<{ cnpj: string | null }>(
+    `SELECT cnpj FROM catalog.operational_value WHERE entity_key='IMPORTER' AND value=$1 AND status='ACTIVE'`,
+    [options.destinationImporter]);
+  if (!/^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}$/u.test(importer.rows[0]?.cnpj ?? "")) {
+    throw new BusinessError(409, "IMPORTER_CNPJ_REQUIRED", "A importadora de destino precisa estar ativa e cadastrada com CNPJ.");
+  }
+  const allocations = await client.query<{ has_active_allocations: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM procurement.po_item_allocation allocation
+      JOIN procurement.purchase_order_item item ON item.id=allocation.purchase_order_item_id
+      WHERE item.purchase_order_id=$1 AND allocation.status='ACTIVE') AS has_active_allocations`, [options.id]);
+  if (allocations.rows[0]?.has_active_allocations) {
+    throw new BusinessError(409, "PO_HAS_ACTIVE_ALLOCATIONS", "Resolva as alocações ativas antes de trocar a importadora da PO.");
+  }
+  const duplicate = await client.query<{ id: string }>(
+    `SELECT id FROM procurement.purchase_order WHERE importer=$1 AND normalized_number=upper(btrim($2::text))
+      AND id<>$3 LIMIT 1`, [options.destinationImporter, options.number, options.id]);
+  if (duplicate.rowCount) {
+    throw new BusinessError(409, "PO_NUMBER_EXISTS_IN_DESTINATION", "Já existe uma PO com este número na importadora de destino.");
+  }
+}
+
+export type PurchaseOrderItemValidationInput = { productCode: string; unit: string; costCenter?: string | null };
+
+export async function validatePurchaseOrderItems(client: PoolClient, items: PurchaseOrderItemValidationInput[]) {
+  const productCodes = [...new Set(items.map(item => normalizedCode(item.productCode)))];
+  const products = await client.query<{ normalized_code: string; product_ncm_code: string | null }>(
+    `SELECT normalized_code,product_ncm_code FROM catalog.entry
+     WHERE kind='PRODUCT' AND importer IS NULL AND status='ACTIVE' AND normalized_code=ANY($1::text[])`, [productCodes]);
+  const productByCode = new Map(products.rows.map(product => [product.normalized_code, product.product_ncm_code]));
+  const missingProducts = productCodes.filter(code => !productByCode.has(code));
+  if (missingProducts.length) {
+    throw new BusinessError(400, "UNKNOWN_PRODUCT", `Produto fora do catálogo global ativo: ${missingProducts.slice(0, 5).join(", " )}.`);
+  }
+
+  const units = [...new Set(items.map(item => normalizedCode(item.unit)))];
+  const foundUnits = await client.query<{ normalized_value: string }>(
+    `SELECT normalized_value FROM catalog.operational_value WHERE entity_key='UNIT_OF_MEASURE'
+     AND status='ACTIVE' AND normalized_value=ANY($1::text[])`, [units]);
+  const unitSet = new Set(foundUnits.rows.map(row => row.normalized_value));
+  const missingUnits = units.filter(value => !unitSet.has(value));
+  if (missingUnits.length) {
+    throw new BusinessError(400, "UNKNOWN_UNIT_OF_MEASURE", `Unidade fora dos valores operacionais: ${missingUnits.slice(0, 5).join(", ")}.`);
+  }
+
+  const costCenters = [...new Set(items.map(item => normalizedCode(item.costCenter)).filter(Boolean))];
+  if (costCenters.length) {
+    const found = await client.query<{ normalized_value: string }>(
+      `SELECT normalized_value FROM catalog.operational_value WHERE entity_key='COST_CENTER'
+       AND status='ACTIVE' AND normalized_value=ANY($1::text[])`, [costCenters]);
+    const foundSet = new Set(found.rows.map(row => row.normalized_value));
+    const missing = costCenters.filter(value => !foundSet.has(value));
+    if (missing.length) {
+      throw new BusinessError(400, "UNKNOWN_COST_CENTER", `Centro de custo fora dos valores operacionais: ${missing.slice(0, 5).join(", ")}.`);
+    }
+  }
+  return productByCode;
+}
+
+export function purchaseRequestOperationalFields(request: Record<string, unknown> | null): Record<string, unknown> {
+  if (!request) return {};
+  return {
+    scNumber: request.sc_number ?? null, scDate: request.sc_date ?? null,
+    scApprovalDate: request.approval_date ?? null, requester: request.requester ?? null,
+    commercialPlanReceivedDate: request.commercial_plan_received_date ?? null,
+  };
+}
+
+export function purchaseOrderProductReferenceSql(itemAlias = "item") {
+  if (!/^[a-z_][a-z0-9_]*$/iu.test(itemAlias)) throw new Error("Alias SQL inválido.");
+  return `coalesce((SELECT jsonb_agg(jsonb_build_object('currency', reference.currency_code,
+      'unitPrice', reference.unit_price::text, 'purchaseOrderNumber', reference.purchase_order_number,
+      'observedAt', reference.observed_at) ORDER BY reference.currency_code)
+    FROM catalog.product_price_reference AS reference
+    JOIN catalog.entry AS product ON product.id=reference.product_id
+    WHERE product.kind='PRODUCT' AND product.importer IS NULL
+      AND product.normalized_code=upper(btrim(${itemAlias}.product_code))), '[]'::jsonb) AS "referencePrices",
+  (SELECT jsonb_build_object('currency', reference.currency_code,
+      'unitPrice', reference.unit_price::text, 'purchaseOrderNumber', reference.purchase_order_number,
+      'observedAt', reference.observed_at)
+    FROM catalog.product_price_reference AS reference
+    JOIN catalog.entry AS product ON product.id=reference.product_id
+    WHERE product.kind='PRODUCT' AND product.importer IS NULL
+      AND product.normalized_code=upper(btrim(${itemAlias}.product_code))
+      AND reference.currency_code=${itemAlias}.currency_code LIMIT 1) AS "priceReference",
+  (SELECT description_reference.description
+    FROM catalog.product_totvs_description_reference AS description_reference
+    JOIN catalog.entry AS product ON product.id=description_reference.product_id
+    WHERE product.kind='PRODUCT' AND product.importer IS NULL
+      AND product.normalized_code=upper(btrim(${itemAlias}.product_code)) LIMIT 1) AS "latestTotvsDescription",
+  (SELECT description_reference.purchase_order_number
+    FROM catalog.product_totvs_description_reference AS description_reference
+    JOIN catalog.entry AS product ON product.id=description_reference.product_id
+    WHERE product.kind='PRODUCT' AND product.importer IS NULL
+      AND product.normalized_code=upper(btrim(${itemAlias}.product_code)) LIMIT 1) AS "latestTotvsDescriptionPurchaseOrderNumber",
+  (SELECT description_reference.observed_at
+    FROM catalog.product_totvs_description_reference AS description_reference
+    JOIN catalog.entry AS product ON product.id=description_reference.product_id
+    WHERE product.kind='PRODUCT' AND product.importer IS NULL
+      AND product.normalized_code=upper(btrim(${itemAlias}.product_code)) LIMIT 1) AS "latestTotvsDescriptionObservedAt"`;
+}
+
 export async function lockedPo(client: PoolClient, id: string, scopes: string[]) {
   const result = await client.query<Record<string, unknown>>(
     `SELECT * FROM procurement.purchase_order WHERE id = $1 AND importer = ANY($2::text[]) FOR UPDATE`,
@@ -239,16 +431,86 @@ export function assertPoActive(po: Record<string, unknown>) {
     throw new BusinessError(409, "PO_NOT_ACTIVE", "A PO cancelada, encerrada ou excluída não pode ser alterada ou receber novas alocações.");
   }
 }
-export async function validatePurchaseRequest(client: PoolClient, id: string | null | undefined, importer: string) {
-  if (!id) return;
-  const result = await client.query(
-    `SELECT id FROM procurement.purchase_request WHERE id = $1 AND importer = $2`, [id, importer]);
-  if (!result.rows[0]) throw new BusinessError(404, "PURCHASE_REQUEST_NOT_FOUND", "SC não encontrada para esta importadora.");
+export async function validatePurchaseRequest(client: PoolClient, id: string | null | undefined, importer: string,
+  supplierText?: string | null) {
+  if (!id) return null;
+  const result = await client.query<Record<string, unknown>>(
+    `SELECT request.id,request.importer,request.supplier_text,request.sc_number,request.sc_date,
+            request.approval_date,request.requester,request.commercial_plan_received_date,
+            supplier.code AS supplier_code
+     FROM procurement.purchase_request AS request
+     LEFT JOIN catalog.entry AS supplier ON supplier.id=request.supplier_entry_id
+     WHERE request.id = $1 AND request.importer = $2`, [id, importer]);
+  const request = result.rows[0];
+  if (!request) throw new BusinessError(404, "PURCHASE_REQUEST_NOT_FOUND", "SC não encontrada para esta importadora.");
+  if (supplierText && normalizedCode(request.supplier_code ?? request.supplier_text) !== normalizedCode(supplierText)) {
+    throw new BusinessError(409, "PURCHASE_REQUEST_SUPPLIER_MISMATCH",
+      "A SC vinculada tem fornecedor diferente do código informado na PO.");
+  }
+  return request;
 }
 export function checkVersion(row: Record<string, unknown>, expected: string) {
   if (`"${row.version}"` !== expected) {
     throw new BusinessError(409, "VERSION_CONFLICT", "Registro alterado. Recarregue antes de salvar.");
   }
+}
+
+type PurchaseOrderReimportRow = {
+  externalLineReference: string; productCode: string; description: string;
+  orderedQuantity: string; unitPrice: string;
+};
+type PurchaseOrderReimportCurrentRow = Record<string, unknown> & {
+  id: string; external_line_reference: string | null; product_code: string; description: string;
+  ordered_quantity: string; unit_price: string | null; currency_code: string | null; source_status: string | null;
+};
+
+export function calculatePurchaseOrderReimportDiff(currentRows: PurchaseOrderReimportCurrentRow[],
+  incomingRows: PurchaseOrderReimportRow[], currency: string) {
+  const currentByReference = new Map(currentRows.filter(row => row.external_line_reference)
+    .map(row => [String(row.external_line_reference).trim(), row]));
+  const incomingByReference = new Map(incomingRows.map(row => [row.externalLineReference.trim(), row]));
+  const cancelledReferences = currentRows.filter(row => row.external_line_reference
+    && ["CANCELLED", "CANCELED"].includes(String(row.source_status ?? "").toUpperCase())
+    && incomingByReference.has(String(row.external_line_reference).trim()))
+    .map(row => String(row.external_line_reference));
+  const missingReferences = currentRows.filter(row =>
+    !["CANCELLED", "CANCELED"].includes(String(row.source_status ?? "").toUpperCase())
+    && (!row.external_line_reference || !incomingByReference.has(String(row.external_line_reference).trim())))
+    .map(row => row.external_line_reference ? String(row.external_line_reference)
+      : row.line_number ? `linha ${String(row.line_number)} sem Item` : "item sem Item");
+  const unknownReferences = incomingRows.filter(row => !currentByReference.has(row.externalLineReference.trim()))
+    .map(row => row.externalLineReference);
+  const productCodeMismatches: Array<{ externalLineReference: string; current: string; incoming: string }> = [];
+  const differences: Array<{ externalLineReference: string; productCode: string;
+    changes: Record<string, { before: string | null; after: string }> }> = [];
+
+  for (const incoming of incomingRows) {
+    const current = currentByReference.get(incoming.externalLineReference.trim());
+    if (!current || ["CANCELLED", "CANCELED"].includes(String(current.source_status ?? "").toUpperCase())) continue;
+    if (normalizedCode(current.product_code) !== normalizedCode(incoming.productCode)) {
+      productCodeMismatches.push({ externalLineReference: incoming.externalLineReference,
+        current: String(current.product_code), incoming: incoming.productCode });
+      continue;
+    }
+    const changes: Record<string, { before: string | null; after: string }> = {};
+    if (String(current.description) !== incoming.description) {
+      changes.description = { before: String(current.description), after: incoming.description };
+    }
+    if (decimalUnits(String(current.ordered_quantity)) !== decimalUnits(incoming.orderedQuantity)) {
+      changes.orderedQuantity = { before: String(current.ordered_quantity), after: incoming.orderedQuantity };
+    }
+    const samePrice = current.unit_price === null ? false
+      : decimalUnits(String(current.unit_price)) === decimalUnits(incoming.unitPrice);
+    if (!samePrice) changes.unitPrice = { before: current.unit_price === null ? null : String(current.unit_price), after: incoming.unitPrice };
+    if (String(current.currency_code ?? "").trim().toUpperCase() !== currency) {
+      changes.currency = { before: current.currency_code === null ? null : String(current.currency_code).trim(), after: currency };
+    }
+    if (Object.keys(changes).length) differences.push({ externalLineReference: incoming.externalLineReference,
+      productCode: String(current.product_code), changes });
+  }
+  return { differences, missingReferences, unknownReferences, cancelledReferences, productCodeMismatches,
+    canApply: !missingReferences.length && !unknownReferences.length && !cancelledReferences.length
+      && !productCodeMismatches.length };
 }
 
 type PurchaseOrderLifecycleAction = "CANCEL" | "CLOSE" | "REOPEN" | "DELETE" | "REACTIVATE" | "RESTORE";
@@ -355,6 +617,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
       return transaction(pool, reply, async client => {
         const command = await receipt(client, auth.actor.userId, key, "IP_INVOICE_IMPORT", body);
         if (command.existingId) return { id: command.existingId, replayed: true };
+        await setPurchaseOrderObservationActor(client, auth.actor);
         await knownImporter(client, body.process.importer);
         const invoiceImporterCnpj = typeof body.invoice.metadata.importerCnpj === "string"
           ? body.invoice.metadata.importerCnpj.replace(/\D/gu, "") : "";
@@ -837,6 +1100,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
                 item.product_code AS "productCode", item.description,
                 item.ordered_quantity::text AS "orderedQuantity", item.unit,
                 item.unit_price::text AS "unitPrice", item.currency_code AS currency,
+                ${purchaseOrderProductReferenceSql("item")},
                 item.necessity_date::text AS "necessityDate", item.sc_date::text AS "scDate", item.priority, item.demand,
                 item.requester, item.sc_number AS "scNumber", item.sc_approval_date::text AS "scApprovalDate",
                 item.purpose, item.product_group AS "productGroup", to_jsonb(item)->>'item_group' AS "group", item.cost_center AS "costCenter",
@@ -883,7 +1147,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const claim = await receipt(client, auth.actor.userId, key, "PO", body);
         if (claim.existingId) return { id: claim.existingId, replayed: true };
         await knownImporter(client, body.importer);
-        await validatePurchaseRequest(client, body.purchaseRequestId, body.importer);
+        await validateNewPurchaseOrder(client, body, auth.scopes);
         const id = randomUUID();
         const result = await client.query<Record<string, unknown>>(
           `INSERT INTO procurement.purchase_order
@@ -900,9 +1164,88 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
       }, 201);
     });
 
+  app.post<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/reimport/preview",
+    { config: permissionConfig("purchase-orders.write") }, async (request, reply) => {
+      const id = uuid.safeParse(request.params.id);
+      const parsed = purchaseOrderReimportPreviewBody.safeParse(request.body);
+      if (!id.success || !parsed.success) return problem(reply, 400, "INVALID_PO_REIMPORT", "Revise a planilha de reimportação.");
+      let auth: ReturnType<typeof actorAndScopes>;
+      try { auth = actorAndScopes(request); }
+      catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
+      const po = await pool.query<Record<string, unknown>>(
+        `SELECT * FROM procurement.purchase_order WHERE id=$1 AND importer=ANY($2::text[]) LIMIT 1`, [id.data, auth.scopes]);
+      const currentPo = po.rows[0];
+      if (!currentPo) return problem(reply, 404, "RESOURCE_NOT_FOUND", "PO não encontrada.");
+      if (currentPo.lifecycle_status !== "ACTIVE") return problem(reply, 409, "PO_NOT_ACTIVE", "Somente uma PO ativa pode ser reimportada.");
+      if (currentPo.source_kind !== "MANUAL_TOTVS_REFERENCE") {
+        return problem(reply, 409, "PO_REIMPORT_UNSUPPORTED_SOURCE", "A reimportação está disponível para POs cadastradas pelo export TOTVS.");
+      }
+      if (normalizePoNumber(parsed.data.header.number) !== normalizePoNumber(String(currentPo.external_number))) {
+        return problem(reply, 409, "PO_REIMPORT_NUMBER_MISMATCH", "O número do pedido na planilha não corresponde a esta PO.");
+      }
+      const currentItems = await pool.query<PurchaseOrderReimportCurrentRow>(
+        `SELECT * FROM procurement.purchase_order_item WHERE purchase_order_id=$1 ORDER BY line_number`, [id.data]);
+      return { version: String(currentPo.version), ...calculatePurchaseOrderReimportDiff(
+        currentItems.rows, parsed.data.items, parsed.data.currency) };
+    });
+
+  app.post<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/reimport",
+    { config: permissionConfig("purchase-orders.write") }, async (request, reply) => {
+      const id = uuid.safeParse(request.params.id);
+      const parsed = purchaseOrderReimportBody.safeParse(request.body);
+      if (!id.success || !parsed.success) return problem(reply, 400, "INVALID_PO_REIMPORT", "Revise a planilha de reimportação.");
+      let auth: ReturnType<typeof actorAndScopes>; let expected: string;
+      try { auth = actorAndScopes(request); expected = versionFrom(request); }
+      catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
+      return transaction(pool, reply, async client => {
+        const currentPo = await lockedPo(client, id.data, auth.scopes);
+        assertPoActive(currentPo);
+        checkVersion(currentPo, expected);
+        if (currentPo.source_kind !== "MANUAL_TOTVS_REFERENCE") {
+          throw new BusinessError(409, "PO_REIMPORT_UNSUPPORTED_SOURCE", "A reimportação está disponível para POs cadastradas pelo export TOTVS.");
+        }
+        if (normalizePoNumber(parsed.data.header.number) !== normalizePoNumber(String(currentPo.external_number))) {
+          throw new BusinessError(409, "PO_REIMPORT_NUMBER_MISMATCH", "O número do pedido na planilha não corresponde a esta PO.");
+        }
+        const currentItems = await client.query<PurchaseOrderReimportCurrentRow>(
+          `SELECT * FROM procurement.purchase_order_item WHERE purchase_order_id=$1 ORDER BY line_number FOR UPDATE`, [id.data]);
+        const diff = calculatePurchaseOrderReimportDiff(currentItems.rows, parsed.data.items, parsed.data.currency);
+        if (diff.cancelledReferences.length) {
+          throw new BusinessError(409, "PO_REIMPORT_REMOVED_ITEMS", "A planilha contém itens já removidos desta PO.");
+        }
+        if (diff.missingReferences.length || diff.unknownReferences.length) {
+          throw new BusinessError(409, "PO_REIMPORT_LINE_SET_MISMATCH", "As linhas Item da planilha não correspondem aos itens ativos desta PO.");
+        }
+        if (diff.productCodeMismatches.length) {
+          throw new BusinessError(409, "PO_REIMPORT_PRODUCT_CODE_MISMATCH", "Há código de produto diferente para a mesma linha Item; confira o mapeamento antes de reimportar.");
+        }
+        if (!diff.differences.length) return { id: id.data, updatedCount: 0, version: String(currentPo.version), differences: [] };
+        await setPurchaseOrderObservationActor(client, auth.actor);
+        const incomingByReference = new Map(parsed.data.items.map(item => [item.externalLineReference, item]));
+        const currentByReference = new Map(currentItems.rows.map(item => [String(item.external_line_reference ?? "").trim(), item]));
+        for (const difference of diff.differences) {
+          const current = currentByReference.get(difference.externalLineReference)!;
+          const incoming = incomingByReference.get(difference.externalLineReference)!;
+          const updated = await client.query<Record<string, unknown>>(
+            `UPDATE procurement.purchase_order_item SET description=$2, ordered_quantity=$3,
+              unit_price=$4, currency_code=$5, updated_at=now() WHERE id=$1 RETURNING *`,
+            [current.id, incoming.description, incoming.orderedQuantity, incoming.unitPrice, parsed.data.currency]);
+          const after = updated.rows[0] ?? { ...current, description: incoming.description,
+            ordered_quantity: incoming.orderedQuantity, unit_price: incoming.unitPrice, currency_code: parsed.data.currency };
+          await record(client, "PURCHASE_ORDER", id.data, "PURCHASE_ORDER_ITEM", String(current.id), "UPDATE",
+            current, { ...after, sourceFile: { fileName: parsed.data.fileName, fileSha256: parsed.data.fileSha256 } },
+            auth.actor, parsed.data.reason);
+        }
+        const changedPo = await client.query<{ version: string }>(
+          `UPDATE procurement.purchase_order SET version=version+1,updated_at=now() WHERE id=$1 RETURNING version::text`, [id.data]);
+        return { id: id.data, updatedCount: diff.differences.length,
+          version: changedPo.rows[0]?.version ?? String(Number(currentPo.version) + 1), differences: diff.differences };
+      });
+    });
+
   app.patch<{ Params: { id: string } }>("/api/v1/purchase-orders/:id",
     { config: permissionConfig("purchase-orders.write") }, async (request, reply) => {
-      const id = uuid.safeParse(request.params.id); const parsed = poFields.safeParse(request.body);
+      const id = uuid.safeParse(request.params.id); const parsed = patchPoFields.safeParse(request.body);
       if (!id.success || !parsed.success) return problem(reply, 400, "INVALID_PO", "Revise os campos da PO.");
       let expected: string; let auth: ReturnType<typeof actorAndScopes>;
       try { expected = versionFrom(request); auth = actorAndScopes(request); }
@@ -911,13 +1254,21 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const before = await lockedPo(client, id.data, auth.scopes);
         assertPoActive(before);
         checkVersion(before, expected);
+        const destinationImporter = parsed.data.importer ?? String(before.importer);
+        const importerChanged = destinationImporter !== String(before.importer);
+        if (importerChanged) {
+          await validatePurchaseOrderImporterChange(client, { id: id.data, currentImporter: String(before.importer),
+            destinationImporter, number: parsed.data.number, scopes: auth.scopes,
+            roles: request.authorizationContext?.roles ?? [] });
+        }
         if (before.source_kind !== "MANUAL_TOTVS_REFERENCE"
           && parsed.data.number !== before.external_number) {
           throw new BusinessError(409, "HISTORICAL_IDENTITY", "A identidade da PO histórica exige reconciliação da origem.");
         }
-        if (parsed.data.purchaseRequestId !== undefined) {
-          await validatePurchaseRequest(client, parsed.data.purchaseRequestId, String(before.importer));
-        }
+        const purchaseRequestId = parsed.data.purchaseRequestId === undefined
+          ? (before.purchase_request_id ? String(before.purchase_request_id) : null) : parsed.data.purchaseRequestId;
+        const purchaseRequest = purchaseRequestId ? await validatePurchaseRequest(client, purchaseRequestId,
+          destinationImporter, parsed.data.supplierText ?? String(before.supplier_text ?? "")) : null;
         const result = await client.query<Record<string, unknown>>(
           `UPDATE procurement.purchase_order AS po SET supplier_text = $2::text,
             supplier_entry_id = CASE WHEN $2::text IS NULL THEN NULL
@@ -929,12 +1280,25 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
               ELSE po.supplier_entry_id END,
             notes = $3, external_number = $4::text, normalized_number = upper($4::text),
             purchase_request_id = CASE WHEN $5::boolean THEN $6::uuid ELSE purchase_request_id END,
-            version = version + 1, updated_at = now()
+            importer = $7, version = version + 1, updated_at = now()
            WHERE id = $1 RETURNING id, version::text`,
           [id.data, parsed.data.supplierText, parsed.data.notes, parsed.data.number,
-            parsed.data.purchaseRequestId !== undefined, parsed.data.purchaseRequestId ?? null]);
+            parsed.data.purchaseRequestId !== undefined, parsed.data.purchaseRequestId ?? null, destinationImporter]);
         await record(client, "PURCHASE_ORDER", id.data, "PURCHASE_ORDER", id.data, "UPDATE",
           before, { ...parsed.data, orderDate: before.order_date ?? null }, auth.actor, parsed.data.reason);
+        const scFields = purchaseRequestOperationalFields(purchaseRequest);
+        const scEntries = Object.entries(scFields);
+        if (scEntries.length) {
+          const sql = scEntries.map(([field], index) => `${commonItemColumns[field]}=$${index + 2}`).join(",");
+          const items = await client.query<{ id: string }>(
+            `SELECT id FROM procurement.purchase_order_item WHERE purchase_order_id=$1 ORDER BY line_number FOR UPDATE`, [id.data]);
+          for (const item of items.rows) {
+            await client.query(`UPDATE procurement.purchase_order_item SET ${sql},updated_at=now() WHERE id=$1`,
+              [item.id, ...scEntries.map(([, value]) => value)]);
+            await record(client, "PURCHASE_ORDER", id.data, "PURCHASE_ORDER_ITEM", item.id,
+              "FOLLOWUP_UPDATE", null, scFields, auth.actor, parsed.data.reason);
+          }
+        }
         return result.rows[0];
       });
     });
@@ -952,6 +1316,45 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
   app.delete<{ Params: { id: string } }>("/api/v1/purchase-orders/:id",
     { config: permissionConfig("purchase-orders.write") }, purchaseOrderLifecycleHandler(pool, "DELETE"));
 
+  app.post<{ Params: { id: string; itemId: string } }>("/api/v1/purchase-orders/:id/items/:itemId/remove",
+    { config: permissionConfig("purchase-orders.write") }, async (request, reply) => {
+      const poId = uuid.safeParse(request.params.id); const itemId = uuid.safeParse(request.params.itemId);
+      const parsed = z.object({ reason: z.string().trim().min(3).max(1000) }).strict().safeParse(request.body);
+      if (!poId.success || !itemId.success || !parsed.success) {
+        return problem(reply, 400, "INVALID_PO_ITEM_REMOVAL", "Informe um motivo válido para remover o item.");
+      }
+      let expected: string; let auth: ReturnType<typeof actorAndScopes>;
+      try { expected = versionFrom(request); auth = actorAndScopes(request); }
+      catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
+      return transaction(pool, reply, async client => {
+        const po = await lockedPo(client, poId.data, auth.scopes);
+        assertPoActive(po); checkVersion(po, expected);
+        const item = await client.query<PurchaseOrderReimportCurrentRow>(
+          `SELECT * FROM procurement.purchase_order_item WHERE id=$1 AND purchase_order_id=$2 FOR UPDATE`,
+          [itemId.data, poId.data]);
+        const before = item.rows[0];
+        if (!before) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Item não encontrado nesta PO.");
+        if (["CANCELLED", "CANCELED"].includes(String(before.source_status ?? "").toUpperCase())) {
+          throw new BusinessError(409, "PO_ITEM_ALREADY_REMOVED", "O item já foi removido desta PO.");
+        }
+        const allocations = await client.query<{ has_active_allocations: boolean }>(
+          `SELECT EXISTS (SELECT 1 FROM procurement.po_item_allocation
+            WHERE purchase_order_item_id=$1 AND status='ACTIVE') AS has_active_allocations`, [itemId.data]);
+        if (allocations.rows[0]?.has_active_allocations) {
+          throw new BusinessError(409, "PO_ITEM_HAS_ACTIVE_ALLOCATIONS", "Cancele as alocações ativas do item antes de removê-lo.");
+        }
+        const updated = await client.query<Record<string, unknown>>(
+          `UPDATE procurement.purchase_order_item SET source_status='CANCELLED',updated_at=now()
+            WHERE id=$1 RETURNING *`, [itemId.data]);
+        const changedPo = await client.query<{ version: string }>(
+          `UPDATE procurement.purchase_order SET version=version+1,updated_at=now() WHERE id=$1 RETURNING version::text`, [poId.data]);
+        const after = updated.rows[0] ?? { ...before, source_status: "CANCELLED" };
+        await record(client, "PURCHASE_ORDER", poId.data, "PURCHASE_ORDER_ITEM", itemId.data, "REMOVE",
+          before, after, auth.actor, parsed.data.reason);
+        return { id: itemId.data, sourceStatus: "CANCELLED", purchaseOrderVersion: changedPo.rows[0]?.version };
+      });
+    });
+
   app.post<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/items",
     { config: permissionConfig("purchase-orders.write") }, async (request, reply) => {
       const id = uuid.safeParse(request.params.id); const parsed = itemFields.safeParse(request.body);
@@ -968,6 +1371,11 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           `SELECT coalesce(max(line_number),0)::int + 1 AS line_number
            FROM procurement.purchase_order_item WHERE purchase_order_id = $1`, [id.data]);
         const itemId = randomUUID(); const body = parsed.data;
+        const productNcms = await validatePurchaseOrderItems(client, [{ productCode: body.productCode, unit: body.unit }]);
+        const productNcm = productNcms.get(normalizedCode(body.productCode));
+        await setPurchaseOrderObservationActor(client, auth.actor);
+        const purchaseRequest = po.purchase_request_id
+          ? await validatePurchaseRequest(client, String(po.purchase_request_id), String(po.importer), String(po.supplier_text ?? "")) : null;
         await client.query(
           `INSERT INTO procurement.purchase_order_item
            (id,purchase_order_id,line_number,external_line_reference,product_code,description,
@@ -975,10 +1383,20 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
           [itemId, id.data, next.rows[0].line_number, body.externalLineReference,
             body.productCode, body.description, body.orderedQuantity, body.unit, body.unitPrice, body.currency]);
+        if (productNcm) await client.query("UPDATE procurement.purchase_order_item SET ncm=$2 WHERE id=$1", [itemId, productNcm]);
+        const scFields = purchaseRequestOperationalFields(purchaseRequest);
+        const scEntries = Object.entries(scFields);
+        if (scEntries.length) {
+          const sql = scEntries.map(([field], index) => `${commonItemColumns[field]}=$${index + 2}`).join(",");
+          await client.query(`UPDATE procurement.purchase_order_item SET ${sql},updated_at=now() WHERE id=$1`,
+            [itemId, ...scEntries.map(([, value]) => value)]);
+          await record(client, "PURCHASE_ORDER", id.data, "PURCHASE_ORDER_ITEM", itemId,
+            "FOLLOWUP_UPDATE", null, scFields, auth.actor, body.reason);
+        }
         await client.query("UPDATE procurement.purchase_order SET version = version + 1, updated_at = now() WHERE id = $1", [id.data]);
         await saveReceipt(client, auth.actor.userId, key, claim.hash, "PO_ITEM", itemId);
         await record(client, "PURCHASE_ORDER", id.data, "PURCHASE_ORDER_ITEM", itemId, "CREATE",
-          null, body, auth.actor, body.reason);
+          null, productNcm ? { ...body, ncm: productNcm } : body, auth.actor, body.reason);
         return { id: itemId, purchaseOrderId: po.id, lineNumber: next.rows[0].line_number };
       }, 201);
     });
@@ -998,17 +1416,24 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
            WHERE id = $1 AND purchase_order_id = $2 FOR UPDATE`, [itemId.data, id.data]);
         if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Item não encontrado nesta PO.");
         const body = parsed.data;
+        const productNcms = await validatePurchaseOrderItems(client, [{ productCode: body.productCode, unit: body.unit,
+          costCenter: String(found.rows[0].cost_center ?? "") }]);
+        const productNcm = productNcms.get(normalizedCode(body.productCode));
+        await setPurchaseOrderObservationActor(client, auth.actor);
         await client.query(
           `UPDATE procurement.purchase_order_item SET external_line_reference = $2, product_code = $3,
             description = $4, ordered_quantity = $5, unit = $6, unit_price = $7,
             currency_code = $8, updated_at = now() WHERE id = $1`,
           [itemId.data, body.externalLineReference, body.productCode, body.description,
             body.orderedQuantity, body.unit, body.unitPrice, body.currency]);
+        if (productNcm || normalizedCode(body.productCode) !== normalizedCode(found.rows[0].product_code)) {
+          await client.query("UPDATE procurement.purchase_order_item SET ncm=$2 WHERE id=$1", [itemId.data, productNcm ?? null]);
+        }
         const updated = await client.query<{ version: string }>(
           `UPDATE procurement.purchase_order SET version = version + 1, updated_at = now()
            WHERE id = $1 RETURNING version::text`, [id.data]);
         await record(client, "PURCHASE_ORDER", id.data, "PURCHASE_ORDER_ITEM", itemId.data, "UPDATE",
-          found.rows[0], body, auth.actor, body.reason);
+          found.rows[0], productNcm ? { ...body, ncm: productNcm } : body, auth.actor, body.reason);
         return { id: itemId.data, purchaseOrderVersion: updated.rows[0].version };
       });
     });

@@ -6,7 +6,9 @@ import { permissionConfig } from "./authorization.js";
 import { calculateFollowup, invoiceTotals } from "./followup-calculations.js";
 import { actorAndScopes, assertPoActive, BusinessError, checkVersion, createPo as createPoSchema,
   itemFields as basicItemSchema, keyFrom, lockedPo, problem, validatePurchaseRequest,
-  receipt, record, saveReceipt, transaction, versionFrom } from "./operations.js";
+  receipt, record, saveReceipt, transaction, versionFrom, validateNewPurchaseOrder,
+  validatePurchaseOrderItems, purchaseRequestOperationalFields, setPurchaseOrderObservationActor,
+  purchaseOrderProductReferenceSql, validatePurchaseOrderImporterChange } from "./operations.js";
 
 type FieldType = "text" | "date" | "integer" | "money" | "boolean";
 const itemFields: Record<string, [string, FieldType, number?]> = {
@@ -85,6 +87,9 @@ function context(request: FastifyRequest, ifMatch = false, idempotency = false) 
     key: idempotency ? keyFrom(request) : null };
 }
 const reason = z.string().trim().min(3).max(1000);
+const sourceFileSchema = z.object({ fileName: z.string().trim().min(1).max(255),
+  fileSha256: z.string().regex(/^[a-f0-9]{64}$/u) }).strict();
+const completePoHeaderSchema = createPoSchema.extend({ sourceFile: sourceFileSchema.nullable().optional() });
 const completeItemSchema = z.object({ base: basicItemSchema,
   fields: z.record(z.string(), z.unknown()) }).strict();
 const documentBase = z.object({
@@ -106,7 +111,7 @@ const docPatch = documentBase.omit({ kind: true, purchaseOrderItemId: true })
 export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
   app.post("/api/v1/purchase-orders/complete",
     { config: permissionConfig("purchase-orders.write") }, async (request, reply) => {
-      const parsed = z.object({ header: createPoSchema,
+      const parsed = z.object({ header: completePoHeaderSchema,
         items: z.array(completeItemSchema).min(1).max(500),
       }).strict().safeParse(request.body);
       if (!parsed.success) return problem(reply, 400, "INVALID_PO", "Revise a PO e os produtos.");
@@ -130,13 +135,13 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
           return { id: claim.existingId, itemIds: priorItems.rows.map(item => item.id),
             version: "1", replayed: true };
         }
-        const known = await client.query(`SELECT importer FROM procurement.purchase_order WHERE importer=$1
-          UNION SELECT importer FROM imports.import_process WHERE importer=$1
-          UNION SELECT value AS importer FROM catalog.operational_value
-            WHERE entity_key='IMPORTER' AND value=$1 LIMIT 1`, [body.header.importer]);
-        if (!known.rowCount) throw new BusinessError(404, "UNKNOWN_IMPORTER", "Importadora ainda não cadastrada.");
         const poId = randomUUID(); const header = body.header;
-        await validatePurchaseRequest(client, header.purchaseRequestId, header.importer);
+        const { purchaseRequest } = await validateNewPurchaseOrder(client, header, auth.scopes);
+        const productNcms = await validatePurchaseOrderItems(client, body.items.map((item, index) => ({
+          productCode: item.base.productCode, unit: item.base.unit,
+          costCenter: typeof operational[index]?.costCenter === "string" ? operational[index].costCenter as string : null,
+        })));
+        await setPurchaseOrderObservationActor(client, auth.actor);
         const createdPo = await client.query<{ orderDate: string }>(`INSERT INTO procurement.purchase_order
           (id,importer,external_number,normalized_number,identity_status,source_kind,version,
            supplier_text,order_date,notes,purchase_request_id)
@@ -158,7 +163,10 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
               base.description, base.orderedQuantity, base.unit, base.unitPrice, base.currency]);
           await record(client, "PURCHASE_ORDER", poId, "PURCHASE_ORDER_ITEM", itemId, "CREATE",
             null, base, auth.actor, header.reason);
-          const fields = operational[index]!;
+          const fields = { ...operational[index]! };
+          const productNcm = productNcms.get(base.productCode.trim().toLocaleUpperCase("en-US"));
+          if (productNcm) fields.ncm = productNcm;
+          Object.assign(fields, purchaseRequestOperationalFields(purchaseRequest));
           const keys = Object.keys(fields);
           if (keys.length) {
             const sql = keys.map((field, fieldIndex) => `${itemFields[field][0]}=$${fieldIndex + 2}`).join(",");
@@ -188,27 +196,39 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
         const claim = await receipt(client, auth.actor.userId, key, "PO_ITEM_COMPLETE",
           { poId: poId.data, ...parsed.data });
         if (claim.existingId) return { id: claim.existingId, replayed: true };
+        const base = parsed.data.base;
+        const fields = Object.keys(parsed.data.fields).length ? validateFields(parsed.data.fields, itemFields) : {};
+        if (fields === null) throw new BusinessError(400, "INVALID_FOLLOWUP", "Revise os campos operacionais do produto.");
+        const productNcms = await validatePurchaseOrderItems(client, [{ productCode: base.productCode, unit: base.unit,
+          costCenter: typeof fields.costCenter === "string" ? fields.costCenter : null }]);
+        const productNcm = productNcms.get(base.productCode.trim().toLocaleUpperCase("en-US"));
+        const purchaseRequest = po.purchase_request_id
+          ? await validatePurchaseRequest(client, String(po.purchase_request_id), String(po.importer), String(po.supplier_text ?? "")) : null;
+        const itemFieldsToSave = { ...fields };
+        if (productNcm) itemFieldsToSave.ncm = productNcm;
+        Object.assign(itemFieldsToSave, purchaseRequestOperationalFields(purchaseRequest));
+        await setPurchaseOrderObservationActor(client, auth.actor);
         const next = await client.query<{ line_number: number }>(`SELECT coalesce(max(line_number),0)::int + 1 AS line_number
           FROM procurement.purchase_order_item WHERE purchase_order_id=$1`, [poId.data]);
-        const itemId = randomUUID(); const base = parsed.data.base;
+        const itemId = randomUUID();
         await client.query(`INSERT INTO procurement.purchase_order_item
           (id,purchase_order_id,line_number,external_line_reference,product_code,description,
            ordered_quantity,unit,unit_price,currency_code)
           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
           [itemId, poId.data, next.rows[0].line_number, base.externalLineReference, base.productCode,
             base.description, base.orderedQuantity, base.unit, base.unitPrice, base.currency]);
-        const keys = Object.keys(fields);
+        const keys = Object.keys(itemFieldsToSave);
         if (keys.length) {
           const sql = keys.map((field, index) => `${itemFields[field][0]}=$${index + 2}`).join(",");
           await client.query(`UPDATE procurement.purchase_order_item SET ${sql},updated_at=now() WHERE id=$1`,
-            [itemId, ...keys.map(field => fields[field])]);
+            [itemId, ...keys.map(field => itemFieldsToSave[field])]);
         }
         const updated = await client.query<{ version: string }>(`UPDATE procurement.purchase_order
           SET version=version+1,updated_at=now() WHERE id=$1 RETURNING version::text`, [poId.data]);
         await record(client, "PURCHASE_ORDER", poId.data, "PURCHASE_ORDER_ITEM", itemId, "CREATE",
           null, base, auth.actor, base.reason);
         if (keys.length) await record(client, "PURCHASE_ORDER", poId.data, "PURCHASE_ORDER_ITEM", itemId,
-          "FOLLOWUP_UPDATE", null, fields, auth.actor, base.reason);
+          "FOLLOWUP_UPDATE", null, itemFieldsToSave, auth.actor, base.reason);
         await saveReceipt(client, auth.actor.userId, key, claim.hash, "PO_ITEM_COMPLETE", itemId);
         return { id: itemId, purchaseOrderVersion: updated.rows[0].version };
       }, 201);
@@ -232,18 +252,31 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
         const previous = await client.query<Record<string, unknown>>(`SELECT * FROM procurement.purchase_order_item
           WHERE id=$1 AND purchase_order_id=$2 FOR UPDATE`, [itemId.data, poId.data]);
         if (!previous.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Produto não encontrado nesta PO.");
-        const base = parsed.data.base; const keys = Object.keys(fields);
+        const base = parsed.data.base;
+        const productNcms = await validatePurchaseOrderItems(client, [{ productCode: base.productCode, unit: base.unit,
+          costCenter: typeof fields.costCenter === "string" ? fields.costCenter : String(previous.rows[0].cost_center ?? "") }]);
+        const productNcm = productNcms.get(base.productCode.trim().toLocaleUpperCase("en-US"));
+        const purchaseRequest = po.purchase_request_id
+          ? await validatePurchaseRequest(client, String(po.purchase_request_id), String(po.importer), String(po.supplier_text ?? "")) : null;
+        const itemFieldsToSave = { ...fields };
+        if (productNcm || base.productCode.trim().toLocaleUpperCase("en-US")
+          !== String(previous.rows[0].product_code).trim().toLocaleUpperCase("en-US")) {
+          itemFieldsToSave.ncm = productNcm ?? null;
+        }
+        Object.assign(itemFieldsToSave, purchaseRequestOperationalFields(purchaseRequest));
+        await setPurchaseOrderObservationActor(client, auth.actor);
+        const keys = Object.keys(itemFieldsToSave);
         const sql = keys.map((field, index) => `${itemFields[field][0]}=$${index + 9}`).join(",");
         await client.query(`UPDATE procurement.purchase_order_item SET external_line_reference=$2,
           product_code=$3,description=$4,ordered_quantity=$5,unit=$6,unit_price=$7,currency_code=$8,
           ${sql ? `${sql},` : ""}updated_at=now() WHERE id=$1`,
           [itemId.data, base.externalLineReference, base.productCode, base.description,
             base.orderedQuantity, base.unit, base.unitPrice, base.currency,
-            ...keys.map(field => fields[field])]);
+            ...keys.map(field => itemFieldsToSave[field])]);
         const updated = await client.query<{ version: string }>(`UPDATE procurement.purchase_order
           SET version=version+1,updated_at=now() WHERE id=$1 RETURNING version::text`, [poId.data]);
         await record(client, "PURCHASE_ORDER", poId.data, "PURCHASE_ORDER_ITEM", itemId.data,
-          "UPDATE", previous.rows[0], { ...base, fields }, auth.actor, base.reason);
+          "UPDATE", previous.rows[0], { ...base, fields: itemFieldsToSave }, auth.actor, base.reason);
         return { id: itemId.data, purchaseOrderVersion: updated.rows[0].version };
       });
     });
@@ -251,7 +284,9 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
   app.patch<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/complete",
     { config: permissionConfig("purchase-orders.write") }, async (request, reply) => {
       const poId = z.uuid().safeParse(request.params.id);
-      const parsed = z.object({ header: createPoSchema.omit({ importer: true }),
+      const parsed = z.object({ header: createPoSchema.omit({ importer: true }).extend({
+        importer: z.string().trim().min(1).max(120).optional(),
+      }),
         itemIds: z.array(z.uuid()).max(500), fields: z.record(z.string(), z.unknown()),
       }).strict().safeParse(request.body);
       if (!poId.success || !parsed.success) return problem(reply, 400, "INVALID_PO", "Revise o pedido.");
@@ -273,7 +308,18 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
           throw new BusinessError(409, "ITEM_SET_CHANGED", "A lista de produtos mudou. Recarregue a PO.");
         }
         const header = parsed.data.header;
-        await validatePurchaseRequest(client, header.purchaseRequestId, String(po.importer));
+        const destinationImporter = header.importer ?? String(po.importer);
+        if (destinationImporter !== String(po.importer)) {
+          await validatePurchaseOrderImporterChange(client, { id: poId.data, currentImporter: String(po.importer),
+            destinationImporter, number: header.number, scopes: auth.scopes,
+            roles: request.authorizationContext?.roles ?? [] });
+        }
+        const purchaseRequestId = header.purchaseRequestId === undefined
+          ? (po.purchase_request_id ? String(po.purchase_request_id) : null) : header.purchaseRequestId;
+        const purchaseRequest = purchaseRequestId
+          ? await validatePurchaseRequest(client, purchaseRequestId, destinationImporter,
+            header.supplierText ?? String(po.supplier_text ?? "")) : null;
+        const fieldsToSave = { ...fields, ...purchaseRequestOperationalFields(purchaseRequest) };
         const updated = await client.query<{ version: string }>(`UPDATE procurement.purchase_order AS po
           SET external_number=$2::text,normalized_number=upper($2::text),supplier_text=$3::text,
             supplier_entry_id=CASE WHEN $3::text IS NULL THEN NULL
@@ -284,19 +330,20 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
                     OR upper(btrim(supplier.name))=upper(btrim($3::text))))
               ELSE po.supplier_entry_id END,
             notes=$4,purchase_request_id=CASE WHEN $5::boolean THEN $6::uuid ELSE purchase_request_id END,
+            importer=$7,
             version=version+1,updated_at=now() WHERE id=$1 RETURNING version::text`,
           [poId.data, header.number, header.supplierText, header.notes,
-            header.purchaseRequestId !== undefined, header.purchaseRequestId ?? null]);
+            header.purchaseRequestId !== undefined, header.purchaseRequestId ?? null, destinationImporter]);
         await record(client, "PURCHASE_ORDER", poId.data, "PURCHASE_ORDER", poId.data, "UPDATE",
           po, { ...header, orderDate: po.order_date ?? null }, auth.actor, header.reason);
-        const keys = Object.keys(fields);
+        const keys = Object.keys(fieldsToSave);
         if (keys.length) {
           const sql = keys.map((field, index) => `${itemFields[field][0]}=$${index + 2}`).join(",");
           for (const itemId of expectedIds) {
             await client.query(`UPDATE procurement.purchase_order_item SET ${sql},updated_at=now() WHERE id=$1`,
-              [itemId, ...keys.map(field => fields[field])]);
+              [itemId, ...keys.map(field => fieldsToSave[field])]);
             await record(client, "PURCHASE_ORDER", poId.data, "PURCHASE_ORDER_ITEM", itemId,
-              "FOLLOWUP_UPDATE", null, fields, auth.actor, header.reason);
+              "FOLLOWUP_UPDATE", null, fieldsToSave, auth.actor, header.reason);
           }
         }
         return { id: poId.data, version: updated.rows[0].version, updatedCount: expectedIds.length };
@@ -405,7 +452,8 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
         LEFT JOIN catalog.entry supplier ON supplier.id = po.supplier_entry_id
         WHERE po.id=$1 AND po.importer=ANY($2::text[])`, [id.data, scopes]);
       if (!po.rows[0]) return problem(reply, 404, "RESOURCE_NOT_FOUND", "PO não encontrada.");
-      const items = await pool.query(`SELECT item.*, to_jsonb(item)->>'item_group' AS "group"
+      const items = await pool.query(`SELECT item.*, to_jsonb(item)->>'item_group' AS "group",
+        ${purchaseOrderProductReferenceSql("item")}
         FROM procurement.purchase_order_item item WHERE item.purchase_order_id=$1 ORDER BY item.line_number`, [id.data]);
       const links = await pool.query(`SELECT a.id AS allocation_id, a.purchase_order_item_id AS item_id,
         a.quantity::text AS allocation_quantity, a.notes AS allocation_notes,
@@ -507,6 +555,10 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
         if (found.rows.length !== requested.size || found.rows.some(item => !requested.has(item.id))) {
           throw new BusinessError(409, "ITEM_SET_CHANGED", "Os produtos da PO mudaram. Recarregue antes de aplicar campos compartilhados.");
         }
+        if (typeof fields.costCenter === "string" && fields.costCenter) {
+          await validatePurchaseOrderItems(client, found.rows.map(item => ({ productCode: String(item.product_code),
+            unit: String(item.unit), costCenter: fields.costCenter as string })));
+        }
         const keys = Object.keys(fields);
         const sql = keys.map((key, index) => `${itemFields[key][0]}=$${index + 2}`).join(",");
         await client.query(`UPDATE procurement.purchase_order_item SET ${sql},updated_at=now()
@@ -534,6 +586,10 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
         const po = await lockedPo(client, poId.data, auth.scopes); assertPoActive(po); checkVersion(po, auth.version!);
         const found = await client.query(`SELECT * FROM procurement.purchase_order_item WHERE id=$1 AND purchase_order_id=$2 FOR UPDATE`, [itemId.data, poId.data]);
         if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Item não encontrado nesta PO.");
+        if (typeof fields.costCenter === "string" && fields.costCenter) {
+          await validatePurchaseOrderItems(client, [{ productCode: String(found.rows[0].product_code),
+            unit: String(found.rows[0].unit), costCenter: fields.costCenter }]);
+        }
         const keys = Object.keys(fields); const sql = keys.map((key, index) => `${itemFields[key][0]}=$${index + 2}`).join(",");
         await client.query(`UPDATE procurement.purchase_order_item SET ${sql},updated_at=now() WHERE id=$1`,
           [itemId.data, ...keys.map(key => fields[key])]);

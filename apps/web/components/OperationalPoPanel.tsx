@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { apiFetch, hasPoLifecycleSupport, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
 import { purchaseOrderLifecycleActions, type PurchaseOrderLifecycleStatus } from "../lib/po-lifecycle";
@@ -14,6 +14,8 @@ import { loadPurchaseRequests, purchaseRequestOperationalFields, PurchaseRequest
 import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
 import { formatUsDate } from "../lib/date-format";
 import { formatNumber } from "../lib/format-number";
+import { estimatedProductTotal, productPriceReferenceForCurrency, type ProductPriceReference } from "../lib/product-price-reference";
+import { parseTotvsPoXlsx } from "../lib/totvs-po-xlsx";
 
 type Item = { id: string; lineNumber: number; externalLineReference: string | null;
   productCode: string; description: string; orderedQuantity: string; unit: string | null;
@@ -25,7 +27,9 @@ type Item = { id: string; lineNumber: number; externalLineReference: string | nu
   mrpCompletedDate: string | null; targetMrpDays: number | null; targetOrderDays: number | null;
   targetShipmentDays: number | null; targetPortDays: number | null; targetTransitDays: number | null;
   targetCustomsDays: number | null; actualFactoryShipDate: string | null;
-  allocatedQuantity: string; remainingQuantity: string };
+  allocatedQuantity: string; remainingQuantity: string;
+  referencePrices?: ProductPriceReference[]; priceReference?: ProductPriceReference | null;
+  latestTotvsDescription?: string | null };
 type Allocation = { id: string; itemId: string; processId: string; ipNumber: string;
   quantity: string; notes: string; factoryShipDate: string | null; version: string };
 type OperationalPo = { id: string; importer: string; number: string; supplierText: string | null;
@@ -38,6 +42,17 @@ type OperationalPo = { id: string; importer: string; number: string; supplierTex
   items: Item[]; allocations: Allocation[] };
 type FollowupItem = { id: string } & Record<string, unknown>;
 type ProcessOption = { id: string; ipNumber: string; importer: string };
+type ImporterChoice = { code: string; cnpj: string | null; shortName: string | null; acceptsNewPurchaseOrders: boolean };
+type ReimportItem = { externalLineReference: string; productCode: string; description: string;
+  orderedQuantity: string; unitPrice: string };
+type ReimportPayload = { header: { number: string }; fileName: string; fileSha256: string;
+  currency: string; items: ReimportItem[] };
+type ReimportDifference = { externalLineReference: string; productCode: string;
+  changes: Record<string, { before: string | null; after: string }> };
+type ReimportPreview = { version: string; differences: ReimportDifference[]; missingReferences: string[];
+  unknownReferences: string[]; cancelledReferences: string[];
+  productCodeMismatches: Array<{ externalLineReference: string; current: string; incoming: string }>;
+  canApply: boolean };
 type ItemDraft = { externalLineReference: string; productCode: string; description: string;
   orderedQuantity: string; unit: string; unitPrice: string; currency: string; operational: OperationalFieldDraft };
 const blankItem = (): ItemDraft => ({ externalLineReference: "", productCode: "", description: "",
@@ -50,6 +65,8 @@ function operationalDraft(item: Item): OperationalFieldDraft {
 }
 const poWriters = new Set(["Master", "Administrador", "Importação", "Compras"]);
 const allocationWriters = new Set(["Master", "Administrador", "Importação"]);
+const reimportFieldLabels: Record<string, string> = { description: "Descrição", orderedQuantity: "Quantidade",
+  unitPrice: "Preço unitário", currency: "Moeda" };
 
 async function responseData<T>(response: Response): Promise<T> {
   return readApiJson<T>(response);
@@ -130,6 +147,8 @@ async function verifySavedItem(poId: string, itemId: string,
 export default function OperationalPoPanel({ id, onChanged }: { id: string; onChanged?: () => void }) {
   const [data, setData] = useState<OperationalPo>();
   const [roles, setRoles] = useState<string[]>([]);
+  const [importer, setImporter] = useState("");
+  const [importers, setImporters] = useState<ImporterChoice[]>([]);
   const [number, setNumber] = useState("");
   const [supplier, setSupplier] = useState("");
   const [orderDate, setOrderDate] = useState("");
@@ -158,6 +177,14 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [lifecycleReason, setLifecycleReason] = useState("");
+  const [reimportFileName, setReimportFileName] = useState("");
+  const [reimportPayload, setReimportPayload] = useState<ReimportPayload>();
+  const [reimportPreview, setReimportPreview] = useState<ReimportPreview>();
+  const [reimportCurrency, setReimportCurrency] = useState("CNY");
+  const [reimportReason, setReimportReason] = useState("");
+  const [reimportLoading, setReimportLoading] = useState(false);
+  const [reimportFileError, setReimportFileError] = useState("");
+  const [itemRemovalReasons, setItemRemovalReasons] = useState<Record<string, string>>({});
   const [reload, setReload] = useState(0);
   const [products, setProducts] = useState<CatalogChoice[]>([]);
   const [suppliers, setSuppliers] = useState<CatalogChoice[]>([]);
@@ -174,10 +201,12 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       loadFollowupItems(id, controller.signal),
       apiFetch("/auth/me", { signal: controller.signal }),
       loadOperationalCatalog(),
-    ]).then(async ([poResponse, followupItems, identityResponse, operationalCatalog]) => {
+      apiFetch("/api/v1/importers", { signal: controller.signal, cache: "no-store" }),
+    ]).then(async ([poResponse, followupItems, identityResponse, operationalCatalog, importerResponse]) => {
       const operationalPo = await responseData<OperationalPo>(poResponse);
       const po = { ...operationalPo, items: combineOperationalItems(operationalPo.items, followupItems, operationalCatalog.purchaseOrderGroup) };
       const identity = await responseData<{ roles: string[] }>(identityResponse);
+      const importerResult = await responseData<{ items: ImporterChoice[] }>(importerResponse);
       const [productChoices, supplierChoices] = await Promise.all([
         loadCatalogChoices("products", po.importer), loadCatalogChoices("suppliers", po.importer),
       ]);
@@ -185,6 +214,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         ? await loadPurchaseRequests(po.importer, controller.signal) : [];
       if (controller.signal.aborted) return;
       setData(po); setRoles(identity.roles); setOptions(operationalCatalog.items);
+      setImporters(importerResult.items); setImporter(po.importer);
       setSupportsGroup(operationalCatalog.purchaseOrderGroup);
       setProducts(productChoices); setSuppliers(supplierChoices);
       setPurchaseRequests(requestChoices); setPurchaseRequestId(po.purchaseRequestId ?? "");
@@ -215,6 +245,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   const canAllocate = activePo && roles.some(role => allocationWriters.has(role));
   const lifecycleSupported = hasPoLifecycleSupport(data);
   const canManageLifecycle = roles.some(role => role === "Master" || role === "Administrador");
+  const canChangeImporter = canEditPo && canManageLifecycle;
   const lifecycleActions = purchaseOrderLifecycleActions(data?.lifecycleStatus, canWritePo, canManageLifecycle);
   async function send(path: string, method: string, body: unknown, version?: string) {
     const response = await apiFetch(path, { method,
@@ -275,11 +306,72 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       setLifecycleReason("");
     }, success);
   }
+  async function selectReimportFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0]; event.currentTarget.value = "";
+    if (!file) return;
+    setReimportFileName(file.name); setReimportPayload(undefined); setReimportPreview(undefined);
+    setReimportFileError(""); setReimportReason(""); setReimportLoading(true);
+    try {
+      const result = await parseTotvsPoXlsx(file);
+      const invalidTotals = result.rows.filter(row => !row.totalWithinTolerance);
+      if (invalidTotals.length) {
+        throw new Error(`O Valor Total difere do preço derivado em mais de 0,01 nos itens ${invalidTotals.slice(0, 8).map(row => row.externalLineReference).join(", ")}.`);
+      }
+      const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+      const fileSha256 = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+      setReimportPayload({ header: { number: result.header.number }, fileName: file.name, fileSha256,
+        currency: "CNY", items: result.rows.map(row => ({ externalLineReference: row.externalLineReference,
+          productCode: row.productCode, description: row.description, orderedQuantity: row.orderedQuantity,
+          unitPrice: row.unitPrice })) });
+      setReimportCurrency("CNY");
+    } catch (cause) { setReimportFileError(cause instanceof Error ? cause.message : "Não foi possível ler a planilha."); }
+    finally { setReimportLoading(false); }
+  }
+  async function previewReimport() {
+    if (!data || !reimportPayload || reimportLoading) return;
+    const route = `/api/v1/purchase-orders/${id}/reimport/preview`;
+    setReimportLoading(true); setReimportFileError(""); setReimportPreview(undefined);
+    try {
+      const response = await apiFetch(route, { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...reimportPayload, currency: reimportCurrency }) });
+      if (await missingRoute(response, `POST:${route}`)) {
+        throw new Error("A API publicada ainda não oferece a prévia de reimportação desta PO.");
+      }
+      setReimportPreview(await responseData<ReimportPreview>(response));
+    } catch (cause) { setReimportFileError(cause instanceof Error ? cause.message : "Não foi possível comparar a planilha."); }
+    finally { setReimportLoading(false); }
+  }
+  async function applyReimport() {
+    if (!data || !reimportPayload || !reimportPreview?.canApply || !reimportReason.trim()) return;
+    const route = `/api/v1/purchase-orders/${id}/reimport`;
+    await save(async () => {
+      const response = await apiFetch(route, { method: "POST",
+        headers: { "content-type": "application/json", "X-Record-Version": reimportPreview.version },
+        body: JSON.stringify({ ...reimportPayload, currency: reimportCurrency, reason: reimportReason.trim() }) });
+      if (await missingRoute(response, `POST:${route}`)) {
+        throw new Error("A API publicada ainda não oferece a reimportação transacional desta PO.");
+      }
+      const result = await responseData<{ updatedCount: number }>(response);
+      setReimportPreview(undefined); setReimportPayload(undefined); setReimportFileName(""); setReimportReason("");
+      return result.updatedCount;
+    }, "Reimportação aplicada e auditada.");
+  }
+  async function removeItem(item: Item) {
+    if (!data) return;
+    const itemReason = itemRemovalReasons[item.id]?.trim() ?? "";
+    if (itemReason.length < 3) { setError("Informe um motivo com pelo menos 3 caracteres para remover o item."); return; }
+    await save(async () => {
+      await send(`/api/v1/purchase-orders/${id}/items/${item.id}/remove`, "POST",
+        { reason: itemReason }, data.version);
+      setItemRemovalReasons(current => ({ ...current, [item.id]: "" }));
+    }, "Item removido da PO; o histórico foi preservado.");
+  }
   async function saveHeader(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!data) return;
     await save(async () => {
       const header = { number, supplierText: supplier || null, orderDate: orderDate || null, notes,
-        purchaseRequestId: purchaseRequestId || null, reason: automaticAuditReason };
+        purchaseRequestId: purchaseRequestId || null, reason: automaticAuditReason,
+        ...(importer !== data.importer ? { importer } : {}) };
       if (commonFieldsTouched.size && data.items.length) {
         const fieldsToSave = purchaseOrderCommonItemFields.filter(field => commonFieldsTouched.has(field.key));
         const fields = purchaseOrderItemFieldsPayload(commonOperationalDraft, true, fieldsToSave);
@@ -507,12 +599,50 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         </div>}
         {data.allocations.length > 0 && <p className="muted">Cancele ou encaminhe as distribuições ativas pelos IPs antes de cancelar ou excluir esta PO.</p>}
       </section>}
+      {canEditPo && data.sourceKind === "MANUAL_TOTVS_REFERENCE" && <section className="card po-reimport" aria-label="Atualizar PO pela planilha TOTVS">
+        <h3>Atualizar PO pela planilha TOTVS</h3>
+        <p className="muted">Compare por Item. A aplicação atualiza somente descrição, quantidade, preço e moeda, em uma transação auditada.</p>
+        <label>Arquivo Excel (.xlsx)<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          disabled={reimportLoading || saving} onChange={event => void selectReimportFile(event)} /></label>
+        {reimportFileName && <p className="muted">{reimportFileName}</p>}
+        <label>Moeda dos itens<OperationalOptionSelect entity="currency" value={reimportCurrency} values={options}
+          onChange={currency => { setReimportCurrency(currency); setReimportPreview(undefined); }} /></label>
+        {reimportFileError && <p className="notice error" role="alert">{reimportFileError}</p>}
+        {reimportPayload && <button className="button secondary" type="button" disabled={reimportLoading || saving}
+          onClick={() => void previewReimport()}>{reimportLoading ? "Comparando…" : "Conferir diferenças"}</button>}
+        {reimportPreview && <>
+          {reimportPreview.differences.length === 0 && reimportPreview.canApply
+            ? <p className="notice" role="status">Nenhuma diferença encontrada. A PO não será alterada.</p>
+            : <>
+              {reimportPreview.missingReferences.length > 0 && <p className="notice error">Itens ausentes na planilha: {reimportPreview.missingReferences.join(", ")}</p>}
+              {reimportPreview.unknownReferences.length > 0 && <p className="notice error">Itens sem correspondência nesta PO: {reimportPreview.unknownReferences.join(", ")}</p>}
+              {reimportPreview.cancelledReferences.length > 0 && <p className="notice error">Itens já removidos: {reimportPreview.cancelledReferences.join(", ")}</p>}
+              {reimportPreview.productCodeMismatches.length > 0 && <p className="notice error">Código do produto diferente para o item {reimportPreview.productCodeMismatches.map(value => value.externalLineReference).join(", ")}.</p>}
+              {reimportPreview.differences.length > 0 && <div className="table-scroll"><table><thead><tr><th>Item</th><th>Produto</th><th>Campo</th><th>Atual</th><th>Planilha</th></tr></thead><tbody>
+                {reimportPreview.differences.flatMap(difference => Object.entries(difference.changes).map(([field, values]) => <tr key={`${difference.externalLineReference}-${field}`}>
+                  <td>{difference.externalLineReference}</td><td>{difference.productCode}</td><td>{reimportFieldLabels[field] ?? field}</td>
+                  <td>{values.before ?? "—"}</td><td>{values.after}</td>
+                </tr>))}
+              </tbody></table></div>}
+              {reimportPreview.canApply && reimportPreview.differences.length > 0 && <>
+                <label>Motivo da reimportação<textarea required minLength={3} maxLength={1000} value={reimportReason}
+                  onChange={event => setReimportReason(event.target.value)} /></label>
+                <button className="button" type="button" disabled={saving || reimportLoading || reimportReason.trim().length < 3}
+                  onClick={() => void applyReimport()}>Aplicar {reimportPreview.differences.length} diferença(s)</button>
+              </>}
+            </>}
+        </>}
+      </section>}
       {canEditPo && <details className="po-header-disclosure">
         <summary>Dados da PO</summary>
         <section className="po-entry-section">
           <form className="stack-form" onSubmit={saveHeader}>
             <label>Número da PO no TOTVS<input required maxLength={80} disabled={data.sourceKind !== "MANUAL_TOTVS_REFERENCE"}
               value={number} onChange={event => setNumber(event.target.value)} /></label>
+            {canChangeImporter && <label>Importadora<SearchableSelect ariaLabel="Importadora" required value={importer}
+              onChange={setImporter} options={importers.filter(option => option.acceptsNewPurchaseOrders || option.code === data.importer)
+                .map(option => ({ value: option.code, label: `${option.shortName || option.code}${option.cnpj ? ` · ${option.cnpj}` : " · sem CNPJ"}` }))} />
+              <small className="po-field-hint">A troca exige ausência de alocações ativas e uma importadora de destino com CNPJ.</small></label>}
             <label>Fornecedor<SearchableSelect ariaLabel="Fornecedor" required disabled={Boolean(purchaseRequestId)} value={supplier}
               onChange={setSupplier} options={suppliers.map(item => ({ value: item.code, label: `${item.code} · ${item.name}` }))} />
               {purchaseRequestId ? <small className="po-field-hint">Preenchido pela SC vinculada.</small> : null}</label>
@@ -548,6 +678,9 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         const price = formatItemPrice(item.unitPrice, item.currency);
         const totalPrice = item.unitPrice == null ? "Não informado" : formatItemPrice(
           String(Number(item.orderedQuantity) * Number(item.unitPrice)), item.currency);
+        const reference = item.priceReference ?? productPriceReferenceForCurrency(item.referencePrices, item.currency);
+        const estimate = item.unitPrice !== null && Number(item.unitPrice) === 0
+          ? estimatedProductTotal(item.orderedQuantity, reference) : null;
         return <details className="po-entry-item po-item-card" key={item.id}>
           <summary className="po-item-summary">
             <div className="po-item-heading">
@@ -571,6 +704,12 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
               <div><span>Valor total</span><strong>{totalPrice}</strong></div>
               <div><span>Data de necessidade</span><strong>{formatUsDate(item.necessityDate) || "Não informada"}</strong></div>
             </div>
+            {item.unitPrice !== null && Number(item.unitPrice) === 0 && <p className="muted">
+              {reference ? <>Preço de referência: {formatNumber(reference.unitPrice)} {reference.currency}
+                (PO {reference.purchaseOrderNumber}, {formatUsDate(reference.observedAt)})
+                {estimate !== null && <> · Valor estimado: {formatNumber(estimate)} {reference.currency}</>}
+              </> : "Sem preço real conhecido nesta moeda."}
+            </p>}
             {itemAllocations.length > 0 && <div className="po-item-ip-summary">
               <span>Distribuição por IP</span>
               <div>{itemAllocations.map(allocation => <span className="po-item-ip-chip" key={allocation.id}>
@@ -579,13 +718,20 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             </div>}
             <span className="po-item-toggle" aria-hidden="true">⌄</span>
           </summary>
-          {canEditPo ? <form className="stack-form" data-item-id={item.id} onSubmit={saveItem}>
+          {canEditPo && !canceled ? <form className="stack-form" data-item-id={item.id} onSubmit={saveItem}>
             <div className="operational-fields">
               <label>Linha no TOTVS<input maxLength={80} value={draft.externalLineReference} onChange={event => setDraft({ externalLineReference: event.target.value })} /></label>
               <label>Produto<CatalogProductSelect required value={draft.productCode} fallbackName={draft.description} products={products}
-                onChange={product => setDraft({ productCode: product?.code ?? "", description: product?.name ?? "" })} /></label>
-              <label>Código do produto<input readOnly value={draft.productCode} /></label>
-              <label>Descrição<input readOnly value={draft.description} /></label>
+                onChange={product => setDraft({ productCode: product?.code ?? "",
+                  description: product?.latestTotvsDescription?.trim() || product?.name || "",
+                  operational: { ...draft.operational, ncm: product?.ncmCode ?? "" } })} /></label>
+              <label>Código do produto<input value={draft.productCode} onChange={event => {
+                const code = event.target.value;
+                const product = products.find(option => option.code.trim().toLocaleUpperCase("en-US") === code.trim().toLocaleUpperCase("en-US"));
+                setDraft({ productCode: code, description: product?.latestTotvsDescription?.trim() || product?.name || "",
+                  operational: { ...draft.operational, ncm: product?.ncmCode ?? "" } });
+              }} /></label>
+              <label>Descrição<input value={draft.description} onChange={event => setDraft({ description: event.target.value })} /></label>
               <label>Quantidade pedida<input required inputMode="decimal" value={draft.orderedQuantity} onChange={event => setDraft({ orderedQuantity: event.target.value })} /></label>
               <label>Unidade<OperationalOptionSelect required entity="unit_of_measure" value={draft.unit} values={options}
                 onChange={unit => setDraft({ unit })} /></label>
@@ -598,6 +744,16 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             <PurchaseOrderCalculatedFields quantity={draft.orderedQuantity} unitPrice={draft.unitPrice} currency={draft.currency} />
             <button className="button" disabled={saving || commonFieldsTouched.size > 0}>Salvar todos os campos deste item</button>
           </form> : <p>{formatItemQuantity(item.orderedQuantity)}{item.unit ? ` ${item.unit}` : ""} · {item.description}</p>}
+          {canEditPo && !canceled && <section className="po-item-removal" aria-label={`Remover item ${item.lineNumber}`}>
+            {itemAllocations.length > 0
+              ? <p className="muted">Cancele as alocações ativas deste item antes de removê-lo.</p>
+              : <>
+                <label>Motivo para remover o item<textarea required minLength={3} maxLength={1000}
+                  value={itemRemovalReasons[item.id] ?? ""} onChange={event => setItemRemovalReasons(current => ({ ...current, [item.id]: event.target.value }))} /></label>
+                <button className="button secondary" type="button" disabled={saving || (itemRemovalReasons[item.id]?.trim().length ?? 0) < 3}
+                  onClick={() => void removeItem(item)}>Remover item</button>
+              </>}
+          </section>}
         </details>;
       })}
       {canEditPo && <details><summary>Adicionar item à PO</summary>
@@ -605,9 +761,16 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
           <div className="operational-fields">
             <label>Linha no TOTVS<input maxLength={80} value={itemDraft.externalLineReference} onChange={event => setItemDraft({ ...itemDraft, externalLineReference: event.target.value })} /></label>
             <label>Produto<CatalogProductSelect required value={itemDraft.productCode} fallbackName={itemDraft.description} products={products}
-              onChange={product => setItemDraft({ ...itemDraft, productCode: product?.code ?? "", description: product?.name ?? "" })} /></label>
-            <label>Código do produto<input readOnly value={itemDraft.productCode} /></label>
-            <label>Descrição<input readOnly value={itemDraft.description} /></label>
+              onChange={product => setItemDraft({ ...itemDraft, productCode: product?.code ?? "",
+                description: product?.latestTotvsDescription?.trim() || product?.name || "",
+                operational: { ...itemDraft.operational, ncm: product?.ncmCode ?? "" } })} /></label>
+            <label>Código do produto<input value={itemDraft.productCode} onChange={event => {
+              const code = event.target.value;
+              const product = products.find(option => option.code.trim().toLocaleUpperCase("en-US") === code.trim().toLocaleUpperCase("en-US"));
+              setItemDraft({ ...itemDraft, productCode: code, description: product?.latestTotvsDescription?.trim() || product?.name || "",
+                operational: { ...itemDraft.operational, ncm: product?.ncmCode ?? "" } });
+            }} /></label>
+            <label>Descrição<input value={itemDraft.description} onChange={event => setItemDraft({ ...itemDraft, description: event.target.value })} /></label>
             <label>Quantidade pedida<input required inputMode="decimal" value={itemDraft.orderedQuantity} onChange={event => setItemDraft({ ...itemDraft, orderedQuantity: event.target.value })} /></label>
             <label>Unidade<OperationalOptionSelect required entity="unit_of_measure" value={itemDraft.unit} values={options}
               onChange={unit => setItemDraft({ ...itemDraft, unit })} /></label>

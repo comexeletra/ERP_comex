@@ -5,13 +5,17 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../lib/api";
 import { automaticAuditReason } from "../../lib/audit";
 import { formatUsDate, formatUsDateTime, parseUsDate } from "../../lib/date-format";
+import type { ProductPriceReference } from "../../lib/product-price-reference";
 import { SearchableSelect } from "../../components/SearchableSelect";
 
 type Resource = "products" | "ncms";
 type Candidate = { rawCode: string; observationCount: number;
   sampleSourceRowId: string; sampleSheetName: string; sampleRowNumber: number; eligibleFormat: boolean };
 type Entry = { id: string; importer: string | null; code: string; name: string; status: string;
-  evidence: string; validFrom: string | null; validTo: string | null; version: string; provenance: string };
+  evidence: string; validFrom: string | null; validTo: string | null; version: string; provenance: string;
+  referencePrices?: ProductPriceReference[]; latestTotvsDescription?: string | null };
+type PriceHistoryEntry = ProductPriceReference & { id: string; purchaseOrderItemId: string; actor: string | null };
+type PriceHistoryPage = { page: number; pageSize: number; totalCount: number; items: PriceHistoryEntry[] };
 type AuditEvent = { id: string; operation: string; fieldName: string | null; oldValue: unknown;
   newValue: unknown; actor: string; occurredAt: string; reason: string | null };
 type AuditPage = { page: number; pageSize: number; totalCount: number; items: AuditEvent[] };
@@ -46,6 +50,11 @@ export default function CatalogPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const historyRequest = useRef(0);
+  const priceHistoryRequest = useRef(0);
+  const [priceHistoryEntry, setPriceHistoryEntry] = useState<Entry>();
+  const [priceHistory, setPriceHistory] = useState<PriceHistoryPage>();
+  const [priceHistoryLoading, setPriceHistoryLoading] = useState(false);
+  const [priceHistoryError, setPriceHistoryError] = useState("");
   const [editDraft, setEditDraft] = useState({ name: "", status: "ACTIVE", evidence: "" });
 
   useEffect(() => {
@@ -67,7 +76,7 @@ export default function CatalogPage() {
     return () => controller.abort();
   }, [resource, search, page, refresh]);
 
-  function chooseResource(next: Resource) { historyRequest.current += 1; setHistoryLoading(false); setResource(next); setPage(1); setDraft({ code: "", name: "", evidence: "", validFrom: "" }); setEditing(undefined); setHistoryEntry(undefined); setHistory(undefined); }
+  function chooseResource(next: Resource) { historyRequest.current += 1; priceHistoryRequest.current += 1; setHistoryLoading(false); setPriceHistoryLoading(false); setResource(next); setPage(1); setDraft({ code: "", name: "", evidence: "", validFrom: "" }); setEditing(undefined); setHistoryEntry(undefined); setHistory(undefined); setPriceHistoryEntry(undefined); setPriceHistory(undefined); }
   function chooseCandidate(candidate: Candidate) {
     setDraft({ code: candidate.rawCode, name: "",
       evidence: `Origem ${candidate.sampleSheetName}, linha ${candidate.sampleRowNumber}; documento de confirmação: `,
@@ -123,6 +132,22 @@ export default function CatalogPage() {
     } finally { if (historyRequest.current === requestId) setHistoryLoading(false); }
   }
 
+  async function loadPriceHistory(entry: Entry, nextPage = 1) {
+    const requestId = ++priceHistoryRequest.current;
+    setPriceHistoryEntry(entry); setPriceHistoryLoading(true); setPriceHistoryError("");
+    try {
+      const query = new URLSearchParams({ page: String(nextPage), pageSize: "25" });
+      const response = await apiFetch(`/api/v1/products/${entry.id}/price-history?${query}`);
+      const data = await responseJson<PriceHistoryPage>(response);
+      if (priceHistoryRequest.current === requestId) setPriceHistory(data);
+    } catch (reason) {
+      if (priceHistoryRequest.current === requestId) {
+        setPriceHistory(undefined);
+        setPriceHistoryError(reason instanceof Error ? reason.message : "Erro ao carregar histórico de preços.");
+      }
+    } finally { if (priceHistoryRequest.current === requestId) setPriceHistoryLoading(false); }
+  }
+
   const canWrite = roles.includes("Master") || roles.includes("Administrador")
     || roles.includes(resource === "ncms" ? "Fiscal" : "Compras");
   const canRegisterPo = roles.some(role => ["Master", "Administrador", "Importação", "Compras"].includes(role));
@@ -151,13 +176,36 @@ export default function CatalogPage() {
       <section className="card"><h2>{labels[resource]} cadastrados</h2>
         <p className="muted">{registered?.totalCount ?? 0} registros</p>
         {registered?.items.length === 0 && <p>Nenhum cadastro encontrado.</p>}
-        {!!registered?.items.length && <div className="table-scroll"><table className="catalog-entry-table"><thead><tr><th>Código</th><th>Nome</th><th>Situação</th><th>Vigência</th><th>Versão</th><th>Ação</th></tr></thead><tbody>
-          {registered.items.map(entry => <tr key={entry.id}><td>{entry.code}</td><td className="catalog-entry-name">{entry.name}</td><td>{entry.status === "ACTIVE" ? "Ativo" : "Inativo"}</td>
+        {!!registered?.items.length && <div className="table-scroll"><table className="catalog-entry-table"><thead><tr><th>Código</th><th>Nome</th>{resource === "products" && <th>Preço de referência</th>}<th>Situação</th><th>Vigência</th><th>Versão</th><th>Ação</th></tr></thead><tbody>
+          {registered.items.map(entry => <tr key={entry.id}><td>{entry.code}</td><td className="catalog-entry-name">{entry.name}</td>
+            {resource === "products" && <td>{entry.referencePrices?.length
+              ? entry.referencePrices.map(reference => `${formatNumber(reference.unitPrice)} ${reference.currency}`).join(" · ")
+              : <span className="muted">Sem referência</span>}</td>}
+            <td>{entry.status === "ACTIVE" ? "Ativo" : "Inativo"}</td>
             <td>{formatUsDate(entry.validFrom) || "—"}{entry.validTo ? ` a ${formatUsDate(entry.validTo)}` : ""}</td><td>{entry.version}</td>
             <td><button className="button secondary" type="button" aria-label={`Ver histórico de ${labels[resource].toLowerCase()} ${entry.code}`} disabled={historyLoading} onClick={() => void loadHistory(entry)}>Histórico</button>
+              {resource === "products" && <button className="button secondary" type="button" aria-label={`Ver histórico de preços do produto ${entry.code}`} disabled={priceHistoryLoading} onClick={() => void loadPriceHistory(entry)}>Preços</button>}
               {canWrite && <button className="button secondary" type="button" aria-label={`Editar ${labels[resource].toLowerCase()} ${entry.code}`} onClick={() => startEdit(entry)}>Editar</button>}</td></tr>)}
         </tbody></table></div>}
       </section>
+      {priceHistoryEntry && <section className="card request-history" aria-label={`Histórico de preços do produto ${priceHistoryEntry.code}`}>
+        <div className="quality-heading"><h2>Preços: {priceHistoryEntry.code} · {priceHistoryEntry.name}</h2>
+          <button className="button secondary" type="button" onClick={() => { priceHistoryRequest.current += 1; setPriceHistoryLoading(false); setPriceHistoryEntry(undefined); setPriceHistory(undefined); }}>Fechar</button></div>
+        {priceHistoryError && <p className="notice error" role="alert">{priceHistoryError}</p>}
+        {priceHistoryLoading && <p role="status">Carregando histórico de preços…</p>}
+        {!priceHistoryLoading && priceHistory && <>
+          {priceHistory.items.length === 0 && <p className="muted">Ainda não há observações de preço para este produto.</p>}
+          {!!priceHistory.items.length && <div className="table-scroll"><table><thead><tr><th>Preço unitário</th><th>Moeda</th><th>PO</th><th>Data</th><th>Ator</th></tr></thead><tbody>
+            {priceHistory.items.map(item => <tr key={item.id}><td>{formatNumber(item.unitPrice)}</td><td>{item.currency}</td>
+              <td>{item.purchaseOrderNumber}</td><td>{formatUsDateTime(item.observedAt)}</td><td>{item.actor ?? "Sistema"}</td></tr>)}
+          </tbody></table></div>}
+          {priceHistory.totalCount > priceHistory.pageSize && <nav className="pagination" aria-label="Páginas do histórico de preços">
+            <button className="button secondary" disabled={priceHistory.page <= 1} onClick={() => void loadPriceHistory(priceHistoryEntry, priceHistory.page - 1)}>Anterior</button>
+            <span>Página {priceHistory.page} de {Math.ceil(priceHistory.totalCount / priceHistory.pageSize)}</span>
+            <button className="button" disabled={priceHistory.page * priceHistory.pageSize >= priceHistory.totalCount} onClick={() => void loadPriceHistory(priceHistoryEntry, priceHistory.page + 1)}>Próxima</button>
+          </nav>}
+        </>}
+      </section>}
       {historyEntry && <section className="card request-history" aria-label={`Histórico do cadastro ${historyEntry.code}`}>
         <div className="quality-heading"><h2>Histórico: {historyEntry.code} · {historyEntry.name}</h2>
           <button className="button secondary" type="button" onClick={() => { historyRequest.current += 1; setHistoryLoading(false); setHistoryEntry(undefined); setHistory(undefined); }}>Fechar</button></div>
@@ -211,4 +259,9 @@ export default function CatalogPage() {
 function formatAuditValue(value: unknown): string {
   if (value == null) return "—";
   return typeof value === "object" ? JSON.stringify(value) : String(value);
+}
+
+function formatNumber(value: string): string {
+  const number = Number(value);
+  return Number.isFinite(number) ? new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 8 }).format(number) : value;
 }

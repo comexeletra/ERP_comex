@@ -23,11 +23,12 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   });
 }
 
-export function isMissingApiRoute(status: number, body: unknown): boolean {
+export function isMissingApiRoute(status: number, body: unknown, route = "/api/v1/purchase-orders/complete"): boolean {
   if (status !== 404 || !body || typeof body !== "object" || Array.isArray(body)) return false;
   const error = body as Record<string, unknown>;
+  const escapedRoute = route.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
   return (typeof error.message === "string" &&
-      /^Route (?:POST|GET|PATCH|PUT|DELETE):\/api\/v1\/purchase-orders\/complete not found$/i.test(error.message))
+      new RegExp(`^Route (?:POST|GET|PATCH|PUT|DELETE):${escapedRoute} not found$`, "i").test(error.message))
     || (Object.keys(error).length === 1 && error.error === "Recurso não encontrado.");
 }
 

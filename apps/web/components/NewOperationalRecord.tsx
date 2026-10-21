@@ -18,6 +18,8 @@ import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
 import { loadPurchaseRequests, purchaseRequestOperationalFields, PurchaseRequestChoice, PurchaseRequestSelect } from "./PurchaseRequestSelect";
 import { parseTotvsPoXlsx, TotvsPoProductRow } from "../lib/totvs-po-xlsx";
 import { formatNumber } from "../lib/format-number";
+import { estimatedProductTotal, productPriceReferenceForCurrency } from "../lib/product-price-reference";
+import { formatUsDate } from "../lib/date-format";
 import { ChinaInvoiceDraft, parseChinaInvoiceXlsx } from "../lib/china-invoice-xlsx";
 import { clearInvoiceCommandKey, invoiceCommandKey } from "../lib/invoice-command-key";
 import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
@@ -27,6 +29,7 @@ const poRoles = new Set(["Master", "Administrador", "Importação", "Compras"]);
 const ipRoles = new Set(["Master", "Administrador", "Importação"]);
 
 type PoItemDraft = {
+  draftId: string;
   externalLineReference: string;
   productCode: string;
   description: string;
@@ -70,10 +73,15 @@ type InvoiceExistingProcess = { id: string; ipNumber: string; importer: string; 
   operationalAllocations: Array<{ id: string; poId: string; poNumber: string; productCode: string;
     quantity: string; unit: string }> };
 
-type InvoiceImporterOption = { code: string; cnpj: string | null };
+type InvoiceImporterOption = { code: string; cnpj: string | null; shortName?: string | null };
 
 function normalizeCnpj(value: string | null | undefined): string {
   return (value ?? "").replace(/\D/gu, "");
+}
+
+function normalizeLookup(value: string | null | undefined): string {
+  return (value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/gu, "")
+    .toLocaleUpperCase("pt-BR").replace(/[^A-Z0-9]+/gu, " ").trim().replace(/\s+/gu, " ");
 }
 
 function supplierMatchesExporter(candidate: InvoiceItemCandidate, exporter: string): boolean {
@@ -91,8 +99,13 @@ async function forEachInBatches<T>(items: readonly T[], size: number, action: (i
 }
 
 function blankPoItem(): PoItemDraft {
-  return { externalLineReference: "", productCode: "", description: "", orderedQuantity: "",
+  return { draftId: globalThis.crypto.randomUUID(), externalLineReference: "", productCode: "", description: "", orderedQuantity: "",
     unit: "", unitPrice: "", currency: "", operational: blankPurchaseOrderItemFields() };
+}
+
+function hasPoItemData(items: unknown): boolean {
+  return Array.isArray(items) && items.some(item => typeof item === "object" && item !== null
+    && Object.entries(item).some(([key, value]) => key !== "draftId" && hasDraftValue(value)));
 }
 
 function hasDraftValue(value: unknown): boolean {
@@ -111,13 +124,16 @@ function isLegacyImporterOnlyDraft(draft: Partial<PoDraft>): boolean {
     && !hasDraftValue(draft.createdPoId)
     && !hasDraftValue(draft.commonItemFields)
     && Array.isArray(draft.items)
-    && !hasDraftValue(draft.items);
+    && !hasPoItemData(draft.items);
 }
 
 async function readResponse<T>(response: Response): Promise<T> {
   return readApiJson<T>(response);
 }
 type InvoicePreflight = { ipNumbers: string[]; ipReferenceOtherImporter: boolean };
+type PurchaseOrderPreflight = { importerAcceptsNewPurchaseOrders: boolean; sameImporterDuplicate: boolean;
+  otherImporterDuplicates: string[]; supplierFound: boolean; missingProducts: string[];
+  missingUnits: string[]; missingCostCenters: string[] };
 async function loadInvoicePreflight(importer: string, draft: ChinaInvoiceDraft): Promise<InvoicePreflight> {
   if (!importer || !draft.invoiceNumber.trim() || !draft.exporterText.trim()) {
     return { ipNumbers: [], ipReferenceOtherImporter: false };
@@ -129,12 +145,23 @@ async function loadInvoicePreflight(importer: string, draft: ChinaInvoiceDraft):
     `/api/v1/processes/invoice-duplicates?${params}`, { cache: "no-store" }));
 }
 
+async function loadPurchaseOrderPreflight(body: { importer: string; number: string; supplierCode: string;
+  productCodes: string[]; units: string[]; costCenters: string[] }): Promise<PurchaseOrderPreflight | null> {
+  const route = "/api/v1/purchase-orders/preflight";
+  const response = await apiFetch(route, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify(body) });
+  const error = response.status === 404 ? await response.clone().json().catch(() => null) as unknown : null;
+  if (isMissingApiRoute(response.status, error, route)) return null;
+  return readResponse<PurchaseOrderPreflight>(response);
+}
+
 export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId }: {
   kind: "po" | "ip"; returnHref?: string; reviewInvoiceId?: string }) {
   const router = useRouter();
   const [roles, setRoles] = useState<string[]>([]);
   const [importers, setImporters] = useState<string[]>([]);
   const [importerCnpjs, setImporterCnpjs] = useState<Record<string, string>>({});
+  const [importerNames, setImporterNames] = useState<Record<string, string>>({});
   const [importer, setImporter] = useState("");
   const [purchaseRequestId, setPurchaseRequestId] = useState("");
   const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequestChoice[]>([]);
@@ -154,9 +181,22 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   const [items, setItems] = useState<PoItemDraft[]>([blankPoItem()]);
   const [totvsFileName, setTotvsFileName] = useState("");
   const [totvsRows, setTotvsRows] = useState<TotvsPoProductRow[]>([]);
+  const [totvsHeader, setTotvsHeader] = useState<{ number: string; importerCnpj: string; supplierCode: string;
+    supplierName: string; scNumber: string } | null>(null);
+  const [totvsSpreadsheetTotal, setTotvsSpreadsheetTotal] = useState("");
+  const [totvsCalculatedTotal, setTotvsCalculatedTotal] = useState("");
+  const [totvsCurrency, setTotvsCurrency] = useState("CNY");
+  const [totvsImporterMatches, setTotvsImporterMatches] = useState<string[]>([]);
+  const [totvsImportHash, setTotvsImportHash] = useState("");
+  const [poPreflight, setPoPreflight] = useState<PurchaseOrderPreflight | null>(null);
+  const [confirmDuplicateNumber, setConfirmDuplicateNumber] = useState(false);
+  const [duplicateNumberJustification, setDuplicateNumberJustification] = useState("");
   const [totvsFileError, setTotvsFileError] = useState("");
   const [totvsParsing, setTotvsParsing] = useState(false);
   const [totvsApplied, setTotvsApplied] = useState(false);
+  const [totvsItemEditing, setTotvsItemEditing] = useState<string | null>(null);
+  const [totvsScSuggestion, setTotvsScSuggestion] = useState("");
+  const [draftStorageWarning, setDraftStorageWarning] = useState("");
   const [commonItemFields, setCommonItemFields] = useState<OperationalFieldDraft>(blankPurchaseOrderItemFields);
   const [createdPoId, setCreatedPoId] = useState("");
   const [invoiceDraft, setInvoiceDraft] = useState<ChinaInvoiceDraft | null>(null);
@@ -188,7 +228,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           setNumber(typeof draft.number === "string" ? draft.number : "");
           setSupplier(typeof draft.supplier === "string" ? draft.supplier : "");
           setNotes(typeof draft.notes === "string" ? draft.notes : "");
-          setItems(draft.items);
+          setItems(draft.items.map((item, index) => ({ ...item,
+            draftId: typeof item.draftId === "string" && item.draftId ? item.draftId : `restored:${index}` })));
           setCommonItemFields(draft.commonItemFields ?? blankPurchaseOrderItemFields);
           setCreatedPoId(typeof draft.createdPoId === "string" ? draft.createdPoId : "");
         }
@@ -203,7 +244,27 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   useEffect(() => {
     if (kind !== "po" || !draftReady) return;
     const draft: PoDraft = { importer, number, supplier, notes, items, commonItemFields, purchaseRequestId, createdPoId };
-    sessionStorage.setItem(poDraftKey, JSON.stringify(draft));
+    const serialized = JSON.stringify(draft);
+    const compact = { ...draft, items: items.map(item => ({ ...item, operational: blankPurchaseOrderItemFields() })) };
+    const compactSerialized = JSON.stringify(compact);
+    const serializedBytes = new TextEncoder().encode(serialized).byteLength;
+    try {
+      if (serializedBytes > 4 * 1024 * 1024) {
+        sessionStorage.setItem(poDraftKey, compactSerialized);
+        setDraftStorageWarning("O rascunho excedeu 4 MB. Os campos de acompanhamento dos itens não foram guardados nesta sessão.");
+      } else {
+        sessionStorage.setItem(poDraftKey, serialized);
+        setDraftStorageWarning("");
+      }
+    } catch {
+      try {
+        sessionStorage.setItem(poDraftKey, compactSerialized);
+        setDraftStorageWarning("O espaço do navegador foi excedido. Os campos de acompanhamento dos itens não foram guardados nesta sessão.");
+      } catch {
+        sessionStorage.removeItem(poDraftKey);
+        setDraftStorageWarning("Não foi possível guardar o rascunho neste navegador.");
+      }
+    }
   }, [kind, draftReady, importer, number, supplier, notes, items, commonItemFields, purchaseRequestId, createdPoId]);
 
   useEffect(() => {
@@ -212,16 +273,21 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         if (!identity.ok || !list.ok) throw new Error("Não foi possível consultar suas permissões e importadoras.");
         const user = await identity.json() as { roles: string[] };
         const data = await list.json() as { items: InvoiceImporterOption[] };
+        const visibleImporters = data.items.filter(item => kind !== "po" || Boolean(item.cnpj));
         setRoles(user.roles);
         setOptions(operationalCatalog.items);
         setSupportsGroup(operationalCatalog.purchaseOrderGroup);
-        setImporters(data.items.map(item => item.code));
-        setImporterCnpjs(Object.fromEntries(data.items.filter(item => item.cnpj)
+        setImporters(visibleImporters.map(item => item.code));
+        setImporterCnpjs(Object.fromEntries(visibleImporters.filter(item => item.cnpj)
           .map(item => [item.code, normalizeCnpj(item.cnpj)])));
+        setImporterNames(Object.fromEntries(visibleImporters.map(item => [item.code,
+          item.shortName?.trim() || operationalCatalog.items.find(option => normalizeLookup(option.entity) === "IMPORTER"
+            && option.value === item.code)?.shortName?.trim() || item.code])));
+        if (kind === "po") setImporter(current => visibleImporters.some(item => item.code === current) ? current : "");
       })
       .catch(cause => setError(cause instanceof Error ? cause.message : "Erro inesperado."))
       .finally(() => setLoading(false));
-  }, []);
+  }, [kind]);
 
   useEffect(() => {
     if (!reviewInvoiceId) return;
@@ -278,6 +344,32 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     return Boolean(candidate && line && invoicePoPriceDiffers(line.unitPrice, candidate.unitPrice, candidate.currency)
       && !match.confirmPriceMismatch);
   });
+  const selectedPurchaseRequest = purchaseRequests.find(choice => choice.id === purchaseRequestId);
+  const totvsSupplierOption = suppliers.find(item => normalizeLookup(item.code) === normalizeLookup(totvsHeader?.supplierCode));
+  const totvsSupplierNameDiverges = Boolean(totvsHeader && totvsSupplierOption
+    && normalizeLookup(totvsSupplierOption.name) !== normalizeLookup(totvsHeader.supplierName));
+  const totvsImporterResolved = Boolean(importer && totvsImporterMatches.includes(importer));
+  const totvsMissingProducts = !catalogLoading ? totvsRows.filter(row => !products.some(product =>
+    normalizeLookup(product.code) === normalizeLookup(row.productCode) && product.status === "ACTIVE")) : [];
+  const unitValues = new Set(options.filter(option => option.entity === "unit_of_measure").map(option => normalizeLookup(option.value)));
+  const costCenterValues = new Set(options.filter(option => option.entity === "cost_center").map(option => normalizeLookup(option.value)));
+  const totvsMissingUnits = options.length ? totvsRows.filter(row => !unitValues.has(normalizeLookup(row.unit))) : [];
+  const totvsMissingCostCenters = options.length ? totvsRows.filter(row => !costCenterValues.has(normalizeLookup(row.costCenter))) : [];
+  const totvsTotalIssues = totvsRows.filter(row => !row.totalWithinTolerance);
+  const selectedScConflictsWithTotvs = Boolean(selectedPurchaseRequest && totvsHeader
+    && (selectedPurchaseRequest.importer !== importer
+      || normalizeLookup(selectedPurchaseRequest.supplierText) !== normalizeLookup(totvsHeader.supplierCode)));
+  const totvsImportReady = Boolean(totvsHeader && totvsImporterResolved && totvsSupplierOption
+    && normalizeLookup(supplier) === normalizeLookup(totvsHeader.supplierCode))
+    && !catalogLoading && totvsTotalIssues.length === 0 && totvsMissingProducts.length === 0
+    && totvsMissingUnits.length === 0 && totvsMissingCostCenters.length === 0 && !selectedScConflictsWithTotvs;
+  const compactPoItems = totvsApplied || items.length > 50;
+  const poPreflightHasCatalogIssues = Boolean(poPreflight && (!poPreflight.importerAcceptsNewPurchaseOrders
+    || !poPreflight.supplierFound || poPreflight.missingProducts.length || poPreflight.missingUnits.length
+    || poPreflight.missingCostCenters.length));
+  const poDuplicateNeedsConfirmation = Boolean(poPreflight?.otherImporterDuplicates.length
+    && (!confirmDuplicateNumber || duplicateNumberJustification.trim().length < 3));
+  const poPreflightBlocksSave = Boolean(poPreflight?.sameImporterDuplicate || poPreflightHasCatalogIssues || poDuplicateNeedsConfirmation);
   const allocatedPoIds = new Set(invoiceMatches.flatMap(match => {
     const candidate = match.candidates.find(value => value.id === match.itemId);
     return candidate ? [candidate.purchaseOrderId] : [];
@@ -291,15 +383,42 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       || normalizeCnpj(importerCnpjs[importer]) !== normalizeCnpj(invoiceDraft.importerCnpj)));
 
   function updateItem(index: number, change: Partial<PoItemDraft>) {
+    setPoPreflight(null);
     setItems(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...change } : item));
+  }
+
+  function updateProductCode(index: number, productCode: string) {
+    const product = products.find(choice => normalizeLookup(choice.code) === normalizeLookup(productCode.trim()));
+    const current = items[index];
+    updateItem(index, { productCode, description: product
+      ? product.latestTotvsDescription?.trim() || product.name : "",
+    operational: { ...current.operational, ncm: product?.ncmCode ?? "" } });
   }
 
   async function selectTotvsProductFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = "";
     if (!file) return;
-    setTotvsFileName(file.name); setTotvsRows([]); setTotvsFileError(""); setTotvsApplied(false); setTotvsParsing(true);
-    try { setTotvsRows(await parseTotvsPoXlsx(file)); }
+    setTotvsFileName(file.name); setTotvsRows([]); setTotvsHeader(null); setTotvsSpreadsheetTotal("");
+    setTotvsCalculatedTotal(""); setTotvsImporterMatches([]); setTotvsScSuggestion(""); setTotvsImportHash("");
+    setTotvsCurrency("CNY"); setTotvsFileError(""); setTotvsApplied(false); setTotvsParsing(true);
+    setPoPreflight(null); setConfirmDuplicateNumber(false); setDuplicateNumberJustification("");
+    try {
+      const result = await parseTotvsPoXlsx(file);
+      setTotvsRows(result.rows); setTotvsHeader(result.header);
+      setTotvsSpreadsheetTotal(result.spreadsheetTotal); setTotvsCalculatedTotal(result.calculatedTotal);
+      setNumber(result.header.number); setSupplier(result.header.supplierCode); setPurchaseRequestId("");
+      setCommonItemFields(current => ({ ...current, scNumber: result.header.scNumber }));
+      const cnpjMatches = importers.filter(code => importerCnpjs[code] === result.header.importerCnpj);
+      setTotvsImporterMatches(cnpjMatches);
+      setImporter(cnpjMatches.length === 1 ? cnpjMatches[0] : "");
+      const matchingRequest = cnpjMatches.length === 1 ? purchaseRequests.find(choice => choice.importer === cnpjMatches[0]
+        && choice.scNumber.trim() === result.header.scNumber.trim()
+        && choice.supplierText?.trim().toLocaleUpperCase("en-US") === result.header.supplierCode.trim().toLocaleUpperCase("en-US")) : undefined;
+      if (matchingRequest) setTotvsScSuggestion(matchingRequest.id);
+      const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+      setTotvsImportHash(Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join(""));
+    }
     catch (cause) { setTotvsFileError(cause instanceof Error ? cause.message : "Não foi possível ler a planilha."); }
     finally { setTotvsParsing(false); }
   }
@@ -468,13 +587,14 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
 
   function applyTotvsProducts(mode: "replace" | "append") {
     const imported = totvsRows.map(row => ({
+      draftId: globalThis.crypto.randomUUID(),
       externalLineReference: row.externalLineReference,
       productCode: row.productCode,
       description: row.description,
       orderedQuantity: row.orderedQuantity,
       unit: row.unit,
       unitPrice: row.unitPrice,
-      currency: row.unitPrice ? "CNY" : "",
+      currency: totvsCurrency,
       operational: { ...blankPurchaseOrderItemFields(), costCenter: row.costCenter },
     }));
     const onlyBlankStarter = items.length === 1 && !items[0].externalLineReference && !items[0].productCode
@@ -487,18 +607,48 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     }
     setItems(mode === "replace" ? imported : [...existing, ...imported]);
     setTotvsApplied(true);
+    setTotvsItemEditing(null);
+    setPoPreflight(null);
   }
 
   function selectPurchaseRequest(id: string) {
+    setPoPreflight(null);
     setPurchaseRequestId(id);
     const selected = purchaseRequests.find(choice => choice.id === id);
     if (selected?.supplierText) setSupplier(selected.supplierText);
     if (selected) setImporter(selected.importer);
-    setCommonItemFields(current => ({ ...current, ...purchaseRequestOperationalFields(selected) }));
+    setCommonItemFields(current => ({ ...current, ...purchaseRequestOperationalFields(selected),
+      ...(!selected && totvsHeader ? { scNumber: totvsHeader.scNumber } : {}) }));
   }
 
-  async function createPurchaseOrder() {
+  async function createPurchaseOrder(preflight: PurchaseOrderPreflight | null) {
     if (items.length === 0) throw new Error("Adicione ao menos um item à PO.");
+    if (preflight) {
+      if (!preflight.importerAcceptsNewPurchaseOrders) {
+        throw new Error("A API aceita novas POs somente para importadoras cadastradas com CNPJ.");
+      }
+      if (preflight.sameImporterDuplicate) throw new Error("Já existe uma PO com este número nesta importadora.");
+      if (!preflight.supplierFound) throw new Error("Selecione um código de fornecedor ativo do catálogo global.");
+      if (preflight.missingProducts.length) throw new Error(`Produtos fora do catálogo global: ${preflight.missingProducts.slice(0, 8).join(", ")}.`);
+      if (preflight.missingUnits.length) throw new Error(`Unidades fora dos valores operacionais: ${preflight.missingUnits.slice(0, 8).join(", ")}.`);
+      if (preflight.missingCostCenters.length) throw new Error(`Centros de custo fora dos valores operacionais: ${preflight.missingCostCenters.slice(0, 8).join(", ")}.`);
+      if (preflight.otherImporterDuplicates.length && (!confirmDuplicateNumber || duplicateNumberJustification.trim().length < 3)) {
+        throw new Error("Confirme a duplicidade em outra importadora e informe uma justificativa.");
+      }
+    }
+    if (totvsApplied) {
+      if (!totvsHeader || !totvsImporterResolved) {
+        throw new Error("Resolva o CNPJ da empresa da planilha antes de salvar a PO.");
+      }
+      if (!totvsSupplierOption || normalizeLookup(supplier) !== normalizeLookup(totvsHeader.supplierCode)) {
+        throw new Error("Selecione o fornecedor Codigo da planilha no catálogo global.");
+      }
+      if (totvsTotalIssues.length) throw new Error("Corrija as linhas cujo preço calculado não confere com Valor Total em até 0,01 na moeda da PO.");
+      if (totvsMissingProducts.length) throw new Error("Corrija os produtos da planilha que não estão ativos no catálogo global.");
+      if (totvsMissingUnits.length) throw new Error("Corrija as unidades da planilha que não existem nos valores operacionais.");
+      if (totvsMissingCostCenters.length) throw new Error("Corrija os centros de custo da planilha que não existem nos valores operacionais.");
+      if (selectedScConflictsWithTotvs) throw new Error("A SC vinculada tem importadora ou fornecedor diferente dos informados na planilha.");
+    }
     for (const [index, item] of items.entries()) {
       if (!item.productCode) throw new Error(`Selecione o produto do item ${index + 1}.`);
       if (Boolean(item.unitPrice.trim()) !== Boolean(item.currency)) {
@@ -518,6 +668,9 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       },
     }));
     const completePayload = JSON.stringify({ header: { importer, number, purchaseRequestId: purchaseRequestId || null, supplierText: supplier || null,
+      ...(preflight ? { sourceFile: totvsApplied && totvsFileName && totvsImportHash
+        ? { fileName: totvsFileName, fileSha256: totvsImportHash } : null } : {}),
+      ...(preflight ? { confirmDuplicateNumber, duplicateNumberJustification: duplicateNumberJustification.trim() || undefined } : {}),
       orderDate: null, notes, reason: automaticAuditReason }, items: completeItems });
     let previousCommand: { payload: string; key: string } | null = null;
     try { previousCommand = JSON.parse(sessionStorage.getItem(poCommandKey) ?? "null"); } catch { /* Recria a chave. */ }
@@ -571,7 +724,9 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       method: "POST",
       headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
       body: JSON.stringify({ importer, number, supplierText: supplier || null,
-        orderDate: null, notes, purchaseRequestId: purchaseRequestId || null, reason: automaticAuditReason }),
+        orderDate: null, notes, purchaseRequestId: purchaseRequestId || null,
+        ...(preflight ? { confirmDuplicateNumber, duplicateNumberJustification: duplicateNumberJustification.trim() || undefined } : {}),
+        reason: automaticAuditReason }),
     }));
     setCreatedPoId(header.id);
 
@@ -635,7 +790,12 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     setError("");
     try {
       if (kind === "po") {
-        await createPurchaseOrder();
+        const preflight = await loadPurchaseOrderPreflight({ importer, number: number.trim(), supplierCode: supplier.trim(),
+          productCodes: [...new Set(items.map(item => item.productCode.trim()).filter(Boolean))],
+          units: [...new Set(items.map(item => item.unit.trim()).filter(Boolean))],
+          costCenters: [...new Set(items.map(item => item.operational.costCenter?.trim() ?? "").filter(Boolean))] });
+        setPoPreflight(preflight);
+        await createPurchaseOrder(preflight);
         return;
       }
       if (invoiceDraft) {
@@ -775,11 +935,16 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
             <PurchaseRequestSelect importer={importer} value={purchaseRequestId} choices={purchaseRequests} onChange={selectPurchaseRequest} />
             <label>Importadora<SearchableSelect ariaLabel="Importadora" required disabled={Boolean(purchaseRequestId || invoiceDraft)}
               value={importer} onChange={value => {
+              setPoPreflight(null); setConfirmDuplicateNumber(false); setDuplicateNumberJustification("");
               setImporter(value); selectPurchaseRequest("");
-            }} options={importers.map(value => ({ value, label: value }))} />{purchaseRequestId ? <small className="po-field-hint">Definida pela SC vinculada.</small> : null}</label>
-            <label>Número da PO no TOTVS<input required maxLength={80} value={number} onChange={event => setNumber(event.target.value)} /></label>
+            }} options={(totvsHeader && totvsImporterMatches.length > 1 ? totvsImporterMatches : importers)
+              .map(value => ({ value, label: `${importerNames[value] ?? value} · CNPJ ${importerCnpjs[value] ?? ""}` }))} />
+              {purchaseRequestId ? <small className="po-field-hint">Definida pela SC vinculada.</small> : null}</label>
+            <label>Número da PO no TOTVS<input required maxLength={80} value={number} onChange={event => {
+              setPoPreflight(null); setConfirmDuplicateNumber(false); setDuplicateNumberJustification(""); setNumber(event.target.value);
+            }} /></label>
             <label>Fornecedor<SearchableSelect ariaLabel="Fornecedor" required disabled={Boolean(purchaseRequestId)} value={supplier}
-              onChange={setSupplier} options={suppliers.map(item => ({ value: item.code, label: `${item.code} · ${item.name}` }))} />
+              onChange={value => { setPoPreflight(null); setSupplier(value); }} options={suppliers.map(item => ({ value: item.code, label: `${item.code} · ${item.name}` }))} />
               {purchaseRequestId ? <small className="po-field-hint">Preenchido pela SC vinculada.</small> : null}</label>
             <label>Data da PO<input type="text" value="Automática ao salvar" readOnly aria-readonly="true" /></label>
           </div>
@@ -796,37 +961,93 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           </div>
           <div className="totvs-po-import">
             <div><h3>Importar produtos de planilha TOTVS</h3>
-              <p className="muted">Lê linha, código, descrição, unidade, quantidade, preço em CNY e centro de custo. A SC já vinculada e os dados de cabeçalho não serão alterados.</p>
+              <p className="muted">Lê o cabeçalho e os itens do export TOTVS Pedido de Compras. O preço vem de Valor Total ÷ Quantidade.</p>
             </div>
             <label>Arquivo Excel (.xlsx)<input className="file-upload-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               disabled={totvsParsing || saving || Boolean(createdPoId)} onChange={event => void selectTotvsProductFile(event)} /></label>
             {totvsParsing && <p role="status">Lendo a planilha…</p>}
             {totvsFileError && <p className="notice error" role="alert">{totvsFileError}</p>}
             {totvsRows.length > 0 && !totvsFileError && <>
-              <p className="notice" role="status">{totvsFileName}: {totvsRows.length} produtos válidos. Preços preenchidos serão registrados em CNY.</p>
+              <div className="notice" role="status">
+                <p>{totvsFileName}: {totvsRows.length} produtos válidos.</p>
+                <p>PO {totvsHeader?.number || "—"} · CNPJ {totvsHeader?.importerCnpj || "—"} · Importadora {importer || "selecione uma correspondência"}</p>
+                {totvsImporterMatches.length === 0 && <p role="alert">O CNPJ da planilha não corresponde a uma importadora cadastrada com CNPJ.</p>}
+                {totvsImporterMatches.length > 1 && <p role="alert">O CNPJ corresponde a mais de uma importadora. Selecione a correta acima.</p>}
+                {totvsHeader && <p>Fornecedor {totvsHeader.supplierCode} · {totvsHeader.supplierName}
+                  {totvsSupplierOption ? ` · Catálogo: ${totvsSupplierOption.name}` : importer ? " · Fornecedor não encontrado no catálogo global" : ""}</p>}
+                {totvsHeader && supplier && normalizeLookup(supplier) !== normalizeLookup(totvsHeader.supplierCode)
+                  && <p role="alert">Selecione o código {totvsHeader.supplierCode} do fornecedor informado na planilha.</p>}
+                {totvsSupplierNameDiverges && <p>Confira a razão social: ela difere do nome do fornecedor no catálogo.</p>}
+                {totvsHeader?.scNumber && <p>Nro.SC {totvsHeader.scNumber}
+                  {totvsScSuggestion ? <> · SC encontrada para a mesma importadora e fornecedor. <button className="button secondary" type="button"
+                    disabled={Boolean(purchaseRequestId)} onClick={() => selectPurchaseRequest(totvsScSuggestion)}>Vincular SC</button></>
+                    : " · Nenhuma SC correspondente foi sugerida."}</p>}
+                {selectedScConflictsWithTotvs && <p role="alert">A SC selecionada tem importadora ou fornecedor diferente dos informados na planilha.</p>}
+                <p>Totais {totvsCurrency}: planilha {formatNumber(totvsSpreadsheetTotal)} · calculado {formatNumber(totvsCalculatedTotal)}</p>
+                <label>Moeda da PO<OperationalOptionSelect entity="currency" value={totvsCurrency} values={options}
+                  onChange={setTotvsCurrency} required /></label>
+              </div>
+              {draftStorageWarning && <p className="notice" role="status">{draftStorageWarning}</p>}
               <details className="totvs-import-details">
                 <summary>Conferir os {totvsRows.length} produtos mapeados</summary>
                 <div className="totvs-import-table-wrap"><table className="totvs-import-table">
-                  <thead><tr><th>Linha</th><th>Produto</th><th>Descrição</th><th>Quantidade</th><th>UM</th><th>Preço CNY</th><th>Centro de custo</th></tr></thead>
-                  <tbody>{totvsRows.map((row, index) => <tr key={`${row.sourceRow}:${index}`}>
-                    <td>{row.externalLineReference || "—"}</td><td>{row.productCode}</td><td>{row.description}</td>
-                    <td>{formatNumber(row.orderedQuantity)}</td><td>{row.unit}</td><td>{row.unitPrice ? formatNumber(row.unitPrice) : "—"}</td><td>{row.costCenter || "—"}</td>
-                  </tr>)}</tbody>
+                  <thead><tr><th>Item</th><th>Produto</th><th>Descrição TOTVS</th><th>Quantidade</th><th>UM</th><th>Preço {totvsCurrency}</th><th>Valor Total</th><th>Referência / estimativa</th><th>CC</th><th>Pendência</th></tr></thead>
+                  <tbody>{totvsRows.map(row => {
+                    const product = products.find(choice => normalizeLookup(choice.code) === normalizeLookup(row.productCode));
+                    const reference = productPriceReferenceForCurrency(product?.referencePrices, totvsCurrency);
+                    const estimate = Number(row.unitPrice) === 0 ? estimatedProductTotal(row.orderedQuantity, reference) : null;
+                    const catalogDescription = product?.latestTotvsDescription?.trim() || product?.name;
+                    const pending = [
+                      !row.totalWithinTolerance ? "Preço calculado difere do Valor Total em mais de 0,01." : "",
+                      totvsMissingProducts.includes(row) ? "Produto fora do catálogo global ativo." : "",
+                      totvsMissingUnits.includes(row) ? "UM fora dos valores operacionais." : "",
+                      totvsMissingCostCenters.includes(row) ? "CC fora dos valores operacionais." : "",
+                      catalogDescription && normalizeLookup(catalogDescription) !== normalizeLookup(row.description)
+                        ? "Descrição TOTVS difere da descrição disponível no catálogo; confira." : "",
+                      Number(row.unitPrice) === 0 && !reference ? "Sem preço real conhecido nesta moeda." : "",
+                    ].filter(Boolean).join(" ");
+                    return <tr key={row.sourceRow}>
+                    <td>{row.externalLineReference}</td><td>{row.productCode}</td><td>{row.description}</td>
+                    <td>{formatNumber(row.orderedQuantity)}</td><td>{row.unit}</td><td>{formatNumber(row.unitPrice)} {totvsCurrency}</td>
+                    <td>{formatNumber(row.spreadsheetLineTotal)} {totvsCurrency}</td>
+                    <td>{Number(row.unitPrice) === 0 ? reference
+                      ? <>Preço de referência: {formatNumber(reference.unitPrice)} {reference.currency} (PO {reference.purchaseOrderNumber}, {formatUsDate(reference.observedAt)})
+                        {estimate !== null && <> · Valor estimado: {formatNumber(estimate)} {reference.currency}</>}</>
+                      : "Sem preço real conhecido" : "—"}</td>
+                    <td>{row.costCenter}</td><td>{pending || "—"}</td>
+                    </tr>;
+                  })}</tbody>
                 </table></div>
               </details>
               <div className="totvs-import-actions">
-                <button className="button" type="button" disabled={totvsApplied || saving || Boolean(createdPoId)}
+                <button className="button" type="button" disabled={!totvsImportReady || totvsApplied || saving || Boolean(createdPoId)}
                   onClick={() => applyTotvsProducts("replace")}>Substituir itens atuais</button>
-                <button className="button secondary" type="button" disabled={totvsApplied || saving || Boolean(createdPoId)}
+                <button className="button secondary" type="button" disabled={!totvsImportReady || totvsApplied || saving || Boolean(createdPoId)}
                   onClick={() => applyTotvsProducts("append")}>Adicionar ao formulário</button>
               </div>
               {totvsApplied && <p className="muted" role="status">Os produtos foram preenchidos no formulário; confira os itens antes de salvar a PO.</p>}
+              {totvsApplied && !totvsImportReady && <p className="notice" role="status">Resolva as pendências da planilha antes de salvar a PO.</p>}
             </>}
           </div>
           {catalogLoading && <p role="status">Carregando produtos e fornecedores…</p>}
-          {items.map((item, index) => <article className="po-entry-item" key={index}>
+          {compactPoItems && <div className="totvs-import-table-wrap"><table className="totvs-import-table">
+            <thead><tr><th>Item</th><th>Produto</th><th>Descrição</th><th>Quantidade</th><th>Preço</th><th>Valor total</th><th>Ação</th></tr></thead>
+            <tbody>{items.map((item, index) => <tr key={item.draftId}>
+              <td>{item.externalLineReference || index + 1}</td><td>{item.productCode || "—"}</td><td>{item.description || "—"}</td>
+              <td>{formatNumber(item.orderedQuantity)} {item.unit}</td><td>{formatNumber(item.unitPrice)} {item.currency}</td>
+              <td>{formatNumber(String(Number(item.orderedQuantity.replace(",", ".")) * Number(item.unitPrice.replace(",", "."))))} {item.currency}</td>
+              <td><button className="button secondary" type="button" onClick={() => setTotvsItemEditing(item.draftId)}>Editar</button></td>
+            </tr>)}</tbody>
+          </table></div>}
+          {items.map((item, index) => {
+            if (compactPoItems && item.draftId !== totvsItemEditing) return null;
+            const product = products.find(choice => normalizeLookup(choice.code) === normalizeLookup(item.productCode));
+            const reference = productPriceReferenceForCurrency(product?.referencePrices, item.currency);
+            const estimate = estimatedProductTotal(item.orderedQuantity, reference);
+            return <article className="po-entry-item" key={item.draftId}>
             <div className="po-entry-heading">
               <h3>Produto {index + 1}</h3>
+              {compactPoItems && <button className="button secondary" type="button" onClick={() => setTotvsItemEditing(null)}>Fechar edição</button>}
               {items.length > 1 && <button className="button secondary" type="button"
                 onClick={() => setItems(current => current.filter((_, itemIndex) => itemIndex !== index))}>Remover</button>}
             </div>
@@ -834,9 +1055,10 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
               <label>Linha no TOTVS<input maxLength={80} value={item.externalLineReference}
                 onChange={event => updateItem(index, { externalLineReference: event.target.value })} /></label>
               <label>Produto<CatalogProductSelect required value={item.productCode} fallbackName={item.description} products={products}
-                onChange={product => updateItem(index, { productCode: product?.code ?? "", description: product?.name ?? "" })} /></label>
-              <label>Código do produto<input readOnly value={item.productCode} placeholder="Preenchido pelo produto selecionado" /></label>
-              <label>Descrição<input readOnly value={item.description} placeholder="Preenchida pelo produto selecionado" /></label>
+                onChange={product => updateProductCode(index, product?.code ?? "")} /></label>
+              <label>Código do produto<input value={item.productCode} onChange={event => updateProductCode(index, event.target.value)} /></label>
+              <label>Descrição<input value={item.description} onChange={event => updateItem(index, { description: event.target.value })}
+                placeholder="Sugerida pelo catálogo e editável" /></label>
               <label>Quantidade pedida<input required inputMode="decimal" value={item.orderedQuantity}
                 onChange={event => updateItem(index, { orderedQuantity: event.target.value })} placeholder="Ex.: 100 ou 100,5" /></label>
               <label>Unidade<OperationalOptionSelect required entity="unit_of_measure" value={item.unit} values={options}
@@ -846,17 +1068,33 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
               <label>Moeda do preço<OperationalOptionSelect entity="currency" value={item.currency} values={options}
                 onChange={currency => updateItem(index, { currency })} /></label>
             </div>
+            {reference && <p className="muted">Preço de referência: {formatNumber(reference.unitPrice)} {reference.currency}
+              (PO {reference.purchaseOrderNumber}, {formatUsDate(reference.observedAt)})
+              {estimate !== null && <> · Valor estimado: {formatNumber(estimate)} {reference.currency}</>}</p>}
             <h4>Planejamento e acompanhamento deste produto</h4>
             <OperationalFieldsEditor fields={specificItemFields} values={item.operational} options={options}
               setValues={operational => updateItem(index, { operational })} />
             <PurchaseOrderCalculatedFields quantity={item.orderedQuantity} unitPrice={item.unitPrice} currency={item.currency} />
-          </article>)}
+          </article>;
+          })}
         </section>
 
         <section className="card po-entry-section">
           <h2>Confirmação</h2>
           {createdPoId && <p className="notice error">A PO já foi criada. <Link className="text-link" href={`/purchase-orders/${createdPoId}`}>Abrir a PO e continuar o preenchimento</Link>.</p>}
-          <button className="button" disabled={saving || !importer || Boolean(createdPoId)}>
+          {poPreflight?.sameImporterDuplicate && <p className="notice error" role="alert">Já existe uma PO {number} nesta importadora.</p>}
+          {poPreflight && (!poPreflight.importerAcceptsNewPurchaseOrders || !poPreflight.supplierFound
+            || poPreflight.missingProducts.length > 0 || poPreflight.missingUnits.length > 0 || poPreflight.missingCostCenters.length > 0)
+            && <p className="notice error" role="alert">A pré-validação encontrou pendências no CNPJ, fornecedor, produto, UM ou centro de custo. Corrija os itens e tente novamente.</p>}
+          {poPreflight && poPreflight.otherImporterDuplicates.length > 0 && <div className="notice">
+            <p>O número {number} já existe nas importadoras: {poPreflight.otherImporterDuplicates.join(", ")}.</p>
+            <label><input type="checkbox" checked={confirmDuplicateNumber}
+              onChange={event => setConfirmDuplicateNumber(event.target.checked)} />Confirmo a criação desta PO com o mesmo número.</label>
+            <label>Justificativa<input required minLength={3} maxLength={1000} value={duplicateNumberJustification}
+              onChange={event => setDuplicateNumberJustification(event.target.value)} /></label>
+          </div>}
+          <button className="button" disabled={saving || !importer || Boolean(createdPoId)
+            || (totvsApplied && !totvsImportReady) || poPreflightBlocksSave}>
             {saving ? "Salvando pedido e produtos…" : "Salvar PO e produtos"}
           </button>
         </section>

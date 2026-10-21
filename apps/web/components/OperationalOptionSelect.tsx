@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { apiFetch } from "../lib/api";
+import type { ProductPriceReference } from "../lib/product-price-reference";
 import { SearchableSelect } from "./SearchableSelect";
 
 export type OperationalOption = { entity: string; value: string; shortName?: string | null };
@@ -29,7 +30,8 @@ export async function loadOperationalOptions(): Promise<OperationalOption[]> {
   return (await response.json() as { items: OperationalOption[] }).items;
 }
 
-export type CatalogChoice = { code: string; name: string; status?: string };
+export type CatalogChoice = { code: string; name: string; status?: string; ncmCode?: string | null;
+  latestTotvsDescription?: string | null; referencePrices?: ProductPriceReference[] };
 
 export function CatalogProductSelect({ value, fallbackName, products, onChange, required = false }:
   { value: string; fallbackName?: string; products: CatalogChoice[]; onChange: (product: CatalogChoice | null) => void; required?: boolean }) {

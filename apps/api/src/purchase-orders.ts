@@ -17,6 +17,13 @@ const listQuery = z.object({
   ...portfolioFilterFields,
 }).strict();
 const summaryQuery = z.object(portfolioFilterFields).strict();
+const poPreflightSchema = z.object({
+  importer: z.string().trim().min(1).max(120), number: z.string().trim().min(1).max(80),
+  supplierCode: z.string().trim().min(1).max(240).optional(),
+  productCodes: z.array(z.string().trim().min(1).max(120)).max(500).default([]),
+  units: z.array(z.string().trim().min(1).max(32)).max(500).default([]),
+  costCenters: z.array(z.string().trim().min(1).max(80)).max(500).default([]),
+}).strict();
 
 function portfolioWhere(scopeSql: string, lifecycleParameter?: number): string {
   const lifecycleFilter = lifecycleParameter
@@ -67,6 +74,66 @@ function badQuery(reply: FastifyReply, issues: unknown) {
 }
 
 export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool: Pool): Promise<void> {
+  app.post("/api/v1/purchase-orders/preflight", {
+    config: permissionConfig("purchase-orders.write"),
+  }, async (request, reply) => {
+    const parsed = poPreflightSchema.safeParse(request.body);
+    if (!parsed.success) return badQuery(reply, parsed.error.flatten().fieldErrors);
+    const scopes = request.authorizationContext?.importerScopes ?? [];
+    const body = parsed.data;
+    if (!scopes.includes(body.importer)) return reply.code(404).send({ code: "RESOURCE_NOT_FOUND", detail: "Importadora fora do seu escopo." });
+
+    const [duplicates, importerResult, supplierResult, productResult, unitResult, costCenterResult] = await Promise.all([
+      pool.query<{ importer: string }>(`SELECT importer FROM procurement.purchase_order
+        WHERE normalized_number=upper(btrim($1::text)) AND importer=ANY($2::text[]) ORDER BY importer`, [body.number, scopes]),
+      pool.query<{ cnpj: string | null }>(`SELECT cnpj FROM catalog.operational_value
+        WHERE entity_key='IMPORTER' AND value=$1`, [body.importer]),
+      body.supplierCode ? pool.query<{ normalized_code: string }>(`SELECT normalized_code FROM catalog.entry
+        WHERE kind='SUPPLIER' AND importer IS NULL AND status='ACTIVE'
+          AND normalized_code=upper(btrim($1::text))`, [body.supplierCode]) : Promise.resolve({ rows: [] }),
+      body.productCodes.length ? pool.query<{ normalized_code: string; product_ncm_code: string | null;
+        latest_totvs_description: string | null; reference_prices: Array<{ currency: string; unitPrice: string;
+          purchaseOrderNumber: string; observedAt: string }> }>(`SELECT entry.normalized_code,entry.product_ncm_code,
+          description_reference.description AS latest_totvs_description,
+          coalesce((SELECT jsonb_agg(jsonb_build_object('currency',price.currency_code,
+            'unitPrice',price.unit_price::text,'purchaseOrderNumber',price.purchase_order_number,
+            'observedAt',price.observed_at)
+            ORDER BY price.currency_code) FROM catalog.product_price_reference AS price
+            WHERE price.product_id=entry.id),'[]'::jsonb) AS reference_prices
+        FROM catalog.entry AS entry
+        LEFT JOIN catalog.product_totvs_description_reference AS description_reference
+          ON description_reference.product_id=entry.id
+        WHERE entry.kind='PRODUCT' AND entry.importer IS NULL AND entry.status='ACTIVE'
+          AND entry.normalized_code=ANY($1::text[])`,
+      [body.productCodes.map(value => value.toLocaleUpperCase("en-US"))]) : Promise.resolve({ rows: [] }),
+      body.units.length ? pool.query<{ normalized_value: string }>(`SELECT normalized_value FROM catalog.operational_value
+        WHERE entity_key='UNIT_OF_MEASURE' AND status='ACTIVE'
+          AND normalized_value=ANY($1::text[])`, [body.units.map(value => value.toLocaleUpperCase("en-US"))]) : Promise.resolve({ rows: [] }),
+      body.costCenters.length ? pool.query<{ normalized_value: string }>(`SELECT normalized_value FROM catalog.operational_value
+        WHERE entity_key='COST_CENTER' AND status='ACTIVE'
+          AND normalized_value=ANY($1::text[])`, [body.costCenters.map(value => value.toLocaleUpperCase("en-US"))]) : Promise.resolve({ rows: [] }),
+    ]);
+    const normalized = (values: string[]) => values.map(value => value.trim().toLocaleUpperCase("en-US"));
+    const productSet = new Set(productResult.rows.map(row => row.normalized_code));
+    const unitSet = new Set(unitResult.rows.map(row => row.normalized_value));
+    const costCenterSet = new Set(costCenterResult.rows.map(row => row.normalized_value));
+    const duplicateImporters = [...new Set(duplicates.rows.map(row => row.importer))];
+    const cnpj = importerResult.rows[0]?.cnpj ?? null;
+    reply.header("cache-control", "no-store");
+    return {
+      importerAcceptsNewPurchaseOrders: /^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}$/u.test(cnpj ?? ""),
+      sameImporterDuplicate: duplicateImporters.includes(body.importer),
+      otherImporterDuplicates: duplicateImporters.filter(importer => importer !== body.importer),
+      supplierFound: supplierResult.rows.length > 0,
+      missingProducts: body.productCodes.filter((value, index) => !productSet.has(normalized(body.productCodes)[index]!)),
+      productReferences: productResult.rows.map(product => ({ productCode: product.normalized_code,
+        ncmCode: product.product_ncm_code, latestTotvsDescription: product.latest_totvs_description,
+        referencePrices: product.reference_prices ?? [] })),
+      missingUnits: body.units.filter((value, index) => !unitSet.has(normalized(body.units)[index]!)),
+      missingCostCenters: body.costCenters.filter((value, index) => !costCenterSet.has(normalized(body.costCenters)[index]!)),
+    };
+  });
+
   app.get("/api/v1/purchase-orders", {
     config: permissionConfig("purchase-orders.read"),
   }, async (request, reply) => {

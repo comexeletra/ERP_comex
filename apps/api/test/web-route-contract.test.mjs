@@ -29,6 +29,7 @@ const webRoutes = [
   ["GET", "/api/v1/purchase-orders/invoice-candidates"],
   ["GET", "/api/v1/purchase-orders/:id/followup"],
   ["POST", "/api/v1/purchase-orders"], ["POST", "/api/v1/purchase-orders/complete"],
+  ["POST", "/api/v1/purchase-orders/preflight"],
   ["PATCH", "/api/v1/purchase-orders/:id"],
   ["POST", "/api/v1/purchase-orders/:id/cancel"],
   ["POST", "/api/v1/purchase-orders/:id/close"],
@@ -36,7 +37,10 @@ const webRoutes = [
   ["POST", "/api/v1/purchase-orders/:id/reactivate"],
   ["POST", "/api/v1/purchase-orders/:id/restore"],
   ["DELETE", "/api/v1/purchase-orders/:id"],
+  ["POST", "/api/v1/purchase-orders/:id/reimport/preview"],
+  ["POST", "/api/v1/purchase-orders/:id/reimport"],
   ["POST", "/api/v1/purchase-orders/:id/items"],
+  ["POST", "/api/v1/purchase-orders/:id/items/:itemId/remove"],
   ["POST", "/api/v1/purchase-orders/:id/items/complete"],
   ["PATCH", "/api/v1/purchase-orders/:id/items/:itemId"],
   ["PATCH", "/api/v1/purchase-orders/:id/items/:itemId/complete"],
@@ -79,7 +83,8 @@ const webRoutes = [
       ["GET", "/api/v1/ncms/official-search"],
       ["POST", "/api/v1/ncms/import-official"], ["POST", "/api/v1/ncms/refresh-official"],
     ] : []),
-    ...(resource === "products" ? [["POST", "/api/v1/products/bulk"]] : []),
+    ...(resource === "products" ? [["POST", "/api/v1/products/bulk"],
+      ["GET", "/api/v1/products/:id/price-history"]] : []),
   ]),
 ];
 

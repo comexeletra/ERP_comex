@@ -108,7 +108,25 @@ type Entry = { id: string; importer: string | null; kind: Kind; code: string; na
   product_ncm_code?: string | null;
   mandatory_import_attributes?: OfficialNcm["mandatoryImportAttributes"];
   creation_act?: OfficialNcm["creationAct"];
-  source_updated_at?: string | null; attributes_source_version?: string | null; synced_at?: Date | null };
+  source_updated_at?: string | null; attributes_source_version?: string | null; synced_at?: Date | null;
+  latest_totvs_description?: string | null;
+  latest_totvs_description_purchase_order_number?: string | null;
+  latest_totvs_description_observed_at?: string | Date | null;
+  reference_prices?: Array<{ currency: string; unitPrice: string; purchaseOrderNumber: string; observedAt: string | Date }> };
+
+const productReferenceProjection = `, product_prices.reference_prices,
+  description_reference.description AS latest_totvs_description,
+  description_reference.purchase_order_number AS latest_totvs_description_purchase_order_number,
+  description_reference.observed_at AS latest_totvs_description_observed_at`;
+const productReferenceJoins = `
+  LEFT JOIN LATERAL (
+    SELECT coalesce(jsonb_agg(jsonb_build_object('currency', reference.currency_code,
+      'unitPrice', reference.unit_price::text, 'purchaseOrderNumber', reference.purchase_order_number,
+      'observedAt', reference.observed_at) ORDER BY reference.currency_code), '[]'::jsonb) AS reference_prices
+    FROM catalog.product_price_reference AS reference WHERE reference.product_id = entry.id
+  ) AS product_prices ON true
+  LEFT JOIN catalog.product_totvs_description_reference AS description_reference
+    ON description_reference.product_id = entry.id`;
 
 function problem(reply: FastifyReply, status: number, code: string, detail: string) {
   return reply.code(status).send({ type: "about:blank", title: detail, status, detail,
@@ -134,7 +152,11 @@ function present(row: Entry) {
     validFrom: row.valid_from, validTo: row.valid_to, version: String(row.version),
     ...(row.kind === "PRODUCT" ? { manufacturer: row.manufacturer ?? null,
       manufacturerAddress: row.manufacturer_address ?? null,
-      manufacturerCountry: row.manufacturer_country ?? null, ncmCode: row.product_ncm_code ?? null } : {}),
+      manufacturerCountry: row.manufacturer_country ?? null, ncmCode: row.product_ncm_code ?? null,
+      latestTotvsDescription: row.latest_totvs_description ?? null,
+      latestTotvsDescriptionPurchaseOrderNumber: row.latest_totvs_description_purchase_order_number ?? null,
+      latestTotvsDescriptionObservedAt: row.latest_totvs_description_observed_at ?? null,
+      referencePrices: row.reference_prices ?? [] } : {}),
     createdAt: row.created_at, updatedAt: row.updated_at,
     ...(row.mandatory_import_attributes !== undefined ? { mandatoryImportAttributes: row.mandatory_import_attributes,
       creationAct: row.creation_act ?? null,
@@ -571,15 +593,33 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
            )
            SELECT * FROM curated UNION ALL SELECT * FROM candidates ORDER BY name,code`,
           [sourceColumn, descriptionColumn, parsed.data.importer, kind]);
-        return { items: result.rows };
+        if (kind !== "PRODUCT") return { items: result.rows };
+        const productDetails = result.rows.length ? await pool.query<{
+          normalized_code: string; ncm_code: string | null; latest_totvs_description: string | null;
+          latest_totvs_description_purchase_order_number: string | null; latest_totvs_description_observed_at: string | Date | null;
+          reference_prices: Array<{ currency: string; unitPrice: string; purchaseOrderNumber: string; observedAt: string | Date }>;
+        }>(`SELECT entry.normalized_code, entry.product_ncm_code AS ncm_code${productReferenceProjection}
+           FROM catalog.entry AS entry ${productReferenceJoins}
+           WHERE entry.kind='PRODUCT' AND entry.importer IS NULL
+             AND entry.normalized_code=ANY($1::text[])`,
+        [result.rows.map(row => row.code.trim().toLocaleUpperCase("en-US"))]) : { rows: [] };
+        const detailByCode = new Map(productDetails.rows.map(row => [row.normalized_code, row]));
+        return { items: result.rows.map(row => {
+          const detail = detailByCode.get(row.code.trim().toLocaleUpperCase("en-US"));
+          return { ...row, ncmCode: detail?.ncm_code ?? null,
+            latestTotvsDescription: detail?.latest_totvs_description ?? null,
+            latestTotvsDescriptionPurchaseOrderNumber: detail?.latest_totvs_description_purchase_order_number ?? null,
+            latestTotvsDescriptionObservedAt: detail?.latest_totvs_description_observed_at ?? null,
+            referencePrices: detail?.reference_prices ?? [] };
+        }) };
       });
   }
 
   app.get("/api/v1/importers", { config: permissionConfig("catalog.read") }, async (request, reply) => {
     reply.header("cache-control", "no-store");
     const scopes = request.authorizationContext?.importerScopes ?? [];
-    const result = await pool.query<{ importer: string; cnpj: string | null; po_count: number }>(
-      `SELECT available.importer, importer_ref.cnpj,
+    const result = await pool.query<{ importer: string; cnpj: string | null; short_name: string | null; po_count: number }>(
+      `SELECT available.importer, importer_ref.cnpj, importer_ref.short_name,
               count(po.id) FILTER (WHERE po.source_kind = 'HISTORICAL_EXCEL')::int AS po_count
        FROM (SELECT importer FROM procurement.purchase_order
              UNION SELECT importer FROM imports.import_process
@@ -589,9 +629,10 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
        LEFT JOIN catalog.operational_value AS importer_ref
          ON importer_ref.entity_key = 'IMPORTER' AND importer_ref.value = available.importer
        WHERE available.importer = ANY($1::text[])
-       GROUP BY available.importer, importer_ref.cnpj ORDER BY available.importer`, [scopes]);
+       GROUP BY available.importer, importer_ref.cnpj, importer_ref.short_name ORDER BY available.importer`, [scopes]);
     return { items: result.rows.map(row => ({ code: row.importer, historicalPoCount: row.po_count,
-      cnpj: row.cnpj,
+      cnpj: row.cnpj, shortName: row.short_name,
+      acceptsNewPurchaseOrders: /^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}$/u.test(row.cnpj ?? ""),
       status: "HISTORICAL_OBSERVED", officialTotvsMappingKnown: false })) };
   });
 
@@ -605,14 +646,16 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
       ? `, official.mandatory_import_attributes, official.creation_act, official.source_updated_at::text AS source_updated_at,
            official.attributes_source_version, official.synced_at`
       : "";
+    const productFields = kind === "PRODUCT" ? productReferenceProjection : "";
+    const productJoins = kind === "PRODUCT" ? productReferenceJoins : "";
     app.get(base, { config: permissionConfig("catalog.read", scopeMode) }, async (request, reply) => {
       const parsed = (kind === "NCM" ? globalListQuery : listQuery).safeParse(request.query);
       if (!parsed.success) return problem(reply, 400, "INVALID_QUERY", "Filtros inválidos.");
       const { search, page, pageSize } = parsed.data;
       const result = await pool.query<{ total_count: number; items: Entry[] }>(
         `WITH visible AS MATERIALIZED (
-           SELECT entry.*${officialNcmFields} FROM catalog.entry AS entry
-           ${officialNcmJoin}
+           SELECT entry.*${officialNcmFields}${productFields} FROM catalog.entry AS entry
+           ${officialNcmJoin}${productJoins}
            WHERE entry.kind = $1 AND entry.importer IS NULL
              AND ($2::text IS NULL OR strpos(lower(entry.code), lower($2)) > 0
                   OR strpos(lower(entry.name), lower($2)) > 0)
@@ -872,6 +915,10 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
              FROM catalog.entry AS entry
              LEFT JOIN catalog.ncm_siscomex_data AS official ON official.ncm_entry_id = entry.id
              WHERE entry.id = $1 AND entry.kind = $2 AND entry.importer IS NULL LIMIT 1`
+          : kind === "PRODUCT"
+          ? `SELECT entry.*${productReferenceProjection}
+             FROM catalog.entry AS entry ${productReferenceJoins}
+             WHERE entry.id = $1 AND entry.kind = $2 AND entry.importer IS NULL LIMIT 1`
           : `SELECT entry.* FROM catalog.entry AS entry
              WHERE entry.id = $1 AND entry.kind = $2 AND entry.importer IS NULL LIMIT 1`,
         [id.data, kind]);
@@ -907,6 +954,35 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
           actor: event.actor_id, occurredAt: event.occurred_at, reason: event.reason,
         })) };
     });
+
+    if (kind === "PRODUCT") {
+      app.get<{ Params: { id: string } }>(`${base}/:id/price-history`,
+        { config: permissionConfig("catalog.read", "global") }, async (request, reply) => {
+          const id = z.uuid().safeParse(request.params.id);
+          const parsed = historyQuery.safeParse(request.query);
+          if (!id.success || !parsed.success) return problem(reply, 400, "INVALID_QUERY", "Identificador ou paginação inválidos.");
+          const visible = await pool.query<{ id: string }>(
+            `SELECT id FROM catalog.entry WHERE id=$1 AND kind='PRODUCT' AND importer IS NULL LIMIT 1`, [id.data]);
+          if (!visible.rowCount) return problem(reply, 404, "RESOURCE_NOT_FOUND", "Produto não encontrado.");
+          const { page, pageSize } = parsed.data;
+          const history = await pool.query<{ total_count: number | string; items: Array<Record<string, unknown>> }>(
+            `WITH page AS (
+               SELECT id, currency_code, unit_price::text AS unit_price, purchase_order_item_id,
+                 purchase_order_number, observed_at, actor_id
+               FROM catalog.product_price_observation WHERE product_id=$1
+               ORDER BY observed_at DESC, id DESC LIMIT $2 OFFSET $3
+             )
+             SELECT (SELECT count(*)::int FROM catalog.product_price_observation WHERE product_id=$1) AS total_count,
+               coalesce(jsonb_agg(jsonb_build_object('id', page.id, 'currency', page.currency_code,
+                 'unitPrice', page.unit_price, 'purchaseOrderItemId', page.purchase_order_item_id,
+                 'purchaseOrderNumber', page.purchase_order_number, 'observedAt', page.observed_at,
+                 'actor', page.actor_id) ORDER BY page.observed_at DESC, page.id DESC)
+                 FILTER (WHERE page.id IS NOT NULL), '[]'::jsonb) AS items FROM page`,
+            [id.data, pageSize, (page - 1) * pageSize]);
+          return { page, pageSize, totalCount: Number(history.rows[0]?.total_count ?? 0),
+            items: history.rows[0]?.items ?? [] };
+        });
+    }
 
     if (kind === "PRODUCT") {
       app.post(`${base}/bulk`, { config: permissionConfig("catalog.write") }, async (request, reply) => {
