@@ -6,7 +6,7 @@
 | Branch de trabalho | `homologacao` |
 | Ambiente de validação | HML (VPS `import-erp-hml-api` + banco `erp_po_totvs_hml`) e Preview Vercel |
 | Arquivo de referência | `PO 030201.xlsx` (export TOTVS "1-Pedido de Compras Autoriz", 215 itens) |
-| Status | **Autorização recebida em 2026-10-21. Ciclos 1–4 e melhorias F2–F5 implementados na branch `homologacao`; suíte web com 70 testes, lint sem erros, type-check e build passaram. M065 foi aplicada somente no HML após backup e validação em cópia restaurada; a API HML está ativa. O Preview do código redireciona para SSO, impedindo validar a aplicação pela web. A validação autenticada das rotas HML também está pendente: as credenciais Master protegidas não permitiram sessão utilizável. Nenhuma PO foi criada ou alterada nesta validação. E3 permanece excluído, sem aprovação específica.** |
+| Status | **Autorização recebida em 2026-10-21. Ciclos 1–4 e melhorias F2–F5 implementados na branch `homologacao`; suíte web com 70 testes, lint sem erros, type-check e build passaram. M065 foi aplicada somente no HML após backup e validação em cópia restaurada; a API HML está ativa. O commit `49157a6` tem Preview `READY` e status Vercel `success`, mas a URL do deployment e o domínio estável redirecionam para SSO, impedindo validar a aplicação pela web. A validação autenticada das rotas HML também está pendente: as credenciais Master protegidas não permitiram sessão utilizável. Nenhuma PO foi criada ou alterada nesta validação. E3 permanece excluído, sem aprovação específica.** |
 
 ## Sumário
 
