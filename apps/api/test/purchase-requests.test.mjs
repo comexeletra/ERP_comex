@@ -8,8 +8,9 @@ import { BusinessError, validatePurchaseRequest } from "../dist/operations.js";
 const actorId = "00000000-0000-4000-8000-000000000010";
 const scId = "00000000-0000-4000-8000-000000000011";
 
-async function createApp(t) {
+async function createApp(t, { linkedPoStatus = null } = {}) {
   let writes = 0;
+  const transactionQueries = [];
   const pool = {
     async query(sql, values) {
       if (sql.includes("identity.erp_user_role")) {
@@ -28,6 +29,23 @@ async function createApp(t) {
       return {
         async query(sql, values) {
           writes += 1;
+          transactionQueries.push({ sql, values });
+          if (sql.includes("FROM procurement.purchase_request") && sql.includes("FOR UPDATE")) {
+            return { rows: [{ id: scId, importer: "ELETRA MATRIZ", sc_number: "SC-100",
+              supplier_entry_id: null, supplier_text: "SUP-100", sc_date: "2026-10-07",
+              commercial_plan_received_date: "2026-10-10", requester: "Ana",
+              approval_date: null, version: "1" }], rowCount: 1 };
+          }
+          if (sql.includes("FROM procurement.purchase_order") && sql.includes("purchase_request_id = $1")
+            && sql.includes("FOR UPDATE")) {
+            return { rows: linkedPoStatus ? [{ id: "po-closed", supplier_text: "SUP-100",
+              lifecycle_status: linkedPoStatus }] : [], rowCount: linkedPoStatus ? 1 : 0 };
+          }
+          if (sql.includes("UPDATE procurement.purchase_request") && sql.includes("RETURNING id")) {
+            return { rows: [{ id: scId, importer: values[1], scNumber: values[2], supplierText: values[3],
+              scDate: values[4], commercialPlanReceivedDate: values[5], requester: values[6],
+              approvalDate: values[7], version: "2" }], rowCount: 1 };
+          }
           if (sql.includes("SELECT importer FROM procurement.purchase_order")) {
             return { rows: [{ importer: "ELETRA MATRIZ" }], rowCount: 1 };
           }
@@ -54,7 +72,7 @@ async function createApp(t) {
     };
   });
   await registerPurchaseRequestRoutes(app, pool);
-  return { app, get writes() { return writes; } };
+  return { app, get writes() { return writes; }, transactionQueries };
 }
 
 test("PCM manages SCs; PO writers can read them; importer scope is enforced", async t => {
@@ -95,4 +113,20 @@ test("a PO can only link an SC from the same importer", async () => {
   await assert.rejects(validatePurchaseRequest(client, scId, "ELETRA FILIAL"),
     error => error instanceof BusinessError && error.status === 404);
   assert.deepEqual(calls.map(call => call.values[1]), ["ELETRA MATRIZ", "ELETRA FILIAL"]);
+});
+
+test("editing an SC is blocked while a linked PO is not active", async t => {
+  const fixture = await createApp(t, { linkedPoStatus: "CLOSED" });
+  const response = await fixture.app.inject({
+    method: "PATCH",
+    url: `/api/v1/purchase-requests/${scId}`,
+    headers: { "x-test-subject": "pcm", "x-record-version": "1" },
+    payload: { importer: "ELETRA MATRIZ", scNumber: "SC-100", supplierText: "SUP-100",
+      scDate: "2026-10-07", commercialPlanReceivedDate: "2026-10-10", requester: "Beatriz",
+      approvalDate: null, reason: "Atualização solicitada" },
+  });
+
+  assert.equal(response.statusCode, 409, response.body);
+  assert.equal(response.json().code, "PO_NOT_ACTIVE");
+  assert.equal(fixture.transactionQueries.some(query => query.sql.includes("UPDATE procurement.purchase_request")), false);
 });

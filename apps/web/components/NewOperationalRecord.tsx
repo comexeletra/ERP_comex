@@ -53,13 +53,14 @@ const poCommandKey = "new-operational-record:po-command:v1";
 
 type InvoiceItemCandidate = { id: string; lineNumber: number; productCode: string; description: string;
   unit: string; remainingQuantity: string; purchaseOrderId: string; poNumber: string;
+  poStatus?: "ACTIVE" | "CANCELLED" | "CLOSED" | "DELETED";
   supplierEntryId: string | null; supplierText: string | null; supplierName: string | null; supplierCode: string | null;
   orderedQuantity: string; unitPrice: string | null; currency: string | null; poNcmCode: string | null;
   productId: string | null; productName: string | null; productNcmCode: string | null;
   manufacturer: string | null; manufacturerAddress: string | null; manufacturerCountry: string | null };
 type InvoiceMatch = { key: string; sourceRow: number; sourcePoNumber: string; poNumber: string; quantity: string;
   productCode: string; description: string; itemId: string; candidates: InvoiceItemCandidate[];
-  poExists: boolean; poId: string | null;
+  poExists: boolean; poId: string | null; poStatus: "ACTIVE" | "CANCELLED" | "CLOSED" | "DELETED" | null;
   updateProduct: boolean; updatePoItem: boolean; confirmCodeMismatch: boolean; confirmSupplierMismatch: boolean;
   confirmUnitMismatch: boolean; confirmPriceMismatch: boolean };
 type InvoiceDuplicate = { id: string; ipNumber: string; recordStatus: string; version: string;
@@ -283,7 +284,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   }));
   const orphanPos = invoiceExistingProcess?.purchaseOrders.filter(order => !allocatedPoIds.has(order.id)) ?? [];
   const destinationIssues = invoiceMatches.map(match => ({ match, issue: classifyInvoiceDestination(
-    match.candidates, match.poExists, match.productCode, match.quantity, match.itemId) }))
+    match.candidates, match.poExists, match.productCode, match.quantity, match.itemId, match.poStatus ?? "ACTIVE") }))
     .filter(entry => entry.issue !== null);
   const importerCnpjMismatch = Boolean(invoiceDraft && importer
     && (normalizeCnpj(invoiceDraft.importerCnpj).length !== 14
@@ -369,12 +370,14 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       for (const assignment of assignments) candidateRequests.set(candidateKey(assignment.productCode, assignment.sourcePoNumber), {
         productCode: assignment.productCode, sourcePoNumber: assignment.sourcePoNumber,
       });
-      const candidatesByAssignment = new Map<string, { items: InvoiceItemCandidate[]; poExists: boolean; purchaseOrderId: string | null }>();
+      const candidatesByAssignment = new Map<string, { items: InvoiceItemCandidate[]; poExists: boolean;
+        purchaseOrderId: string | null; poStatus: "ACTIVE" | "CANCELLED" | "CLOSED" | "DELETED" | null }>();
       if (invoiceImporter) await forEachInBatches([...candidateRequests], 8, async ([key, candidateRequest]) => {
         const params = new URLSearchParams({ importer: invoiceImporter, productCode: candidateRequest.productCode,
           sourcePoNumber: candidateRequest.sourcePoNumber,
           revisingIpNumber: draft.ipNumber.trim() });
-        const result = await readResponse<{ items: InvoiceItemCandidate[]; poExists: boolean; purchaseOrderId: string | null }>(
+        const result = await readResponse<{ items: InvoiceItemCandidate[]; poExists: boolean; purchaseOrderId: string | null;
+          poStatus: "ACTIVE" | "CANCELLED" | "CLOSED" | "DELETED" | null }>(
           await apiFetch(`/api/v1/purchase-orders/invoice-candidates?${params}`, { cache: "no-store" }));
         candidatesByAssignment.set(key, result);
       });
@@ -383,7 +386,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         const candidates = lookup?.items ?? [];
         const suggestion = suggestInvoicePoItem(candidates, assignment.productCode, assignment.quantity);
         return { ...assignment, candidates, poExists: lookup?.poExists ?? false,
-          poId: lookup?.purchaseOrderId ?? null, itemId: suggestion?.id ?? "", updateProduct: false,
+          poId: lookup?.purchaseOrderId ?? null, poStatus: lookup?.poStatus ?? null,
+          itemId: suggestion?.id ?? "", updateProduct: false,
           updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
           confirmUnitMismatch: false, confirmPriceMismatch: false };
       });
@@ -419,7 +423,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       setInvoiceExistingProcess(duplicate ? await readResponse<InvoiceExistingProcess>(
         await apiFetch(`/api/v1/processes/${duplicate.id}`, { cache: "no-store" })) : null);
       const assignments = invoiceMatches.length > 0 ? invoiceMatches : invoiceAssignmentsFromLines(invoiceDraft.lines).map(match => ({
-        ...match, candidates: [] as InvoiceItemCandidate[], poExists: false, poId: null as string | null,
+        ...match, candidates: [] as InvoiceItemCandidate[], poExists: false, poId: null as string | null, poStatus: null,
         itemId: "", updateProduct: false,
         updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
         confirmUnitMismatch: false, confirmPriceMismatch: false,
@@ -430,12 +434,14 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       for (const match of assignments) requests.set(candidateKey(match.productCode, match.sourcePoNumber), {
         productCode: match.productCode, sourcePoNumber: match.sourcePoNumber,
       });
-      const byAssignment = new Map<string, { items: InvoiceItemCandidate[]; poExists: boolean; purchaseOrderId: string | null }>();
+      const byAssignment = new Map<string, { items: InvoiceItemCandidate[]; poExists: boolean;
+        purchaseOrderId: string | null; poStatus: "ACTIVE" | "CANCELLED" | "CLOSED" | "DELETED" | null }>();
       await forEachInBatches([...requests], 8, async ([key, candidateRequest]) => {
         const params = new URLSearchParams({ importer, productCode: candidateRequest.productCode,
           sourcePoNumber: candidateRequest.sourcePoNumber,
           revisingIpNumber: invoiceDraft.ipNumber.trim() });
-        const result = await readResponse<{ items: InvoiceItemCandidate[]; poExists: boolean; purchaseOrderId: string | null }>(
+        const result = await readResponse<{ items: InvoiceItemCandidate[]; poExists: boolean; purchaseOrderId: string | null;
+          poStatus: "ACTIVE" | "CANCELLED" | "CLOSED" | "DELETED" | null }>(
           await apiFetch(`/api/v1/purchase-orders/invoice-candidates?${params}`, { cache: "no-store" }));
         byAssignment.set(key, result);
       });
@@ -448,7 +454,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           && Number(item.remainingQuantity) >= Number(match.quantity));
         const selected = previous ?? suggestion;
         return { ...match, candidates, poExists: lookup?.poExists ?? false,
-          poId: lookup?.purchaseOrderId ?? null, poNumber: selected?.poNumber ?? match.sourcePoNumber,
+          poId: lookup?.purchaseOrderId ?? null, poStatus: lookup?.poStatus ?? null,
+          poNumber: selected?.poNumber ?? match.sourcePoNumber,
           itemId: selected?.id ?? "", confirmCodeMismatch: Boolean(previous && match.confirmCodeMismatch),
           confirmSupplierMismatch: Boolean(previous && match.confirmSupplierMismatch),
           confirmUnitMismatch: Boolean(previous && match.confirmUnitMismatch),
@@ -893,6 +900,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
             <p className="muted">A PO informada em cada linha da INV determina o destino. O sistema sugere o produto cadastrado nessa PO; divergências de código exigem confirmação e podem ser ajustadas manualmente dentro da própria PO. A quantidade original da PO permanece registrada.</p>
             {invoiceDraft.warnings.map(warning => <p className="notice" key={warning}>{warning}</p>)}
             {destinationIssues.length > 0 && <div className="notice error" role="alert">
+              <p>{destinationIssues.filter(entry => entry.issue?.kind === "PO_NOT_ACTIVE").length} PO(s) inativa(s).</p>
               <p>{destinationIssues.length} destino(s) da invoice precisam de ação antes de gravar:</p>
               <p>{destinationIssues.filter(entry => entry.issue?.kind === "PO_NOT_REGISTERED").length} PO(s) não cadastrada(s),
                 {" "}{destinationIssues.filter(entry => entry.issue?.kind === "ITEM_NOT_FOUND").length} item(ns) não encontrado(s),
@@ -914,7 +922,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                 const priceMismatch = Boolean(selectedCandidate && sourceLine
                   && invoicePoPriceDiffers(sourceLine.unitPrice, selectedCandidate.unitPrice, selectedCandidate.currency));
                 const destinationIssue = classifyInvoiceDestination(match.candidates, match.poExists,
-                  match.productCode, match.quantity, match.itemId);
+                  match.productCode, match.quantity, match.itemId, match.poStatus ?? "ACTIVE");
                 return <tr key={match.key}>
                   <td>{match.sourceRow}<small>INV: PO {match.sourcePoNumber || "?"}</small></td>
                   <td>{match.productCode}<small>{match.description}</small></td>
@@ -942,7 +950,9 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                       <p>Linha {match.sourceRow}, PO {match.sourcePoNumber}: {destinationIssue.kind === "PO_NOT_REGISTERED"
                         ? "PO não cadastrada." : destinationIssue.kind === "ITEM_NOT_FOUND"
                           ? `Item/produto ${match.productCode} não encontrado na PO.`
-                          : `Saldo insuficiente: quantidade pedida ${formatNumber(destinationIssue.requested)}, disponível ${formatNumber(destinationIssue.available)}.`}</p>
+                          : destinationIssue.kind === "PO_NOT_ACTIVE"
+                            ? `PO ${destinationIssue.status === "CLOSED" ? "encerrada" : destinationIssue.status === "CANCELLED" ? "cancelada" : "excluída"}; não pode receber a invoice.`
+                            : `Saldo insuficiente: quantidade pedida ${formatNumber(destinationIssue.requested)}, disponível ${formatNumber(destinationIssue.available)}.`}</p>
                       {match.poId ? <Link href={`/purchase-orders/${match.poId}`} target="_blank" rel="noopener noreferrer">Abrir PO para ajustar</Link>
                         : <Link href="/purchase-orders/new" target="_blank" rel="noopener noreferrer">Cadastrar PO em nova aba</Link>}
                     </div>}

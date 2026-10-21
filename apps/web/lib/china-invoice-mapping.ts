@@ -1,10 +1,14 @@
 export type InvoicePoItemCandidate = { id: string; productCode: string; remainingQuantity: string };
-export type InvoiceDestinationIssue = { kind: "PO_NOT_REGISTERED" } | { kind: "ITEM_NOT_FOUND" }
+export type InvoiceDestinationIssue = { kind: "PO_NOT_REGISTERED" } | { kind: "PO_NOT_ACTIVE"; status: "CANCELLED" | "CLOSED" | "DELETED" }
+  | { kind: "ITEM_NOT_FOUND" }
   | { kind: "INSUFFICIENT_BALANCE"; requested: string; available: string };
 
 export function classifyInvoiceDestination(candidates: readonly InvoicePoItemCandidate[], poExists: boolean,
-  invoiceProductCode: string, quantity: string, selectedItemId: string): InvoiceDestinationIssue | null {
+  invoiceProductCode: string, quantity: string, selectedItemId: string, poStatus = "ACTIVE"): InvoiceDestinationIssue | null {
   if (!poExists) return { kind: "PO_NOT_REGISTERED" };
+  if (poStatus === "CANCELLED" || poStatus === "CLOSED" || poStatus === "DELETED") {
+    return { kind: "PO_NOT_ACTIVE", status: poStatus };
+  }
   const exact = candidates.filter(item => !invoicePoCodeDiffers(item.productCode, invoiceProductCode));
   const selected = candidates.find(item => item.id === selectedItemId);
   if (selected && Number(selected.remainingQuantity) >= Number(quantity)) return null;

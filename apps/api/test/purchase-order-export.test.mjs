@@ -1,7 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import ExcelJS from "exceljs";
-import { purchaseOrderExportXlsx } from "../dist/purchase-order-exports.js";
+import { purchaseOrderExportXlsx, queryPurchaseOrderExport } from "../dist/purchase-order-exports.js";
+
+test("active PO export query excludes logically deleted orders", async () => {
+  let sql = "";
+  const result = await queryPurchaseOrderExport({
+    async query(statement) { sql = statement; return { rows: [], rowCount: 0 }; },
+  }, ["ELETRA MATRIZ"], {});
+
+  assert.equal(result.totalCount, 0);
+  assert.match(sql, /po\.lifecycle_status\s*<>\s*'DELETED'/u);
+});
 
 test("purchase-order export is an Excel workbook with text and count columns", async () => {
   const bytes = await purchaseOrderExportXlsx([{

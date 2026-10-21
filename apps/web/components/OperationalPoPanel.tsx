@@ -29,6 +29,8 @@ type Allocation = { id: string; itemId: string; processId: string; ipNumber: str
   quantity: string; notes: string; factoryShipDate: string | null; version: string };
 type OperationalPo = { id: string; importer: string; number: string; supplierText: string | null;
   orderDate: string | null; notes: string; sourceKind: string; version: string;
+  lifecycleStatus: "ACTIVE" | "CANCELLED" | "CLOSED" | "DELETED";
+  lifecycleChangedAt: string | null; lifecycleChangedBy: string | null; lifecycleReason: string | null;
   purchaseRequestId: string | null;
   purchaseRequest: { id: string; importer: string; scNumber: string; supplierText: string | null; scDate: string | null; commercialPlanReceivedDate: string | null;
     requester: string; approvalDate: string | null } | null;
@@ -154,6 +156,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [lifecycleReason, setLifecycleReason] = useState("");
   const [reload, setReload] = useState(0);
   const [products, setProducts] = useState<CatalogChoice[]>([]);
   const [suppliers, setSuppliers] = useState<CatalogChoice[]>([]);
@@ -206,7 +209,9 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   }, [id, reload]);
 
   const canWritePo = roles.some(role => poWriters.has(role));
-  const canAllocate = roles.some(role => allocationWriters.has(role));
+  const activePo = data?.lifecycleStatus === "ACTIVE";
+  const canEditPo = canWritePo && activePo;
+  const canAllocate = activePo && roles.some(role => allocationWriters.has(role));
   async function send(path: string, method: string, body: unknown, version?: string) {
     const response = await apiFetch(path, { method,
       headers: { "content-type": "application/json", ...(version ? { "X-Record-Version": version } :
@@ -249,6 +254,21 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     try { await action(); setNotice(success); setReload(value => value + 1); onChanged?.(); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setSaving(false); }
+  }
+  async function changeLifecycle(action: "cancel" | "close" | "reopen" | "delete") {
+    if (!data) return;
+    if (action === "delete" && !window.confirm("Excluir esta PO da carteira ativa? Os dados e vínculos históricos serão preservados.")) return;
+    const method = action === "delete" ? "DELETE" : "POST";
+    const success = action === "cancel" ? "PO cancelada." : action === "close" ? "PO encerrada."
+      : action === "reopen" ? "PO reaberta." : "PO excluída da carteira ativa.";
+    await save(async () => {
+      const response = await apiFetch(`/api/v1/purchase-orders/${id}${action === "delete" ? "" : `/${action}`}`, {
+        method, headers: { "content-type": "application/json", "X-Record-Version": data.version },
+        body: JSON.stringify({ reason: lifecycleReason.trim() }),
+      });
+      await responseData<{ id: string; lifecycleStatus: OperationalPo["lifecycleStatus"]; version: string }>(response);
+      setLifecycleReason("");
+    }, success);
   }
   async function saveHeader(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!data) return;
@@ -455,7 +475,36 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
     {!loading && data && <>
-      {canWritePo && <details className="po-header-disclosure">
+      {data.lifecycleStatus !== "ACTIVE" && <p className="notice" role="status">
+        {data.lifecycleStatus === "CLOSED" ? "PO encerrada: alterações e novas alocações estão bloqueadas. Reabra com um motivo para continuar."
+          : data.lifecycleStatus === "CANCELLED" ? "PO cancelada: permanece disponível para consulta e histórico."
+            : "PO excluída da carteira ativa: os dados e vínculos históricos permanecem disponíveis para consulta."}
+        {data.lifecycleReason && <> Motivo: {data.lifecycleReason}</>}
+      </p>}
+      {canWritePo && data.lifecycleStatus !== "DELETED" && <section className="card po-lifecycle-actions">
+        <h3>Ciclo da PO</h3>
+        <label>Motivo da ação<textarea required minLength={3} maxLength={1000} value={lifecycleReason}
+          onChange={event => setLifecycleReason(event.target.value)} /></label>
+        {data.lifecycleStatus === "ACTIVE" && <div className="operational-actions">
+          <button className="button secondary" type="button" disabled={saving || !lifecycleReason.trim()}
+            onClick={() => void changeLifecycle("close")}>Encerrar PO</button>
+          <button className="button secondary" type="button" disabled={saving || !lifecycleReason.trim() || data.allocations.length > 0}
+            onClick={() => void changeLifecycle("cancel")}>Cancelar PO</button>
+          <button className="button secondary" type="button" disabled={saving || !lifecycleReason.trim() || data.allocations.length > 0}
+            onClick={() => void changeLifecycle("delete")}>Excluir da carteira</button>
+        </div>}
+        {data.lifecycleStatus === "CLOSED" && <div className="operational-actions">
+          <button className="button" type="button" disabled={saving || !lifecycleReason.trim()}
+            onClick={() => void changeLifecycle("reopen")}>Reabrir PO</button>
+          <button className="button secondary" type="button" disabled={saving || !lifecycleReason.trim() || data.allocations.length > 0}
+            onClick={() => void changeLifecycle("delete")}>Excluir da carteira</button>
+        </div>}
+        {data.lifecycleStatus === "CANCELLED" && <button className="button secondary" type="button"
+          disabled={saving || !lifecycleReason.trim() || data.allocations.length > 0}
+          onClick={() => void changeLifecycle("delete")}>Excluir da carteira</button>}
+        {data.allocations.length > 0 && <p className="muted">Cancele ou encaminhe as distribuições ativas pelos IPs antes de cancelar ou excluir esta PO.</p>}
+      </section>}
+      {canEditPo && <details className="po-header-disclosure">
         <summary>Dados da PO</summary>
         <section className="po-entry-section">
           <form className="stack-form" onSubmit={saveHeader}>
@@ -473,7 +522,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         </section>
       </details>}
       <h3>Dados e saldo por item</h3>
-      {canWritePo && <section className="po-entry-section po-common-fields">
+      {canEditPo && <section className="po-entry-section po-common-fields">
         <h4>Dados compartilhados pelos produtos</h4>
         <p className="muted">Preencha uma vez para manter iguais nos produtos. A data da PO é compartilhada no cabeçalho.</p>
         {commonValuesDiffer && <p className="notice">Há valores diferentes entre produtos. Ao aplicar um campo, ele será padronizado em todos.</p>}
@@ -527,7 +576,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             </div>}
             <span className="po-item-toggle" aria-hidden="true">⌄</span>
           </summary>
-          {canWritePo ? <form className="stack-form" data-item-id={item.id} onSubmit={saveItem}>
+          {canEditPo ? <form className="stack-form" data-item-id={item.id} onSubmit={saveItem}>
             <div className="operational-fields">
               <label>Linha no TOTVS<input maxLength={80} value={draft.externalLineReference} onChange={event => setDraft({ externalLineReference: event.target.value })} /></label>
               <label>Produto<CatalogProductSelect required value={draft.productCode} fallbackName={draft.description} products={products}
@@ -548,7 +597,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
           </form> : <p>{formatItemQuantity(item.orderedQuantity)}{item.unit ? ` ${item.unit}` : ""} · {item.description}</p>}
         </details>;
       })}
-      {canWritePo && <details><summary>Adicionar item à PO</summary>
+      {canEditPo && <details><summary>Adicionar item à PO</summary>
         <form className="stack-form" onSubmit={createItem}>
           <div className="operational-fields">
             <label>Linha no TOTVS<input maxLength={80} value={itemDraft.externalLineReference} onChange={event => setItemDraft({ ...itemDraft, externalLineReference: event.target.value })} /></label>

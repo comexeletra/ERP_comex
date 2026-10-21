@@ -101,7 +101,8 @@ test("invoice import validates SHA-256 and stores it in document metadata", asyn
 
 function invoiceImportClient({ revision = false, supplierMatchesExporter = true, otherImporterIp = false,
   canceledItem = false, duplicateKind = null, poUnit = null, poUnitPrice = null, poCurrency = null,
-  linkedOrphanPo = false, draft = false, insufficientBalance = false } = {}) {
+  linkedOrphanPo = false, draft = false, insufficientBalance = false, purchaseOrderStatus = "ACTIVE",
+  previousAllocationPoStatus = "ACTIVE" } = {}) {
   const processId = "00000000-0000-4000-8000-000000000021";
   const oldDocumentId = "00000000-0000-4000-8000-000000000022";
   const oldAllocationId = "00000000-0000-4000-8000-000000000023";
@@ -123,6 +124,7 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true,
       if (sql.includes("FROM procurement.purchase_order_item item JOIN procurement.purchase_order po")) {
         return { rows: [{ id: poId, purchase_order_id: "00000000-0000-4000-8000-000000000002",
           number: "PO030201", importer: "ELETRA MATRIZ", quantity: "10", product_code: "PO-CODE",
+          lifecycle_status: purchaseOrderStatus,
           source_status: canceledItem ? "CANCELLED" : null,
           unit: poUnit, unit_price: poUnitPrice, currency_code: poCurrency,
           supplier_entry_id: "00000000-0000-4000-8000-000000000003",
@@ -148,9 +150,10 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true,
         return revision ? { rows: [{ id: oldDocumentId, process_id: processId, kind: "INVOICE", status: "ACTIVE" }], rowCount: 1 }
           : { rows: [], rowCount: 0 };
       }
-      if (sql.includes("SELECT * FROM procurement.po_item_allocation WHERE process_id")) {
+      if (sql.includes("FROM procurement.po_item_allocation allocation") && sql.includes("allocation.process_id")) {
         return revision ? { rows: [{ id: oldAllocationId, process_id: processId,
-          purchase_order_item_id: poId, quantity: "5", status: "ACTIVE" }], rowCount: 1 }
+          purchase_order_item_id: poId, quantity: "5", status: "ACTIVE",
+          lifecycle_status: previousAllocationPoStatus }], rowCount: 1 }
           : { rows: [], rowCount: 0 };
       }
       if (sql.includes("SELECT item.id, item.ordered_quantity::text")) {
@@ -481,7 +484,8 @@ test("invoice import requires explicit confirmation for a PO supplier mismatch",
       if (sql.includes("FROM catalog.operational_value")) return { rows: [{ ok: true }], rowCount: 1 };
       if (sql.includes("FROM procurement.purchase_order_item item JOIN procurement.purchase_order po")) {
         return { rows: [{ id: poId, purchase_order_id: "00000000-0000-4000-8000-000000000002",
-          number: "PO030201", importer: "ELETRA MATRIZ", quantity: "10", product_code: "PO-CODE",
+          number: "PO030201", importer: "ELETRA MATRIZ", lifecycle_status: "ACTIVE",
+          quantity: "10", product_code: "PO-CODE",
           supplier_entry_id: "00000000-0000-4000-8000-000000000003", supplier_text: "PO Supplier",
           supplier_name: "PO Supplier Ltd", supplier_code: "PO-SUP" }], rowCount: 1 };
       }
@@ -555,6 +559,17 @@ test("invoice approval creates an active IP and allocates the invoice quantity f
   assert.ok(queries.some(query => query.sql.includes("INSERT INTO audit.outbox_message")));
 });
 
+test("invoice import revalidates PO lifecycle status before writing", async t => {
+  const { client, queries } = invoiceImportClient({ purchaseOrderStatus: "CLOSED" });
+  const app = await invoiceImportApp(t, client);
+  const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-closed-po" }, payload: invoicePayload(),
+  });
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.json().code, "PO_NOT_ACTIVE");
+  assert.equal(queries.some(query => query.sql.includes("INSERT INTO imports.import_process")), false);
+});
+
 test("confirmed invoice supplier divergence is persisted for the database constraint", async t => {
   const { client, queries } = invoiceImportClient({ supplierMatchesExporter: false });
   const app = await invoiceImportApp(t, client);
@@ -587,6 +602,19 @@ test("invoice revision cancels the previous allocation and invoice before replac
   assert.equal(queries.filter(query => query.sql.includes("INSERT INTO procurement.po_item_allocation")).length, 1);
 });
 
+test("invoice revision requires reopening a PO before changing its allocations", async t => {
+  const { client, queries } = invoiceImportClient({ revision: true, previousAllocationPoStatus: "CLOSED" });
+  const app = await invoiceImportApp(t, client);
+  const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-revision-closed-po", "x-record-version": '"2"' },
+    payload: invoicePayload(),
+  });
+
+  assert.equal(response.statusCode, 409, response.body);
+  assert.equal(response.json().code, "PO_NOT_ACTIVE");
+  assert.equal(queries.some(query => query.sql.includes("UPDATE procurement.po_item_allocation")), false);
+});
+
 test("invoice revision requires the version read by the client", async t => {
   const { client, queries } = invoiceImportClient({ revision: true });
   const app = await invoiceImportApp(t, client);
@@ -612,6 +640,7 @@ test("invoice candidates include PO supplier details even when they differ from 
       if (sql.includes("FROM procurement.purchase_order_item item")) {
         return { rows: [{ id: poId, lineNumber: 1, productCode: "PO-CODE", description: "PO item",
           orderedQuantity: "10", unit: "PCS", remainingQuantity: "10", purchaseOrderId: "po-1",
+          poStatus: "ACTIVE",
           poNumber: "PO030201", supplierEntryId: "supplier-1", supplierText: "PO Supplier",
           supplierName: "PO Supplier Ltd", supplierCode: "PO-SUP" }], rowCount: 1 };
       }
@@ -650,7 +679,8 @@ test("invoice candidate lookup distinguishes an unregistered PO from an empty re
     async query(sql, params) {
       if (sql.includes("SELECT DISTINCT importer FROM procurement.purchase_order")) return { rows: [{ importer: "ELETRA MATRIZ" }] };
       if (sql.includes("FROM procurement.purchase_order_item item")) return { rows: [], rowCount: 0 };
-      if (sql.includes("SELECT id FROM procurement.purchase_order")) return { rows: exists ? [{ id: poId }] : [], rowCount: exists ? 1 : 0 };
+      if (sql.includes("SELECT id, lifecycle_status FROM procurement.purchase_order")) return { rows: exists ? [{ id: poId,
+        lifecycle_status: "CLOSED" }] : [], rowCount: exists ? 1 : 0 };
       return { rows: [{ role: "Importação", importer_code: "ELETRA MATRIZ" }] };
     }, async connect() { throw new Error("read only"); },
   };
@@ -666,6 +696,7 @@ test("invoice candidate lookup distinguishes an unregistered PO from an empty re
   const empty = await app.inject({ method: "GET", url });
   assert.equal(empty.json().poExists, true);
   assert.equal(empty.json().purchaseOrderId, poId);
+  assert.equal(empty.json().poStatus, "CLOSED");
 });
 
 test("invoice balance errors identify the affected invoice row", async t => {

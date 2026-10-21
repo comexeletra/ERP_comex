@@ -20,6 +20,7 @@ type Overview = {
   id: string;
   number: string;
   importer: string;
+  lifecycleStatus: "ACTIVE" | "CANCELLED" | "CLOSED" | "DELETED";
   itemCount: number;
   processes: Process[];
 };
@@ -71,6 +72,9 @@ export default function PurchaseOrderWorkspace({ id, returnPath }: { id: string;
       <header className="page-header">
         <p className="eyebrow">PO TOTVS · {data.importer}</p>
         <h1>{data.number}</h1>
+        <p>Status da PO: {data.lifecycleStatus === "CLOSED" ? "Encerrada"
+          : data.lifecycleStatus === "CANCELLED" ? "Cancelada"
+            : data.lifecycleStatus === "DELETED" ? "Excluída da carteira ativa" : "Ativa"}.</p>
         <p>{data.itemCount} itens · {data.processes.length} IPs vinculados.</p>
         <p>Pré embarque na PO; quantidades e pós embarque por IP nesta mesma tela.</p>
       </header>

@@ -63,6 +63,7 @@ export async function queryPurchaseOrderExport(
               AS unresolved_issue_count
      FROM procurement.purchase_order AS po
      WHERE po.importer = ANY($1::text[])
+       AND po.lifecycle_status <> 'DELETED'
        AND ($2::text IS NULL OR strpos(po.normalized_number, upper($2)) > 0)
        AND ($3::text IS NULL OR strpos(lower(po.importer), lower($3)) > 0)
        AND ($4::text IS NULL OR EXISTS (

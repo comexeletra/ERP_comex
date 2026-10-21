@@ -19,6 +19,7 @@ const summaryQuery = z.object(portfolioFilterFields).strict();
 
 function portfolioWhere(scopeSql: string): string {
   return `WHERE ${scopeSql}
+    AND po.lifecycle_status <> 'DELETED'
     AND ($2::text IS NULL OR strpos(po.normalized_number, upper($2)) > 0)
     AND ($3::text IS NULL OR strpos(lower(po.importer), lower($3)) > 0)
     AND ($4::text IS NULL OR EXISTS (
@@ -77,6 +78,7 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
                 po.external_number,
                 po.importer,
                 po.identity_status,
+                po.lifecycle_status,
                 (SELECT count(*)::int
                  FROM procurement.po_line_observation AS obs
                  WHERE obs.purchase_order_id = po.id) AS historical_item_count,
@@ -133,6 +135,7 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
                   'number', page.external_number,
                   'importer', page.importer,
                   'identityStatus', page.identity_status,
+                  'lifecycleStatus', page.lifecycle_status,
                   'officialItemsKnown', false,
                   'historicalItemCount', page.historical_item_count,
                   'operationalItemCount', page.operational_item_count,
@@ -236,6 +239,10 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
            'number', po.external_number,
            'importer', po.importer,
            'identityStatus', po.identity_status,
+           'lifecycleStatus', po.lifecycle_status,
+           'lifecycleChangedAt', po.lifecycle_changed_at,
+           'lifecycleChangedBy', po.lifecycle_changed_by,
+           'lifecycleReason', po.lifecycle_reason,
            'version', po.version::text,
            'officialItemsKnown', false,
            'balanceAvailable', (

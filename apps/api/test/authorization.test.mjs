@@ -213,6 +213,7 @@ test("production PO list applies the grant scope in SQL before its limit and off
         return { rows: [{ role: "Consulta", importer_code: "ELETRA MATRIZ" }] };
       }
       assert.ok(sql.indexOf("WHERE po.importer = ANY($1::text[])") < sql.indexOf("LIMIT $6 OFFSET $7"));
+      assert.match(sql, /po\.lifecycle_status\s*<>\s*'DELETED'/u);
       assert.deepEqual(values, [["ELETRA MATRIZ"], null, null, null, null, 50, 0]);
       return { rows: [{ total_count: 1, items: [{ id: "po-visible", importer: "ELETRA MATRIZ" }] }] };
     },
@@ -280,6 +281,7 @@ test("portfolio summary uses the same filters and importer scope before aggregat
       }
       assert.match(sql, /WITH filtered_po AS MATERIALIZED/u);
       assert.match(sql, /WHERE po\.importer = ANY\(\$1::text\[\]\)/u);
+      assert.match(sql, /po\.lifecycle_status\s*<>\s*'DELETED'/u);
       assert.match(sql, /process\.importer = ANY\(\$1::text\[\]\)/u);
       assert.deepEqual(values, [["ELETRA MATRIZ"], "18751", "eletra", "motor", "IP-20"]);
       return { rows: [{ purchase_orders: 1, linked_processes: 2, items: 8,

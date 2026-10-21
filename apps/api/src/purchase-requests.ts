@@ -190,6 +190,12 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
         if (!actor.scopes.includes(body.importer)) {
           throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Importadora fora do seu escopo.");
         }
+        const linkedOrders = await client.query<Record<string, unknown>>(
+          `SELECT id, supplier_text, lifecycle_status FROM procurement.purchase_order
+           WHERE purchase_request_id = $1 ORDER BY id FOR UPDATE`, [id.data]);
+        if (linkedOrders.rows.some(po => po.lifecycle_status !== "ACTIVE")) {
+          throw new BusinessError(409, "PO_NOT_ACTIVE", "A SC não pode ser alterada enquanto estiver vinculada a uma PO cancelada, encerrada ou excluída.");
+        }
         if (body.importer !== before.importer) {
           const knownImporter = await client.query(
             `SELECT importer FROM procurement.purchase_order WHERE importer = $1
@@ -197,9 +203,7 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
              UNION SELECT value AS importer FROM catalog.operational_value
                WHERE entity_key = 'IMPORTER' AND value = $1 LIMIT 1`, [body.importer]);
           if (!knownImporter.rowCount) throw new BusinessError(404, "UNKNOWN_IMPORTER", "Importadora ainda não cadastrada.");
-          const linked = await client.query(
-            "SELECT id FROM procurement.purchase_order WHERE purchase_request_id = $1 LIMIT 1", [id.data]);
-          if (linked.rowCount) {
+          if (linkedOrders.rowCount) {
             throw new BusinessError(409, "PURCHASE_REQUEST_IN_USE", "Remova os vínculos com POs antes de alterar a importadora da SC.");
           }
         }
@@ -215,8 +219,6 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
                      commercial_plan_received_date::text AS "commercialPlanReceivedDate",
                      requester, approval_date::text AS "approvalDate", version::text AS version`,
           [id.data, body.importer, body.scNumber, body.supplierText, body.scDate, body.commercialPlanReceivedDate, body.requester, body.approvalDate]);
-        const linkedOrders = await client.query<Record<string, unknown>>(
-          `SELECT id, supplier_text FROM procurement.purchase_order WHERE purchase_request_id = $1 FOR UPDATE`, [id.data]);
         for (const po of linkedOrders.rows) {
           if (po.supplier_text === body.supplierText) continue;
           await client.query(

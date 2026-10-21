@@ -79,6 +79,7 @@ const updateAllocation = z.object({
   || value.factoryShipDate !== undefined);
 const cancelAllocation = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
 const closeProcess = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
+const purchaseOrderLifecycleReason = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
 const cancelProcess = z.object({
   reason: z.string().trim().min(3).max(1000),
   purchaseOrders: z.array(z.discriminatedUnion("destinationType", [
@@ -233,6 +234,11 @@ export async function lockedPo(client: PoolClient, id: string, scopes: string[])
   if (!result.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "PO não encontrada.");
   return result.rows[0];
 }
+export function assertPoActive(po: Record<string, unknown>) {
+  if (po.lifecycle_status !== "ACTIVE") {
+    throw new BusinessError(409, "PO_NOT_ACTIVE", "A PO cancelada, encerrada ou excluída não pode ser alterada ou receber novas alocações.");
+  }
+}
 export async function validatePurchaseRequest(client: PoolClient, id: string | null | undefined, importer: string) {
   if (!id) return;
   const result = await client.query(
@@ -243,6 +249,65 @@ export function checkVersion(row: Record<string, unknown>, expected: string) {
   if (`"${row.version}"` !== expected) {
     throw new BusinessError(409, "VERSION_CONFLICT", "Registro alterado. Recarregue antes de salvar.");
   }
+}
+
+type PurchaseOrderLifecycleAction = "CANCEL" | "CLOSE" | "REOPEN" | "DELETE";
+
+async function changePurchaseOrderLifecycle(client: PoolClient, id: string, expected: string,
+  auth: ReturnType<typeof actorAndScopes>, action: PurchaseOrderLifecycleAction, reason: string) {
+  const before = await lockedPo(client, id, auth.scopes);
+  checkVersion(before, expected);
+  const current = String(before.lifecycle_status);
+  let next: string;
+  if (action === "CANCEL" || action === "CLOSE") {
+    if (current !== "ACTIVE") throw new BusinessError(409, "PO_NOT_ACTIVE", "Somente uma PO ativa pode ser cancelada ou encerrada.");
+    next = action === "CANCEL" ? "CANCELLED" : "CLOSED";
+  } else if (action === "REOPEN") {
+    if (current !== "CLOSED") throw new BusinessError(409, "PO_NOT_CLOSED", "Somente uma PO encerrada pode ser reaberta.");
+    next = "ACTIVE";
+  } else {
+    if (current === "DELETED") throw new BusinessError(409, "PO_ALREADY_DELETED", "A PO já foi excluída da carteira ativa.");
+    next = "DELETED";
+  }
+
+  if (action === "CANCEL" || action === "DELETE") {
+    const allocations = await client.query<{ has_active_allocations: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM procurement.po_item_allocation allocation
+         JOIN procurement.purchase_order_item item ON item.id = allocation.purchase_order_item_id
+         WHERE item.purchase_order_id = $1 AND allocation.status = 'ACTIVE'
+       ) AS has_active_allocations`, [id]);
+    if (allocations.rows[0]?.has_active_allocations) {
+      throw new BusinessError(409, "PO_HAS_ACTIVE_ALLOCATIONS",
+        "A PO possui alocações ativas. Resolva os vínculos com os IPs antes de cancelar ou excluir a PO.");
+    }
+  }
+
+  const actor = `${auth.actor.issuer}#${auth.actor.subject}`;
+  const updated = await client.query<{ version: string }>(
+    `UPDATE procurement.purchase_order SET lifecycle_status = $2, lifecycle_changed_at = now(),
+       lifecycle_changed_by = $3, lifecycle_reason = $4, version = version + 1, updated_at = now()
+     WHERE id = $1 RETURNING version::text`, [id, next, actor, reason]);
+  const auditAction = action === "DELETE" ? "SOFT_DELETE" : action;
+  await record(client, "PURCHASE_ORDER", id, "PURCHASE_ORDER", id, auditAction,
+    before, { ...before, lifecycle_status: next, lifecycle_changed_by: actor, lifecycle_reason: reason },
+    auth.actor, reason);
+  return { id, lifecycleStatus: next, version: updated.rows[0].version };
+}
+
+function purchaseOrderLifecycleHandler(pool: Pool, action: PurchaseOrderLifecycleAction) {
+  return async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    const id = uuid.safeParse(request.params.id);
+    const parsed = purchaseOrderLifecycleReason.safeParse(request.body);
+    if (!id.success || !parsed.success) {
+      return problem(reply, 400, "INVALID_PO_LIFECYCLE", "Informe um motivo válido para alterar o ciclo da PO.");
+    }
+    let expected: string; let auth: ReturnType<typeof actorAndScopes>;
+    try { expected = versionFrom(request); auth = actorAndScopes(request); }
+    catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
+    return transaction(pool, reply, client => changePurchaseOrderLifecycle(
+      client, id.data, expected, auth, action, parsed.data.reason));
+  };
 }
 
 export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool): Promise<void> {
@@ -408,8 +473,8 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           throw new BusinessError(409, "INVOICE_DUPLICATE_UNCONFIRMED",
             "Esta invoice já está associada a outro IP ativo. Confirme a duplicidade para continuar.", duplicateIpNumbers);
         }
-        const matchedItems = await client.query<{ id: string; purchase_order_id: string; number: string; importer: string; quantity: string; product_code: string; source_status: string | null; unit: string; unit_price: string | null; currency_code: string | null; supplier_entry_id: string | null; supplier_text: string | null; supplier_name: string | null; supplier_code: string | null }>(
-          `SELECT item.id, item.purchase_order_id, po.external_number AS number, po.importer,
+        const matchedItems = await client.query<{ id: string; purchase_order_id: string; number: string; importer: string; lifecycle_status: string; quantity: string; product_code: string; source_status: string | null; unit: string; unit_price: string | null; currency_code: string | null; supplier_entry_id: string | null; supplier_text: string | null; supplier_name: string | null; supplier_code: string | null }>(
+          `SELECT item.id, item.purchase_order_id, po.external_number AS number, po.importer, po.lifecycle_status,
                   item.ordered_quantity::text AS quantity, item.product_code, item.source_status,
                   item.unit, item.unit_price::text, item.currency_code,
                   po.supplier_entry_id, po.supplier_text,
@@ -423,6 +488,12 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
             item.id === assignment.itemId && item.importer === body.process.importer));
           throw new BusinessError(409, "PO_ITEM_MISMATCH",
             `Linha ${offending?.sourceRow ?? "?"} da invoice: item de PO não encontrado na importadora do IP.`);
+        }
+        const nonActivePo = matchedItems.rows.find(item => item.lifecycle_status !== "ACTIVE");
+        if (nonActivePo) {
+          const offending = invoiceAssignments.data.find(assignment => assignment.itemId === nonActivePo.id);
+          throw new BusinessError(409, "PO_NOT_ACTIVE",
+            `Linha ${offending?.sourceRow ?? "?"} da invoice: PO ${nonActivePo.number} cancelada, encerrada ou excluida.`);
         }
         if (matchedItems.rows.some(item => ["CANCELLED", "CANCELED"].includes(item.source_status?.toUpperCase() ?? ""))) {
           const canceled = matchedItems.rows.find(item => ["CANCELLED", "CANCELED"].includes(item.source_status?.toUpperCase() ?? ""));
@@ -519,7 +590,15 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
                 document, { ...document, status: "CANCELLED" }, auth.actor, "Substituida por nova revisao da invoice.");
             }
             const oldAllocations = await client.query<Record<string, unknown>>(
-              `SELECT * FROM procurement.po_item_allocation WHERE process_id = $1 AND status = 'ACTIVE' FOR UPDATE`, [processId]);
+              `SELECT allocation.*, po.lifecycle_status
+               FROM procurement.po_item_allocation allocation
+               JOIN procurement.purchase_order_item item ON item.id = allocation.purchase_order_item_id
+               JOIN procurement.purchase_order po ON po.id = item.purchase_order_id
+               WHERE allocation.process_id = $1 AND allocation.status = 'ACTIVE'
+               FOR UPDATE OF allocation, po`, [processId]);
+            if (oldAllocations.rows.some(allocation => allocation.lifecycle_status !== "ACTIVE")) {
+              throw new BusinessError(409, "PO_NOT_ACTIVE", "Reabra as POs encerradas antes de revisar as alocações da invoice.");
+            }
             for (const allocation of oldAllocations.rows) {
               await client.query(`UPDATE procurement.po_item_allocation SET status = 'CANCELLED', version = version + 1, updated_at = now() WHERE id = $1`, [allocation.id]);
               await record(client, "IMPORT_PROCESS", processId, "PO_ITEM_ALLOCATION", String(allocation.id), "REVISION_CANCEL",
@@ -672,6 +751,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
                 item.description, item.ordered_quantity::text AS "orderedQuantity", item.unit,
                 item.unit_price::text AS "unitPrice", item.currency_code AS currency, item.ncm AS "poNcmCode",
                 po.id AS "purchaseOrderId", po.external_number AS "poNumber",
+                po.lifecycle_status AS "poStatus",
                 po.supplier_entry_id AS "supplierEntryId", po.supplier_text AS "supplierText",
                 supplier.name AS "supplierName", supplier.code AS "supplierCode",
                 product.id AS "productId", product.name AS "productName",
@@ -688,7 +768,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
            AND product.normalized_code = upper(btrim(item.product_code))
          LEFT JOIN procurement.po_item_allocation allocation ON allocation.purchase_order_item_id = item.id
          LEFT JOIN imports.import_process process ON process.id = allocation.process_id
-         WHERE po.importer = $1 AND po.importer = ANY($5::text[])
+         WHERE po.importer = $1 AND po.importer = ANY($5::text[]) AND po.lifecycle_status = 'ACTIVE'
            AND regexp_replace(regexp_replace(upper(po.external_number), '[^A-Z0-9]', '', 'g'), '^PO', '')
              = regexp_replace(regexp_replace(upper($3), '[^A-Z0-9]', '', 'g'), '^PO', '')
            AND upper(coalesce(item.source_status, '')) NOT IN ('CANCELLED','CANCELED')
@@ -699,15 +779,16 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           parsed.data.sourcePoNumber, parsed.data.revisingIpNumber || null,
           request.authorizationContext?.importerScopes ?? []],
       );
-      const matchingPo = result.rows[0] ? null : await pool.query<{ id: string }>(
-        `SELECT id FROM procurement.purchase_order
+      const matchingPo = result.rows[0] ? null : await pool.query<{ id: string; lifecycle_status: string }>(
+        `SELECT id, lifecycle_status FROM procurement.purchase_order
          WHERE importer = $1 AND importer = ANY($3::text[])
            AND regexp_replace(regexp_replace(upper(external_number), '[^A-Z0-9]', '', 'g'), '^PO', '')
              = regexp_replace(regexp_replace(upper($2), '[^A-Z0-9]', '', 'g'), '^PO', '')
          LIMIT 1`, [parsed.data.importer, parsed.data.sourcePoNumber,
           request.authorizationContext?.importerScopes ?? []]);
       const purchaseOrderId = result.rows[0]?.purchaseOrderId ?? matchingPo?.rows[0]?.id ?? null;
-      return { items: result.rows, poExists: purchaseOrderId !== null, purchaseOrderId };
+      return { items: result.rows, poExists: purchaseOrderId !== null, purchaseOrderId,
+        poStatus: result.rows[0]?.poStatus ?? matchingPo?.rows[0]?.lifecycle_status ?? null };
     });
 
   app.get<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/operational",
@@ -716,7 +797,9 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
       if (!id.success) return problem(reply, 400, "INVALID_ID", "Identificador inválido.");
       const scopes = request.authorizationContext?.importerScopes ?? [];
       const po = await pool.query<Record<string, unknown>>(
-        `SELECT po.id, po.importer, po.external_number AS number, po.supplier_entry_id AS "supplierEntryId",
+        `SELECT po.id, po.importer, po.external_number AS number, po.lifecycle_status AS "lifecycleStatus",
+                po.lifecycle_changed_at AS "lifecycleChangedAt", po.lifecycle_changed_by AS "lifecycleChangedBy",
+                po.lifecycle_reason AS "lifecycleReason", po.supplier_entry_id AS "supplierEntryId",
                 coalesce(supplier.code, po.supplier_text) AS "supplierText", supplier.name AS "supplierName",
                 coalesce(po.order_date, CASE WHEN po.source_kind = 'MANUAL_TOTVS_REFERENCE'
                   THEN (po.created_at AT TIME ZONE 'America/Sao_Paulo')::date END)::text AS "orderDate",
@@ -813,6 +896,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
       catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
       return transaction(pool, reply, async client => {
         const before = await lockedPo(client, id.data, auth.scopes);
+        assertPoActive(before);
         checkVersion(before, expected);
         if (before.source_kind !== "MANUAL_TOTVS_REFERENCE"
           && parsed.data.number !== before.external_number) {
@@ -842,6 +926,15 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
       });
     });
 
+  app.post<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/cancel",
+    { config: permissionConfig("purchase-orders.write") }, purchaseOrderLifecycleHandler(pool, "CANCEL"));
+  app.post<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/close",
+    { config: permissionConfig("purchase-orders.write") }, purchaseOrderLifecycleHandler(pool, "CLOSE"));
+  app.post<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/reopen",
+    { config: permissionConfig("purchase-orders.write") }, purchaseOrderLifecycleHandler(pool, "REOPEN"));
+  app.delete<{ Params: { id: string } }>("/api/v1/purchase-orders/:id",
+    { config: permissionConfig("purchase-orders.write") }, purchaseOrderLifecycleHandler(pool, "DELETE"));
+
   app.post<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/items",
     { config: permissionConfig("purchase-orders.write") }, async (request, reply) => {
       const id = uuid.safeParse(request.params.id); const parsed = itemFields.safeParse(request.body);
@@ -851,6 +944,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
       catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
       return transaction(pool, reply, async client => {
         const po = await lockedPo(client, id.data, auth.scopes);
+        assertPoActive(po);
         const claim = await receipt(client, auth.actor.userId, key, "PO_ITEM", { poId: id.data, ...parsed.data });
         if (claim.existingId) return { id: claim.existingId, replayed: true };
         const next = await client.query<{ line_number: number }>(
@@ -881,7 +975,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
       try { expected = versionFrom(request); auth = actorAndScopes(request); }
       catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
       return transaction(pool, reply, async client => {
-        const po = await lockedPo(client, id.data, auth.scopes); checkVersion(po, expected);
+        const po = await lockedPo(client, id.data, auth.scopes); assertPoActive(po); checkVersion(po, expected);
         const found = await client.query<Record<string, unknown>>(
           `SELECT * FROM procurement.purchase_order_item
            WHERE id = $1 AND purchase_order_id = $2 FOR UPDATE`, [itemId.data, id.data]);
@@ -1008,12 +1102,15 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         checkVersion(process, expected);
         if (process.record_status === "CANCELLED") throw new BusinessError(409, "PROCESS_ALREADY_CANCELLED", "Este IP jÃ¡ foi cancelado.");
         if (process.lifecycle_status !== "OPEN") throw new BusinessError(409, "PROCESS_CLOSED", "Reabra o IP antes de cancelar e encaminhar suas POs.");
-        const links = await client.query<{ purchase_order_id: string; number: string }>(
-          `SELECT po.id AS purchase_order_id, po.external_number AS number
+        const links = await client.query<{ purchase_order_id: string; number: string; lifecycle_status: string }>(
+          `SELECT po.id AS purchase_order_id, po.external_number AS number, po.lifecycle_status
            FROM procurement.process_purchase_order link
            JOIN procurement.purchase_order po ON po.id = link.purchase_order_id
            WHERE link.process_id = $1 AND po.importer = $2 ORDER BY po.normalized_number FOR UPDATE OF po`,
           [id.data, process.importer]);
+        if (links.rows.some(link => link.lifecycle_status === "CLOSED")) {
+          throw new BusinessError(409, "PO_NOT_ACTIVE", "Reabra as POs encerradas antes de cancelar e encaminhar este IP.");
+        }
         const supplied = new Set(parsed.data.purchaseOrders.map(item => item.purchaseOrderId));
         const current = new Set(links.rows.map(item => item.purchase_order_id));
         if (supplied.size !== parsed.data.purchaseOrders.length || supplied.size !== current.size
@@ -1171,6 +1268,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
       const body = parsed.data;
       return transaction(pool, reply, async client => {
         const po = await lockedPo(client, id.data, auth.scopes);
+        assertPoActive(po);
         const claim = await receipt(client, auth.actor.userId, key, "ALLOCATION", { poId: id.data, ...body });
         if (claim.existingId) return { id: claim.existingId, replayed: true };
         const item = await client.query(
@@ -1218,7 +1316,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
       try { expected = versionFrom(request); auth = actorAndScopes(request); }
       catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
       return transaction(pool, reply, async client => {
-        await lockedPo(client, id.data, auth.scopes);
+        const po = await lockedPo(client, id.data, auth.scopes); assertPoActive(po);
         const found = await client.query<Record<string, unknown>>(
           `SELECT a.* FROM procurement.po_item_allocation a
            JOIN procurement.purchase_order_item item ON item.id = a.purchase_order_item_id
@@ -1256,7 +1354,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
       try { expected = versionFrom(request); auth = actorAndScopes(request); }
       catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
       return transaction(pool, reply, async client => {
-        await lockedPo(client, id.data, auth.scopes);
+        const po = await lockedPo(client, id.data, auth.scopes); assertPoActive(po);
         const found = await client.query<Record<string, unknown>>(
           `SELECT a.* FROM procurement.po_item_allocation a
            JOIN procurement.purchase_order_item item ON item.id = a.purchase_order_item_id

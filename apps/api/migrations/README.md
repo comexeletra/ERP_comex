@@ -240,3 +240,12 @@ imports set the IP supplier from the invoice Exporter and validate it against
 the supplier code/name on every allocated PO. Active allocations prevent later
 supplier changes that would break the match. Validate M040 on an isolated
 restored database before deploying the matching API/UI.
+
+`M063_purchase_order_lifecycle.sql` adds the PO states ACTIVE, CANCELLED,
+CLOSED, and DELETED. Cancellation and logical deletion require active
+allocations to be resolved first. Closing preserves the existing allocations
+and remaining balance while freezing PO, item, and allocation changes; a
+closed PO can be reopened with a reason. DELETED POs remain in history and are
+excluded from the active portfolio and its export. Validate this migration on
+an isolated restored database and apply it to HML before deploying the matching
+API/UI.

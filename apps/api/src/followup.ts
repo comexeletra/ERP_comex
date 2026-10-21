@@ -4,7 +4,7 @@ import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
 import { calculateFollowup, invoiceTotals } from "./followup-calculations.js";
-import { actorAndScopes, BusinessError, checkVersion, createPo as createPoSchema,
+import { actorAndScopes, assertPoActive, BusinessError, checkVersion, createPo as createPoSchema,
   itemFields as basicItemSchema, keyFrom, lockedPo, problem, validatePurchaseRequest,
   receipt, record, saveReceipt, transaction, versionFrom } from "./operations.js";
 
@@ -184,7 +184,7 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
       try { auth = actorAndScopes(request); key = keyFrom(request); }
       catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
       return transaction(pool, reply, async client => {
-        await lockedPo(client, poId.data, auth.scopes);
+        const po = await lockedPo(client, poId.data, auth.scopes); assertPoActive(po);
         const claim = await receipt(client, auth.actor.userId, key, "PO_ITEM_COMPLETE",
           { poId: poId.data, ...parsed.data });
         if (claim.existingId) return { id: claim.existingId, replayed: true };
@@ -228,7 +228,7 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
       try { auth = actorAndScopes(request); expected = versionFrom(request); }
       catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
       return transaction(pool, reply, async client => {
-        const po = await lockedPo(client, poId.data, auth.scopes); checkVersion(po, expected);
+        const po = await lockedPo(client, poId.data, auth.scopes); assertPoActive(po); checkVersion(po, expected);
         const previous = await client.query<Record<string, unknown>>(`SELECT * FROM procurement.purchase_order_item
           WHERE id=$1 AND purchase_order_id=$2 FOR UPDATE`, [itemId.data, poId.data]);
         if (!previous.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Produto não encontrado nesta PO.");
@@ -263,7 +263,7 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
       try { auth = actorAndScopes(request); expected = versionFrom(request); }
       catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
       return transaction(pool, reply, async client => {
-        const po = await lockedPo(client, poId.data, auth.scopes); checkVersion(po, expected);
+        const po = await lockedPo(client, poId.data, auth.scopes); assertPoActive(po); checkVersion(po, expected);
         const found = await client.query<{ id: string }>(`SELECT id FROM procurement.purchase_order_item
           WHERE purchase_order_id=$1 ORDER BY line_number FOR UPDATE`, [poId.data]);
         const expectedIds = found.rows.map(item => item.id);
@@ -499,7 +499,7 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
       try { auth = context(request, true); }
       catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
       return transaction(pool, reply, async client => {
-        const po = await lockedPo(client, poId.data, auth.scopes); checkVersion(po, auth.version!);
+        const po = await lockedPo(client, poId.data, auth.scopes); assertPoActive(po); checkVersion(po, auth.version!);
         const found = await client.query(`SELECT * FROM procurement.purchase_order_item
           WHERE purchase_order_id=$1 ORDER BY line_number,id FOR UPDATE`, [poId.data]);
         if (!found.rows.length) throw new BusinessError(409, "EMPTY_PURCHASE_ORDER", "Cadastre um produto antes de aplicar campos compartilhados.");
@@ -531,7 +531,7 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
       let auth: ReturnType<typeof context>;
       try { auth = context(request, true); } catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
       return transaction(pool, reply, async client => {
-        const po = await lockedPo(client, poId.data, auth.scopes); checkVersion(po, auth.version!);
+        const po = await lockedPo(client, poId.data, auth.scopes); assertPoActive(po); checkVersion(po, auth.version!);
         const found = await client.query(`SELECT * FROM procurement.purchase_order_item WHERE id=$1 AND purchase_order_id=$2 FOR UPDATE`, [itemId.data, poId.data]);
         if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Item não encontrado nesta PO.");
         const keys = Object.keys(fields); const sql = keys.map((key, index) => `${itemFields[key][0]}=$${index + 2}`).join(",");

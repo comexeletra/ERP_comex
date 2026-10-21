@@ -25,3 +25,19 @@ test("invoice migrations keep record-state and supplier-divergence invariants in
   assert.match(allocationRules, /ip_source_kind = 'CHINA_INVOICE' AND ip_supplier_divergence/u);
   assert.match(allocationRules, /PO must reference a supplier entity before allocation/u);
 });
+
+test("PO lifecycle migration preserves audit history and protects closed or terminal POs", async () => {
+  const lifecycle = await readFile(new URL("M063_purchase_order_lifecycle.sql", migrationsUrl), "utf8");
+  assert.match(lifecycle, /lifecycle_status varchar\(16\) NOT NULL DEFAULT 'ACTIVE'/u);
+  assert.match(lifecycle, /'ACTIVE', 'CANCELLED', 'CLOSED', 'DELETED'/u);
+  assert.match(lifecycle, /lifecycle_changed_at timestamptz/u);
+  assert.match(lifecycle, /lifecycle_changed_by text/u);
+  assert.match(lifecycle, /lifecycle_reason text/u);
+  assert.match(lifecycle, /lifecycle_reason IS NOT NULL/u);
+  assert.match(lifecycle, /purchase_order_lifecycle_transition/u);
+  assert.match(lifecycle, /purchase_order_business_fields_immutable/u);
+  assert.match(lifecycle, /to_jsonb\(NEW\)/u);
+  assert.match(lifecycle, /Only active POs allow allocation changes/u);
+  assert.match(lifecycle, /PO with active allocations cannot be cancelled or deleted/u);
+  assert.match(lifecycle, /purchase_order_item_lifecycle_check/u);
+});
