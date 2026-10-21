@@ -1,8 +1,12 @@
+export const purchaseOrderLifecycleFilters = ["active", "cancelled", "closed", "deleted", "all"] as const;
+export type PurchaseOrderLifecycleFilter = "" | typeof purchaseOrderLifecycleFilters[number];
+
 export type PortfolioFilters = {
   number: string;
   importer: string;
   product: string;
   ipNumber: string;
+  lifecycle: PurchaseOrderLifecycleFilter;
 };
 
 export function matchesPurchaseOrderNumber(number: string, search: string): boolean {
@@ -27,6 +31,7 @@ export function purchaseOrderListQuery(
   pageSize: number,
 ): URLSearchParams {
   const query = portfolioFilterQuery(filters);
+  if (filters.lifecycle) query.set("lifecycle", filters.lifecycle);
   query.set("page", String(page));
   query.set("pageSize", String(pageSize));
   return query;

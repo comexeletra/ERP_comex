@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { matchesPurchaseOrderNumber, portfolioFilterQuery, purchaseOrderListQuery } from "../lib/portfolio-query.ts";
 
-const filters = { number: " 18751 ", importer: " eletra matriz ", product: " motor ", ipNumber: " NH-017/2025 " };
+const filters = { number: " 18751 ", importer: " eletra matriz ", product: " motor ", ipNumber: " NH-017/2025 ", lifecycle: "" };
 
 test("portfolio summary filters match the list filters and omit blank values", () => {
   const summary = portfolioFilterQuery({ ...filters, product: "   " });
@@ -18,8 +18,17 @@ test("portfolio summary filters match the list filters and omit blank values", (
 });
 
 test("portfolio query encoding preserves slash-containing IP identifiers", () => {
-  const query = portfolioFilterQuery({ number: "", importer: "", product: "", ipNumber: filters.ipNumber });
+  const query = portfolioFilterQuery({ number: "", importer: "", product: "", ipNumber: filters.ipNumber, lifecycle: "" });
   assert.equal(query.toString(), "ipNumber=NH-017%2F2025");
+});
+
+test("purchase order list query carries lifecycle selection without changing portfolio summary filters", () => {
+  const selected = { ...filters, lifecycle: "deleted" };
+  const list = purchaseOrderListQuery(selected, 1, 50);
+  const summary = portfolioFilterQuery(selected);
+  assert.equal(list.get("lifecycle"), "deleted");
+  assert.equal(summary.has("lifecycle"), false);
+  assert.deepEqual([...list.entries()].slice(-3), [["lifecycle", "deleted"], ["page", "1"], ["pageSize", "50"]]);
 });
 
 test("purchase order search includes only numbers containing the complete typed sequence", () => {

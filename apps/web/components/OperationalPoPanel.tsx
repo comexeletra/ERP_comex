@@ -214,7 +214,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   const canEditPo = canWritePo && activePo;
   const canAllocate = activePo && roles.some(role => allocationWriters.has(role));
   const lifecycleSupported = hasPoLifecycleSupport(data);
-  const lifecycleActions = purchaseOrderLifecycleActions(data?.lifecycleStatus, canWritePo);
+  const canManageLifecycle = roles.some(role => role === "Master" || role === "Administrador");
+  const lifecycleActions = purchaseOrderLifecycleActions(data?.lifecycleStatus, canWritePo, canManageLifecycle);
   async function send(path: string, method: string, body: unknown, version?: string) {
     const response = await apiFetch(path, { method,
       headers: { "content-type": "application/json", ...(version ? { "X-Record-Version": version } :
@@ -258,12 +259,13 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setSaving(false); }
   }
-  async function changeLifecycle(action: "cancel" | "close" | "reopen" | "delete") {
+  async function changeLifecycle(action: "cancel" | "close" | "reopen" | "delete" | "reactivate" | "restore") {
     if (!data) return;
     if (action === "delete" && !window.confirm("Excluir esta PO da carteira ativa? Os dados e vínculos históricos serão preservados.")) return;
     const method = action === "delete" ? "DELETE" : "POST";
     const success = action === "cancel" ? "PO cancelada." : action === "close" ? "PO encerrada."
-      : action === "reopen" ? "PO reaberta." : "PO excluída da carteira ativa.";
+      : action === "reopen" ? "PO reaberta." : action === "reactivate" ? "PO reativada."
+        : action === "restore" ? "PO restaurada." : "PO excluída da carteira ativa.";
     await save(async () => {
       const response = await apiFetch(`/api/v1/purchase-orders/${id}${action === "delete" ? "" : `/${action}`}`, {
         method, headers: { "content-type": "application/json", "X-Record-Version": data.version },
@@ -485,11 +487,11 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             : "PO excluída da carteira ativa: os dados e vínculos históricos permanecem disponíveis para consulta."}
         {data.lifecycleReason && <> Motivo: {data.lifecycleReason}</>}
       </p>}
-      {lifecycleSupported && lifecycleActions.length > 0 && <section className="card po-lifecycle-actions">
+      {lifecycleSupported && (lifecycleActions.length > 0 || data.lifecycleStatus === "DELETED") && <section className="card po-lifecycle-actions">
         <h3>Ciclo da PO</h3>
-        <label className="po-lifecycle-reason"><span>Motivo da ação</span><textarea required minLength={3} maxLength={1000} value={lifecycleReason}
-          onChange={event => setLifecycleReason(event.target.value)} /></label>
-        <div className="operational-actions">
+        {lifecycleActions.length > 0 && <label className="po-lifecycle-reason"><span>Motivo da ação</span><textarea required minLength={3} maxLength={1000} value={lifecycleReason}
+          onChange={event => setLifecycleReason(event.target.value)} /></label>}
+        {lifecycleActions.length > 0 && <div className="operational-actions">
           {lifecycleActions.includes("close") && <button className="button secondary" type="button" disabled={saving || !lifecycleReason.trim()}
             onClick={() => void changeLifecycle("close")}>Encerrar PO</button>}
           {lifecycleActions.includes("cancel") && <button className="button secondary" type="button" disabled={saving || !lifecycleReason.trim() || data.allocations.length > 0}
@@ -498,7 +500,11 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             onClick={() => void changeLifecycle("delete")}>Excluir da carteira</button>}
         {lifecycleActions.includes("reopen") && <button className="button" type="button" disabled={saving || !lifecycleReason.trim()}
           onClick={() => void changeLifecycle("reopen")}>Reabrir PO</button>}
-        </div>
+          {lifecycleActions.includes("reactivate") && <button className="button" type="button" disabled={saving || !lifecycleReason.trim()}
+            onClick={() => void changeLifecycle("reactivate")}>Reativar PO</button>}
+          {lifecycleActions.includes("restore") && <button className="button" type="button" disabled={saving || !lifecycleReason.trim()}
+            onClick={() => void changeLifecycle("restore")}>Restaurar PO</button>}
+        </div>}
         {data.allocations.length > 0 && <p className="muted">Cancele ou encaminhe as distribuições ativas pelos IPs antes de cancelar ou excluir esta PO.</p>}
       </section>}
       {canEditPo && <details className="po-header-disclosure">

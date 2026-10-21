@@ -4,13 +4,14 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { formatCount } from "../lib/format-count";
-import { portfolioFilterQuery, purchaseOrderListQuery, type PortfolioFilters } from "../lib/portfolio-query";
+import { portfolioFilterQuery, purchaseOrderListQuery, purchaseOrderLifecycleFilters,
+  type PortfolioFilters, type PurchaseOrderLifecycleFilter } from "../lib/portfolio-query";
 
 type Filters = PortfolioFilters;
 type PurchaseOrder = {
   id: string; number: string; importer: string; operationalItemCount: number;
   itemsWithIp: number; itemsWithoutIp: number; linkedProcessCount: number;
-  unresolvedIssueCount: number; lifecycleStatus: "ACTIVE" | "CANCELLED" | "CLOSED";
+  unresolvedIssueCount: number; lifecycleStatus: "ACTIVE" | "CANCELLED" | "CLOSED" | "DELETED";
 };
 type PurchaseOrderPage = { page: number; pageSize: number; totalCount: number; items: PurchaseOrder[] };
 type PortfolioSummary = { purchaseOrders: number; linkedProcesses: number; items: number;
@@ -21,7 +22,7 @@ type PortfolioSummaryFailure = { query: string; message: string };
 type ExportJob = { id: string; status: string; errorCode: string | null; createdAt: string;
   expiresAt: string | null; downloadPath: string | null };
 
-const emptyFilters: Filters = { number: "", importer: "", product: "", ipNumber: "" };
+const emptyFilters: Filters = { number: "", importer: "", product: "", ipNumber: "", lifecycle: "" };
 const pageSize = 50;
 
 function queryFor(filters: Filters, page: number, size = pageSize) {
@@ -60,9 +61,13 @@ export default function PortfolioPage() {
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
+    const requestedLifecycle = query.get("lifecycle");
     const filters: Filters = {
       number: query.get("number") ?? "", importer: query.get("importer") ?? "",
       product: query.get("product") ?? "", ipNumber: query.get("ipNumber") ?? "",
+      lifecycle: requestedLifecycle && purchaseOrderLifecycleFilters.includes(
+        requestedLifecycle as typeof purchaseOrderLifecycleFilters[number],
+      ) ? requestedLifecycle as PurchaseOrderLifecycleFilter : "",
     };
     const requestedPage = Number(query.get("page"));
     setDraft(filters);
@@ -123,7 +128,7 @@ export default function PortfolioPage() {
   function filter(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     navigate({ number: draft.number.trim(), importer: draft.importer.trim(),
-      product: draft.product.trim(), ipNumber: draft.ipNumber.trim() }, 1);
+      product: draft.product.trim(), ipNumber: draft.ipNumber.trim(), lifecycle: draft.lifecycle }, 1);
   }
 
   async function downloadExcel() {
@@ -199,6 +204,16 @@ export default function PortfolioPage() {
         <label>Importador<input value={draft.importer} onChange={event => setDraft(value => ({ ...value, importer: event.target.value }))} placeholder="Parte do nome" /></label>
         <label>Produto<input value={draft.product} onChange={event => setDraft(value => ({ ...value, product: event.target.value }))} placeholder="Código ou descrição" /></label>
         <label>IP vinculado<input value={draft.ipNumber} onChange={event => setDraft(value => ({ ...value, ipNumber: event.target.value }))} placeholder="Número do IP" /></label>
+        <label>Status do ciclo<select value={draft.lifecycle} onChange={event => setDraft(value => ({
+          ...value, lifecycle: event.target.value as PurchaseOrderLifecycleFilter,
+        }))}>
+          <option value="">Padrão (oculta excluídas)</option>
+          <option value="active">Ativas</option>
+          <option value="cancelled">Canceladas</option>
+          <option value="closed">Encerradas</option>
+          <option value="deleted">Excluídas</option>
+          <option value="all">Todas (incluindo excluídas)</option>
+        </select></label>
         <button className="button" type="submit">Aplicar filtros</button>
         <button className="button secondary" type="button" onClick={() => { setDraft(emptyFilters); navigate(emptyFilters, 1); }}>Limpar</button>
       </form>
@@ -246,7 +261,8 @@ export default function PortfolioPage() {
           <tbody>{result.items.map(order => <tr key={order.id}>
             <td><strong>{order.number}</strong></td><td>{order.importer}</td>
             <td>{order.lifecycleStatus === "CLOSED" ? "Encerrada"
-              : order.lifecycleStatus === "CANCELLED" ? "Cancelada" : "Ativa"}</td>
+              : order.lifecycleStatus === "CANCELLED" ? "Cancelada"
+                : order.lifecycleStatus === "DELETED" ? "Excluída" : "Ativa"}</td>
             <td>{order.operationalItemCount}</td><td>{order.linkedProcessCount}</td>
             <td>{order.itemsWithoutIp}</td><td>{order.unresolvedIssueCount}</td>
             <td><Link className="button" href={`/purchase-orders/${order.id}?return=${encodeURIComponent(returnPath)}`}>Abrir PO {order.number}</Link></td>

@@ -41,3 +41,16 @@ test("PO lifecycle migration preserves audit history and protects closed or term
   assert.match(lifecycle, /PO with active allocations cannot be cancelled or deleted/u);
   assert.match(lifecycle, /purchase_order_item_lifecycle_check/u);
 });
+
+test("PO lifecycle restoration migration permits only the planned returns to ACTIVE and clears lifecycle metadata", async () => {
+  const lifecycleRestore = await readFile(new URL("M064_purchase_order_lifecycle_restore.sql", migrationsUrl), "utf8");
+  assert.match(lifecycleRestore, /CREATE OR REPLACE FUNCTION procurement\.check_purchase_order_lifecycle_transition/u);
+  assert.match(lifecycleRestore, /OLD\.lifecycle_status = 'CANCELLED' AND NEW\.lifecycle_status IN \('ACTIVE', 'DELETED'\)/u);
+  assert.match(lifecycleRestore, /OLD\.lifecycle_status = 'DELETED' AND NEW\.lifecycle_status = 'ACTIVE'/u);
+  assert.match(lifecycleRestore, /OLD\.lifecycle_status = 'CLOSED' AND NEW\.lifecycle_status IN \('ACTIVE', 'DELETED'\)/u);
+  assert.match(lifecycleRestore, /NEW\.lifecycle_changed_at := NULL/u);
+  assert.match(lifecycleRestore, /NEW\.lifecycle_changed_by := NULL/u);
+  assert.match(lifecycleRestore, /NEW\.lifecycle_reason := NULL/u);
+  assert.match(lifecycleRestore, /PO with active allocations cannot be cancelled or deleted/u);
+  assert.doesNotMatch(lifecycleRestore, /ADD COLUMN/u);
+});

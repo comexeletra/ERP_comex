@@ -37,7 +37,10 @@ test("shows lifecycle actions only for supported PO states and writers", () => {
   assert.deepEqual(purchaseOrderLifecycleActions("ACTIVE", true), ["close", "cancel", "delete"]);
   assert.deepEqual(purchaseOrderLifecycleActions("CLOSED", true), ["reopen", "delete"]);
   assert.deepEqual(purchaseOrderLifecycleActions("CANCELLED", true), ["delete"]);
+  assert.deepEqual(purchaseOrderLifecycleActions("CANCELLED", true, true), ["reactivate", "delete"]);
   assert.deepEqual(purchaseOrderLifecycleActions("DELETED", true), []);
+  assert.deepEqual(purchaseOrderLifecycleActions("DELETED", true, true), ["restore"]);
   assert.deepEqual(purchaseOrderLifecycleActions(undefined, true), []);
   assert.deepEqual(purchaseOrderLifecycleActions("ACTIVE", false), []);
+  assert.deepEqual(purchaseOrderLifecycleActions("CANCELLED", false, true), []);
 });

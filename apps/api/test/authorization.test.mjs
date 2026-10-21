@@ -212,9 +212,9 @@ test("production PO list applies the grant scope in SQL before its limit and off
         assert.match(sql, /u\.issuer = \$1 AND u\.subject = \$2/u);
         return { rows: [{ role: "Consulta", importer_code: "ELETRA MATRIZ" }] };
       }
-      assert.ok(sql.indexOf("WHERE po.importer = ANY($1::text[])") < sql.indexOf("LIMIT $6 OFFSET $7"));
+      assert.ok(sql.indexOf("WHERE po.importer = ANY($1::text[])") < sql.indexOf("LIMIT $7 OFFSET $8"));
       assert.match(sql, /po\.lifecycle_status\s*<>\s*'DELETED'/u);
-      assert.deepEqual(values, [["ELETRA MATRIZ"], null, null, null, null, 50, 0]);
+      assert.deepEqual(values, [["ELETRA MATRIZ"], null, null, null, null, null, 50, 0]);
       return { rows: [{ total_count: 1, items: [{ id: "po-visible", importer: "ELETRA MATRIZ" }] }] };
     },
   };
@@ -253,7 +253,7 @@ test("production PO list passes all four filters with pagination inside the impo
       assert.match(sql, /strpos\(lower\(po\.importer\), lower\(\$3\)\) > 0/u);
       assert.match(sql, /strpos\(lower\(coalesce\(obs\.description_snapshot, ''\)\), lower\(\$4\)\) > 0/u);
       assert.match(sql, /process\.importer = ANY\(\$1::text\[\]\)/u);
-      assert.deepEqual(values, [["ELETRA MATRIZ"], "03", "eletra", "motor", "IP-20", 50, 50]);
+      assert.deepEqual(values, [["ELETRA MATRIZ"], "03", "eletra", "motor", "IP-20", null, 50, 50]);
       return { rows: [{ total_count: 75, items: [{ id: "po-visible" }] }] };
     },
   };

@@ -13,13 +13,19 @@ const portfolioFilterFields = {
 const listQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
+  lifecycle: z.enum(["active", "cancelled", "closed", "deleted", "all"]).optional(),
   ...portfolioFilterFields,
 }).strict();
 const summaryQuery = z.object(portfolioFilterFields).strict();
 
-function portfolioWhere(scopeSql: string): string {
+function portfolioWhere(scopeSql: string, lifecycleParameter?: number): string {
+  const lifecycleFilter = lifecycleParameter
+    ? `($${lifecycleParameter}::text IS NULL AND po.lifecycle_status <> 'DELETED'
+       OR $${lifecycleParameter}::text = 'all'
+       OR lower(po.lifecycle_status) = $${lifecycleParameter}::text)`
+    : "po.lifecycle_status <> 'DELETED'";
   return `WHERE ${scopeSql}
-    AND po.lifecycle_status <> 'DELETED'
+    AND (${lifecycleFilter})
     AND ($2::text IS NULL OR strpos(po.normalized_number, upper($2)) > 0)
     AND ($3::text IS NULL OR strpos(lower(po.importer), lower($3)) > 0)
     AND ($4::text IS NULL OR EXISTS (
@@ -67,7 +73,7 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
     const parsed = listQuery.safeParse(request.query);
     if (!parsed.success) return badQuery(reply, parsed.error.flatten().fieldErrors);
 
-    const { page, pageSize, number, importer, product, ipNumber } = parsed.data;
+    const { page, pageSize, number, importer, product, ipNumber, lifecycle } = parsed.data;
     const scopes = request.authorizationContext?.importerScopes ?? [];
     const scoped = importerScopePredicate("po.importer", 1, scopes);
     const offset = (page - 1) * pageSize;
@@ -122,11 +128,11 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
                    ON obs.source_row_id = issue.source_row_id
                  WHERE obs.purchase_order_id = po.id AND issue.status = 'OPEN') AS unresolved_issue_count
          FROM procurement.purchase_order AS po
-         ${portfolioWhere(scoped.sql)}
+         ${portfolioWhere(scoped.sql, 6)}
        ), page AS (
          SELECT * FROM filtered
          ORDER BY normalized_number, id
-         LIMIT $6 OFFSET $7
+         LIMIT $7 OFFSET $8
        )
        SELECT (SELECT count(*)::int FROM filtered) AS total_count,
               coalesce(
@@ -151,7 +157,8 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
                 '[]'::jsonb
               ) AS items
        FROM page`,
-      [scoped.values[0], number || null, importer || null, product || null, ipNumber || null, pageSize, offset],
+      [scoped.values[0], number || null, importer || null, product || null, ipNumber || null,
+        lifecycle ?? null, pageSize, offset],
     );
 
     return {

@@ -251,7 +251,7 @@ export function checkVersion(row: Record<string, unknown>, expected: string) {
   }
 }
 
-type PurchaseOrderLifecycleAction = "CANCEL" | "CLOSE" | "REOPEN" | "DELETE";
+type PurchaseOrderLifecycleAction = "CANCEL" | "CLOSE" | "REOPEN" | "DELETE" | "REACTIVATE" | "RESTORE";
 
 async function changePurchaseOrderLifecycle(client: PoolClient, id: string, expected: string,
   auth: ReturnType<typeof actorAndScopes>, action: PurchaseOrderLifecycleAction, reason: string) {
@@ -259,7 +259,13 @@ async function changePurchaseOrderLifecycle(client: PoolClient, id: string, expe
   checkVersion(before, expected);
   const current = String(before.lifecycle_status);
   let next: string;
-  if (action === "CANCEL" || action === "CLOSE") {
+  if (action === "REACTIVATE") {
+    if (current !== "CANCELLED") throw new BusinessError(409, "PO_NOT_CANCELLED", "Somente uma PO cancelada pode ser reativada.");
+    next = "ACTIVE";
+  } else if (action === "RESTORE") {
+    if (current !== "DELETED") throw new BusinessError(409, "PO_NOT_DELETED", "Somente uma PO excluída pode ser restaurada.");
+    next = "ACTIVE";
+  } else if (action === "CANCEL" || action === "CLOSE") {
     if (current !== "ACTIVE") throw new BusinessError(409, "PO_NOT_ACTIVE", "Somente uma PO ativa pode ser cancelada ou encerrada.");
     next = action === "CANCEL" ? "CANCELLED" : "CLOSED";
   } else if (action === "REOPEN") {
@@ -284,14 +290,21 @@ async function changePurchaseOrderLifecycle(client: PoolClient, id: string, expe
   }
 
   const actor = `${auth.actor.issuer}#${auth.actor.subject}`;
-  const updated = await client.query<{ version: string }>(
-    `UPDATE procurement.purchase_order SET lifecycle_status = $2, lifecycle_changed_at = now(),
-       lifecycle_changed_by = $3, lifecycle_reason = $4, version = version + 1, updated_at = now()
-     WHERE id = $1 RETURNING version::text`, [id, next, actor, reason]);
+  const updated = await client.query<{ version: string; lifecycle_changed_at: string | null;
+    lifecycle_changed_by: string | null; lifecycle_reason: string | null }>(
+    `UPDATE procurement.purchase_order SET lifecycle_status = $2,
+       lifecycle_changed_at = CASE WHEN $2 = 'ACTIVE' THEN NULL ELSE now() END,
+       lifecycle_changed_by = CASE WHEN $2 = 'ACTIVE' THEN NULL ELSE $3 END,
+       lifecycle_reason = CASE WHEN $2 = 'ACTIVE' THEN NULL ELSE $4 END,
+       version = version + 1, updated_at = now()
+     WHERE id = $1 RETURNING version::text, lifecycle_changed_at, lifecycle_changed_by, lifecycle_reason`,
+    [id, next, actor, reason]);
   const auditAction = action === "DELETE" ? "SOFT_DELETE" : action;
+  const after = { ...before, lifecycle_status: next, lifecycle_changed_at: updated.rows[0].lifecycle_changed_at,
+    lifecycle_changed_by: updated.rows[0].lifecycle_changed_by, lifecycle_reason: updated.rows[0].lifecycle_reason,
+    version: updated.rows[0].version };
   await record(client, "PURCHASE_ORDER", id, "PURCHASE_ORDER", id, auditAction,
-    before, { ...before, lifecycle_status: next, lifecycle_changed_by: actor, lifecycle_reason: reason },
-    auth.actor, reason);
+    before, after, auth.actor, reason);
   return { id, lifecycleStatus: next, version: updated.rows[0].version };
 }
 
@@ -932,6 +945,10 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
     { config: permissionConfig("purchase-orders.write") }, purchaseOrderLifecycleHandler(pool, "CLOSE"));
   app.post<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/reopen",
     { config: permissionConfig("purchase-orders.write") }, purchaseOrderLifecycleHandler(pool, "REOPEN"));
+  app.post<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/reactivate",
+    { config: permissionConfig("purchase-orders.lifecycle.manage") }, purchaseOrderLifecycleHandler(pool, "REACTIVATE"));
+  app.post<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/restore",
+    { config: permissionConfig("purchase-orders.lifecycle.manage") }, purchaseOrderLifecycleHandler(pool, "RESTORE"));
   app.delete<{ Params: { id: string } }>("/api/v1/purchase-orders/:id",
     { config: permissionConfig("purchase-orders.write") }, purchaseOrderLifecycleHandler(pool, "DELETE"));
 
