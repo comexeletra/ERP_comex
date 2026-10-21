@@ -1,5 +1,28 @@
 # API ERP na VPS Hostinger
 
+## Release de ciclo de vida de PO no HML (2026-10-21)
+
+O commit `5165ca7` foi compilado na VPS como
+`/opt/import-erp/apps/api/hml-release-5165ca7` e ativado pelo drop-in
+`/etc/systemd/system/import-erp-hml-api.service.d/zzzz-release-5165ca7.conf`.
+Antes da troca, o build `hml-release-94699c5` foi copiado e conferido em
+`/var/backups/import-erp/hml-release-94699c5-po-lifecycle-20261021T115232Z`;
+o drop-in anterior também está preservado nesse diretório. Para rollback, mova o
+drop-in `zzzz-release-5165ca7.conf` para o backup, execute
+`systemctl daemon-reload` e reinicie `import-erp-hml-api`.
+
+A compilação e a suíte completa da API passaram. Após a troca, o serviço ficou
+`active`, o readiness autenticado respondeu 200, o health público respondeu
+200 e o readiness público sem token respondeu 401. A conexão confirmou
+`erp_po_totvs_hml`, papel `import_erp_hml_app` e ledger M001–M063 (63/63).
+
+As transições foram exercitadas nos handlers reais com uma PO temporária de
+teste (`TEST-LIFECYCLE-20261021-5cf25df1`, id
+`8edca089-7806-4b96-bcde-13f6aee35ca6`): ACTIVE → CLOSED → ACTIVE → CANCELLED →
+DELETED. A PO de teste ficou excluída logicamente para preservar auditoria e
+outbox, sem alocações ativas, e não aparece na lista padrão. A PO preexistente
+`030201` permaneceu ACTIVE e sem alocações ativas.
+
 ## M063 — ciclo de vida de PO no HML (2026-10-20)
 
 M063 foi aplicada somente a `erp_po_totvs_hml`, que estava em M062. Antes da

@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
-import { apiFetch, readApiJson } from "../lib/api";
+import { apiFetch, hasPoLifecycleSupport, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
+import { purchaseOrderLifecycleActions, type PurchaseOrderLifecycleStatus } from "../lib/po-lifecycle";
 import { SearchableSelect } from "./SearchableSelect";
 import { blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsEditor,
   purchaseOrderCommonItemFields, purchaseOrderSpecificFields, purchaseOrderItemFields,
@@ -29,7 +30,7 @@ type Allocation = { id: string; itemId: string; processId: string; ipNumber: str
   quantity: string; notes: string; factoryShipDate: string | null; version: string };
 type OperationalPo = { id: string; importer: string; number: string; supplierText: string | null;
   orderDate: string | null; notes: string; sourceKind: string; version: string;
-  lifecycleStatus: "ACTIVE" | "CANCELLED" | "CLOSED" | "DELETED";
+  lifecycleStatus?: PurchaseOrderLifecycleStatus;
   lifecycleChangedAt: string | null; lifecycleChangedBy: string | null; lifecycleReason: string | null;
   purchaseRequestId: string | null;
   purchaseRequest: { id: string; importer: string; scNumber: string; supplierText: string | null; scDate: string | null; commercialPlanReceivedDate: string | null;
@@ -212,6 +213,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   const activePo = data?.lifecycleStatus === "ACTIVE";
   const canEditPo = canWritePo && activePo;
   const canAllocate = activePo && roles.some(role => allocationWriters.has(role));
+  const lifecycleSupported = hasPoLifecycleSupport(data);
+  const lifecycleActions = purchaseOrderLifecycleActions(data?.lifecycleStatus, canWritePo);
   async function send(path: string, method: string, body: unknown, version?: string) {
     const response = await apiFetch(path, { method,
       headers: { "content-type": "application/json", ...(version ? { "X-Record-Version": version } :
@@ -475,33 +478,27 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
     {!loading && data && <>
-      {data.lifecycleStatus !== "ACTIVE" && <p className="notice" role="status">
+      {!lifecycleSupported && <p className="notice" role="status">Ciclo da PO indisponível nesta versão da API.</p>}
+      {lifecycleSupported && data.lifecycleStatus !== "ACTIVE" && <p className="notice" role="status">
         {data.lifecycleStatus === "CLOSED" ? "PO encerrada: alterações e novas alocações estão bloqueadas. Reabra com um motivo para continuar."
           : data.lifecycleStatus === "CANCELLED" ? "PO cancelada: permanece disponível para consulta e histórico."
             : "PO excluída da carteira ativa: os dados e vínculos históricos permanecem disponíveis para consulta."}
         {data.lifecycleReason && <> Motivo: {data.lifecycleReason}</>}
       </p>}
-      {canWritePo && data.lifecycleStatus !== "DELETED" && <section className="card po-lifecycle-actions">
+      {lifecycleSupported && lifecycleActions.length > 0 && <section className="card po-lifecycle-actions">
         <h3>Ciclo da PO</h3>
-        <label>Motivo da ação<textarea required minLength={3} maxLength={1000} value={lifecycleReason}
+        <label className="po-lifecycle-reason"><span>Motivo da ação</span><textarea required minLength={3} maxLength={1000} value={lifecycleReason}
           onChange={event => setLifecycleReason(event.target.value)} /></label>
-        {data.lifecycleStatus === "ACTIVE" && <div className="operational-actions">
-          <button className="button secondary" type="button" disabled={saving || !lifecycleReason.trim()}
-            onClick={() => void changeLifecycle("close")}>Encerrar PO</button>
-          <button className="button secondary" type="button" disabled={saving || !lifecycleReason.trim() || data.allocations.length > 0}
-            onClick={() => void changeLifecycle("cancel")}>Cancelar PO</button>
-          <button className="button secondary" type="button" disabled={saving || !lifecycleReason.trim() || data.allocations.length > 0}
-            onClick={() => void changeLifecycle("delete")}>Excluir da carteira</button>
-        </div>}
-        {data.lifecycleStatus === "CLOSED" && <div className="operational-actions">
-          <button className="button" type="button" disabled={saving || !lifecycleReason.trim()}
-            onClick={() => void changeLifecycle("reopen")}>Reabrir PO</button>
-          <button className="button secondary" type="button" disabled={saving || !lifecycleReason.trim() || data.allocations.length > 0}
-            onClick={() => void changeLifecycle("delete")}>Excluir da carteira</button>
-        </div>}
-        {data.lifecycleStatus === "CANCELLED" && <button className="button secondary" type="button"
-          disabled={saving || !lifecycleReason.trim() || data.allocations.length > 0}
-          onClick={() => void changeLifecycle("delete")}>Excluir da carteira</button>}
+        <div className="operational-actions">
+          {lifecycleActions.includes("close") && <button className="button secondary" type="button" disabled={saving || !lifecycleReason.trim()}
+            onClick={() => void changeLifecycle("close")}>Encerrar PO</button>}
+          {lifecycleActions.includes("cancel") && <button className="button secondary" type="button" disabled={saving || !lifecycleReason.trim() || data.allocations.length > 0}
+            onClick={() => void changeLifecycle("cancel")}>Cancelar PO</button>}
+          {lifecycleActions.includes("delete") && <button className="button secondary" type="button" disabled={saving || !lifecycleReason.trim() || data.allocations.length > 0}
+            onClick={() => void changeLifecycle("delete")}>Excluir da carteira</button>}
+        {lifecycleActions.includes("reopen") && <button className="button" type="button" disabled={saving || !lifecycleReason.trim()}
+          onClick={() => void changeLifecycle("reopen")}>Reabrir PO</button>}
+        </div>
         {data.allocations.length > 0 && <p className="muted">Cancele ou encaminhe as distribuições ativas pelos IPs antes de cancelar ou excluir esta PO.</p>}
       </section>}
       {canEditPo && <details className="po-header-disclosure">

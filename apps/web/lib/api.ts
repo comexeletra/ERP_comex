@@ -37,6 +37,13 @@ export function hasIpLifecycleSupport(process: unknown): boolean {
   return lifecycleStatus === "OPEN" || lifecycleStatus === "CLOSED";
 }
 
+export function hasPoLifecycleSupport(purchaseOrder: unknown): boolean {
+  if (!purchaseOrder || typeof purchaseOrder !== "object" || Array.isArray(purchaseOrder)) return false;
+  const lifecycleStatus = (purchaseOrder as Record<string, unknown>).lifecycleStatus;
+  return lifecycleStatus === "ACTIVE" || lifecycleStatus === "CLOSED"
+    || lifecycleStatus === "CANCELLED" || lifecycleStatus === "DELETED";
+}
+
 export async function readApiJson<T>(response: Response): Promise<T> {
   const raw = await response.text();
   let body: (T & { detail?: string }) | undefined;

@@ -394,6 +394,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 :root[data-theme="dark"] .auth-form-panel .stack-form input:not([type="checkbox"]) { background: #111c23; border-color: #40545f; color: #e4edf2; }
 .operational-panel { display: grid; gap: 18px; }
 .operational-panel h3 { margin: 8px 0 0; }
+.po-lifecycle-reason { display: grid; gap: 6px; max-width: 520px; font-weight: 700; }
+.po-lifecycle-reason textarea { border: 1px solid #b7c5cf; border-radius: 7px; font: inherit; min-height: 92px; padding: 9px; resize: vertical; width: 100%; }
 .operational-panel details { border: 1px solid #dce6eb; border-radius: 10px; padding: 14px 18px; }
 .operational-panel summary { color: #165665; cursor: pointer; font-weight: 700; }
 .operational-panel details form { margin-top: 16px; }
