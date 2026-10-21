@@ -319,7 +319,7 @@ export async function validatePurchaseOrderImporterChange(client: PoolClient, op
   }
   inScope(options.destinationImporter, options.scopes);
   const importer = await client.query<{ cnpj: string | null }>(
-    `SELECT cnpj FROM catalog.operational_value WHERE entity_key='IMPORTER' AND value=$1 AND status='ACTIVE'`,
+    `SELECT cnpj FROM catalog.operational_value WHERE entity_key='IMPORTER' AND value=$1`,
     [options.destinationImporter]);
   if (!/^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}$/u.test(importer.rows[0]?.cnpj ?? "")) {
     throw new BusinessError(409, "IMPORTER_CNPJ_REQUIRED", "A importadora de destino precisa estar ativa e cadastrada com CNPJ.");
@@ -355,7 +355,7 @@ export async function validatePurchaseOrderItems(client: PoolClient, items: Purc
   const units = [...new Set(items.map(item => normalizedCode(item.unit)))];
   const foundUnits = await client.query<{ normalized_value: string }>(
     `SELECT normalized_value FROM catalog.operational_value WHERE entity_key='UNIT_OF_MEASURE'
-     AND status='ACTIVE' AND normalized_value=ANY($1::text[])`, [units]);
+     AND normalized_value=ANY($1::text[])`, [units]);
   const unitSet = new Set(foundUnits.rows.map(row => row.normalized_value));
   const missingUnits = units.filter(value => !unitSet.has(value));
   if (missingUnits.length) {
@@ -366,7 +366,7 @@ export async function validatePurchaseOrderItems(client: PoolClient, items: Purc
   if (costCenters.length) {
     const found = await client.query<{ normalized_value: string }>(
       `SELECT normalized_value FROM catalog.operational_value WHERE entity_key='COST_CENTER'
-       AND status='ACTIVE' AND normalized_value=ANY($1::text[])`, [costCenters]);
+       AND normalized_value=ANY($1::text[])`, [costCenters]);
     const foundSet = new Set(found.rows.map(row => row.normalized_value));
     const missing = costCenters.filter(value => !foundSet.has(value));
     if (missing.length) {

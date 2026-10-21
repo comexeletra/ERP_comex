@@ -6,6 +6,7 @@ import { registerPurchaseOrderReadRoutes } from "../dist/purchase-orders.js";
 
 async function preflightApp(t) {
   const pool = { async query(sql, params = []) {
+    if (sql.includes("catalog.operational_value")) assert.doesNotMatch(sql, /\bstatus\s*=/iu);
     if (sql.includes("FROM identity.erp_user AS u")) return { rows: [{ role: "Master", importer_code: "ELETRA MATRIZ" }] };
     if (sql.includes("SELECT DISTINCT importer FROM procurement.purchase_order")) {
       return { rows: [{ importer: "ELETRA MATRIZ" }] };

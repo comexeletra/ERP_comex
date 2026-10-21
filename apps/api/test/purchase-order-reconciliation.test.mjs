@@ -20,6 +20,7 @@ async function appWithState(t, { role = "Master", activeAllocations = false, des
   const queries = [];
   const client = { async query(sql, params = []) {
     queries.push({ sql, params });
+    if (sql.includes("entity_key='IMPORTER'")) assert.doesNotMatch(sql, /\bstatus\s*=/iu);
     if (sql.includes("SELECT * FROM procurement.purchase_order WHERE") && sql.includes("FOR UPDATE")) {
       return { rows: state.po.importer === params[1][0] || params[1].includes(state.po.importer) ? [{ ...state.po }] : [], rowCount: 1 };
     }

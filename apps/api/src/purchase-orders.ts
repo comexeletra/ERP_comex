@@ -107,10 +107,10 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
           AND entry.normalized_code=ANY($1::text[])`,
       [body.productCodes.map(value => value.toLocaleUpperCase("en-US"))]) : Promise.resolve({ rows: [] }),
       body.units.length ? pool.query<{ normalized_value: string }>(`SELECT normalized_value FROM catalog.operational_value
-        WHERE entity_key='UNIT_OF_MEASURE' AND status='ACTIVE'
+        WHERE entity_key='UNIT_OF_MEASURE'
           AND normalized_value=ANY($1::text[])`, [body.units.map(value => value.toLocaleUpperCase("en-US"))]) : Promise.resolve({ rows: [] }),
       body.costCenters.length ? pool.query<{ normalized_value: string }>(`SELECT normalized_value FROM catalog.operational_value
-        WHERE entity_key='COST_CENTER' AND status='ACTIVE'
+        WHERE entity_key='COST_CENTER'
           AND normalized_value=ANY($1::text[])`, [body.costCenters.map(value => value.toLocaleUpperCase("en-US"))]) : Promise.resolve({ rows: [] }),
     ]);
     const normalized = (values: string[]) => values.map(value => value.trim().toLocaleUpperCase("en-US"));

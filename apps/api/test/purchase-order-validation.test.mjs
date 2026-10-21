@@ -5,6 +5,7 @@ import { BusinessError, validateNewPurchaseOrder, validatePurchaseOrderItems } f
 function validationClient({ cnpj = "12.345.678/0001-90", duplicates = [], supplier = true, request = null,
   products = ["PRODUCT-1"], units = ["UN"], costCenters = ["1202027"] } = {}) {
   const client = { async query(sql, params = []) {
+    if (sql.includes("catalog.operational_value")) assert.doesNotMatch(sql, /\bstatus\s*=/iu);
     if (sql.includes("entity_key='IMPORTER'")) return { rows: cnpj ? [{ cnpj }] : [] };
     if (sql.includes("FROM procurement.purchase_order") && sql.includes("normalized_number")) {
       return { rows: duplicates.filter(item => params[1].includes(item.importer)) };
