@@ -1,5 +1,33 @@
 # API ERP na VPS Hostinger
 
+## Validação das regras de criação de PO no HML (2026-10-21)
+
+O commit `6a18999` foi compilado na VPS como
+`/opt/import-erp/apps/api/hml-release-6a18999` e ativado pelo drop-in
+`/etc/systemd/system/import-erp-hml-api.service.d/zzzzzzz-release-6a18999.conf`.
+Antes da troca, o release e o drop-in anteriores foram preservados em
+`/var/backups/import-erp/hml-po-validation-6a18999-predeploy` para rollback.
+O serviço ficou ativo e `https://api-hml.72-60-250-212.sslip.io/health/live`
+respondeu 200.
+
+As rotas autenticadas foram exercitadas somente em `erp_po_totvs_hml`, com o
+papel `import_erp_hml_app`: pré-validação de duplicidade e valores ausentes;
+recusa de importadora sem CNPJ e de UM/CC inválidos; criação de uma PO sintética;
+reimportação com diff vazio e alteração de quantidade; remoção de item; e troca
+de importadora por Master sem alocação ativa. A PO de teste
+`HMLVALMVIIAQ73B9DD951D-CREATE` ficou excluída logicamente para preservar os
+eventos de auditoria/outbox; ela tem sete eventos de auditoria e sete mensagens
+de outbox. A observação de descrição criada pela trigger foi removida somente
+para essa PO, e o preço zero não criou observação de preço. A credencial local
+temporária foi restaurada ao hash e metadados anteriores, e a sessão de teste
+foi revogada.
+
+A PO preexistente `030201` permaneceu inalterada. As contagens do HML passaram
+de 2 POs e 215 itens para 3 POs e 216 itens devido à PO sintética excluída
+logicamente; as alocações ativas não mudaram. O check Vercel associado ao commit
+`6a18999` está `success`, mas o domínio estável do Preview responde HTTP 302
+para `vercel.com/sso-api`, então a interface web não foi validada.
+
 ## Release de ciclo de vida de PO no HML (2026-10-21)
 
 O commit `5165ca7` foi compilado na VPS como

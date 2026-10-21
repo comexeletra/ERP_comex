@@ -6,7 +6,7 @@
 | Branch de trabalho | `homologacao` |
 | Ambiente de validação | HML (VPS `import-erp-hml-api` + banco `erp_po_totvs_hml`) e Preview Vercel |
 | Arquivo de referência | `PO 030201.xlsx` (export TOTVS "1-Pedido de Compras Autoriz", 215 itens) |
-| Status | **Autorização recebida em 2026-10-21. Ciclos 1–4 e melhorias F2–F5 implementados na branch `homologacao`; suíte web com 70 testes, lint sem erros, type-check e build passaram. M065 foi aplicada somente no HML após backup e validação em cópia restaurada; a API HML está ativa. O commit `49157a6` tem Preview `READY` e status Vercel `success`, mas a URL do deployment e o domínio estável redirecionam para SSO, impedindo validar a aplicação pela web. A validação autenticada das rotas HML também está pendente: as credenciais Master protegidas não permitiram sessão utilizável. Nenhuma PO foi criada ou alterada nesta validação. E3 permanece excluído, sem aprovação específica.** |
+| Status | **Autorização recebida em 2026-10-21. Ciclos 1–4 e melhorias F2–F5 implementados na branch `homologacao`; suíte web com 70 testes, lint sem erros, type-check e build passaram. M065 foi aplicada somente no HML após backup e validação em cópia restaurada; a API HML está ativa no release `6a18999`. A validação autenticada no HML passou para pré-validação, criação sintética, reimportação, remoção de item e troca de importadora; a PO 030201 permaneceu inalterada e a credencial temporária foi restaurada. O check Vercel do commit `6a18999` está `success`, mas o domínio estável respondeu HTTP 302 para `vercel.com/sso-api`, impedindo validar a aplicação pela web. E3 permanece excluído, sem aprovação específica.** |
 
 ## Sumário
 
@@ -446,8 +446,9 @@ Corrige o que gera dado errado hoje, sem migration.
       do informado ou de outra importadora (R18).
 - [x] Item criado com NCM do produto quando o catálogo tiver `product_ncm_code`.
 - [x] Testes de API e de contrato web↔API; build e deploy da API na VPS HML.
-- [ ] Validação autenticada da pré-validação e do fluxo de criação no HML. O health respondeu
-      200 e a rota sem sessão respondeu 401; não houve sessão Master utilizável para continuar.
+- [x] Validação autenticada no HML: duplicidade na mesma importadora e em outra importadora;
+      importadora apta, fornecedor, produto, UM e CC; valores ausentes; recusas de importadora sem
+      CNPJ e de UM/CC inválidos; criação completa de PO sintética. A PO 030201 permaneceu inalterada.
 - **Aceite:** CA3, CA4, CA6 (lado API), CA7.
 
 ### Ciclo 3 — Preço de referência do produto (migration no HML)
@@ -472,8 +473,9 @@ Corrige o que gera dado errado hoje, sem migration.
 - [x] Troca de importadora (R16), validando SC vinculada (a SC é da importadora) e número no destino,
       coberta por testes.
 - [x] Item novo herda campos compartilhados (E4), coberto por testes.
-- [ ] Validação autenticada no HML da reimportação, remoção e troca de importadora permanece
-      pendente pelo bloqueio de autenticação Master descrito acima.
+- [x] Validação autenticada no HML: reimportação idêntica com diff vazio; alteração de quantidade
+      com uma diferença e aplicação; remoção do item; troca de importadora por Master sem alocação
+      ativa. Os cenários usaram somente uma PO sintética, excluída logicamente ao final.
 - [ ] Avaliar com os consumidores da outbox a consolidação de `FOLLOWUP_UPDATE` por PO (E3);
       implementar só com aprovação.
 - **Aceite:** CA8, CA9.
@@ -491,10 +493,19 @@ Corrige o que gera dado errado hoje, sem migration.
 A PO 030201 do HML foi criada pelo upload de `PO 030201.xlsx` com o código atual. Ela fica como
 está e serve de caso de regressão:
 
-Na execução deste plano, a criação e a correção pós-criação foram verificadas por testes locais;
-nenhuma PO foi criada, reimportada, removida ou alterada no banco HML. A contagem conferida após
-M065 permaneceu em 2 POs e 215 itens. O teste de integração autenticado ainda precisa ser feito
-quando houver uma conta Master HML utilizável e acesso ao Preview sem o redirecionamento SSO.
+Na validação autenticada do HML, a PO 030201 não foi alterada: importadora, número, versão,
+ciclo de vida, fornecedor, 215 itens e alocações ativas permaneceram iguais. Para validar as rotas,
+foi criada somente a PO sintética `HMLVALMVIIAQ73B9DD951D-CREATE` com um item. A reimportação
+alterou a quantidade de 1 para 2; o item foi removido e a importadora foi trocada por uma segunda
+importadora com CNPJ. A PO de teste ficou excluída logicamente, com item `CANCELLED`, sete eventos
+de auditoria e sete mensagens de outbox. A observação temporária de descrição foi removida e o preço
+zero não criou observação de preço. As contagens passaram de 2 POs e 215 itens para 3 POs e 216
+itens (incluindo a PO excluída logicamente), sem mudança nas alocações ativas. A senha temporária
+de validação não foi persistida; hash e metadados originais da credencial foram restaurados e a
+sessão de teste foi revogada.
+
+A validação da interface no Preview permanece pendente: o check Vercel do commit `6a18999` está
+`success`, mas o domínio estável responde HTTP 302 para `vercel.com/sso-api`.
 
 | Uso | Resultado esperado |
 |---|---|
