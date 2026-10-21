@@ -6,7 +6,7 @@
 | Branch de trabalho | `homologacao` |
 | Ambiente de validação | HML (VPS `import-erp-hml-api` + banco `erp_po_totvs_hml`) e Preview Vercel |
 | Arquivo de referência | `PO 030201.xlsx` (export TOTVS "1-Pedido de Compras Autoriz", 215 itens) |
-| Status | **Autorização recebida em 2026-10-21. Ciclos 1–4 implementados e commit `40ed41e` publicado em `homologacao`; testes locais completos passaram. M065 foi aplicada somente no HML após backup e validação em cópia restaurada; a API HML está ativa. O Preview desse commit está `READY`, mas o domínio e a URL do deployment redirecionam para SSO, impedindo validar a aplicação pela web. A validação autenticada das rotas HML também está pendente: as credenciais Master protegidas não permitiram sessão utilizável. Nenhuma PO foi criada ou alterada nesta validação. E3 permanece excluído, sem aprovação específica.** |
+| Status | **Autorização recebida em 2026-10-21. Ciclos 1–4 e melhorias F2–F5 implementados na branch `homologacao`; suíte web com 70 testes, lint sem erros, type-check e build passaram. M065 foi aplicada somente no HML após backup e validação em cópia restaurada; a API HML está ativa. O Preview do código redireciona para SSO, impedindo validar a aplicação pela web. A validação autenticada das rotas HML também está pendente: as credenciais Master protegidas não permitiram sessão utilizável. Nenhuma PO foi criada ou alterada nesta validação. E3 permanece excluído, sem aprovação específica.** |
 
 ## Sumário
 
@@ -480,8 +480,9 @@ Corrige o que gera dado errado hoje, sem migration.
 
 ### Melhorias de UX/desempenho (encaixar no ciclo que tocar o componente)
 
-- [ ] Tabela compacta para itens importados (F3) e chave estável por item (F4).
-- [ ] Pendências por linha (F2) e controle de tamanho do rascunho (F5).
+- [x] Tabela compacta para itens importados (F3) e chave estável por item (F4).
+- [x] Pendências por linha (F2) e controle de tamanho do rascunho (F5), com aviso visível também
+      para POs manuais e fallback para rascunho compacto; coberto por testes de armazenamento.
 
 ---
 

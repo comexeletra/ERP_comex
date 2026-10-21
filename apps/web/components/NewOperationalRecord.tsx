@@ -22,6 +22,7 @@ import { estimatedProductTotal, productPriceReferenceForCurrency } from "../lib/
 import { formatUsDate } from "../lib/date-format";
 import { ChinaInvoiceDraft, parseChinaInvoiceXlsx } from "../lib/china-invoice-xlsx";
 import { clearInvoiceCommandKey, invoiceCommandKey } from "../lib/invoice-command-key";
+import { persistSessionDraft } from "../lib/po-draft-storage";
 import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
   invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping";
 
@@ -244,26 +245,11 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   useEffect(() => {
     if (kind !== "po" || !draftReady) return;
     const draft: PoDraft = { importer, number, supplier, notes, items, commonItemFields, purchaseRequestId, createdPoId };
-    const serialized = JSON.stringify(draft);
     const compact = { ...draft, items: items.map(item => ({ ...item, operational: blankPurchaseOrderItemFields() })) };
-    const compactSerialized = JSON.stringify(compact);
-    const serializedBytes = new TextEncoder().encode(serialized).byteLength;
     try {
-      if (serializedBytes > 4 * 1024 * 1024) {
-        sessionStorage.setItem(poDraftKey, compactSerialized);
-        setDraftStorageWarning("O rascunho excedeu 4 MB. Os campos de acompanhamento dos itens não foram guardados nesta sessão.");
-      } else {
-        sessionStorage.setItem(poDraftKey, serialized);
-        setDraftStorageWarning("");
-      }
+      setDraftStorageWarning(persistSessionDraft(sessionStorage, poDraftKey, draft, compact));
     } catch {
-      try {
-        sessionStorage.setItem(poDraftKey, compactSerialized);
-        setDraftStorageWarning("O espaço do navegador foi excedido. Os campos de acompanhamento dos itens não foram guardados nesta sessão.");
-      } catch {
-        sessionStorage.removeItem(poDraftKey);
-        setDraftStorageWarning("Não foi possível guardar o rascunho neste navegador.");
-      }
+      setDraftStorageWarning("Não foi possível guardar o rascunho neste navegador.");
     }
   }, [kind, draftReady, importer, number, supplier, notes, items, commonItemFields, purchaseRequestId, createdPoId]);
 
@@ -967,6 +953,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
               disabled={totvsParsing || saving || Boolean(createdPoId)} onChange={event => void selectTotvsProductFile(event)} /></label>
             {totvsParsing && <p role="status">Lendo a planilha…</p>}
             {totvsFileError && <p className="notice error" role="alert">{totvsFileError}</p>}
+            {draftStorageWarning && <p className="notice" role="status">{draftStorageWarning}</p>}
             {totvsRows.length > 0 && !totvsFileError && <>
               <div className="notice" role="status">
                 <p>{totvsFileName}: {totvsRows.length} produtos válidos.</p>
@@ -987,7 +974,6 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                 <label>Moeda da PO<OperationalOptionSelect entity="currency" value={totvsCurrency} values={options}
                   onChange={setTotvsCurrency} required /></label>
               </div>
-              {draftStorageWarning && <p className="notice" role="status">{draftStorageWarning}</p>}
               <details className="totvs-import-details">
                 <summary>Conferir os {totvsRows.length} produtos mapeados</summary>
                 <div className="totvs-import-table-wrap"><table className="totvs-import-table">
