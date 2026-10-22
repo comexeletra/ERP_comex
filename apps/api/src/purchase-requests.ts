@@ -3,7 +3,8 @@ import type { FastifyInstance } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
-import { actorAndScopes, BusinessError, checkVersion, keyFrom, problem, receipt, record, saveReceipt, transaction, versionFrom } from "./operations.js";
+import { actorAndScopes, BusinessError, checkVersion, keyFrom, problem, receipt, record, saveReceipt,
+  syncPurchaseRequestItems, transaction, versionFrom } from "./operations.js";
 
 const uuid = z.uuid();
 const date = z.iso.date().nullable();
@@ -262,28 +263,7 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
           await record(client, "IMPORT_PROCESS", process.id, "IMPORT_PROCESS", process.id, "UPDATE",
             { supplierText: null }, { supplierText: body.supplierText }, actor.actor, body.reason);
         }
-        const syncedItems = await client.query<{ purchase_order_id: string }>(
-          `UPDATE procurement.purchase_order_item AS item
-           SET sc_number = CASE WHEN item.sc_number IS NOT DISTINCT FROM $2::varchar THEN $7::varchar ELSE item.sc_number END,
-               sc_date = CASE WHEN item.sc_date IS NOT DISTINCT FROM $3::date THEN $8::date ELSE item.sc_date END,
-               requester = CASE WHEN item.requester IS NOT DISTINCT FROM $4::varchar THEN $9::varchar ELSE item.requester END,
-               sc_approval_date = CASE WHEN item.sc_approval_date IS NOT DISTINCT FROM $5::date THEN $10::date ELSE item.sc_approval_date END,
-               commercial_plan_received_date = CASE WHEN item.commercial_plan_received_date IS NOT DISTINCT FROM $6::date THEN $11::date ELSE item.commercial_plan_received_date END
-           WHERE item.purchase_order_id IN
-             (SELECT id FROM procurement.purchase_order WHERE purchase_request_id = $1)
-             AND (item.sc_number IS NOT DISTINCT FROM $2::varchar
-               OR item.sc_date IS NOT DISTINCT FROM $3::date
-               OR item.requester IS NOT DISTINCT FROM $4::varchar
-               OR item.sc_approval_date IS NOT DISTINCT FROM $5::date
-               OR item.commercial_plan_received_date IS NOT DISTINCT FROM $6::date)
-           RETURNING item.purchase_order_id`,
-          [id.data, beforeAudit.scNumber, beforeAudit.scDate, beforeAudit.requester,
-            beforeAudit.approvalDate, beforeAudit.commercialPlanReceivedDate,
-            body.scNumber, body.scDate, body.requester, body.approvalDate, body.commercialPlanReceivedDate]);
-        for (const poId of new Set(syncedItems.rows.map(item => item.purchase_order_id))) {
-          await client.query(
-            "UPDATE procurement.purchase_order SET version = version + 1, updated_at = now() WHERE id = $1", [poId]);
-        }
+        await syncPurchaseRequestItems(client, id.data, beforeAudit, body);
         await record(client, "PURCHASE_REQUEST", id.data, "PURCHASE_REQUEST", id.data, "UPDATE",
           beforeAudit, after, actor.actor, body.reason);
         return updated.rows[0];

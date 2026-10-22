@@ -567,6 +567,98 @@ async function linkPurchaseRequestToPurchaseOrder(client: PoolClient, po: Record
   return { purchaseRequestId: resolved.id, purchaseRequest: resolved.purchaseRequest, created: resolved.created,
     version: updated.rows[0]?.version ?? null };
 }
+
+type PurchaseRequestItemValues = { scNumber: unknown; scDate: unknown; requester: unknown; approvalDate: unknown;
+  commercialPlanReceivedDate: unknown };
+
+export async function syncPurchaseRequestItems(client: PoolClient, purchaseRequestId: string,
+  before: PurchaseRequestItemValues, after: PurchaseRequestItemValues, excludedPurchaseOrderId: string | null = null) {
+  const syncedItems = await client.query<{ purchase_order_id: string }>(
+    `UPDATE procurement.purchase_order_item AS item
+     SET sc_number = CASE WHEN item.sc_number IS NOT DISTINCT FROM $2::varchar THEN $7::varchar ELSE item.sc_number END,
+         sc_date = CASE WHEN item.sc_date IS NOT DISTINCT FROM $3::date THEN $8::date ELSE item.sc_date END,
+         requester = CASE WHEN item.requester IS NOT DISTINCT FROM $4::varchar THEN $9::varchar ELSE item.requester END,
+         sc_approval_date = CASE WHEN item.sc_approval_date IS NOT DISTINCT FROM $5::date THEN $10::date ELSE item.sc_approval_date END,
+         commercial_plan_received_date = CASE WHEN item.commercial_plan_received_date IS NOT DISTINCT FROM $6::date THEN $11::date ELSE item.commercial_plan_received_date END
+     WHERE item.purchase_order_id IN
+       (SELECT id FROM procurement.purchase_order WHERE purchase_request_id = $1
+          AND ($12::uuid IS NULL OR id <> $12::uuid))
+       AND (item.sc_number IS NOT DISTINCT FROM $2::varchar
+         OR item.sc_date IS NOT DISTINCT FROM $3::date
+         OR item.requester IS NOT DISTINCT FROM $4::varchar
+         OR item.sc_approval_date IS NOT DISTINCT FROM $5::date
+         OR item.commercial_plan_received_date IS NOT DISTINCT FROM $6::date)
+     RETURNING item.purchase_order_id`,
+    [purchaseRequestId, before.scNumber, before.scDate, before.requester, before.approvalDate,
+      before.commercialPlanReceivedDate, after.scNumber, after.scDate, after.requester, after.approvalDate,
+      after.commercialPlanReceivedDate, excludedPurchaseOrderId]);
+  for (const poId of new Set(syncedItems.rows.map(item => item.purchase_order_id))) {
+    await client.query(
+      "UPDATE procurement.purchase_order SET version = version + 1, updated_at = now() WHERE id = $1", [poId]);
+  }
+}
+
+const purchaseRequestSyncedFields = {
+  scDate: ["sc_date", "scDate"], scApprovalDate: ["approval_date", "approvalDate"],
+  requester: ["requester", "requester"], commercialPlanReceivedDate: ["commercial_plan_received_date", "commercialPlanReceivedDate"],
+} as const;
+
+async function lockedPurchaseRequestValues(client: PoolClient, id: string, importer: string) {
+  const result = await client.query<Record<string, string | null>>(
+    `SELECT sc_number, sc_date::text AS sc_date, approval_date::text AS approval_date, requester,
+            commercial_plan_received_date::text AS commercial_plan_received_date
+     FROM procurement.purchase_request WHERE id = $1 AND importer = $2 FOR UPDATE`, [id, importer]);
+  if (!result.rows[0]) throw new BusinessError(404, "PURCHASE_REQUEST_NOT_FOUND", "SC não encontrada para esta importadora.");
+  return result.rows[0];
+}
+
+function changedPurchaseRequestFields(request: Record<string, string | null>, fields: Record<string, unknown>) {
+  return (Object.keys(purchaseRequestSyncedFields) as Array<keyof typeof purchaseRequestSyncedFields>)
+    .filter(key => key in fields && (fields[key] ?? null) !== (request[purchaseRequestSyncedFields[key][0]] ?? null));
+}
+
+export async function assertItemFieldsMatchPurchaseRequest(client: PoolClient, po: Record<string, unknown>,
+  fields: Record<string, unknown>) {
+  if (!po.purchase_request_id) return;
+  const request = await lockedPurchaseRequestValues(client, String(po.purchase_request_id), String(po.importer));
+  const scNumberDiffers = "scNumber" in fields && normalizedCode(fields.scNumber) !== normalizedCode(request.sc_number);
+  if (scNumberDiffers || changedPurchaseRequestFields(request, fields).length) {
+    throw new BusinessError(409, "PURCHASE_REQUEST_FIELDS_SHARED",
+      "Os dados da SC valem para todos os produtos da PO. Altere-os em \"Dados compartilhados pelos produtos\".");
+  }
+}
+
+export async function syncPurchaseRequestFromPurchaseOrder(client: PoolClient, po: Record<string, unknown>,
+  fields: Record<string, unknown>, actor: { issuer: string; subject: string }, reason: string) {
+  if (!po.purchase_request_id) return false;
+  const id = String(po.purchase_request_id);
+  const request = await lockedPurchaseRequestValues(client, id, String(po.importer));
+  if ("scNumber" in fields && normalizedCode(fields.scNumber) !== normalizedCode(request.sc_number)) {
+    throw new BusinessError(409, "PURCHASE_REQUEST_NUMBER_LOCKED",
+      "O número da SC vinculada só pode ser alterado no PCM.");
+  }
+  if ("requester" in fields && !fields.requester) {
+    throw new BusinessError(409, "PURCHASE_REQUEST_REQUESTER_REQUIRED", "A SC vinculada exige um solicitante.");
+  }
+  const changed = changedPurchaseRequestFields(request, fields);
+  if (!changed.length) return false;
+  const linkedOrders = await client.query<{ lifecycle_status: string }>(
+    `SELECT id, lifecycle_status FROM procurement.purchase_order
+     WHERE purchase_request_id = $1 ORDER BY id FOR UPDATE`, [id]);
+  if (linkedOrders.rows.some(linked => linked.lifecycle_status !== "ACTIVE")) {
+    throw new BusinessError(409, "PO_NOT_ACTIVE", "A SC não pode ser alterada enquanto estiver vinculada a uma PO cancelada, encerrada ou excluída.");
+  }
+  const sql = changed.map((key, index) => `${purchaseRequestSyncedFields[key][0]} = $${index + 2}`).join(", ");
+  await client.query(`UPDATE procurement.purchase_request SET ${sql}, version = version + 1, updated_at = now()
+    WHERE id = $1`, [id, ...changed.map(key => fields[key] ?? null)]);
+  const before: PurchaseRequestItemValues = { scNumber: request.sc_number, scDate: request.sc_date,
+    requester: request.requester, approvalDate: request.approval_date,
+    commercialPlanReceivedDate: request.commercial_plan_received_date };
+  const after = { ...before, ...Object.fromEntries(changed.map(key => [purchaseRequestSyncedFields[key][1], fields[key] ?? null])) };
+  await record(client, "PURCHASE_REQUEST", id, "PURCHASE_REQUEST", id, "UPDATE", before, after, actor, reason);
+  await syncPurchaseRequestItems(client, id, before, after, String(po.id));
+  return true;
+}
 export function checkVersion(row: Record<string, unknown>, expected: string) {
   if (`"${row.version}"` !== expected) {
     throw new BusinessError(409, "VERSION_CONFLICT", "Registro alterado. Recarregue antes de salvar.");
