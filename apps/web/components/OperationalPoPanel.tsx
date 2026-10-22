@@ -10,6 +10,7 @@ import { blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsE
   purchaseOrderCommonItemFields, purchaseOrderSpecificFields, purchaseOrderItemFields,
   purchaseOrderItemFieldsPayload } from "./PurchaseOrderItemFields";
 import { CatalogChoice, CatalogProductSelect, loadCatalogChoices, loadOperationalCatalog, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
+import PurchaseOrderScLink from "./PurchaseOrderScLink";
 import { loadPurchaseRequests, purchaseRequestOperationalFields, PurchaseRequestChoice, PurchaseRequestSelect } from "./PurchaseRequestSelect";
 import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
 import { formatUsDate } from "../lib/date-format";
@@ -633,6 +634,10 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             </>}
         </>}
       </section>}
+      {canEditPo && !data.purchaseRequestId && <PurchaseOrderScLink importer={data.importer}
+        supplierCode={data.supplierText} items={data.items} purchaseRequests={purchaseRequests} options={options}
+        saving={saving} onCreate={body => save(() => send(`/api/v1/purchase-orders/${id}/purchase-request`, "POST",
+          { ...body, reason: automaticAuditReason }, data.version), "SC vinculada à PO e aplicada aos produtos.")} />}
       {canEditPo && <details className="po-header-disclosure">
         <summary>Dados da PO</summary>
         <section className="po-entry-section">
