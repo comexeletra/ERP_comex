@@ -1500,7 +1500,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           const incoming = incomingFor(line.externalLineReference);
           const ncm = productNcms.get(normalizedCode(incoming.productCode)) ?? null;
           const updated = await client.query<Record<string, unknown>>(
-            `UPDATE procurement.purchase_order_item SET product_code=$2,description=$3,ordered_quantity=$4,unit=$5,
+            `UPDATE procurement.purchase_order_item SET product_code=$2::text,description=$3,ordered_quantity=$4,unit=$5,
               unit_price=$6,currency_code=$7,
               ncm=coalesce($8::text, CASE WHEN upper(btrim(product_code))=upper(btrim($2::text)) THEN ncm END),
               cost_center=coalesce($9::text,cost_center),source_status=NULL,updated_at=now()
