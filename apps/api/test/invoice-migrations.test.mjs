@@ -54,3 +54,28 @@ test("PO lifecycle restoration migration permits only the planned returns to ACT
   assert.match(lifecycleRestore, /PO with active allocations cannot be cancelled or deleted/u);
   assert.doesNotMatch(lifecycleRestore, /ADD COLUMN/u);
 });
+
+test("IP lifecycle migration adds soft-delete metadata and guards allowed record-state transitions", async () => {
+  const lifecycle = await readFile(new URL("M067_import_process_lifecycle.sql", migrationsUrl), "utf8");
+
+  assert.match(lifecycle, /DROP CONSTRAINT import_process_record_status_check/u);
+  assert.match(lifecycle, /record_status IN \('DRAFT', 'ACTIVE', 'CANCELLED', 'DELETED'\)/u);
+  assert.match(lifecycle, /ADD COLUMN deleted_at timestamptz/u);
+  assert.match(lifecycle, /ADD COLUMN deleted_by text/u);
+  assert.match(lifecycle, /ADD COLUMN delete_reason text/u);
+  assert.match(lifecycle, /ADD COLUMN record_status_before_delete varchar\(16\)/u);
+  assert.match(lifecycle, /record_status = 'DELETED'\s+AND deleted_at IS NOT NULL\s+AND deleted_by IS NOT NULL/u);
+  assert.match(lifecycle, /char_length\(btrim\(delete_reason\)\) >= 3/u);
+  assert.match(lifecycle, /OLD\.record_status = 'DRAFT' AND NEW\.record_status IN \('ACTIVE', 'CANCELLED', 'DELETED'\)/u);
+  assert.match(lifecycle, /OLD\.record_status = 'ACTIVE' AND NEW\.record_status IN \('CANCELLED', 'DELETED'\)/u);
+  assert.match(lifecycle, /OLD\.record_status = 'DELETED' AND NEW\.record_status = OLD\.record_status_before_delete/u);
+  assert.match(lifecycle, /OLD\.record_status = 'CANCELLED' AND NEW\.record_status = 'ACTIVE'/u);
+  assert.match(lifecycle, /OLD\.lifecycle_status <> 'OPEN'/u);
+  assert.match(lifecycle, /Cancel active allocations before changing IP record status/u);
+  assert.match(lifecycle, /Cancel active documents before changing IP record status/u);
+  assert.match(lifecycle, /Deleted IPs cannot retain linked purchase orders/u);
+  assert.match(lifecycle, /process_purchase_order/u);
+  assert.match(lifecycle, /GRANT SELECT \(deleted_at, deleted_by, delete_reason, record_status_before_delete\),\s+INSERT \(deleted_at, deleted_by, delete_reason, record_status_before_delete\),\s+UPDATE \(deleted_at, deleted_by, delete_reason, record_status_before_delete\)/u);
+  assert.match(lifecycle, /import_erp_app/u);
+  assert.match(lifecycle, /import_erp_hml_app/u);
+});
