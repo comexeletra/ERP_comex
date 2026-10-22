@@ -7,6 +7,7 @@ import { calculateFollowup, invoiceTotals } from "./followup-calculations.js";
 import { actorAndScopes, assertPoActive, BusinessError, checkVersion, createPo as createPoSchema,
   itemFields as basicItemSchema, keyFrom, lockedPo, problem, validatePurchaseRequest,
   receipt, record, saveReceipt, transaction, versionFrom, validateNewPurchaseOrder,
+  resolvePurchaseRequestForCompletePo,
   validatePurchaseOrderItems, purchaseRequestOperationalFields, setPurchaseOrderObservationActor,
   purchaseOrderProductReferenceSql, validatePurchaseOrderImporterChange } from "./operations.js";
 
@@ -89,7 +90,13 @@ function context(request: FastifyRequest, ifMatch = false, idempotency = false) 
 const reason = z.string().trim().min(3).max(1000);
 const sourceFileSchema = z.object({ fileName: z.string().trim().min(1).max(255),
   fileSha256: z.string().regex(/^[a-f0-9]{64}$/u) }).strict();
-const completePoHeaderSchema = createPoSchema.extend({ sourceFile: sourceFileSchema.nullable().optional() });
+const newPurchaseRequestSchema = z.object({
+  scNumber: z.string().trim().min(1).max(80), requester: z.string().trim().min(1).max(160),
+  scDate: dateSchema.nullable(), approvalDate: dateSchema.nullable(),
+  commercialPlanReceivedDate: dateSchema.nullable(),
+}).strict();
+const completePoHeaderSchema = createPoSchema.extend({ sourceFile: sourceFileSchema.nullable().optional(),
+  newPurchaseRequest: newPurchaseRequestSchema.optional() });
 const completeItemSchema = z.object({ base: basicItemSchema,
   fields: z.record(z.string(), z.unknown()) }).strict();
 const documentBase = z.object({
@@ -115,6 +122,10 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
         items: z.array(completeItemSchema).min(1).max(500),
       }).strict().safeParse(request.body);
       if (!parsed.success) return problem(reply, 400, "INVALID_PO", "Revise a PO e os produtos.");
+      if (parsed.data.header.newPurchaseRequest && parsed.data.header.purchaseRequestId) {
+        return problem(reply, 400, "PURCHASE_REQUEST_CHOICE_CONFLICT",
+          "Informe uma SC existente ou os dados para criar uma nova, nÃ£o os dois.");
+      }
       const operational = parsed.data.items.map(item => Object.keys(item.fields).length
         ? validateFields(item.fields, itemFields) : {});
       if (operational.some(fields => fields === null)) {
@@ -132,11 +143,21 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
         if (claim.existingId) {
           const priorItems = await client.query<{ id: string }>(`SELECT id FROM procurement.purchase_order_item
             WHERE purchase_order_id=$1 ORDER BY line_number`, [claim.existingId]);
+          const priorPo = await client.query<{ purchase_request_id: string | null }>(
+            `SELECT purchase_request_id FROM procurement.purchase_order WHERE id=$1`, [claim.existingId]);
           return { id: claim.existingId, itemIds: priorItems.rows.map(item => item.id),
-            version: "1", replayed: true };
+            purchaseRequestId: priorPo.rows[0]?.purchase_request_id ?? null, version: "1", replayed: true };
         }
         const poId = randomUUID(); const header = body.header;
-        const { purchaseRequest } = await validateNewPurchaseOrder(client, header, auth.scopes);
+        const validated = await validateNewPurchaseOrder(client, header, auth.scopes);
+        const resolved = header.newPurchaseRequest
+          ? await resolvePurchaseRequestForCompletePo(client, {
+            importer: header.importer, ...header.newPurchaseRequest, supplierText: header.supplierText ?? "",
+            actor: auth.actor, reason: header.reason,
+          })
+          : null;
+        const purchaseRequest = resolved?.purchaseRequest ?? validated.purchaseRequest;
+        const purchaseRequestId = resolved?.id ?? header.purchaseRequestId ?? null;
         const productNcms = await validatePurchaseOrderItems(client, body.items.map((item, index) => ({
           productCode: item.base.productCode, unit: item.base.unit,
           costCenter: typeof operational[index]?.costCenter === "string" ? operational[index].costCenter as string : null,
@@ -148,7 +169,7 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
           VALUES ($1,$2,$3::text,upper($3::text),'MANUAL_UNVERIFIED','MANUAL_TOTVS_REFERENCE',1,$4,
             (now() AT TIME ZONE 'America/Sao_Paulo')::date,$5,$6)
           RETURNING order_date::text AS "orderDate"`,
-          [poId, header.importer, header.number, header.supplierText, header.notes, header.purchaseRequestId ?? null]);
+          [poId, header.importer, header.number, header.supplierText, header.notes, purchaseRequestId]);
         await record(client, "PURCHASE_ORDER", poId, "PURCHASE_ORDER", poId, "CREATE",
           null, { ...header, orderDate: createdPo.rows[0].orderDate }, auth.actor, header.reason);
         const itemIds: string[] = [];
@@ -177,7 +198,7 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
           }
         }
         await saveReceipt(client, auth.actor.userId, key, claim.hash, "PO_COMPLETE", poId);
-        return { id: poId, itemIds, version: "1" };
+        return { id: poId, itemIds, purchaseRequestId, version: "1" };
       }, 201);
     });
 

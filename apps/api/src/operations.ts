@@ -445,7 +445,8 @@ export async function validatePurchaseRequest(client: PoolClient, id: string | n
             supplier.code AS supplier_code
      FROM procurement.purchase_request AS request
      LEFT JOIN catalog.entry AS supplier ON supplier.id=request.supplier_entry_id
-     WHERE request.id = $1 AND request.importer = $2`, [id, importer]);
+     WHERE request.id = $1 AND request.importer = $2
+     FOR KEY SHARE OF request`, [id, importer]);
   const request = result.rows[0];
   if (!request) throw new BusinessError(404, "PURCHASE_REQUEST_NOT_FOUND", "SC não encontrada para esta importadora.");
   if (supplierText && normalizedCode(request.supplier_code ?? request.supplier_text) !== normalizedCode(supplierText)) {
@@ -453,6 +454,46 @@ export async function validatePurchaseRequest(client: PoolClient, id: string | n
       "A SC vinculada tem fornecedor diferente do código informado na PO.");
   }
   return request;
+}
+
+export async function resolvePurchaseRequestForCompletePo(client: PoolClient, input: {
+  importer: string;
+  scNumber: string;
+  requester: string;
+  scDate: string | null;
+  approvalDate: string | null;
+  commercialPlanReceivedDate: string | null;
+  supplierText: string;
+  actor: { issuer: string; subject: string };
+  reason: string;
+}) {
+  const inserted = await client.query<{ id: string }>(
+    `INSERT INTO procurement.purchase_request
+       (id, importer, sc_number, normalized_sc_number, supplier_text, sc_date,
+        commercial_plan_received_date, requester, approval_date, created_by)
+     VALUES (gen_random_uuid(), $1, $2::varchar, upper(btrim($2::varchar)), $3, $4, $5, $6, $7, $8)
+     ON CONFLICT (importer, normalized_sc_number) DO NOTHING
+     RETURNING id`,
+    [input.importer, input.scNumber, input.supplierText, input.scDate,
+      input.commercialPlanReceivedDate, input.requester, input.approvalDate,
+      `${input.actor.issuer}#${input.actor.subject}`]);
+  let id = inserted.rows[0]?.id;
+  if (id) {
+    await record(client, "PURCHASE_REQUEST", id, "PURCHASE_REQUEST", id, "CREATE", null, {
+      importer: input.importer, scNumber: input.scNumber, supplierText: input.supplierText,
+      scDate: input.scDate, commercialPlanReceivedDate: input.commercialPlanReceivedDate,
+      requester: input.requester, approvalDate: input.approvalDate,
+    }, input.actor, input.reason);
+  } else {
+    const existing = await client.query<{ id: string }>(
+      `SELECT id FROM procurement.purchase_request
+       WHERE importer = $1 AND normalized_sc_number = upper(btrim($2::varchar))`,
+      [input.importer, input.scNumber]);
+    id = existing.rows[0]?.id;
+  }
+  if (!id) throw new BusinessError(409, "PURCHASE_REQUEST_RESOLUTION_FAILED", "NÃ£o foi possÃ­vel localizar a SC para esta PO.");
+  const purchaseRequest = await validatePurchaseRequest(client, id, input.importer, input.supplierText);
+  return { id, purchaseRequest };
 }
 export function checkVersion(row: Record<string, unknown>, expected: string) {
   if (`"${row.version}"` !== expected) {
