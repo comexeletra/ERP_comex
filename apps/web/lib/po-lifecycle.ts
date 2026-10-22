@@ -28,3 +28,8 @@ export function purchaseOrderNumberBlockMessage(
 export function deletedPurchaseOrderActions(canManageLifecycle: boolean, replaceSupported: boolean) {
   return { restore: canManageLifecycle, replace: canManageLifecycle && replaceSupported, needsManager: !canManageLifecycle };
 }
+
+export function purchaseOrderActorLabel(actor: string): string {
+  const separator = actor.lastIndexOf("#");
+  return (separator >= 0 ? actor.slice(separator + 1) : actor).trim() || actor;
+}

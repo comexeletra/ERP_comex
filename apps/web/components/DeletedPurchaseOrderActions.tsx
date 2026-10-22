@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, readApiJson } from "../lib/api";
 import { deletedPurchaseOrderActions } from "../lib/po-lifecycle";
+import type { PurchaseRequestPayloadChoice } from "../lib/totvs-purchase-request";
 
 export type PurchaseOrderReplacePayload = {
   header: { number: string; supplierCode: string }; fileName: string; fileSha256: string; currency: string;
@@ -22,10 +23,13 @@ const previewGroups: Array<[keyof Pick<ReplacePreview, "updated" | "added" | "re
 ];
 const listedLines = 20;
 
-export default function DeletedPurchaseOrderActions({ purchaseOrder, canManageLifecycle, replacePayload }: {
+export default function DeletedPurchaseOrderActions({ purchaseOrder, canManageLifecycle, replacePayload,
+  purchaseRequest, purchaseRequestBlocker }: {
   purchaseOrder: { id: string; version: string; replaceSupported: boolean };
   canManageLifecycle: boolean;
   replacePayload: PurchaseOrderReplacePayload | null;
+  purchaseRequest: PurchaseRequestPayloadChoice | null;
+  purchaseRequestBlocker: string | null;
 }) {
   const router = useRouter();
   const actions = deletedPurchaseOrderActions(canManageLifecycle, purchaseOrder.replaceSupported);
@@ -46,7 +50,7 @@ export default function DeletedPurchaseOrderActions({ purchaseOrder, canManageLi
     return run(async () => {
       await readApiJson(await apiFetch(`/api/v1/purchase-orders/${purchaseOrder.id}/restore`, {
         method: "POST", headers: { "content-type": "application/json", "X-Record-Version": purchaseOrder.version },
-        body: JSON.stringify({ reason: reason.trim() }) }));
+        body: JSON.stringify({ reason: reason.trim(), ...(purchaseRequest ? { purchaseRequest } : {}) }) }));
       router.push(purchaseOrderHref);
     });
   }
@@ -64,12 +68,16 @@ export default function DeletedPurchaseOrderActions({ purchaseOrder, canManageLi
     return run(async () => {
       await readApiJson(await apiFetch(`/api/v1/purchase-orders/${purchaseOrder.id}/replace`, {
         method: "POST", headers: { "content-type": "application/json", "X-Record-Version": preview.version },
-        body: JSON.stringify({ ...replacePayload, reason: reason.trim() }) }));
+        body: JSON.stringify({ ...replacePayload, reason: reason.trim(), ...(purchaseRequest ? { purchaseRequest } : {}) }) }));
       router.push(purchaseOrderHref);
     });
   }
 
   const reasonReady = reason.trim().length >= 3;
+  const purchaseRequestNotice = purchaseRequest && "newPurchaseRequest" in purchaseRequest
+    ? `A SC ${purchaseRequest.newPurchaseRequest.scNumber} será criada com o solicitante `
+      + `${purchaseRequest.newPurchaseRequest.requester} e vinculada à PO.`
+    : purchaseRequest ? "A SC selecionada será vinculada à PO." : null;
   return <div className="notice">
     <p><Link className="text-link" href={purchaseOrderHref}>Abrir PO excluída</Link></p>
     {actions.needsManager && <p>Peça a um Master ou Administrador para restaurar ou substituir esta PO.</p>}
@@ -92,9 +100,11 @@ export default function DeletedPurchaseOrderActions({ purchaseOrder, canManageLi
       {preview.blockers.map(blocker => <p key={blocker.code} className="notice error" role="alert">{blocker.message}</p>)}
     </>}
     {(mode === "restore" || (mode === "replace" && preview?.canApply)) && <>
+      {purchaseRequestBlocker ? <p className="notice error" role="alert">{purchaseRequestBlocker}</p>
+        : purchaseRequestNotice && <p className="muted">{purchaseRequestNotice}</p>}
       <label>Motivo<input required minLength={3} maxLength={1000} value={reason}
         onChange={event => setReason(event.target.value)} /></label>
-      <button className="button" type="button" disabled={busy || !reasonReady}
+      <button className="button" type="button" disabled={busy || !reasonReady || purchaseRequestBlocker !== null}
         onClick={() => void (mode === "restore" ? restore() : replace())}>
         {mode === "restore" ? "Confirmar restauração" : "Restaurar e substituir pela planilha"}
       </button>

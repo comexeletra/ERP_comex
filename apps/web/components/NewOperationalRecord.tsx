@@ -25,7 +25,7 @@ import { clearInvoiceCommandKey, invoiceCommandKey } from "../lib/invoice-comman
 import { persistSessionDraft } from "../lib/po-draft-storage";
 import { purchaseOrderNumberBlockMessage } from "../lib/po-lifecycle";
 import DeletedPurchaseOrderActions, { PurchaseOrderReplacePayload } from "./DeletedPurchaseOrderActions";
-import { classifyTotvsPurchaseRequest } from "../lib/totvs-purchase-request";
+import { classifyTotvsPurchaseRequest, totvsPurchaseRequestPayload } from "../lib/totvs-purchase-request";
 import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
   invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping";
 
@@ -343,6 +343,9 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     ? classifyTotvsPurchaseRequest({ importer, scNumber: totvsHeader.scNumber,
       supplierCode: totvsHeader.supplierCode, purchaseRequests })
     : { kind: "none" as const };
+  const totvsScPayload = totvsPurchaseRequestPayload({ classification: totvsScClassification,
+    selectedPurchaseRequestId: purchaseRequestId, newRequest: { requester: newScRequester, scDate: newScDate,
+      approvalDate: newScApprovalDate, commercialPlanReceivedDate: newScCommercialPlanReceivedDate } });
   const totvsSupplierOption = suppliers.find(item => normalizeLookup(item.code) === normalizeLookup(totvsHeader?.supplierCode));
   const totvsSupplierNameDiverges = Boolean(totvsHeader && totvsSupplierOption
     && normalizeLookup(totvsSupplierOption.name) !== normalizeLookup(totvsHeader.supplierName));
@@ -640,18 +643,9 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
 
   async function createPurchaseOrder(preflight: PurchaseOrderPreflight | null) {
     if (items.length === 0) throw new Error("Adicione ao menos um item à PO.");
-    if (totvsScClassification.kind === "supplier-mismatch") {
-      throw new Error(`A SC ${totvsScClassification.request.scNumber} já existe para o fornecedor ${totvsScClassification.request.supplierText ?? "não informado"}.`);
-    }
-    const shouldCreatePurchaseRequest = Boolean(totvsHeader && totvsScClassification.kind === "missing" && !purchaseRequestId);
-    if (shouldCreatePurchaseRequest && !newScRequester.trim()) {
-      throw new Error("Informe o solicitante da nova SC antes de salvar a PO.");
-    }
-    const newPurchaseRequest = shouldCreatePurchaseRequest && totvsHeader ? {
-      scNumber: totvsHeader.scNumber.trim(), requester: newScRequester.trim(),
-      scDate: newScDate || null, approvalDate: newScApprovalDate || null,
-      commercialPlanReceivedDate: newScCommercialPlanReceivedDate || null,
-    } : undefined;
+    if (totvsScPayload.blocker) throw new Error(totvsScPayload.blocker);
+    const newPurchaseRequest = totvsScPayload.choice && "newPurchaseRequest" in totvsScPayload.choice
+      ? totvsScPayload.choice.newPurchaseRequest : undefined;
     const requestFields = selectedPurchaseRequest ?? newPurchaseRequest;
     const effectiveCommonItemFields = requestFields
       ? { ...commonItemFields, ...purchaseRequestOperationalFields(requestFields) }
@@ -1149,7 +1143,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           {poNumberBlockMessage && <p className="notice error" role="alert">{poNumberBlockMessage}</p>}
           {poPreflight?.sameImporterDeletedPurchaseOrder && <DeletedPurchaseOrderActions
             purchaseOrder={poPreflight.sameImporterDeletedPurchaseOrder} canManageLifecycle={canManagePoLifecycle}
-            replacePayload={poReplacePayload} />}
+            replacePayload={poReplacePayload} purchaseRequest={totvsScPayload.choice}
+            purchaseRequestBlocker={totvsScPayload.blocker} />}
           {poPreflight && (!poPreflight.importerAcceptsNewPurchaseOrders || !poPreflight.supplierFound
             || poPreflight.missingProducts.length > 0 || poPreflight.missingUnits.length > 0 || poPreflight.missingCostCenters.length > 0)
             && <p className="notice error" role="alert">A pré-validação encontrou pendências no CNPJ, fornecedor, produto, UM ou centro de custo. Corrija os itens e tente novamente.</p>}
@@ -1162,9 +1157,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           </div>}
           <button className="button" disabled={saving || !importer || Boolean(createdPoId)
             || (totvsApplied && !totvsImportReady) || poPreflightBlocksSave
-            || (totvsHeader !== null && totvsScClassification.kind === "supplier-mismatch")
-            || (totvsHeader !== null && totvsScClassification.kind === "missing" && !purchaseRequestId
-              && !newScRequester.trim())}>
+            || totvsScPayload.blocker !== null}>
             {saving ? "Salvando pedido e produtos…" : "Salvar PO e produtos"}
           </button>
         </section>

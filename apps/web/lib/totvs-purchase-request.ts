@@ -33,3 +33,29 @@ export function classifyTotvsPurchaseRequest(options: {
     ? { kind: "match", request }
     : { kind: "supplier-mismatch", request };
 }
+
+export type PurchaseRequestPayloadChoice =
+  | { purchaseRequestId: string }
+  | { newPurchaseRequest: { scNumber: string; requester: string; scDate: string | null; approvalDate: string | null;
+    commercialPlanReceivedDate: string | null } };
+
+export function totvsPurchaseRequestPayload(options: {
+  classification: TotvsPurchaseRequestClassification;
+  selectedPurchaseRequestId: string;
+  newRequest: { requester: string; scDate: string; approvalDate: string; commercialPlanReceivedDate: string };
+}): { choice: PurchaseRequestPayloadChoice | null; blocker: string | null } {
+  const { classification, selectedPurchaseRequestId, newRequest } = options;
+  if (classification.kind === "supplier-mismatch") {
+    return { choice: null, blocker: `A SC ${classification.request.scNumber} já existe para o fornecedor `
+      + `${classification.request.supplierText ?? "não informado"}.` };
+  }
+  if (selectedPurchaseRequestId) return { choice: { purchaseRequestId: selectedPurchaseRequestId }, blocker: null };
+  if (classification.kind !== "missing") return { choice: null, blocker: null };
+  const requester = newRequest.requester.trim();
+  if (!requester) {
+    return { choice: null, blocker: `Informe o solicitante para criar a SC ${classification.scNumber}.` };
+  }
+  return { choice: { newPurchaseRequest: { scNumber: classification.scNumber, requester,
+    scDate: newRequest.scDate || null, approvalDate: newRequest.approvalDate || null,
+    commercialPlanReceivedDate: newRequest.commercialPlanReceivedDate || null } }, blocker: null };
+}

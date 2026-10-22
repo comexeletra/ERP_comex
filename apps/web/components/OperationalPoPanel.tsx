@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { apiFetch, hasPoLifecycleSupport, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
-import { purchaseOrderLifecycleActions, type PurchaseOrderLifecycleStatus } from "../lib/po-lifecycle";
+import { purchaseOrderActorLabel, purchaseOrderLifecycleActions, type PurchaseOrderLifecycleStatus } from "../lib/po-lifecycle";
 import { SearchableSelect } from "./SearchableSelect";
 import { blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsEditor,
   purchaseOrderCommonItemFields, purchaseOrderSpecificFields, purchaseOrderItemFields,
@@ -13,7 +13,7 @@ import { CatalogChoice, CatalogProductSelect, loadCatalogChoices, loadOperationa
 import PurchaseOrderScLink from "./PurchaseOrderScLink";
 import { loadPurchaseRequests, purchaseRequestOperationalFields, PurchaseRequestChoice, PurchaseRequestSelect } from "./PurchaseRequestSelect";
 import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
-import { formatUsDate } from "../lib/date-format";
+import { formatUsDate, formatUsDateTime } from "../lib/date-format";
 import { formatNumber } from "../lib/format-number";
 import { estimatedProductTotal, productPriceReferenceForCurrency, type ProductPriceReference } from "../lib/product-price-reference";
 import { parseTotvsPoXlsx } from "../lib/totvs-po-xlsx";
@@ -37,6 +37,7 @@ type OperationalPo = { id: string; importer: string; number: string; supplierTex
   orderDate: string | null; notes: string; sourceKind: string; version: string;
   lifecycleStatus?: PurchaseOrderLifecycleStatus;
   lifecycleChangedAt: string | null; lifecycleChangedBy: string | null; lifecycleReason: string | null;
+  createdAt?: string | null; lastRestore?: { at: string; by: string; reason: string | null } | null;
   purchaseRequestId: string | null;
   purchaseRequest: { id: string; importer: string; scNumber: string; supplierText: string | null; scDate: string | null; commercialPlanReceivedDate: string | null;
     requester: string; approvalDate: string | null } | null;
@@ -573,6 +574,12 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
     {!loading && data && <>
+      {(data.createdAt || data.lastRestore) && <p className="muted">
+        {data.createdAt && <>Criada em {formatUsDateTime(data.createdAt)}</>}
+        {data.createdAt && data.lastRestore && " · "}
+        {data.lastRestore && <>Restaurada em {formatUsDateTime(data.lastRestore.at)} por {purchaseOrderActorLabel(data.lastRestore.by)}
+          {data.lastRestore.reason && <> — {data.lastRestore.reason}</>}</>}
+      </p>}
       {!lifecycleSupported && <p className="notice" role="status">Ciclo da PO indisponível nesta versão da API.</p>}
       {lifecycleSupported && data.lifecycleStatus !== "ACTIVE" && <p className="notice" role="status">
         {data.lifecycleStatus === "CLOSED" ? "PO encerrada: alterações e novas alocações estão bloqueadas. Reabra com um motivo para continuar."
