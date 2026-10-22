@@ -3,7 +3,7 @@
 Every ERP database must receive the migrations required by the code deployed to
 it. As of 2026-10-21, `erp_po_totvs_test` and
 `erp_po_totvs_gatewayflow_20261010_test` are at M001–M034, while
-`erp_po_totvs_hml` is at M001–M065. HML contains business data and is no longer
+`erp_po_totvs_hml` is at M001–M066. HML contains business data and is no longer
 empty; the 2026-10-15 setup below records its initial state. See
 `deploy/hostinger/README.md` for M063 backup and validation evidence.
 
@@ -250,4 +250,4 @@ API/UI.
 
 `M064_purchase_order_lifecycle_restore.sql` permits only the planned transitions from CANCELLED or DELETED back to ACTIVE and clears lifecycle metadata on return to ACTIVE. On 2026-10-21, it passed a restored-copy transaction/rollback check and was applied only to `erp_po_totvs_hml`; the ledger is M001–M064. The Cycle 2 API workflow was exercised against the existing HML test PO with audit/outbox verification and unchanged PO counts. Production was not changed; release, backup, and rollback evidence is in `deploy/hostinger/README.md`.
 
-`M066_purchase_request_delete.sql` grants `DELETE` on `procurement.purchase_request` to the application roles when present. It also updates the PO business-field trigger to allow exactly one exception on a `DELETED` PO: clearing a non-null `purchase_request_id` while every other business field remains unchanged. The M063 immutability rule remains in force for all other edits. Validate both the grant and trigger behavior on a restored HML copy before applying M066 only to `erp_po_totvs_hml`; never apply it to production without separate approval. See `deploy/hostinger/validate-m066-on-copy.sql` and `deploy/hostinger/README.md` for the validation procedure and release evidence.
+`M066_purchase_request_delete.sql` grants `DELETE` on `procurement.purchase_request` to the application roles when present. It also updates the PO business-field trigger to allow exactly one exception on a `DELETED` PO: clearing a non-null `purchase_request_id` while every other business field remains unchanged. The M063 immutability rule remains in force for all other edits. On 2026-10-21, M066 passed `deploy/hostinger/validate-m066-on-copy.sql` on restored copy `erp_po_hml_m066_copy_20261022001454` and was applied only to `erp_po_totvs_hml`. The ledger is M001–M066; the SHA-256 is `17300c5eb50f6a6e5bc3388f3e0d6182a67cc7be343dad641c60eeea8160c433`. The pre-migration backup and release checks are in `deploy/hostinger/README.md`. Production was not changed.

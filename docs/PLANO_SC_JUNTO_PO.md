@@ -5,7 +5,7 @@
 | Data | 2026-10-21 |
 | Branch de trabalho | `homologacao` |
 | Ambiente de validação | HML (VPS `import-erp-hml-api` + banco `erp_po_totvs_hml`) e Preview Vercel |
-| Status | Aprovado para implementação; exceção estreita M066 autorizada |
+| Status | Concluído em homologação; Preview pronto, domínio estável protegido por SSO |
 
 ## Objetivo
 

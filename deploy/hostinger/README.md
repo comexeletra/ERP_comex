@@ -1,5 +1,59 @@
 # API ERP na VPS Hostinger
 
+## SC junto com PO e exclusão de SC no HML (2026-10-21)
+
+O código da Parte A e da Parte B foi publicado na branch `homologacao` no commit
+`83c35117045be3abc18212bab23db6df50dc931d`. Antes da migration, o banco
+`erp_po_totvs_hml` estava em M065, com 1 SC, 4 POs, 431 itens, 1 alocação,
+8.534 eventos de auditoria e 7.024 mensagens de outbox.
+
+O backup pré-M066 foi validado com `pg_restore --list` e restaurado em uma cópia
+descartável: `/var/backups/import-erp/erp_po_totvs_hml_m066_20261022T001454Z.dump`,
+466.238.795 bytes, SHA-256
+`14ea3841ba4e6d3b32cdb92f6eae0c1a535dbd70688178e8c2b5a19cbf0ac5a3`. A cópia
+`erp_po_hml_m066_copy_20261022001454` recebeu M066 e passou
+`deploy/hostinger/validate-m066-on-copy.sql`: o trigger permitiu limpar somente
+`purchase_request_id` de PO `DELETED`, recusou essa limpeza junto com alteração
+do fornecedor, recusou alteração de negócio sem limpar o vínculo e reverteu os
+testes. A cópia foi removida. O checksum M066 é
+`17300c5eb50f6a6e5bc3388f3e0d6182a67cc7be343dad641c60eeea8160c433`.
+
+M066 foi aplicada somente a `erp_po_totvs_hml`; o ledger ficou em M001–M066 e
+as contagens permaneceram iguais às anteriores à migration. A role
+`import_erp_hml_app` tem `DELETE` na tabela de SC e leitura da view de histórico.
+Nenhuma produção foi consultada ou alterada.
+
+A API HML está no release
+`/opt/import-erp/apps/api/hml-release-83c3511`, pelo drop-in
+`/etc/systemd/system/import-erp-hml-api.service.d/zzzzzzzzz-release-83c3511.conf`.
+O release anterior `hml-release-114fc1d`, o drop-in anterior e as instruções de
+rollback estão preservados em
+`/var/backups/import-erp/hml-sc-m066-83c3511-predeploy`. Para reverter somente
+o código, remova o drop-in novo, execute `systemctl daemon-reload` e reinicie
+`import-erp-hml-api`; mantenha M066 aplicada. O serviço está `active`, o health
+HTTPS respondeu 200 e o readiness sem sessão respondeu 401.
+
+O teste opt-in `apps/api/test/purchase-request-hml.integration.mjs` foi
+executado na API HML com a role de runtime e contexto sintético. Ele criou uma
+PO/SC `HMLVAL`, confirmou o bloqueio enquanto a PO estava ativa, excluiu a PO
+logicamente, desvinculou a PO e apagou a SC pela rota nova. O histórico DELETE
+ficou legível após a exclusão, e o mesmo número de SC pôde ser cadastrado e
+excluído novamente. A PO sintética
+`HMLVAL-PO-M066-B281E4F8F9C34CA4BF0A6DF51DF8C63B` permanece `DELETED`, sem SC,
+para preservar a auditoria/outbox; a SC sintética foi removida.
+
+Após o fluxo, HML ficou com 1 SC, 5 POs, 432 itens, 1 alocação, 8.543 eventos de
+auditoria e 7.033 mensagens de outbox. As observações de preço permaneceram em
+215; a observação de descrição TOTVS passou de 215 para 216 por causa do item
+sintético retido com a PO excluída.
+
+O deployment Preview Vercel do commit `83c35117045be3abc18212bab23db6df50dc931d`
+está `READY` na branch `homologacao`, em
+`https://erp-comex-5xedg1toc-eletra-comex.vercel.app`. O domínio estável
+`https://erp-comex-git-homologacao-eletra-comex.vercel.app` responde 302 para a
+proteção SSO da Vercel; por isso a interface no browser não foi validada.
+Nenhuma configuração da Vercel foi alterada.
+
 ## POs excluídas fora da checagem de duplicidade no HML (2026-10-21)
 
 O commit `114fc1d` faz a pré-validação e a criação de PO desconsiderarem POs com
