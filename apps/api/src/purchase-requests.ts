@@ -62,7 +62,12 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
       if (!id.success) return problem(reply, 400, "INVALID_ID", "Identificador inválido.");
       const scopes = request.authorizationContext?.importerScopes ?? [];
       const visible = await pool.query(
-        `SELECT id FROM procurement.purchase_request WHERE id = $1 AND importer = ANY($2::text[])`,
+        `SELECT id FROM procurement.purchase_request WHERE id = $1 AND importer = ANY($2::text[])
+         UNION ALL
+         SELECT aggregate_id AS id FROM audit.purchase_request_history
+         WHERE aggregate_id = $1 AND operation = 'DELETE'
+           AND old_value->>'importer' = ANY($2::text[])
+         LIMIT 1`,
         [id.data, scopes]);
       if (!visible.rows[0]) return problem(reply, 404, "RESOURCE_NOT_FOUND", "SC não encontrada.");
       const result = await pool.query(
@@ -283,5 +288,70 @@ export async function registerPurchaseRequestRoutes(app: FastifyInstance, pool: 
           beforeAudit, after, actor.actor, body.reason);
         return updated.rows[0];
       });
+    });
+
+  app.delete<{ Params: { id: string } }>("/api/v1/purchase-requests/:id",
+    { config: permissionConfig("purchase-requests.write") }, async (request, reply) => {
+      const id = uuid.safeParse(request.params.id);
+      const parsed = z.object({ reason }).strict().safeParse(request.body);
+      if (!id.success || !parsed.success) {
+        return problem(reply, 400, "INVALID_PURCHASE_REQUEST", "Informe o motivo da exclusão da SC.");
+      }
+      let expected: string;
+      let actor: ReturnType<typeof actorAndScopes>;
+      try {
+        expected = versionFrom(request);
+        actor = actorAndScopes(request);
+      } catch (error) {
+        if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message);
+        throw error;
+      }
+
+      return transaction(pool, reply, async client => {
+        const found = await client.query<Record<string, unknown>>(
+          `SELECT id, importer, sc_number, supplier_text, sc_date::text AS sc_date,
+                  commercial_plan_received_date::text AS commercial_plan_received_date,
+                  requester, approval_date::text AS approval_date, version::text AS version
+           FROM procurement.purchase_request
+           WHERE id = $1 AND importer = ANY($2::text[]) FOR UPDATE`, [id.data, actor.scopes]);
+        const before = found.rows[0];
+        if (!before) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "SC não encontrada.");
+        checkVersion(before, expected);
+
+        const linkedOrders = await client.query<Record<string, unknown>>(
+          `SELECT id, external_number, lifecycle_status
+           FROM procurement.purchase_order
+           WHERE purchase_request_id = $1 ORDER BY id FOR UPDATE`, [id.data]);
+        const blockingOrders = linkedOrders.rows.filter(po => po.lifecycle_status !== "DELETED");
+        if (blockingOrders.length) {
+          const numbers = blockingOrders.map(po => String(po.external_number)).join(", ");
+          throw new BusinessError(409, "PURCHASE_REQUEST_IN_USE",
+            `A SC ainda está vinculada às POs não excluídas: ${numbers}.`);
+        }
+
+        const beforeAudit = {
+          importer: before.importer,
+          scNumber: before.sc_number,
+          supplierText: before.supplier_text,
+          scDate: before.sc_date == null ? null : String(before.sc_date),
+          commercialPlanReceivedDate: before.commercial_plan_received_date == null
+            ? null : String(before.commercial_plan_received_date),
+          requester: before.requester,
+          approvalDate: before.approval_date == null ? null : String(before.approval_date),
+        };
+        const unlinked = await client.query<{ id: string }>(
+          `UPDATE procurement.purchase_order
+           SET purchase_request_id = NULL, version = version + 1, updated_at = now()
+           WHERE purchase_request_id = $1 AND lifecycle_status = 'DELETED'
+           RETURNING id`, [id.data]);
+        for (const po of unlinked.rows) {
+          await record(client, "PURCHASE_ORDER", po.id, "PURCHASE_ORDER", po.id, "UPDATE",
+            { purchaseRequestId: id.data }, { purchaseRequestId: null }, actor.actor, parsed.data.reason);
+        }
+
+        await client.query("DELETE FROM procurement.purchase_request WHERE id = $1", [id.data]);
+        await record(client, "PURCHASE_REQUEST", id.data, "PURCHASE_REQUEST", id.data, "DELETE",
+          beforeAudit, null, actor.actor, parsed.data.reason);
+      }, 204);
     });
 }

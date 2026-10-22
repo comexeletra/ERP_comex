@@ -14,6 +14,7 @@ import { registerSourceAuditRoutes } from "../dist/source-audit.js";
 import { registerAdminOutboxRoutes } from "../dist/admin-outbox.js";
 import { registerOperationalRoutes } from "../dist/operations.js";
 import { registerFollowupRoutes } from "../dist/followup.js";
+import { registerPurchaseRequestRoutes } from "../dist/purchase-requests.js";
 
 // Routes called by the Next.js app. Fastify's own router is checked, so a
 // missing registration or a changed method fails before a browser test.
@@ -27,6 +28,9 @@ const webRoutes = [
   ["GET", "/api/v1/purchase-orders/:id/history-items"],
   ["GET", "/api/v1/purchase-orders/:id/operational"],
   ["GET", "/api/v1/purchase-orders/invoice-candidates"],
+  ["GET", "/api/v1/purchase-requests"], ["POST", "/api/v1/purchase-requests"],
+  ["GET", "/api/v1/purchase-requests/:id/history"], ["PATCH", "/api/v1/purchase-requests/:id"],
+  ["DELETE", "/api/v1/purchase-requests/:id"],
   ["GET", "/api/v1/purchase-orders/:id/followup"],
   ["POST", "/api/v1/purchase-orders"], ["POST", "/api/v1/purchase-orders/complete"],
   ["POST", "/api/v1/purchase-orders/preflight"],
@@ -105,6 +109,7 @@ test("all Next.js API calls have a registered API method and path", async t => {
   await registerAdminOutboxRoutes(app, unusedPool);
   await registerOperationalRoutes(app, unusedPool);
   await registerFollowupRoutes(app, unusedPool);
+  await registerPurchaseRequestRoutes(app, unusedPool);
   for (const [method, url] of webRoutes) {
     assert.equal(app.hasRoute({ method, url }), true, `${method} ${url} is missing`);
   }
