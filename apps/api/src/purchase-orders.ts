@@ -84,7 +84,8 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
     if (!scopes.includes(body.importer)) return reply.code(404).send({ code: "RESOURCE_NOT_FOUND", detail: "Importadora fora do seu escopo." });
 
     const [duplicates, importerResult, supplierResult, productResult, unitResult, costCenterResult] = await Promise.all([
-      pool.query<{ importer: string; lifecycle_status: string }>(`SELECT importer,lifecycle_status
+      pool.query<{ id: string; importer: string; lifecycle_status: string; version: string; source_kind: string }>(
+        `SELECT id,importer,lifecycle_status,version::text AS version,source_kind
         FROM procurement.purchase_order
         WHERE normalized_number=upper(btrim($1::text)) AND importer=ANY($2::text[]) ORDER BY importer`, [body.number, scopes]),
       pool.query<{ cnpj: string | null }>(`SELECT cnpj FROM catalog.operational_value
@@ -120,13 +121,17 @@ export async function registerPurchaseOrderReadRoutes(app: FastifyInstance, pool
     const costCenterSet = new Set(costCenterResult.rows.map(row => row.normalized_value));
     const duplicateImporters = [...new Set(duplicates.rows
       .filter(row => row.lifecycle_status !== "DELETED").map(row => row.importer))];
+    const deletedInImporter = duplicates.rows.find(row => row.importer === body.importer
+      && row.lifecycle_status === "DELETED");
     const cnpj = importerResult.rows[0]?.cnpj ?? null;
     reply.header("cache-control", "no-store");
     return {
       importerAcceptsNewPurchaseOrders: /^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}$/u.test(cnpj ?? ""),
       sameImporterDuplicate: duplicateImporters.includes(body.importer),
-      sameImporterDeleted: duplicates.rows.some(row => row.importer === body.importer
-        && row.lifecycle_status === "DELETED"),
+      sameImporterDeleted: Boolean(deletedInImporter),
+      sameImporterDeletedPurchaseOrder: deletedInImporter ? { id: deletedInImporter.id,
+        version: deletedInImporter.version,
+        replaceSupported: deletedInImporter.source_kind === "MANUAL_TOTVS_REFERENCE" } : null,
       otherImporterDuplicates: duplicateImporters.filter(importer => importer !== body.importer),
       supplierFound: supplierResult.rows.length > 0,
       missingProducts: body.productCodes.filter((value, index) => !productSet.has(normalized(body.productCodes)[index]!)),

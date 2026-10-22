@@ -43,6 +43,8 @@ const webRoutes = [
   ["DELETE", "/api/v1/purchase-orders/:id"],
   ["POST", "/api/v1/purchase-orders/:id/reimport/preview"],
   ["POST", "/api/v1/purchase-orders/:id/reimport"],
+  ["POST", "/api/v1/purchase-orders/:id/replace/preview"],
+  ["POST", "/api/v1/purchase-orders/:id/replace"],
   ["POST", "/api/v1/purchase-orders/:id/items"],
   ["POST", "/api/v1/purchase-orders/:id/items/:itemId/remove"],
   ["POST", "/api/v1/purchase-orders/:id/items/complete"],

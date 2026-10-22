@@ -49,6 +49,22 @@ const purchaseOrderReimportBody = purchaseOrderReimportFields.extend({
   reason: z.string().trim().min(3).max(1000),
 }).strict().superRefine(validateUniqueReimportRows);
 const purchaseOrderReimportPreviewBody = purchaseOrderReimportFields.superRefine(validateUniqueReimportRows);
+const purchaseOrderReplaceFields = z.object({
+  header: z.object({ number: z.string().trim().min(1).max(80),
+    supplierCode: z.string().trim().min(1).max(240) }).strict(),
+  fileName: z.string().trim().min(1).max(255),
+  fileSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+  currency: z.string().regex(/^[A-Z]{3}$/u),
+  items: z.array(z.object({ externalLineReference: z.string().trim().min(1).max(80),
+    productCode: z.string().trim().min(1).max(120), description: z.string().trim().min(1).max(1000),
+    orderedQuantity: quantity, unitPrice: nonnegative, unit: z.string().trim().min(1).max(32),
+    costCenter: z.string().trim().max(80).nullable() }).strict()).min(1).max(500),
+}).strict();
+const purchaseOrderReplacePreviewBody = purchaseOrderReplaceFields.superRefine(validateUniqueReimportRows);
+const purchaseOrderReplaceBody = purchaseOrderReplaceFields.extend({
+  reason: z.string().trim().min(3).max(1000),
+}).strict().superRefine(validateUniqueReimportRows);
+type PurchaseOrderReplaceBody = z.infer<typeof purchaseOrderReplaceFields>;
 export const createPo = poFields.extend({
   importer: z.string().trim().min(1).max(120),
   supplierText: z.string().trim().min(1).max(240),
@@ -510,6 +526,70 @@ type PurchaseOrderReimportCurrentRow = Record<string, unknown> & {
   ordered_quantity: string; unit_price: string | null; currency_code: string | null; source_status: string | null;
 };
 
+function reimportLineChanges(current: PurchaseOrderReimportCurrentRow, incoming: PurchaseOrderReimportRow,
+  currency: string) {
+  const changes: Record<string, { before: string | null; after: string }> = {};
+  if (String(current.description) !== incoming.description) {
+    changes.description = { before: String(current.description), after: incoming.description };
+  }
+  if (decimalUnits(String(current.ordered_quantity)) !== decimalUnits(incoming.orderedQuantity)) {
+    changes.orderedQuantity = { before: String(current.ordered_quantity), after: incoming.orderedQuantity };
+  }
+  const samePrice = current.unit_price === null ? false
+    : decimalUnits(String(current.unit_price)) === decimalUnits(incoming.unitPrice);
+  if (!samePrice) changes.unitPrice = { before: current.unit_price === null ? null : String(current.unit_price), after: incoming.unitPrice };
+  if (String(current.currency_code ?? "").trim().toUpperCase() !== currency) {
+    changes.currency = { before: current.currency_code === null ? null : String(current.currency_code).trim(), after: currency };
+  }
+  return changes;
+}
+
+const isCancelledItem = (row: PurchaseOrderReimportCurrentRow) =>
+  ["CANCELLED", "CANCELED"].includes(String(row.source_status ?? "").toUpperCase());
+
+type PurchaseOrderReplaceRow = PurchaseOrderReimportRow & { unit: string; costCenter: string | null };
+
+export function calculatePurchaseOrderReplacePlan(currentRows: PurchaseOrderReimportCurrentRow[],
+  incomingRows: PurchaseOrderReplaceRow[], currency: string) {
+  const currentByReference = new Map(currentRows.filter(row => row.external_line_reference)
+    .map(row => [String(row.external_line_reference).trim(), row]));
+  const incomingReferences = new Set(incomingRows.map(row => row.externalLineReference.trim()));
+  const plan = {
+    updated: [] as Array<{ itemId: string; externalLineReference: string; productCode: string;
+      changes: Record<string, { before: string | null; after: string }> }>,
+    added: [] as Array<{ externalLineReference: string; productCode: string }>,
+    removed: [] as Array<{ itemId: string; externalLineReference: string; productCode: string }>,
+    reactivated: [] as Array<{ itemId: string; externalLineReference: string; productCode: string }>,
+    productChanged: [] as Array<{ itemId: string; externalLineReference: string; currentProductCode: string;
+      productCode: string }>,
+  };
+  for (const incoming of incomingRows) {
+    const externalLineReference = incoming.externalLineReference.trim();
+    const current = currentByReference.get(externalLineReference);
+    if (!current) {
+      plan.added.push({ externalLineReference, productCode: incoming.productCode });
+    } else if (isCancelledItem(current)) {
+      plan.reactivated.push({ itemId: current.id, externalLineReference, productCode: incoming.productCode });
+    } else if (normalizedCode(current.product_code) !== normalizedCode(incoming.productCode)) {
+      plan.productChanged.push({ itemId: current.id, externalLineReference,
+        currentProductCode: String(current.product_code), productCode: incoming.productCode });
+    } else {
+      const changes = reimportLineChanges(current, incoming, currency);
+      if (Object.keys(changes).length) {
+        plan.updated.push({ itemId: current.id, externalLineReference, productCode: String(current.product_code), changes });
+      }
+    }
+  }
+  for (const current of currentRows) {
+    if (isCancelledItem(current)) continue;
+    const reference = current.external_line_reference ? String(current.external_line_reference).trim() : "";
+    if (reference && incomingReferences.has(reference)) continue;
+    plan.removed.push({ itemId: current.id, productCode: String(current.product_code),
+      externalLineReference: reference || (current.line_number ? `linha ${String(current.line_number)} sem Item` : "item sem Item") });
+  }
+  return plan;
+}
+
 export function calculatePurchaseOrderReimportDiff(currentRows: PurchaseOrderReimportCurrentRow[],
   incomingRows: PurchaseOrderReimportRow[], currency: string) {
   const currentByReference = new Map(currentRows.filter(row => row.external_line_reference)
@@ -538,25 +618,68 @@ export function calculatePurchaseOrderReimportDiff(currentRows: PurchaseOrderRei
         current: String(current.product_code), incoming: incoming.productCode });
       continue;
     }
-    const changes: Record<string, { before: string | null; after: string }> = {};
-    if (String(current.description) !== incoming.description) {
-      changes.description = { before: String(current.description), after: incoming.description };
-    }
-    if (decimalUnits(String(current.ordered_quantity)) !== decimalUnits(incoming.orderedQuantity)) {
-      changes.orderedQuantity = { before: String(current.ordered_quantity), after: incoming.orderedQuantity };
-    }
-    const samePrice = current.unit_price === null ? false
-      : decimalUnits(String(current.unit_price)) === decimalUnits(incoming.unitPrice);
-    if (!samePrice) changes.unitPrice = { before: current.unit_price === null ? null : String(current.unit_price), after: incoming.unitPrice };
-    if (String(current.currency_code ?? "").trim().toUpperCase() !== currency) {
-      changes.currency = { before: current.currency_code === null ? null : String(current.currency_code).trim(), after: currency };
-    }
+    const changes = reimportLineChanges(current, incoming, currency);
     if (Object.keys(changes).length) differences.push({ externalLineReference: incoming.externalLineReference,
       productCode: String(current.product_code), changes });
   }
   return { differences, missingReferences, unknownReferences, cancelledReferences, productCodeMismatches,
     canApply: !missingReferences.length && !unknownReferences.length && !cancelledReferences.length
       && !productCodeMismatches.length };
+}
+
+function assertPoDeleted(po: Record<string, unknown>) {
+  if (po.lifecycle_status !== "DELETED") {
+    throw new BusinessError(409, "PO_NOT_DELETED", "Somente uma PO excluída pode ser substituída pela planilha.");
+  }
+}
+
+async function preparePurchaseOrderReplace(client: PoolClient, po: Record<string, unknown>, body: PurchaseOrderReplaceBody) {
+  const currentItems = await client.query<PurchaseOrderReimportCurrentRow>(
+    `SELECT * FROM procurement.purchase_order_item WHERE purchase_order_id=$1 ORDER BY line_number FOR UPDATE`, [po.id]);
+  const plan = calculatePurchaseOrderReplacePlan(currentItems.rows, body.items, body.currency);
+  const blockers: Array<{ code: string; message: string }> = [];
+  if (normalizePoNumber(body.header.number) !== normalizePoNumber(String(po.external_number))) {
+    blockers.push({ code: "PO_REPLACE_NUMBER_MISMATCH", message: "O número do pedido na planilha não corresponde a esta PO." });
+  }
+  if (po.source_kind !== "MANUAL_TOTVS_REFERENCE") {
+    blockers.push({ code: "PO_REPLACE_UNSUPPORTED_SOURCE", message: "A substituição está disponível para POs cadastradas pelo export TOTVS." });
+  }
+  if (normalizedCode(po.supplier_text) !== normalizedCode(body.header.supplierCode)) {
+    blockers.push({ code: "PO_REPLACE_SUPPLIER_MISMATCH", message: `O fornecedor da planilha (${body.header.supplierCode}) `
+      + `é diferente do fornecedor da PO (${String(po.supplier_text ?? "sem fornecedor")}).` });
+  }
+  const touched = [...plan.removed, ...plan.productChanged];
+  if (touched.length) {
+    const allocated = await client.query<{ item_id: string }>(
+      `SELECT DISTINCT allocation.purchase_order_item_id::text AS item_id FROM procurement.po_item_allocation AS allocation
+       WHERE allocation.purchase_order_item_id = ANY($1::uuid[]) AND allocation.status='ACTIVE'`,
+      [touched.map(line => line.itemId)]);
+    const allocatedIds = new Set(allocated.rows.map(row => row.item_id));
+    const references = touched.filter(line => allocatedIds.has(line.itemId)).map(line => line.externalLineReference);
+    if (references.length) {
+      blockers.push({ code: "PO_REPLACE_ITEM_HAS_ACTIVE_ALLOCATIONS",
+        message: `Linhas com IP alocado não podem ser removidas nem trocar de produto: ${references.slice(0, 20).join(", ")}.` });
+    }
+  }
+  const incomingByReference = new Map(body.items.map(item => [item.externalLineReference.trim(), item]));
+  const entering = [...plan.added, ...plan.reactivated, ...plan.productChanged]
+    .map(line => incomingByReference.get(line.externalLineReference)!);
+  const withoutCostCenter = entering.filter(item => !item.costCenter?.trim()).map(item => item.externalLineReference);
+  if (withoutCostCenter.length) {
+    blockers.push({ code: "PO_REPLACE_COST_CENTER_REQUIRED",
+      message: `Informe o centro de custo das linhas que entram na PO: ${withoutCostCenter.slice(0, 20).join(", ")}.` });
+  }
+  let productNcms = new Map<string, string | null>();
+  if (entering.length) {
+    try {
+      productNcms = await validatePurchaseOrderItems(client, entering.map(item => ({
+        productCode: item.productCode, unit: item.unit, costCenter: item.costCenter })));
+    } catch (error) {
+      if (!(error instanceof BusinessError)) throw error;
+      blockers.push({ code: error.code, message: error.message });
+    }
+  }
+  return { plan, blockers, currentItems: currentItems.rows, incomingByReference, productNcms };
 }
 
 type PurchaseOrderLifecycleAction = "CANCEL" | "CLOSE" | "REOPEN" | "DELETE" | "REACTIVATE" | "RESTORE";
@@ -1286,6 +1409,113 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           `UPDATE procurement.purchase_order SET version=version+1,updated_at=now() WHERE id=$1 RETURNING version::text`, [id.data]);
         return { id: id.data, updatedCount: diff.differences.length,
           version: changedPo.rows[0]?.version ?? String(Number(currentPo.version) + 1), differences: diff.differences };
+      });
+    });
+
+  app.post<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/replace/preview",
+    { config: permissionConfig("purchase-orders.lifecycle.manage") }, async (request, reply) => {
+      const id = uuid.safeParse(request.params.id);
+      const parsed = purchaseOrderReplacePreviewBody.safeParse(request.body);
+      if (!id.success || !parsed.success) return problem(reply, 400, "INVALID_PO_REPLACE", "Revise a planilha de substituição.");
+      let auth: ReturnType<typeof actorAndScopes>;
+      try { auth = actorAndScopes(request); }
+      catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
+      return transaction(pool, reply, async client => {
+        const po = await lockedPo(client, id.data, auth.scopes);
+        assertPoDeleted(po);
+        const { plan, blockers } = await preparePurchaseOrderReplace(client, po, parsed.data);
+        return { version: String(po.version), ...plan, blockers, canApply: blockers.length === 0 };
+      });
+    });
+
+  app.post<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/replace",
+    { config: permissionConfig("purchase-orders.lifecycle.manage") }, async (request, reply) => {
+      const id = uuid.safeParse(request.params.id);
+      const parsed = purchaseOrderReplaceBody.safeParse(request.body);
+      if (!id.success || !parsed.success) return problem(reply, 400, "INVALID_PO_REPLACE", "Revise a planilha e o motivo da substituição.");
+      let auth: ReturnType<typeof actorAndScopes>; let expected: string;
+      try { auth = actorAndScopes(request); expected = versionFrom(request); }
+      catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
+      return transaction(pool, reply, async client => {
+        const po = await lockedPo(client, id.data, auth.scopes);
+        checkVersion(po, expected);
+        assertPoDeleted(po);
+        const body = parsed.data;
+        const { plan, blockers, currentItems, incomingByReference, productNcms } =
+          await preparePurchaseOrderReplace(client, po, body);
+        if (blockers.length) {
+          throw new BusinessError(409, "PO_REPLACE_BLOCKED",
+            `A substituição foi bloqueada. ${blockers.map(blocker => blocker.message).join(" ")}`);
+        }
+        await changePurchaseOrderLifecycle(client, id.data, expected, auth, "RESTORE", body.reason);
+        await setPurchaseOrderObservationActor(client, auth.actor);
+        const sourceFile = { fileName: body.fileName, fileSha256: body.fileSha256 };
+        const currentById = new Map(currentItems.map(item => [item.id, item]));
+        const incomingFor = (reference: string) => incomingByReference.get(reference)!;
+
+        for (const line of plan.updated) {
+          const incoming = incomingFor(line.externalLineReference);
+          const updated = await client.query<Record<string, unknown>>(
+            `UPDATE procurement.purchase_order_item SET description=$2, ordered_quantity=$3,
+              unit_price=$4, currency_code=$5, updated_at=now() WHERE id=$1 RETURNING *`,
+            [line.itemId, incoming.description, incoming.orderedQuantity, incoming.unitPrice, body.currency]);
+          await record(client, "PURCHASE_ORDER", id.data, "PURCHASE_ORDER_ITEM", line.itemId, "UPDATE",
+            currentById.get(line.itemId), { ...updated.rows[0], sourceFile }, auth.actor, body.reason);
+        }
+
+        const purchaseRequest = po.purchase_request_id ? await validatePurchaseRequest(client,
+          String(po.purchase_request_id), String(po.importer), String(po.supplier_text ?? "")) : null;
+        const scEntries = Object.entries(purchaseRequestOperationalFields(purchaseRequest));
+        let nextLineNumber = Math.max(0, ...currentItems.map(item => Number(item.line_number) || 0)) + 1;
+        for (const line of plan.added) {
+          const incoming = incomingFor(line.externalLineReference);
+          const itemId = randomUUID(); const lineNumber = nextLineNumber++;
+          const ncm = productNcms.get(normalizedCode(incoming.productCode)) ?? null;
+          await client.query(
+            `INSERT INTO procurement.purchase_order_item
+             (id,purchase_order_id,line_number,external_line_reference,product_code,description,
+              ordered_quantity,unit,unit_price,currency_code,ncm,cost_center)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+            [itemId, id.data, lineNumber, line.externalLineReference, incoming.productCode, incoming.description,
+              incoming.orderedQuantity, incoming.unit, incoming.unitPrice, body.currency, ncm, incoming.costCenter]);
+          if (scEntries.length) {
+            const sql = scEntries.map(([field], index) => `${commonItemColumns[field]}=$${index + 2}`).join(",");
+            await client.query(`UPDATE procurement.purchase_order_item SET ${sql},updated_at=now() WHERE id=$1`,
+              [itemId, ...scEntries.map(([, value]) => value)]);
+          }
+          await record(client, "PURCHASE_ORDER", id.data, "PURCHASE_ORDER_ITEM", itemId, "CREATE", null,
+            { ...incoming, lineNumber, currency: body.currency, ncm, ...Object.fromEntries(scEntries), sourceFile },
+            auth.actor, body.reason);
+        }
+
+        for (const line of plan.removed) {
+          const updated = await client.query<Record<string, unknown>>(
+            `UPDATE procurement.purchase_order_item SET source_status='CANCELLED',updated_at=now()
+              WHERE id=$1 RETURNING *`, [line.itemId]);
+          await record(client, "PURCHASE_ORDER", id.data, "PURCHASE_ORDER_ITEM", line.itemId, "REMOVE",
+            currentById.get(line.itemId), { ...updated.rows[0], sourceFile }, auth.actor, body.reason);
+        }
+
+        for (const line of [...plan.reactivated, ...plan.productChanged]) {
+          const incoming = incomingFor(line.externalLineReference);
+          const ncm = productNcms.get(normalizedCode(incoming.productCode)) ?? null;
+          const updated = await client.query<Record<string, unknown>>(
+            `UPDATE procurement.purchase_order_item SET product_code=$2,description=$3,ordered_quantity=$4,unit=$5,
+              unit_price=$6,currency_code=$7,
+              ncm=coalesce($8::text, CASE WHEN upper(btrim(product_code))=upper(btrim($2::text)) THEN ncm END),
+              cost_center=coalesce($9::text,cost_center),source_status=NULL,updated_at=now()
+             WHERE id=$1 RETURNING *`,
+            [line.itemId, incoming.productCode, incoming.description, incoming.orderedQuantity, incoming.unit,
+              incoming.unitPrice, body.currency, ncm, incoming.costCenter]);
+          await record(client, "PURCHASE_ORDER", id.data, "PURCHASE_ORDER_ITEM", line.itemId, "UPDATE",
+            currentById.get(line.itemId), { ...updated.rows[0], sourceFile }, auth.actor, body.reason);
+        }
+
+        const changedPo = await client.query<{ version: string }>(
+          `UPDATE procurement.purchase_order SET version=version+1,updated_at=now() WHERE id=$1 RETURNING version::text`, [id.data]);
+        return { id: id.data, version: changedPo.rows[0]?.version,
+          counts: { updated: plan.updated.length, added: plan.added.length, removed: plan.removed.length,
+            reactivated: plan.reactivated.length, productChanged: plan.productChanged.length } };
       });
     });
 
