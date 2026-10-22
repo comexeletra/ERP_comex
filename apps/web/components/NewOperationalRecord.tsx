@@ -24,6 +24,7 @@ import { ChinaInvoiceDraft, parseChinaInvoiceXlsx } from "../lib/china-invoice-x
 import { clearInvoiceCommandKey, invoiceCommandKey } from "../lib/invoice-command-key";
 import { persistSessionDraft } from "../lib/po-draft-storage";
 import { purchaseOrderNumberBlockMessage } from "../lib/po-lifecycle";
+import DeletedPurchaseOrderActions, { PurchaseOrderReplacePayload } from "./DeletedPurchaseOrderActions";
 import { classifyTotvsPurchaseRequest } from "../lib/totvs-purchase-request";
 import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
   invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping";
@@ -135,7 +136,9 @@ async function readResponse<T>(response: Response): Promise<T> {
 }
 type InvoicePreflight = { ipNumbers: string[]; ipReferenceOtherImporter: boolean };
 type PurchaseOrderPreflight = { importerAcceptsNewPurchaseOrders: boolean; sameImporterDuplicate: boolean;
-  sameImporterDeleted?: boolean; otherImporterDuplicates: string[]; supplierFound: boolean; missingProducts: string[];
+  sameImporterDeleted?: boolean;
+  sameImporterDeletedPurchaseOrder?: { id: string; version: string; replaceSupported: boolean } | null;
+  otherImporterDuplicates: string[]; supplierFound: boolean; missingProducts: string[];
   missingUnits: string[]; missingCostCenters: string[] };
 async function loadInvoicePreflight(importer: string, draft: ChinaInvoiceDraft): Promise<InvoicePreflight> {
   if (!importer || !draft.invoiceNumber.trim() || !draft.exporterText.trim()) {
@@ -366,6 +369,14 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   const poDuplicateNeedsConfirmation = Boolean(poPreflight?.otherImporterDuplicates.length
     && (!confirmDuplicateNumber || duplicateNumberJustification.trim().length < 3));
   const poNumberBlockMessage = poPreflight ? purchaseOrderNumberBlockMessage(poPreflight, number) : null;
+  const canManagePoLifecycle = roles.some(role => role === "Master" || role === "Administrador");
+  const poReplacePayload: PurchaseOrderReplacePayload | null = totvsHeader && totvsRows.length && totvsImportHash ? {
+    header: { number: totvsHeader.number, supplierCode: totvsHeader.supplierCode }, fileName: totvsFileName,
+    fileSha256: totvsImportHash, currency: totvsCurrency,
+    items: totvsRows.map(row => ({ externalLineReference: row.externalLineReference, productCode: row.productCode,
+      description: row.description, orderedQuantity: row.orderedQuantity, unitPrice: row.unitPrice, unit: row.unit,
+      costCenter: row.costCenter.trim() || null })),
+  } : null;
   const poPreflightBlocksSave = Boolean(poNumberBlockMessage || poPreflightHasCatalogIssues || poDuplicateNeedsConfirmation);
   const allocatedPoIds = new Set(invoiceMatches.flatMap(match => {
     const candidate = match.candidates.find(value => value.id === match.itemId);
@@ -1136,6 +1147,9 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           <h2>Confirmação</h2>
           {createdPoId && <p className="notice error">A PO já foi criada. <Link className="text-link" href={`/purchase-orders/${createdPoId}`}>Abrir a PO e continuar o preenchimento</Link>.</p>}
           {poNumberBlockMessage && <p className="notice error" role="alert">{poNumberBlockMessage}</p>}
+          {poPreflight?.sameImporterDeletedPurchaseOrder && <DeletedPurchaseOrderActions
+            purchaseOrder={poPreflight.sameImporterDeletedPurchaseOrder} canManageLifecycle={canManagePoLifecycle}
+            replacePayload={poReplacePayload} />}
           {poPreflight && (!poPreflight.importerAcceptsNewPurchaseOrders || !poPreflight.supplierFound
             || poPreflight.missingProducts.length > 0 || poPreflight.missingUnits.length > 0 || poPreflight.missingCostCenters.length > 0)
             && <p className="notice error" role="alert">A pré-validação encontrou pendências no CNPJ, fornecedor, produto, UM ou centro de custo. Corrija os itens e tente novamente.</p>}

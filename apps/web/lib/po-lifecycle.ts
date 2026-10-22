@@ -20,7 +20,11 @@ export function purchaseOrderNumberBlockMessage(
 ): string | null {
   if (preflight.sameImporterDuplicate) return `Já existe uma PO ${number} nesta importadora.`;
   if (preflight.sameImporterDeleted) {
-    return `A PO ${number} desta importadora foi excluída. Restaure-a pela carteira (filtro Excluídas) em vez de criar outra com o mesmo número.`;
+    return `A PO ${number} desta importadora foi excluída. Restaure-a ou substitua-a pela planilha em vez de criar outra com o mesmo número.`;
   }
   return null;
+}
+
+export function deletedPurchaseOrderActions(canManageLifecycle: boolean, replaceSupported: boolean) {
+  return { restore: canManageLifecycle, replace: canManageLifecycle && replaceSupported, needsManager: !canManageLifecycle };
 }

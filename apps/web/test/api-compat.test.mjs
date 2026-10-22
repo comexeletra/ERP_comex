@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { hasIpLifecycleSupport, hasPoLifecycleSupport, isMissingApiRoute } from "../lib/api.ts";
-import { purchaseOrderLifecycleActions, purchaseOrderNumberBlockMessage } from "../lib/po-lifecycle.ts";
+import { deletedPurchaseOrderActions, purchaseOrderLifecycleActions, purchaseOrderNumberBlockMessage } from "../lib/po-lifecycle.ts";
 
 test("recognizes the API's custom not-found response for the legacy PO fallback", () => {
   assert.equal(isMissingApiRoute(404, { error: "Recurso não encontrado." }), true);
@@ -58,4 +58,12 @@ test("blocks a new PO when the number is active or deleted in the same importer"
   assert.match(purchaseOrderNumberBlockMessage({ sameImporterDuplicate: false, sameImporterDeleted: true }, "030201"),
     /PO 030201 desta importadora foi excluída.*Restaure-a/u);
   assert.equal(purchaseOrderNumberBlockMessage({ sameImporterDuplicate: false }, "030201"), null);
+});
+
+test("offers restore and replace for a deleted PO only to lifecycle managers", () => {
+  assert.deepEqual(deletedPurchaseOrderActions(true, true), { restore: true, replace: true, needsManager: false });
+  assert.deepEqual(deletedPurchaseOrderActions(true, false), { restore: true, replace: false, needsManager: false });
+  assert.deepEqual(deletedPurchaseOrderActions(false, true), { restore: false, replace: false, needsManager: true });
+  assert.match(purchaseOrderNumberBlockMessage({ sameImporterDuplicate: false, sameImporterDeleted: true }, "030201"),
+    /Restaure-a ou substitua-a pela planilha/u);
 });
