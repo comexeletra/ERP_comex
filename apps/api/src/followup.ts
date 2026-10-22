@@ -124,7 +124,7 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
       if (!parsed.success) return problem(reply, 400, "INVALID_PO", "Revise a PO e os produtos.");
       if (parsed.data.header.newPurchaseRequest && parsed.data.header.purchaseRequestId) {
         return problem(reply, 400, "PURCHASE_REQUEST_CHOICE_CONFLICT",
-          "Informe uma SC existente ou os dados para criar uma nova, nÃ£o os dois.");
+          "Informe uma SC existente ou os dados para criar uma nova, não os dois.");
       }
       const operational = parsed.data.items.map(item => Object.keys(item.fields).length
         ? validateFields(item.fields, itemFields) : {});

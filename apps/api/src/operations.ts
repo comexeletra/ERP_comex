@@ -123,6 +123,11 @@ const updateAllocation = z.object({
 const cancelAllocation = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
 const closeProcess = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
 const purchaseOrderLifecycleReason = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
+const purchaseOrderPurchaseRequestBody = z.object({
+  scNumber: z.string().trim().min(1).max(80), requester: z.string().trim().min(1).max(160),
+  scDate: z.iso.date().nullable(), approvalDate: z.iso.date().nullable(),
+  commercialPlanReceivedDate: z.iso.date().nullable(), reason: z.string().trim().min(3).max(1000),
+}).strict();
 const cancelProcess = z.object({
   reason: z.string().trim().min(3).max(1000),
   purchaseOrders: z.array(z.discriminatedUnion("destinationType", [
@@ -507,9 +512,9 @@ export async function resolvePurchaseRequestForCompletePo(client: PoolClient, in
       [input.importer, input.scNumber]);
     id = existing.rows[0]?.id;
   }
-  if (!id) throw new BusinessError(409, "PURCHASE_REQUEST_RESOLUTION_FAILED", "NÃ£o foi possÃ­vel localizar a SC para esta PO.");
+  if (!id) throw new BusinessError(409, "PURCHASE_REQUEST_RESOLUTION_FAILED", "Não foi possível localizar a SC para esta PO.");
   const purchaseRequest = await validatePurchaseRequest(client, id, input.importer, input.supplierText);
-  return { id, purchaseRequest };
+  return { id, purchaseRequest, created: Boolean(inserted.rows[0]?.id) };
 }
 export function checkVersion(row: Record<string, unknown>, expected: string) {
   if (`"${row.version}"` !== expected) {
@@ -1516,6 +1521,50 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         return { id: id.data, version: changedPo.rows[0]?.version,
           counts: { updated: plan.updated.length, added: plan.added.length, removed: plan.removed.length,
             reactivated: plan.reactivated.length, productChanged: plan.productChanged.length } };
+      });
+    });
+
+  app.post<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/purchase-request",
+    { config: permissionConfig("purchase-orders.write") }, async (request, reply) => {
+      const id = uuid.safeParse(request.params.id);
+      const parsed = purchaseOrderPurchaseRequestBody.safeParse(request.body);
+      if (!id.success || !parsed.success) {
+        return problem(reply, 400, "INVALID_PO_PURCHASE_REQUEST", "Informe o número da SC, o solicitante e o motivo.");
+      }
+      let auth: ReturnType<typeof actorAndScopes>; let expected: string;
+      try { auth = actorAndScopes(request); expected = versionFrom(request); }
+      catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
+      return transaction(pool, reply, async client => {
+        const po = await lockedPo(client, id.data, auth.scopes);
+        assertPoActive(po);
+        checkVersion(po, expected);
+        if (po.purchase_request_id) {
+          throw new BusinessError(409, "PO_ALREADY_HAS_PURCHASE_REQUEST", "Esta PO já tem uma SC vinculada.");
+        }
+        const supplierText = typeof po.supplier_text === "string" ? po.supplier_text.trim() : "";
+        if (!supplierText) {
+          throw new BusinessError(409, "PO_SUPPLIER_REQUIRED", "Informe o fornecedor da PO antes de vincular a SC.");
+        }
+        const { reason, ...scData } = parsed.data;
+        const { id: purchaseRequestId, purchaseRequest, created } = await resolvePurchaseRequestForCompletePo(client, {
+          importer: String(po.importer), supplierText, actor: auth.actor, reason, ...scData });
+        const updated = await client.query<{ version: string }>(
+          `UPDATE procurement.purchase_order SET purchase_request_id=$2,version=version+1,updated_at=now()
+           WHERE id=$1 RETURNING version::text`, [id.data, purchaseRequestId]);
+        await record(client, "PURCHASE_ORDER", id.data, "PURCHASE_ORDER", id.data, "UPDATE",
+          { purchaseRequestId: null }, { purchaseRequestId }, auth.actor, reason);
+        const scFields = purchaseRequestOperationalFields(purchaseRequest);
+        const scEntries = Object.entries(scFields);
+        const sql = scEntries.map(([field], index) => `${commonItemColumns[field]}=$${index + 2}`).join(",");
+        const items = await client.query<{ id: string }>(
+          `SELECT id FROM procurement.purchase_order_item WHERE purchase_order_id=$1 ORDER BY line_number FOR UPDATE`, [id.data]);
+        for (const item of items.rows) {
+          await client.query(`UPDATE procurement.purchase_order_item SET ${sql},updated_at=now() WHERE id=$1`,
+            [item.id, ...scEntries.map(([, value]) => value)]);
+          await record(client, "PURCHASE_ORDER", id.data, "PURCHASE_ORDER_ITEM", item.id,
+            "FOLLOWUP_UPDATE", null, scFields, auth.actor, reason);
+        }
+        return { purchaseRequestId, created, version: updated.rows[0]?.version };
       });
     });
 
