@@ -24,6 +24,7 @@ import { ChinaInvoiceDraft, parseChinaInvoiceXlsx } from "../lib/china-invoice-x
 import { clearInvoiceCommandKey, invoiceCommandKey } from "../lib/invoice-command-key";
 import { persistSessionDraft } from "../lib/po-draft-storage";
 import { purchaseOrderNumberBlockMessage } from "../lib/po-lifecycle";
+import { classifyTotvsPurchaseRequest } from "../lib/totvs-purchase-request";
 import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
   invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping";
 
@@ -197,7 +198,10 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   const [totvsParsing, setTotvsParsing] = useState(false);
   const [totvsApplied, setTotvsApplied] = useState(false);
   const [totvsItemEditing, setTotvsItemEditing] = useState<string | null>(null);
-  const [totvsScSuggestion, setTotvsScSuggestion] = useState("");
+  const [newScRequester, setNewScRequester] = useState("");
+  const [newScDate, setNewScDate] = useState("");
+  const [newScApprovalDate, setNewScApprovalDate] = useState("");
+  const [newScCommercialPlanReceivedDate, setNewScCommercialPlanReceivedDate] = useState("");
   const [draftStorageWarning, setDraftStorageWarning] = useState("");
   const [commonItemFields, setCommonItemFields] = useState<OperationalFieldDraft>(blankPurchaseOrderItemFields);
   const [createdPoId, setCreatedPoId] = useState("");
@@ -332,6 +336,10 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       && !match.confirmPriceMismatch);
   });
   const selectedPurchaseRequest = purchaseRequests.find(choice => choice.id === purchaseRequestId);
+  const totvsScClassification = totvsHeader && importer
+    ? classifyTotvsPurchaseRequest({ importer, scNumber: totvsHeader.scNumber,
+      supplierCode: totvsHeader.supplierCode, purchaseRequests })
+    : { kind: "none" as const };
   const totvsSupplierOption = suppliers.find(item => normalizeLookup(item.code) === normalizeLookup(totvsHeader?.supplierCode));
   const totvsSupplierNameDiverges = Boolean(totvsHeader && totvsSupplierOption
     && normalizeLookup(totvsSupplierOption.name) !== normalizeLookup(totvsHeader.supplierName));
@@ -349,7 +357,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   const totvsImportReady = Boolean(totvsHeader && totvsImporterResolved && totvsSupplierOption
     && normalizeLookup(supplier) === normalizeLookup(totvsHeader.supplierCode))
     && !catalogLoading && totvsTotalIssues.length === 0 && totvsMissingProducts.length === 0
-    && totvsMissingUnits.length === 0 && totvsMissingCostCenters.length === 0 && !selectedScConflictsWithTotvs;
+    && totvsMissingUnits.length === 0 && totvsMissingCostCenters.length === 0 && !selectedScConflictsWithTotvs
+    && totvsScClassification.kind !== "supplier-mismatch";
   const compactPoItems = totvsApplied || items.length > 50;
   const poPreflightHasCatalogIssues = Boolean(poPreflight && (!poPreflight.importerAcceptsNewPurchaseOrders
     || !poPreflight.supplierFound || poPreflight.missingProducts.length || poPreflight.missingUnits.length
@@ -388,22 +397,31 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     event.currentTarget.value = "";
     if (!file) return;
     setTotvsFileName(file.name); setTotvsRows([]); setTotvsHeader(null); setTotvsSpreadsheetTotal("");
-    setTotvsCalculatedTotal(""); setTotvsImporterMatches([]); setTotvsScSuggestion(""); setTotvsImportHash("");
+    setTotvsCalculatedTotal(""); setTotvsImporterMatches([]); setTotvsImportHash("");
     setTotvsCurrency("CNY"); setTotvsFileError(""); setTotvsApplied(false); setTotvsParsing(true);
+    setNewScRequester(""); setNewScDate(""); setNewScApprovalDate(""); setNewScCommercialPlanReceivedDate("");
     setPoPreflight(null); setConfirmDuplicateNumber(false); setDuplicateNumberJustification("");
     try {
       const result = await parseTotvsPoXlsx(file);
+      const loadedPurchaseRequests = await loadPurchaseRequests("");
+      setPurchaseRequests(loadedPurchaseRequests);
       setTotvsRows(result.rows); setTotvsHeader(result.header);
       setTotvsSpreadsheetTotal(result.spreadsheetTotal); setTotvsCalculatedTotal(result.calculatedTotal);
       setNumber(result.header.number); setSupplier(result.header.supplierCode); setPurchaseRequestId("");
-      setCommonItemFields(current => ({ ...current, scNumber: result.header.scNumber }));
       const cnpjMatches = importers.filter(code => importerCnpjs[code] === result.header.importerCnpj);
       setTotvsImporterMatches(cnpjMatches);
-      setImporter(cnpjMatches.length === 1 ? cnpjMatches[0] : "");
-      const matchingRequest = cnpjMatches.length === 1 ? purchaseRequests.find(choice => choice.importer === cnpjMatches[0]
-        && choice.scNumber.trim() === result.header.scNumber.trim()
-        && choice.supplierText?.trim().toLocaleUpperCase("en-US") === result.header.supplierCode.trim().toLocaleUpperCase("en-US")) : undefined;
-      if (matchingRequest) setTotvsScSuggestion(matchingRequest.id);
+      const resolvedImporter = cnpjMatches.length === 1 ? cnpjMatches[0] : "";
+      setImporter(resolvedImporter);
+      const classification = classifyTotvsPurchaseRequest({ importer: resolvedImporter,
+        scNumber: result.header.scNumber, supplierCode: result.header.supplierCode,
+        purchaseRequests: loadedPurchaseRequests });
+      if (classification.kind === "match") {
+        setPurchaseRequestId(classification.request.id);
+        setSupplier(classification.request.supplierText ?? result.header.supplierCode);
+        setCommonItemFields(current => ({ ...current, ...purchaseRequestOperationalFields(classification.request) }));
+      } else {
+        setCommonItemFields(current => ({ ...current, scNumber: result.header.scNumber }));
+      }
       const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
       setTotvsImportHash(Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join(""));
     }
@@ -611,6 +629,22 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
 
   async function createPurchaseOrder(preflight: PurchaseOrderPreflight | null) {
     if (items.length === 0) throw new Error("Adicione ao menos um item à PO.");
+    if (totvsScClassification.kind === "supplier-mismatch") {
+      throw new Error(`A SC ${totvsScClassification.request.scNumber} já existe para o fornecedor ${totvsScClassification.request.supplierText ?? "não informado"}.`);
+    }
+    const shouldCreatePurchaseRequest = Boolean(totvsHeader && totvsScClassification.kind === "missing" && !purchaseRequestId);
+    if (shouldCreatePurchaseRequest && !newScRequester.trim()) {
+      throw new Error("Informe o solicitante da nova SC antes de salvar a PO.");
+    }
+    const newPurchaseRequest = shouldCreatePurchaseRequest && totvsHeader ? {
+      scNumber: totvsHeader.scNumber.trim(), requester: newScRequester.trim(),
+      scDate: newScDate || null, approvalDate: newScApprovalDate || null,
+      commercialPlanReceivedDate: newScCommercialPlanReceivedDate || null,
+    } : undefined;
+    const requestFields = selectedPurchaseRequest ?? newPurchaseRequest;
+    const effectiveCommonItemFields = requestFields
+      ? { ...commonItemFields, ...purchaseRequestOperationalFields(requestFields) }
+      : commonItemFields;
     if (preflight) {
       if (!preflight.importerAcceptsNewPurchaseOrders) {
         throw new Error("A API aceita novas POs somente para importadoras cadastradas com CNPJ.");
@@ -653,10 +687,12 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         currency: item.currency ? item.currency.toUpperCase() : null, reason: automaticAuditReason },
       fields: {
         ...purchaseOrderItemFieldsPayload(item.operational, false, specificItemFields),
-        ...purchaseOrderItemFieldsPayload(commonItemFields, false, purchaseOrderCommonItemFields),
+        ...purchaseOrderItemFieldsPayload(effectiveCommonItemFields, false, purchaseOrderCommonItemFields),
       },
     }));
-    const completePayload = JSON.stringify({ header: { importer, number, purchaseRequestId: purchaseRequestId || null, supplierText: supplier || null,
+    const completePayload = JSON.stringify({ header: { importer, number,
+      purchaseRequestId: purchaseRequestId || null, ...(newPurchaseRequest ? { newPurchaseRequest } : {}),
+      supplierText: supplier || null,
       ...(preflight ? { sourceFile: totvsApplied && totvsFileName && totvsImportHash
         ? { fileName: totvsFileName, fileSha256: totvsImportHash } : null } : {}),
       ...(preflight ? { confirmDuplicateNumber, duplicateNumberJustification: duplicateNumberJustification.trim() || undefined } : {}),
@@ -675,7 +711,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       ? await complete.clone().json().catch(() => null) as unknown : null;
     const routeMissing = isMissingApiRoute(complete.status, completeError);
     if (!routeMissing) {
-      const created = await readResponse<{ id: string; itemIds: string[] }>(complete);
+      const created = await readResponse<{ id: string; itemIds: string[]; purchaseRequestId: string | null }>(complete);
       setCreatedPoId(created.id);
       const followup = await readResponse<{ number: string; importer: string;
         items: ({ id: string } & Record<string, unknown>)[] }>(
@@ -687,7 +723,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           !Array.isArray(followup.items) || followup.number !== number.trim() ||
           followup.importer !== importer.trim() || savedHeader.supplierText !== (supplier.trim() || null) ||
           !savedHeader.orderDate || savedHeader.notes !== notes.trim() ||
-          savedHeader.purchaseRequestId !== (purchaseRequestId || null) ||
+          savedHeader.purchaseRequestId !== (created.purchaseRequestId ?? null) ||
           completeItems.some((item, index) => {
             const saved = followup.items.find(row => row.id === created.itemIds[index]);
             return !saved || saved.lineNumber !== index + 1 ||
@@ -707,6 +743,10 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       sessionStorage.removeItem(poCommandKey);
       router.push(`/purchase-orders/${created.id}`);
       return;
+    }
+
+    if (newPurchaseRequest) {
+      throw new Error("A API ainda não oferece criação de SC junto com a PO. Tente novamente após a atualização da API de homologação.");
     }
 
     const header = await readResponse<{ id: string }>(await apiFetch("/api/v1/purchase-orders", {
@@ -738,7 +778,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
 
         const fields = {
           ...purchaseOrderItemFieldsPayload(item.operational, false, specificItemFields),
-          ...purchaseOrderItemFieldsPayload(commonItemFields, false, purchaseOrderCommonItemFields),
+          ...purchaseOrderItemFieldsPayload(effectiveCommonItemFields, false, purchaseOrderCommonItemFields),
         };
         expectedItems.set(createdItem.id, fields);
         if (Object.keys(fields).length > 0) {
@@ -969,9 +1009,33 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                   && <p role="alert">Selecione o código {totvsHeader.supplierCode} do fornecedor informado na planilha.</p>}
                 {totvsSupplierNameDiverges && <p>Confira a razão social: ela difere do nome do fornecedor no catálogo.</p>}
                 {totvsHeader?.scNumber && <p>Nro.SC {totvsHeader.scNumber}
-                  {totvsScSuggestion ? <> · SC encontrada para a mesma importadora e fornecedor. <button className="button secondary" type="button"
-                    disabled={Boolean(purchaseRequestId)} onClick={() => selectPurchaseRequest(totvsScSuggestion)}>Vincular SC</button></>
-                    : " · Nenhuma SC correspondente foi sugerida."}</p>}
+                  {totvsScClassification.kind === "match"
+                    ? purchaseRequestId === totvsScClassification.request.id
+                      ? " · SC existente vinculada automaticamente. Você pode removê-la no seletor de SC."
+                      : " · SC existente encontrada; o vínculo foi removido no seletor de SC."
+                    : totvsScClassification.kind === "missing"
+                      ? " · SC não cadastrada para esta importadora e fornecedor."
+                      : ""}</p>}
+                {totvsScClassification.kind === "supplier-mismatch" && <p className="notice error" role="alert">
+                  A SC {totvsScClassification.request.scNumber} já existe para o fornecedor {totvsScClassification.request.supplierText ?? "não informado"}.
+                  O salvamento da PO está bloqueado.
+                </p>}
+                {totvsScClassification.kind === "missing" && !purchaseRequestId && totvsImporterResolved && <div className="notice totvs-sc-create">
+                  <h3>Criar SC {totvsScClassification.scNumber} junto com a PO</h3>
+                  <p>Importadora, número e fornecedor vêm da planilha TOTVS.</p>
+                  <div className="operational-fields">
+                    <label>Importadora<input readOnly aria-readonly="true" value={importer} /></label>
+                    <label>Número da SC<input readOnly aria-readonly="true" value={totvsScClassification.scNumber} /></label>
+                    <label>Fornecedor<input readOnly aria-readonly="true" value={totvsHeader?.supplierCode ?? ""} /></label>
+                    <label>Solicitante<OperationalOptionSelect required entity="requester" value={newScRequester} values={options}
+                      onChange={setNewScRequester} /></label>
+                    <label>Data da SC<input type="date" value={newScDate} onChange={event => setNewScDate(event.target.value)} /></label>
+                    <label>Data de aprovação<input type="date" value={newScApprovalDate}
+                      onChange={event => setNewScApprovalDate(event.target.value)} /></label>
+                    <label>Recebimento do plano comercial<input type="date" value={newScCommercialPlanReceivedDate}
+                      onChange={event => setNewScCommercialPlanReceivedDate(event.target.value)} /></label>
+                  </div>
+                </div>}
                 {selectedScConflictsWithTotvs && <p role="alert">A SC selecionada tem importadora ou fornecedor diferente dos informados na planilha.</p>}
                 <p>Totais {totvsCurrency}: planilha {formatNumber(totvsSpreadsheetTotal)} · calculado {formatNumber(totvsCalculatedTotal)}</p>
                 <label>Moeda da PO<OperationalOptionSelect entity="currency" value={totvsCurrency} values={options}
@@ -1083,7 +1147,10 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
               onChange={event => setDuplicateNumberJustification(event.target.value)} /></label>
           </div>}
           <button className="button" disabled={saving || !importer || Boolean(createdPoId)
-            || (totvsApplied && !totvsImportReady) || poPreflightBlocksSave}>
+            || (totvsApplied && !totvsImportReady) || poPreflightBlocksSave
+            || (totvsHeader !== null && totvsScClassification.kind === "supplier-mismatch")
+            || (totvsHeader !== null && totvsScClassification.kind === "missing" && !purchaseRequestId
+              && !newScRequester.trim())}>
             {saving ? "Salvando pedido e produtos…" : "Salvar PO e produtos"}
           </button>
         </section>
