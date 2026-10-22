@@ -5,7 +5,7 @@
 | Data | 2026-10-21 |
 | Branch de trabalho | `homologacao` |
 | Ambiente de validação | HML (VPS `import-erp-hml-api` + banco `erp_po_totvs_hml`) e Preview Vercel |
-| Status | Especificação aguardando revisão |
+| Status | Implementado na `homologacao` (`4237552`, `7658926`, `58dda50`); API HML no release `58dda50` e validação sintética concluída. Falta a vinculação da `030201` pelo usuário na tela. |
 
 ## Objetivo
 

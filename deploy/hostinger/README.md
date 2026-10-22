@@ -1,5 +1,34 @@
 # API ERP na VPS Hostinger
 
+## Criar e vincular SC numa PO existente no HML (2026-10-21)
+
+O commit `58dda50` publica `POST /api/v1/purchase-orders/:id/purchase-request`
+(permissão `purchase-orders.write`). Para PO ativa sem SC, a rota cria ou
+reaproveita a SC pela importadora e pelo fornecedor da PO, vincula-a e aplica os
+campos da SC a todos os itens, com auditoria. Também corrige duas mensagens de
+SC salvas com acentuação corrompida. Não houve migration; o ledger HML segue em
+M001–M066.
+
+O release foi compilado na VPS como `/opt/import-erp/apps/api/hml-release-58dda50`,
+com as fontes normalizadas para LF, e ativado pelo drop-in
+`/etc/systemd/system/import-erp-hml-api.service.d/zzzzzzzzzzzz-release-58dda50.conf`.
+O drop-in e o `ExecStart` anteriores (`hml-release-b411567`) foram preservados em
+`/var/backups/import-erp/hml-po-sc-link-58dda50-predeploy`. Para rollback do
+código, remova o drop-in novo, execute `systemctl daemon-reload` e reinicie
+`import-erp-hml-api`. Ignorando CR, o `dist` difere do release anterior somente
+em `followup.js` e `operations.js`. O serviço ficou ativo, `/health/live`
+respondeu 200 e a rota nova sem sessão respondeu 401.
+
+O teste opt-in `apps/api/test/purchase-order-sc-link-hml.integration.mjs`, com
+contexto do papel Compras e a role `import_erp_hml_app`, criou a PO sintética
+`HMLVAL-PO-SCLINK-53E67256157A47F2` sem SC. Em seguida, criou e vinculou a SC
+`HMLVAL-SC-LINK-53E67256157A47F2`, conferiu número, solicitante e data da SC no
+item, confirmou a recusa de uma segunda vinculação, excluiu a PO logicamente e
+apagou a SC pela rota de SC. O HML ficou com 8 POs, 442 itens, 1 SC e
+1 alocação. As POs `030201` não foram alteradas; a de ELETRA INDUSTRIA continua
+ativa e sem SC, aguardando a vinculação pelo usuário. Nenhuma produção foi
+consultada ou alterada.
+
 ## Restaurar ou substituir PO excluída no HML (2026-10-21)
 
 O commit `b411567` publica a pré-validação com os dados da PO excluída na mesma
