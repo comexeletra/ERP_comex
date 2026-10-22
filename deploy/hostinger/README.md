@@ -1,5 +1,42 @@
 # API ERP na VPS Hostinger
 
+## Ciclo de vida do IP no HML (2026-10-22)
+
+O commit `0a7df01` publica as rotas de exclusão lógica, restauração e reativação de IP, com filtro de
+excluídos, motivo obrigatório, controle de versão, auditoria e outbox. A M067 foi validada primeiro no
+backup restaurado `erp_po_hml_m067_check_20261022T214553Z_23847`: o DDL, os grants e as transições
+ACTIVE/CANCELLED/DELETED/CLOSED passaram dentro de uma transação revertida, e a cópia foi removida.
+
+Antes da migration, o banco HML `erp_po_totvs_hml` estava em M001–M066, role runtime
+`import_erp_hml_app`, com 2 IPs e todos os pré-checks em zero. O backup custom pré-M067 foi validado com
+`pg_restore --list`: `/var/backups/import-erp/erp_po_totvs_hml_m067_20261022T214553Z.dump`,
+466.346.973 bytes, SHA-256 `1e4513d391603db24b8a06037434a44b208731ab3b234d662136c2f9768b692a`.
+M067 foi aplicada somente no HML com checksum `74fc6bee7a57261260d1f085208e02a1bae925249e176b957352d2a3442c77b4`;
+o ledger passou a M001–M067. A aplicação usou `psql` como `postgres` dentro do container PostgreSQL,
+após confirmar o alvo; o `migration-release.env` não foi usado porque aponta para `/erp_po_totvs_test`.
+Nenhuma conexão foi feita a esse outro banco.
+
+O serviço `import-erp-hml-api` está ativo em `/opt/import-erp/apps/api/hml-release-0a7df01/dist/server.js`,
+pelo drop-in `/etc/systemd/system/import-erp-hml-api.service.d/zzzzzzzzzzzzzzzz-release-0a7df01.conf`.
+O predeploy do release anterior está em `/var/backups/import-erp/hml-ip-lifecycle-0a7df01-predeploy`.
+Para rollback somente do código, remova o drop-in `0a7df01`, execute `systemctl daemon-reload` e reinicie
+`import-erp-hml-api`; o release anterior preservado é `hml-release-5e8b0e3`. M067 deve permanecer aplicada.
+O health responde 200 e `POST /api/v1/processes/:id/reactivate` sem sessão responde 401.
+
+O teste opt-in `apps/api/test/process-lifecycle-hml.integration.mjs`
+(`pnpm run test:ip-lifecycle:hml`) passou com a role `import_erp_hml_app`. O IP sintético
+`TEST-IP-LIFECYCLE-20261022-E3176DD8A5524FC4` percorreu excluir → restaurar → cancelar → reativar →
+encerrar → reabrir e terminou `DELETED`/`OPEN`, sem PO, documento ou alocação vinculados. Foram verificados
+8 registros de auditoria e 8 mensagens outbox. Para respeitar a auditoria append-only, o registro permanece
+como tombstone excluído e fora da lista ativa. O HML ficou com 3 IPs (1 ACTIVE, 1 CANCELLED e 1 DELETED),
+9.296 linhas de auditoria e 7.787 mensagens outbox; a migration não alterou essas contagens.
+
+O push de `homologacao` para `0a7df01148fc3e59a5e7582cf4a223f054be81b6` recebeu status Vercel `success`
+(“Deployment has completed”) na [execução do Preview](https://vercel.com/eletra-comex/erp-comex/EvsmyTgBXK5fTSsBVtuLfM7Sp7uX).
+O alias estável `https://erp-comex-git-homologacao-eletra-comex.vercel.app` responde 302 para
+`vercel.com/sso-api`; por isso, a tela não pôde ser validada visualmente pelo agente. Nenhuma produção foi
+consultada ou alterada.
+
 ## Dados da SC editados na PO sincronizados com o PCM no HML (2026-10-22)
 
 O commit `a71ed42` faz `PATCH /api/v1/purchase-orders/:id/items/followup` e

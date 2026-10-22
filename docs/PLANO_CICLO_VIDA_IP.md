@@ -5,9 +5,9 @@
 | Data | 2026-10-22 |
 | Branch de trabalho | `homologacao` |
 | Ambiente de validação | HML (VPS `import-erp-hml-api` + banco `erp_po_totvs_hml`) e Preview Vercel |
-| Status | Plano aguardando aprovação. Nada implementado. |
+| Status | Fases 1–4 técnicas executadas em HML/Preview; revisão visual do Preview pendente porque o alias exige SSO. Produção não alterada. |
 
-## Diagnóstico (código em `2a8d974`; banco HML ainda não conferido, ver Fase 0)
+## Diagnóstico (código em `2a8d974`; conferência real do banco HML registrada na Fase 0)
 
 O IP já tem dois eixos de estado:
 
@@ -204,6 +204,15 @@ Cada fase termina com testes, lint, type-check e build passando e com um commit 
    `logistics_status`, os `DRAFT` criados por cancelamento e os que têm vínculos em `process_purchase_order`.
 3. Confirmar que nenhuma linha atual viola as constraints novas. Registrar os números neste documento.
 
+#### Resultado da Fase 0 (2026-10-22)
+
+- A conexão do serviço HML confirmou o banco `erp_po_totvs_hml`, o papel `import_erp_hml_app` e PostgreSQL `14.20 (Debian 14.20-1.pgdg13+1)`.
+- O ledger contém 66 migrations contínuas, de `M001_historical_core.sql` a `M066_purchase_request_delete.sql`.
+- Há 1 IP `ACTIVE`/`OPEN` e 1 `CANCELLED`/`OPEN`. O cancelado `123N/2026` tem `logistics_status = 'CANCELLED'`.
+- Não há DRAFTs com `source_kind = 'CANCELLATION_TRANSFER'`; o IP cancelado também não tem POs vinculadas.
+- As contagens de status inválido, lifecycle inválido, IP ativo com logística cancelada, IP não ativo com distribuição/documento ativo e IP excluído com PO vinculada foram todas zero.
+- As consultas foram executadas em transação somente leitura e encerradas com `ROLLBACK`.
+
 ### Fase 1 — migration M067
 
 1. Teste primeiro: estender [invoice-migrations.test.mjs](../apps/api/test/invoice-migrations.test.mjs)
@@ -240,13 +249,38 @@ Cada fase termina com testes, lint, type-check e build passando e com um commit 
 1. Teste opt-in `apps/api/test/process-lifecycle-hml.integration.mjs` e script `test:ip-lifecycle:hml`,
    no molde de [purchase-order-sc-sync-hml.integration.mjs](../apps/api/test/purchase-order-sc-sync-hml.integration.mjs).
    Ele cria um IP sintético `TEST-IP-LIFECYCLE-<data>-<id>`, percorre excluir → restaurar → cancelar →
-   reativar → encerrar → reabrir, confere auditoria e outbox e limpa os dados ao final.
+   reativar → encerrar → reabrir, confere auditoria e outbox e termina com o IP em `DELETED`, fora da lista
+   ativa; o tombstone e os eventos ficam para preservar a auditoria append-only.
 2. Validar a M067 numa cópia restaurada (transação com rollback) e aplicá-la só no HML, com backup.
 3. Publicar a API no HML (`import-erp-hml-api`), conferir o health e as rotas novas, e rodar o teste
    opt-in. Push `git push production homologacao`, acompanhar o Preview até `Ready` e conferir a tela.
 4. Registrar o release, o backup e a validação em
    [deploy/hostinger/README.md](../deploy/hostinger/README.md) e atualizar o status deste documento.
 5. Commit: `docs(hml): record IP lifecycle release and validation`.
+
+#### Resultado da Fase 4 (2026-10-22)
+
+- A M067 passou na cópia restaurada `erp_po_hml_m067_check_20261022T214553Z_23847`; DDL, grants e
+  transições ACTIVE/CANCELLED/DELETED/CLOSED foram executados em transação e revertidos. A cópia foi removida.
+- Backup HML pré-migration, formato custom, validado com `pg_restore --list`:
+  `/var/backups/import-erp/erp_po_totvs_hml_m067_20261022T214553Z.dump`, 466.346.973 bytes,
+  SHA-256 `1e4513d391603db24b8a06037434a44b208731ab3b234d662136c2f9768b692a`. M067 foi aplicada somente
+  em `erp_po_totvs_hml`, com checksum `74fc6bee7a57261260d1f085208e02a1bae925249e176b957352d2a3442c77b4`;
+  o ledger passou de M001–M066 para M001–M067. A contagem de IPs permaneceu 2 durante a migration,
+  auditoria/outbox não mudaram e todos os pré-checks permaneceram em zero.
+- A API HML ativa é `/opt/import-erp/apps/api/hml-release-0a7df01/dist/server.js`; health 200 e a rota
+  protegida de reativação sem sessão responde 401. O backup de código anterior está em
+  `/var/backups/import-erp/hml-ip-lifecycle-0a7df01-predeploy`; M067 deve permanecer aplicada em eventual
+  rollback de código.
+- `pnpm run test:ip-lifecycle:hml` passou na role `import_erp_hml_app`. O IP
+  `TEST-IP-LIFECYCLE-20261022-E3176DD8A5524FC4` terminou `DELETED`/`OPEN`, sem POs, documentos ou
+  distribuições vinculadas; foram conferidos 8 eventos de auditoria e 8 de outbox. O tombstone permanece
+  fora da lista ativa para preservar a trilha imutável. HML ficou com 3 IPs (1 ACTIVE, 1 CANCELLED,
+  1 DELETED), 9.296 linhas de auditoria e 7.787 mensagens outbox.
+- O push para `homologacao` no commit `0a7df01148fc3e59a5e7582cf4a223f054be81b6` recebeu status Vercel
+  `success` (“Deployment has completed”). O alias estável redireciona para `vercel.com/sso-api` com HTTP
+  302; o agente não conseguiu validar visualmente a tela nem confirmar o fluxo na interface. Essa revisão
+  visual continua pendente. Nenhuma produção foi consultada ou alterada.
 
 ## Riscos
 
