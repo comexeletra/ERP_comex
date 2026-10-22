@@ -5,7 +5,7 @@
 | Data | 2026-10-22 |
 | Branch de trabalho | `homologacao` |
 | Ambiente de validação | HML (VPS `import-erp-hml-api` + banco `erp_po_totvs_hml`) e Preview Vercel |
-| Status | Aprovado em 2026-10-22 (solicitante obrigatório; data da restauração lida da auditoria) |
+| Status | Implementado na `homologacao` (`cd9c67b`, `e8ea868`, `1104ee1`); API HML no release `1104ee1` e validação sintética concluída. Falta a conferência da tela pelo usuário no Preview (critério 13) e a vinculação da SC `020028` na `030201`. |
 
 ## Diagnóstico (conferido no HML em 2026-10-22, somente leitura)
 

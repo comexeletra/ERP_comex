@@ -1,5 +1,42 @@
 # API ERP na VPS Hostinger
 
+## SC ao restaurar ou substituir PO excluída no HML (2026-10-22)
+
+O commit `1104ee1` faz `POST /api/v1/purchase-orders/:id/restore` e
+`POST /api/v1/purchase-orders/:id/replace` aceitarem o campo opcional
+`purchaseRequest` (`{ purchaseRequestId }` ou `{ newPurchaseRequest }`). A SC é
+vinculada ou criada na mesma transação da restauração, e o solicitante e as datas
+vão para os itens. `GET /api/v1/purchase-orders/:id/operational` passa a devolver
+`createdAt` e `lastRestore`, este lido de `audit.purchase_order_operational_history`.
+Não houve migration; o ledger HML segue em M001–M066.
+
+O release foi compilado na VPS como `/opt/import-erp/apps/api/hml-release-1104ee1`,
+a partir de `git archive` do commit (fontes em LF), e ativado pelo drop-in
+`/etc/systemd/system/import-erp-hml-api.service.d/zzzzzzzzzzzzz-release-1104ee1.conf`.
+O drop-in e o `ExecStart` anteriores (`hml-release-58dda50`) foram preservados em
+`/var/backups/import-erp/hml-po-restore-sc-1104ee1-predeploy`. Para reverter o
+código, remova o drop-in novo, execute `systemctl daemon-reload` e reinicie
+`import-erp-hml-api`. Ignorando CR, o `dist` difere do release anterior somente
+em `operations.js`. O serviço está `active`, `/health/live` respondeu 200 por
+HTTPS e `restore` sem sessão respondeu 401.
+
+O teste opt-in `apps/api/test/purchase-order-restore-sc-hml.integration.mjs`
+(`npm run test:po-restore-sc:hml`) foi executado no release com a role
+`import_erp_hml_app` em `erp_po_totvs_hml`. Ele cobriu três cenários: PO nova
+`HMLVAL-PO-NEWSC-720DFCF1B1184813` criada com SC inexistente; restauração de
+`HMLVAL-PO-RESTSC-720DFCF1B1184813` com SC nova; e substituição da mesma PO pela
+planilha com outra SC nova. Em todos, a SC foi listada no PCM e o número, o
+solicitante e a data da SC ficaram nos itens. A página da PO devolveu a última
+restauração. Ao final, as POs ficaram `DELETED`, sem SC, e as três SCs sintéticas
+foram apagadas.
+
+Após a validação, o HML ficou com 1 SC, 10 POs (9 `DELETED`), 444 itens e
+1 alocação. A PO `030201` de ELETRA INDUSTRIA não foi alterada: continua ativa,
+na versão 7 e sem SC, aguardando a vinculação da SC `020028` pelo usuário. O
+Preview Vercel do commit está com status `success` ("Deployment has completed").
+O domínio estável responde 302 para o SSO da Vercel, então a interface não foi
+validada pelo agente. Nenhuma produção foi consultada ou alterada.
+
 ## Criar e vincular SC numa PO existente no HML (2026-10-21)
 
 O commit `58dda50` publica `POST /api/v1/purchase-orders/:id/purchase-request`
