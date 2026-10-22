@@ -66,13 +66,18 @@ criação. A página da PO passa a mostrar quando e por quem ela foi restaurada.
 
 5. Quando a planilha encontra uma PO excluída da mesma importadora, o bloco de SC continua visível e com a
    mesma classificação (`match` / `missing` / `supplier-mismatch` / `none`).
-6. "Confirmar restauração" e "Restaurar e substituir pela planilha" enviam `purchaseRequest`:
+6. "Confirmar restauração" e "Confirmar restauração com a planilha" enviam `purchaseRequest`:
    - `match`, ou SC escolhida no seletor: `{ purchaseRequestId }`;
    - `missing`: `{ newPurchaseRequest }`, com o solicitante obrigatório. Sem solicitante, o botão fica
      desabilitado e mostra uma mensagem explicando;
    - `supplier-mismatch`: o botão fica bloqueado, com o mesmo aviso do cadastro.
 7. Os erros `PO_ALREADY_HAS_PURCHASE_REQUEST` e `PURCHASE_REQUEST_SUPPLIER_MISMATCH` aparecem com a
    mensagem da API.
+7a. Ajuste pedido pelo usuário em 2026-10-22, porque o rótulo anterior fazia parecer que a ação tinha sido
+    trocada: as ações passam a se chamar **Restaurar como estava** (reativa a PO com os itens que ela tinha)
+    e **Restaurar com os dados da planilha** (reativa a PO e atualiza os itens conforme a planilha), cada uma
+    com essa explicação. A confirmação diz "Confirmar restauração com a planilha". Se a prévia não tiver
+    diferenças, a tela avisa que o resultado é o mesmo de restaurar como estava.
 
 ### Web — página da PO
 
