@@ -60,6 +60,8 @@ export default function PcmPage() {
   const [historyId, setHistoryId] = useState("");
   const [historyItems, setHistoryItems] = useState<PurchaseRequestHistory[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [deletingItem, setDeletingItem] = useState<PurchaseRequestChoice | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -169,6 +171,41 @@ export default function PcmPage() {
     } finally { setHistoryLoading(false); }
   }
 
+  async function deletePurchaseRequest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!deletingItem || deleteReason.trim().length < 3) return;
+    setSaving(true); setError(""); setNotice("");
+    try {
+      const deleted = deletingItem;
+      const response = await apiFetch(`/api/v1/purchase-requests/${deleted.id}`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json", "If-Match": `"${deleted.version}"` },
+        body: JSON.stringify({ reason: deleteReason.trim() }),
+      });
+      if (!response.ok) await readApiJson<never>(response);
+      const query = new URLSearchParams();
+      if (importerFilter) query.set("importer", importerFilter);
+      const queryString = query.toString();
+      const list = await readApiJson<{ items: PurchaseRequestChoice[] }>(
+        await apiFetch(`/api/v1/purchase-requests${queryString ? `?${queryString}` : ""}`, { cache: "no-store" }));
+      setItems(list.items);
+      setDeletingItem(null); setDeleteReason("");
+      setNotice(`SC ${deleted.scNumber} excluída. A exclusão e os vínculos removidos estão no histórico de auditoria.`);
+      setHistoryId(deleted.id); setHistoryLoading(true);
+      try {
+        const history = await readApiJson<{ items: PurchaseRequestHistory[] }>(
+          await apiFetch(`/api/v1/purchase-requests/${deleted.id}/history`, { cache: "no-store" }));
+        setHistoryItems(history.items);
+      } catch {
+        setHistoryItems([]);
+      } finally {
+        setHistoryLoading(false);
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível excluir a SC.");
+    } finally { setSaving(false); }
+  }
+
   return <main className="shell">
     <header className="page-header">
       <p className="eyebrow">PCM · Planejamento e Controle de Materiais</p>
@@ -188,7 +225,7 @@ export default function PcmPage() {
           <label>Número da SC<input required maxLength={80} value={scNumber} onChange={event => setScNumber(event.target.value)} /></label>
           <label>Fornecedor<SearchableSelect ariaLabel="Fornecedor" required value={supplierText} onChange={setSupplierText}
             options={suppliers.map(item => ({ value: item.code, label: `${item.code} · ${item.name}` }))} /></label>
-          <label>Data da SC<input required type="date" value={scDate} onChange={event => setScDate(event.target.value)} /></label>
+          <label>Data da SC<input type="date" value={scDate} onChange={event => setScDate(event.target.value)} /></label>
           <label>Data de recebimento do plano comercial<input type="date" value={commercialPlanReceivedDate}
             onChange={event => setCommercialPlanReceivedDate(event.target.value)} /></label>
           <label>Solicitante<OperationalOptionSelect required entity="requester" value={requester} values={options}
@@ -220,14 +257,32 @@ export default function PcmPage() {
             <button className="button secondary" type="button" onClick={() => void toggleHistory(item)}>
               {historyId === item.id ? "Ocultar histórico" : "Histórico"}
             </button>
+            {canManage && <button className="button secondary" type="button" disabled={saving}
+              onClick={() => { setDeletingItem(item); setDeleteReason(""); setError(""); }}>
+              Excluir
+            </button>}
           </div></td>
         </tr>)}</tbody></table></div>}
+      {deletingItem && <form className="notice" role="dialog" aria-modal="true" aria-labelledby="delete-sc-title"
+        onSubmit={deletePurchaseRequest}>
+        <h3 id="delete-sc-title">Excluir SC {deletingItem.scNumber}</h3>
+        <p>A exclusão é definitiva. POs ainda não excluídas impedem a operação; POs excluídas serão desvinculadas.</p>
+        <label>Motivo da exclusão<textarea required minLength={3} maxLength={1000} value={deleteReason}
+          onChange={event => setDeleteReason(event.target.value)} /></label>
+        <div className="button-row">
+          <button className="button" disabled={saving || deleteReason.trim().length < 3}>
+            {saving ? "Excluindo SC…" : "Confirmar exclusão"}
+          </button>
+          <button className="button secondary" type="button" disabled={saving}
+            onClick={() => { setDeletingItem(null); setDeleteReason(""); }}>Cancelar</button>
+        </div>
+      </form>}
       {historyId && <section className="sc-history" aria-label="Histórico da SC">
         <h3>Histórico de alterações</h3>
         {historyLoading && <p role="status">Carregando histórico…</p>}
         {!historyLoading && historyItems.length === 0 && <p>Nenhum evento encontrado para esta SC.</p>}
         {!historyLoading && historyItems.map(event => <article className="sc-history-event" key={event.id}>
-          <p><strong>{event.operation === "CREATE" ? "Cadastro" : "Alteração"}</strong> · {new Date(event.occurredAt).toLocaleString("pt-BR")}</p>
+          <p><strong>{event.operation === "CREATE" ? "Cadastro" : event.operation === "DELETE" ? "Exclusão" : "Alteração"}</strong> · {new Date(event.occurredAt).toLocaleString("pt-BR")}</p>
           <ul>{historyChanges(event).map(change => <li key={change}>{change}</li>)}</ul>
           <dl className="sc-history-meta">
             <div><dt>Responsável</dt><dd>{formatHistoryActor(event.actor)}</dd></div>
