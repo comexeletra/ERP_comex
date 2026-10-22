@@ -30,11 +30,16 @@ if (target.rows[0]?.database !== "erp_po_totvs_hml" || target.rows[0]?.role !== 
 const context = await pool.query("SELECT id FROM identity.erp_user ORDER BY id LIMIT 1");
 const importerResult = await pool.query(
   "SELECT value FROM catalog.operational_value WHERE entity_key = 'IMPORTER' ORDER BY value LIMIT 1");
-if (!context.rows[0] || !importerResult.rows[0]) {
+const supplierResult = await pool.query(
+  `SELECT code FROM catalog.entry
+   WHERE kind = 'SUPPLIER' AND importer IS NULL AND status = 'ACTIVE'
+   ORDER BY normalized_code LIMIT 1`);
+if (!context.rows[0] || !importerResult.rows[0] || !supplierResult.rows[0]) {
   await pool.end();
-  throw new Error("HML lacks an actor or configured importer for the lifecycle validation.");
+  throw new Error("HML lacks an actor, configured importer or active global supplier for the lifecycle validation.");
 }
 const importer = importerResult.rows[0].value;
+const supplierText = supplierResult.rows[0].code;
 
 app.addHook("onRequest", async request => {
   request.authContext = { issuer: "hml-validation", subject: `ip-lifecycle-${runId}`,
@@ -91,7 +96,7 @@ test("HML exercises the complete IP lifecycle and records each transition", asyn
 
   try {
     const created = await call("POST", "/api/v1/processes", {
-      importer, ipNumber, supplierText: "HML LIFECYCLE VALIDATION", logisticsStatus: "WAITING SHIPMENT",
+      importer, ipNumber, supplierText, logisticsStatus: "WAITING SHIPMENT",
       priority: null, notes: "Synthetic IP; no invoice, documents, allocations or POs.", reason,
     });
     assert.equal(created.status, 201, JSON.stringify(created.body));
