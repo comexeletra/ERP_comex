@@ -66,9 +66,9 @@ export function purchaseOrderItemFieldsPayload(values: OperationalFieldDraft, in
   }, {});
 }
 
-export function OperationalFieldsEditor({ fields, values, setValues, options }:
+export function OperationalFieldsEditor({ fields, values, setValues, options, readOnlyKeys }:
   { fields: OperationalField[]; values: OperationalFieldDraft; setValues: (value: OperationalFieldDraft) => void;
-    options: OperationalOption[] }) {
+    options: OperationalOption[]; readOnlyKeys?: ReadonlySet<string> }) {
   return <div className="operational-fields">{fields.map(field => <label key={field.key}>{field.label}
     {field.type === "boolean" ? <SearchableSelect ariaLabel={field.label} placeholder="" value={values[field.key] ?? ""}
       onChange={value => setValues({ ...values, [field.key]: value })}
@@ -78,5 +78,6 @@ export function OperationalFieldsEditor({ fields, values, setValues, options }:
       <input type={field.type === "date" ? "date" : field.type === "number" ? "number" : "text"}
         min={field.type === "number" ? 0 : undefined} maxLength={field.max}
         inputMode={field.type === "money" ? "decimal" : undefined}
+        readOnly={readOnlyKeys?.has(field.key)} aria-readonly={readOnlyKeys?.has(field.key) || undefined}
         value={values[field.key] ?? ""} onChange={event => setValues({ ...values, [field.key]: event.target.value })} />}</label>)}</div>;
 }

@@ -10,3 +10,12 @@ export function suggestedPurchaseRequestNumber(items: ReadonlyArray<{ scNumber: 
   }
   return suggestion;
 }
+
+export function lockedSharedFieldKeys(purchaseRequestId: string | null): ReadonlySet<string> {
+  return new Set(purchaseRequestId ? ["scNumber"] : []);
+}
+
+export function sharedFieldsSavedMessage(base: string, purchaseRequestUpdated: boolean, scNumber: string | null): string {
+  if (!purchaseRequestUpdated) return base;
+  return `${base} SC ${scNumber ? `${scNumber} ` : ""}atualizada no PCM.`;
+}

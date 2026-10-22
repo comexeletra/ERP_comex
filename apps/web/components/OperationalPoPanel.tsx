@@ -11,6 +11,7 @@ import { blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsE
   purchaseOrderItemFieldsPayload } from "./PurchaseOrderItemFields";
 import { CatalogChoice, CatalogProductSelect, loadCatalogChoices, loadOperationalCatalog, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 import PurchaseOrderScLink from "./PurchaseOrderScLink";
+import { lockedSharedFieldKeys, sharedFieldsSavedMessage } from "../lib/po-sc-link";
 import { loadPurchaseRequests, purchaseRequestOperationalFields, PurchaseRequestChoice, PurchaseRequestSelect } from "./PurchaseRequestSelect";
 import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
 import { formatUsDate, formatUsDateTime } from "../lib/date-format";
@@ -255,8 +256,9 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         { "Idempotency-Key": crypto.randomUUID() }) }, body: JSON.stringify(body) });
     return responseData<{ id: string }>(response);
   }
-  async function applyCommonFieldsToItems(fields: Record<string, string | number | null>) {
-    if (!data) return;
+  async function applyCommonFieldsToItems(fields: Record<string, string | number | null>): Promise<boolean> {
+    if (!data) return false;
+    let purchaseRequestUpdated = false;
     const current = await responseData<{ version: string }>(await apiFetch(
       `/api/v1/purchase-orders/${id}/operational`, { cache: "no-store" }));
     const batch = await apiFetch(`/api/v1/purchase-orders/${id}/items/followup`, {
@@ -279,16 +281,18 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         }
       }
     } else {
-      const saved = await responseData<{ updatedCount: number }>(batch);
+      const saved = await responseData<{ updatedCount: number; purchaseRequestUpdated?: boolean }>(batch);
       if (saved.updatedCount !== data.items.length) {
         throw new Error("A API atualizou uma quantidade inesperada de produtos. Recarregue a PO e confira os campos.");
       }
+      purchaseRequestUpdated = saved.purchaseRequestUpdated === true;
     }
     await verifySavedItemFields(id, new Map(data.items.map(item => [item.id, fields])));
+    return purchaseRequestUpdated;
   }
-  async function save(action: () => Promise<unknown>, success: string) {
+  async function save<T>(action: () => Promise<T>, success: string | ((result: T) => string)) {
     setSaving(true); setError(""); setNotice("");
-    try { await action(); setNotice(success); setReload(value => value + 1); onChanged?.(); }
+    try { const result = await action(); setNotice(typeof success === "function" ? success(result) : success); setReload(value => value + 1); onChanged?.(); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setSaving(false); }
   }
@@ -381,22 +385,28 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         const response = await apiFetch(route, { method: "PATCH",
           headers: { "content-type": "application/json", "X-Record-Version": data.version },
           body: JSON.stringify({ header, itemIds: data.items.map(item => item.id), fields }) });
+        let purchaseRequestUpdated: boolean;
         if (await missingRoute(response, `PATCH:${route}`)) {
           await send(`/api/v1/purchase-orders/${id}`, "PATCH", header, data.version);
-          await applyCommonFieldsToItems(fields);
+          purchaseRequestUpdated = await applyCommonFieldsToItems(fields);
         } else {
-          const result = await responseData<{ updatedCount: number }>(response);
+          const result = await responseData<{ updatedCount: number; purchaseRequestUpdated?: boolean }>(response);
           if (result.updatedCount !== data.items.length) {
             throw new Error("A API atualizou uma quantidade inesperada de produtos. Recarregue a PO e confira os campos da SC.");
           }
           await verifySavedItemFields(id, new Map(data.items.map(item => [item.id, fields])));
+          purchaseRequestUpdated = result.purchaseRequestUpdated === true;
         }
         setCommonFieldsTouched(new Set());
+        return purchaseRequestUpdated;
       } else {
         await send(`/api/v1/purchase-orders/${id}`, "PATCH", header, data.version);
         setCommonFieldsTouched(new Set());
+        return false;
       }
-    }, commonFieldsTouched.size ? "PO e dados compartilhados atualizados." : "PO atualizada.");
+    }, purchaseRequestUpdated => sharedFieldsSavedMessage(
+      commonFieldsTouched.size ? "PO e dados compartilhados atualizados." : "PO atualizada.",
+      purchaseRequestUpdated, data.purchaseRequest?.scNumber ?? null));
   }
   async function saveItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!data) return;
@@ -448,9 +458,11 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     const fieldsToSave = purchaseOrderCommonItemFields.filter(field => commonFieldsTouched.has(field.key));
     const fields = purchaseOrderItemFieldsPayload(commonOperationalDraft, true, fieldsToSave);
     await save(async () => {
-      await applyCommonFieldsToItems(fields);
+      const purchaseRequestUpdated = await applyCommonFieldsToItems(fields);
       setCommonFieldsTouched(new Set());
-    }, "Dados compartilhados aplicados a todos os produtos.");
+      return purchaseRequestUpdated;
+    }, purchaseRequestUpdated => sharedFieldsSavedMessage("Dados compartilhados aplicados a todos os produtos.",
+      purchaseRequestUpdated, data.purchaseRequest?.scNumber ?? null));
   }
   async function createItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!data) return;
@@ -670,9 +682,13 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       {canEditPo && <section className="po-entry-section po-common-fields">
         <h4>Dados compartilhados pelos produtos</h4>
         <p className="muted">Preencha uma vez para manter iguais nos produtos. A data da PO é compartilhada no cabeçalho.</p>
+        {data.purchaseRequestId && <p className="muted">Com a SC {data.purchaseRequest?.scNumber ?? ""} vinculada, data da SC,
+          data de aprovação, solicitante e recebimento do plano comercial também atualizam a SC no PCM. O número da SC é
+          alterado no PCM.</p>}
         {commonValuesDiffer && <p className="notice">Há valores diferentes entre produtos. Ao aplicar um campo, ele será padronizado em todos.</p>}
         <form className="stack-form" onSubmit={saveCommonFields}>
           <OperationalFieldsEditor fields={purchaseOrderCommonItemFields} values={commonOperationalDraft} options={options}
+            readOnlyKeys={lockedSharedFieldKeys(data.purchaseRequestId)}
             setValues={values => purchaseOrderCommonItemFields.forEach(field => {
               const value = values[field.key] ?? "";
               if (value !== commonOperationalDraft[field.key]) updateCommonField(field.key, value);
