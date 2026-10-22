@@ -5,7 +5,7 @@
 | Data | 2026-10-21 |
 | Branch de trabalho | `homologacao` |
 | Ambiente de validação | HML (VPS `import-erp-hml-api` + banco `erp_po_totvs_hml`) e Preview Vercel |
-| Status | Especificação aguardando revisão |
+| Status | Aprovado para implementação; exceção estreita M066 autorizada |
 
 ## Objetivo
 
@@ -17,7 +17,7 @@ Também não há como excluir uma SC cadastrada por engano. O PCM passa a ter a 
 com os dados e o motivo preservados na auditoria e o número liberado para novo cadastro.
 
 A entrega tem duas partes independentes: **Parte A**, a SC junto com a PO (sem migration), e
-**Parte B**, a exclusão de SC (com a migration M066, só de permissão).
+**Parte B**, a exclusão de SC (com a migration M066).
 
 ## Decisões já tomadas
 
@@ -36,6 +36,9 @@ A entrega tem duas partes independentes: **Parte A**, a SC junto com a PO (sem m
   excluídas vinculadas são desvinculadas automaticamente, com auditoria, antes de apagar a SC.
 - Pode excluir quem já edita SC (`purchase-requests.write`: Master, Administrador e PCM). O motivo é
   obrigatório.
+- Exceção autorizada pelo usuário em 2026-10-21: a M066 pode permitir somente limpar
+  `purchase_order.purchase_request_id` de uma PO já `DELETED`, mantendo imutáveis os demais campos
+  comerciais da PO. Essa exceção é necessária para desvincular POs excluídas antes da exclusão da SC.
 
 ## Requisitos
 
@@ -81,8 +84,11 @@ A entrega tem duas partes independentes: **Parte A**, a SC junto com a PO (sem m
 
 ### Parte B — Banco — migration `M066_purchase_request_delete.sql`
 
-12. Concede `DELETE ON procurement.purchase_request` aos papéis `import_erp_app` e
-    `import_erp_hml_app`, quando existirem. Nenhuma tabela, coluna ou dado muda.
+12. A M066 concede `DELETE ON procurement.purchase_request` aos papéis `import_erp_app` e
+    `import_erp_hml_app`, quando existirem, sem criar tabelas/colunas nem alterar dados. A migration
+    também substitui a função do trigger de imutabilidade da PO para admitir somente limpar
+    `purchase_request_id` quando a PO está e permanece `DELETED`; qualquer outro campo de negócio
+    continua protegido. O usuário autorizou expressamente essa exceção estreita em 2026-10-21.
 13. Validação em cópia restaurada do HML antes de aplicar; aplicação somente em `erp_po_totvs_hml`,
     após backup. Produção não é alterada.
 
@@ -108,8 +114,8 @@ A entrega tem duas partes independentes: **Parte A**, a SC junto com a PO (sem m
 
 ## Restrições
 
-- Única migration: M066, só de permissão. Sem mudança na unicidade `(importer, normalized_sc_number)`
-  da SC.
+- Única migration: M066, com grants e a exceção estrita do trigger descrita acima. Sem mudança na
+  unicidade `(importer, normalized_sc_number)` da SC.
 - Reaproveitar `receipt`/`saveReceipt`, `record`, `validateNewPurchaseOrder` e `validatePurchaseRequest`;
   não duplicar regras da rota `POST /api/v1/purchase-requests`.
 - A tela do PCM e as permissões dos papéis não mudam.
