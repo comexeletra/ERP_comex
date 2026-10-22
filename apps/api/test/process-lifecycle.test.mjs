@@ -289,6 +289,29 @@ test("cancellation cannot route a PO to a deleted IP", async t => {
   assert.equal(queries.some(query => query.sql.includes("SET record_status = 'CANCELLED'")), false);
 });
 
+test("a deleted IP cannot be cancelled or have POs routed", async t => {
+  const queries = [];
+  const client = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (sql.includes("SELECT * FROM imports.import_process WHERE id = $1")) {
+        return { rows: [{ id: processId, importer: "ELETRA MATRIZ", record_status: "DELETED",
+          lifecycle_status: "OPEN", version: "1" }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 1 };
+    },
+    release() {},
+  };
+  const app = await operationalApp(t, client);
+  const response = await app.inject({ method: "POST", url: `/api/v1/processes/${processId}/cancel`,
+    headers: { "x-test-subject": "writer", "x-record-version": "1" },
+    payload: { reason: "Não alterar IP excluído", purchaseOrders: [] },
+  });
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.json().code, "DELETED_IP_REFERENCE");
+  assert.equal(queries.some(query => query.sql.includes("SET record_status = 'CANCELLED'")), false);
+});
+
 test("manual IP creation refuses a number reserved by a deleted IP", async t => {
   const queries = [];
   const client = {

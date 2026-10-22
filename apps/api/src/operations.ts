@@ -2141,6 +2141,9 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const process = found.rows[0];
         if (!process) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "IP nÃ£o encontrado.");
         checkVersion(process, expected);
+        if (process.record_status === "DELETED") {
+          throw new BusinessError(409, "DELETED_IP_REFERENCE", "Restaure o IP antes de encaminhar POs ou alterar seu estado.");
+        }
         if (process.record_status === "CANCELLED") throw new BusinessError(409, "PROCESS_ALREADY_CANCELLED", "Este IP jÃ¡ foi cancelado.");
         if (process.lifecycle_status !== "OPEN") throw new BusinessError(409, "PROCESS_CLOSED", "Reabra o IP antes de cancelar e encaminhar suas POs.");
         const links = await client.query<{ purchase_order_id: string; number: string; lifecycle_status: string }>(

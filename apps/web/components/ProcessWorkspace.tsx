@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { FormEvent, Fragment, useEffect, useRef, useState } from "react";
-import { apiFetch, readApiJson } from "../lib/api";
+import { apiFetch, isMissingApiRoute, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
+import { processLifecycleActions, type ProcessLifecycleAction } from "../lib/ip-lifecycle";
 import { matchesPurchaseOrderNumber } from "../lib/portfolio-query";
 import { formatNumber } from "../lib/format-number";
 import { SearchableSelect } from "./SearchableSelect";
@@ -21,7 +22,8 @@ type OperationalAllocation = { id: string; poId: string; poNumber: string; produ
 type Process = { id: string; ipNumber: string; importer: string; supplierEntryId?: string | null; supplierText: string | null; supplierName?: string | null; logisticsStatus: string | null;
   invoiceSupplierDivergence?: boolean;
   qualityStatus: string; sourceKind: string; priority: string | null; notes: string;
-  version: string; lifecycleStatus?: "OPEN" | "CLOSED"; recordStatus?: "DRAFT" | "ACTIVE" | "CANCELLED"; closedAt: string | null;
+  version: string; lifecycleStatus?: "OPEN" | "CLOSED"; recordStatus?: "DRAFT" | "ACTIVE" | "CANCELLED" | "DELETED";
+  recordStatusBeforeDelete?: "DRAFT" | "ACTIVE" | "CANCELLED" | null; deletedAt?: string | null; deletedBy?: string | null; deleteReason?: string | null; closedAt: string | null;
   closedBy: string | null; closeReason: string | null;
   processDocumentCount?: number;
   purchaseOrders: Order[]; historicalCosts: Cost[];
@@ -72,9 +74,9 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
   const poSearchRequest = useRef(0);
   const [linkingPo, setLinkingPo] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [closing, setClosing] = useState(false);
-  const [reopening, setReopening] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [lifecycleReason, setLifecycleReason] = useState("");
+  const [lifecycleBusy, setLifecycleBusy] = useState<ProcessLifecycleAction | null>(null);
   const [cancellationRoutes, setCancellationRoutes] = useState<Record<string, CancellationDestination>>({});
   const [destinationIps, setDestinationIps] = useState<Array<{ id: string; ipNumber: string; recordStatus?: string }>>([]);
   const [notice, setNotice] = useState("");
@@ -252,6 +254,8 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
   }
   async function cancelProcess(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!process) return;
+    const reason = lifecycleReason.trim();
+    if (reason.length < 3) { setSaveError("Informe um motivo com pelo menos 3 caracteres."); return; }
     setCancelling(true); setSaveError(undefined); setNotice("");
     try {
       const purchaseOrders = process.purchaseOrders.map(order => {
@@ -264,7 +268,7 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
       if (purchaseOrders.some(item => item.destinationType === "EXISTING" && !item.processId)) throw new Error("Selecione um IP para cada PO encaminhada.");
       const response = await apiFetch("/api/v1/processes/" + id + "/cancel", { method: "POST",
         headers: { "content-type": "application/json", "X-Record-Version": process.version },
-        body: JSON.stringify({ reason: automaticAuditReason, purchaseOrders }) });
+        body: JSON.stringify({ reason, purchaseOrders }) });
       const result = await readApiJson<{ status: string; createdDraftIps: number; releasedAllocations: number }>(response);
       if ((await readSavedProcess()).recordStatus !== "CANCELLED") throw new Error("O IP nao aparece como cancelado na releitura.");
       const routeSummary = purchaseOrders.map(route => {
@@ -280,40 +284,57 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
     } catch (cause) { setSaveError(cause instanceof Error ? cause.message : "Nao foi possivel cancelar o IP."); }
     finally { setCancelling(false); }
   }
-  async function closeProcess(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!process) return;
-    setClosing(true); setSaveError(undefined); setNotice("");
+  async function changeLifecycleAction(action: Exclude<ProcessLifecycleAction, "cancel">) {
+    if (!process) return;
+    const reason = lifecycleReason.trim();
+    if (reason.length < 3) { setSaveError("Informe um motivo com pelo menos 3 caracteres."); return; }
+    const pathSuffix = action === "delete" ? "" : "/" + action;
+    const route = "/api/v1/processes/" + id + pathSuffix;
+    const method = action === "delete" ? "DELETE" : "POST";
+    setLifecycleBusy(action); setSaveError(undefined); setNotice("");
     try {
-      const response = await apiFetch(`/api/v1/processes/${id}/close`, { method: "POST",
+      const response = await apiFetch(route, { method,
         headers: { "content-type": "application/json", "X-Record-Version": process.version },
-        body: JSON.stringify({ reason: automaticAuditReason }) });
-      const body = await response.json() as { detail?: string };
-      if (!response.ok) throw new Error(body.detail || "Não foi possível encerrar o IP.");
-      if ((await readSavedProcess()).lifecycleStatus !== "CLOSED") {
-        throw new Error("A API confirmou o encerramento, mas o IP não aparece como encerrado.");
+        body: JSON.stringify({ reason }) });
+      const body = await response.clone().json().catch(() => null) as { detail?: string } | null;
+      if (!response.ok) {
+        if ((action === "delete" || action === "reactivate" || action === "restore")
+          && isMissingApiRoute(response.status, body, route)) {
+          const message = "Ciclo do IP indisponível nesta versão da API.";
+          setCompatibilityWarning(message);
+          setSaveError(undefined);
+          return;
+        }
+        throw new Error(body?.detail || "Não foi possível alterar o ciclo do IP.");
       }
-      setNotice("IP encerrado."); setRetry(value => value + 1);
-    } catch (cause) { setSaveError(cause instanceof Error ? cause.message : "Erro inesperado."); }
-    finally { setClosing(false); }
-  }
-  async function reopenProcess(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!process) return;
-    setReopening(true); setSaveError(undefined); setNotice("");
-    try {
-      const response = await apiFetch(`/api/v1/processes/${id}/reopen`, { method: "POST",
-        headers: { "content-type": "application/json", "X-Record-Version": process.version },
-        body: JSON.stringify({ reason: automaticAuditReason }) });
-      const body = await response.json() as { detail?: string };
-      if (!response.ok) throw new Error(body.detail || "Não foi possível reabrir o IP.");
-      if ((await readSavedProcess()).lifecycleStatus !== "OPEN") {
-        throw new Error("A API confirmou a reabertura, mas o IP não aparece como aberto.");
-      }
-      setNotice("IP reaberto."); setRetry(value => value + 1);
-    } catch (cause) { setSaveError(cause instanceof Error ? cause.message : "Erro inesperado."); }
-    finally { setReopening(false); }
+      const saved = await readSavedProcess();
+      const valid = action === "close" ? saved.lifecycleStatus === "CLOSED"
+        : action === "reopen" ? saved.lifecycleStatus === "OPEN"
+          : action === "delete" ? saved.recordStatus === "DELETED"
+            : action === "reactivate" ? saved.recordStatus === "ACTIVE" && saved.lifecycleStatus === "OPEN"
+              && saved.logisticsStatus === null : saved.recordStatus !== "DELETED";
+      if (!valid) throw new Error("A API confirmou a ação, mas o estado salvo do IP não corresponde ao resultado esperado.");
+      setCompatibilityWarning("");
+      setNotice(action === "close" ? "IP encerrado."
+        : action === "reopen" ? "IP reaberto."
+          : action === "delete" ? "IP excluído da lista ativa. Dados e histórico seguem disponíveis para consulta."
+            : action === "reactivate" ? "IP reativado. Recarregue a invoice ou distribua novamente com o saldo atual."
+              : "IP restaurado ao estado anterior.");
+      setRetry(value => value + 1);
+    } catch (cause) {
+      setSaveError(cause instanceof Error ? cause.message : "Erro inesperado.");
+    } finally { setLifecycleBusy(null); }
   }
   const canWrite = roles.some(role => ["Master", "Administrador", "Importação"].includes(role));
-
+  const canManageLifecycle = roles.some(role => role === "Master" || role === "Administrador");
+  const lifecycleActions = processLifecycleActions(process?.recordStatus, process?.lifecycleStatus,
+    canWrite, canManageLifecycle);
+  const deleteDisabled = Boolean(process && (process.operationalAllocations.length > 0
+    || (process.processDocumentCount ?? 0) > 0 || process.purchaseOrders.length > 0));
+  const lifecycleActionLabels: Record<ProcessLifecycleAction, string> = {
+    close: "Encerrar IP", reopen: "Reabrir IP", delete: "Excluir IP",
+    reactivate: "Reativar IP", restore: "Restaurar IP", cancel: "Cancelar IP e encaminhar POs",
+  };
   return <main className="shell"><Link className="back" href={returnPath}>← Lista de IPs</Link>
     {loading && <p role="status">Carregando IP…</p>}
     {error && <div className="notice error" role="alert"><p>{error}</p><button className="button" onClick={() => setRetry(value => value + 1)}>Tentar novamente</button></div>}
@@ -324,45 +345,26 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
       {process.recordStatus === "CANCELLED" && <p className="notice" role="status">IP cancelado. As distribuicoes foram liberadas e as POs encaminhadas conforme a decisao registrada.</p>}
       {process.invoiceSupplierDivergence && <p className="notice" role="status">O Exporter da invoice difere do fornecedor de uma ou mais POs. Os valores originais foram preservados na invoice e nas POs.</p>}
       <section className="metric-grid"><Metric label="POs vinculadas" value={process.purchaseOrders.length} /><Metric label="Linhas históricas" value={lines.totalCount} /><Metric label="Custos históricos" value={process.historicalCosts.length} /></section>
-      <section className="card"><h2>Dados operacionais do IP</h2>
-        <p>Prioridade: {process.priority ?? "não informada"}. Observações: {process.notes || "—"}.</p>
-        {canWrite && process.lifecycleStatus === "OPEN" && (process.sourceKind === "CHINA_INVOICE" || process.recordStatus === "DRAFT")
-          && <p><Link className="button secondary" href={`/processes/new?reviewInvoice=${encodeURIComponent(id)}`}>
-            {process.recordStatus === "DRAFT" ? "Carregar invoice" : "Revisar invoice"}</Link></p>}
+      <section className="card"><h2>Ciclo do IP</h2>
+        <p>Situação: {process.recordStatus === "DELETED" ? "Excluído" : process.recordStatus === "CANCELLED" ? "Cancelado" : process.recordStatus === "DRAFT" ? "Rascunho" : "Ativo"} · {process.lifecycleStatus === "CLOSED" ? "Encerrado" : process.lifecycleStatus === "OPEN" ? "Aberto" : "Indisponível"}.</p>
+        {process.recordStatus === "DELETED" && <p className="notice" role="status">Este IP foi excluído da lista ativa; dados e histórico continuam disponíveis para consulta.</p>}
+        {process.lifecycleStatus === "CLOSED" && <p className="notice">IP encerrado em {process.closedAt ? new Date(process.closedAt).toLocaleString("pt-BR") : "data indisponível"}.</p>}
+        {((process.recordStatus === "CANCELLED" && !canManageLifecycle) || (process.recordStatus === "DELETED" && !canManageLifecycle))
+          && <p className="notice" role="status">Peça a um Master ou Administrador para reativar ou restaurar este IP.</p>}
         {notice && <p className="notice success" role="status">{notice}</p>}
         {saveError && <p className="notice error" role="alert">{saveError}</p>}
-        {process.lifecycleStatus === "CLOSED" && <>
-          <p className="notice">IP encerrado em {process.closedAt ? new Date(process.closedAt).toLocaleString("pt-BR") : "data indisponível"}.</p>
-          {canWrite && <details className="process-action"><summary className="process-action-trigger">Reabrir IP</summary><form className="stack-form" onSubmit={reopenProcess}>
-            <button className="button" disabled={reopening}>{reopening ? "Reabrindo…" : "Reabrir IP"}</button>
-          </form></details>}
-        </>}
-        {canWrite && process.lifecycleStatus === "OPEN" && process.recordStatus === "ACTIVE" && <>
-          <details className="process-action"><summary className="process-action-trigger">Editar IP</summary><form className="stack-form" onSubmit={saveProcess}>
-          <label>Importadora<SearchableSelect ariaLabel="Importadora" required disabled={process.sourceKind !== "MANUAL" || process.purchaseOrders.length > 0
-            || process.operationalAllocations.length > 0 || process.historicalCosts.length > 0
-            || (process.processDocumentCount ?? 0) > 0 || lines.totalCount > 0} value={importerDraft} onChange={setImporterDraft}
-            options={importers.map(option => ({ value: option.code, label: option.code }))} /></label>
-          <label>Número do IP<input required maxLength={80} disabled={process.sourceKind !== "MANUAL"}
-            value={ipNumberDraft} onChange={event => setIpNumberDraft(event.target.value)} /></label>
-          <label>Status logístico<OperationalOptionSelect entity="logistics_status" value={logisticsStatusDraft}
-            values={operationalOptions} onChange={setLogisticsStatusDraft} /></label>
-          <label>Prioridade<OperationalOptionSelect entity="priority" value={priorityDraft}
-            values={operationalOptions} onChange={setPriorityDraft} /></label>
-          <label>Observações<textarea maxLength={4000} value={notesDraft} onChange={event => setNotesDraft(event.target.value)} /></label>
-          <button className="button" disabled={saving}>{saving ? "Salvando…" : "Salvar IP"}</button>
-          </form></details>
-          <details className="process-action"><summary className="process-action-trigger">Encerrar IP</summary><form className="stack-form" onSubmit={closeProcess}>
-            <p>O encerramento fica a critério do analista e não depende do status logístico. Depois de encerrado, os dados e as distribuições ficam bloqueados para edição.</p>
-            <button className="button" disabled={closing}>{closing ? "Encerrando…" : "Encerrar IP"}</button>
-          </form></details>
-        </>}
-      </section>
-      <section className="card"><h2>POs vinculadas</h2><p className="muted">Vínculos históricos e operacionais. O IP pode atender várias POs, e uma PO pode aparecer em vários IPs.</p>
-        {process.purchaseOrders.length === 0 && <p>Nenhuma PO vinculada. Linhas sem PO podem aparecer nas observações.</p>}
-        {process.purchaseOrders.map(order => <p key={order.id}><Link className="text-link" href={`/purchase-orders/${order.id}`}>PO {order.number} →</Link> · {order.importer} · {order.linkSource}</p>)}
-        {canWrite && process.lifecycleStatus === "OPEN" && process.recordStatus !== "CANCELLED" && <details className="process-action">
-          <summary className="process-action-trigger">Cancelar IP e encaminhar POs</summary>
+        <label>Motivo da ação<textarea required minLength={3} maxLength={1000} value={lifecycleReason}
+          onChange={event => setLifecycleReason(event.target.value)} /></label>
+        <div className="process-action-buttons">
+          {lifecycleActions.filter(action => action !== "cancel").map(action =>
+            <button key={action} className="button" type="button"
+              disabled={lifecycleBusy !== null || lifecycleReason.trim().length < 3
+                || (action === "delete" && deleteDisabled)}
+              onClick={() => void changeLifecycleAction(action)}>
+              {lifecycleBusy === action ? lifecycleActionLabels[action] + "…" : lifecycleActionLabels[action]}
+            </button>)}
+          {lifecycleActions.includes("cancel") && <details className="process-action">
+          <summary className="process-action-trigger">{lifecycleActionLabels.cancel}</summary>
           <form className="stack-form" onSubmit={cancelProcess}>
             <p>Escolha para cada PO se ela fica sem vinculo, segue para um IP existente ou aguarda invoice em um novo IP. O encaminhamento nao reserva quantidades; a invoice informara a distribuicao.</p>
             {process.purchaseOrders.length === 0 && <p>Este IP nao tem POs vinculadas.</p>}
@@ -386,17 +388,51 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
                   onChange={event => setCancellationRoutes(current => ({ ...current, [order.id]: { type: "NEW", ipNumber: event.target.value } }))} /></label>}
               </div>;
             })}
-            <button className="button" disabled={cancelling}>{cancelling ? "Cancelando..." : "Cancelar IP e confirmar destinos"}</button>
+            <button className="button" disabled={cancelling || lifecycleBusy !== null || lifecycleReason.trim().length < 3}>
+              {cancelling ? "Cancelando..." : "Cancelar IP e encaminhar POs"}
+            </button>
           </form>
         </details>}
+        </div>
+        {lifecycleActions.includes("delete") && deleteDisabled && <p className="notice" role="status">
+          Exclua distribuições ativas, documentos ativos e encaminhe ou desvincule as POs antes de excluir este IP.
+        </p>}
+        {lifecycleActions.includes("delete") && lifecycleReason.trim().length < 3
+          && <p className="muted">Informe o motivo com pelo menos 3 caracteres para habilitar as ações.</p>}
+      </section>
+      <section className="card"><h2>Dados operacionais do IP</h2>
+        <p>Prioridade: {process.priority ?? "não informada"}. Observações: {process.notes || "—"}.</p>
+        {canWrite && process.recordStatus !== "DELETED" && process.lifecycleStatus === "OPEN"
+          && (process.sourceKind === "CHINA_INVOICE" || process.recordStatus === "DRAFT")
+          && <p><Link className="button secondary" href={`/processes/new?reviewInvoice=${encodeURIComponent(id)}`}>
+            {process.recordStatus === "DRAFT" ? "Carregar invoice" : "Revisar invoice"}</Link></p>}
+        {canWrite && process.lifecycleStatus === "OPEN" && process.recordStatus === "ACTIVE" && <>
+          <details className="process-action"><summary className="process-action-trigger">Editar IP</summary><form className="stack-form" onSubmit={saveProcess}>
+          <label>Importadora<SearchableSelect ariaLabel="Importadora" required disabled={process.sourceKind !== "MANUAL" || process.purchaseOrders.length > 0
+            || process.operationalAllocations.length > 0 || process.historicalCosts.length > 0
+            || (process.processDocumentCount ?? 0) > 0 || lines.totalCount > 0} value={importerDraft} onChange={setImporterDraft}
+            options={importers.map(option => ({ value: option.code, label: option.code }))} /></label>
+          <label>Número do IP<input required maxLength={80} disabled={process.sourceKind !== "MANUAL"}
+            value={ipNumberDraft} onChange={event => setIpNumberDraft(event.target.value)} /></label>
+          <label>Status logístico<OperationalOptionSelect entity="logistics_status" value={logisticsStatusDraft}
+            values={operationalOptions} onChange={setLogisticsStatusDraft} /></label>
+          <label>Prioridade<OperationalOptionSelect entity="priority" value={priorityDraft}
+            values={operationalOptions} onChange={setPriorityDraft} /></label>
+          <label>Observações<textarea maxLength={4000} value={notesDraft} onChange={event => setNotesDraft(event.target.value)} /></label>
+          <button className="button" disabled={saving}>{saving ? "Salvando…" : "Salvar IP"}</button>
+          </form></details>
+        </>}
+      </section>
+      <section className="card"><h2>POs vinculadas</h2><p className="muted">Vínculos históricos e operacionais. O IP pode atender várias POs, e uma PO pode aparecer em vários IPs.</p>
+        {process.purchaseOrders.length === 0 && <p>Nenhuma PO vinculada. Linhas sem PO podem aparecer nas observações.</p>}
+        {process.purchaseOrders.map(order => <p key={order.id}><Link className="text-link" href={`/purchase-orders/${order.id}`}>PO {order.number} →</Link> · {order.importer} · {order.linkSource}</p>)}
         {canWrite && process.lifecycleStatus === "OPEN" && process.recordStatus === "ACTIVE" && <div className="operational-allocation">
           <div className="allocation-heading">
             <div><h3>Distribuir item de uma PO</h3>
               <p>Escolha o item, confira o saldo e defina quanto ficará neste IP. A PO será vinculada ao confirmar.</p>
             </div>
           </div>
-          {saveError && <p className="notice error" role="alert">{saveError}</p>}
-          {searchingPos && <p className="allocation-feedback" role="status">Buscando PO e carregando saldo...</p>}
+            {searchingPos && <p className="allocation-feedback" role="status">Buscando PO e carregando saldo...</p>}
           {poSearchMessage && <p className="allocation-feedback" role="status">{poSearchMessage}</p>}
 
           <div className="allocation-step-title"><span>1</span><div><h4>Encontre a PO</h4><p>Pesquise pelo número e selecione uma PO da importadora {process.importer}.</p></div></div>

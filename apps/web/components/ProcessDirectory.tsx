@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
+import { emptyProcessDirectoryFilters, parseProcessDirectoryFilters, processDirectoryQuery,
+  type ProcessDirectoryFilters, type ProcessDirectoryRecordStatus } from "../lib/ip-lifecycle";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 
-type Process = { id: string; ipNumber: string; importer: string; logisticsStatus: string | null; lifecycleStatus?: "OPEN" | "CLOSED"; recordStatus?: "DRAFT" | "ACTIVE" | "CANCELLED"; qualityStatus: string; purchaseOrderCount: number; historicalLineCount: number; operationalAllocationCount: number; historicalCostCount: number };
+type Process = { id: string; ipNumber: string; importer: string; logisticsStatus: string | null; lifecycleStatus?: "OPEN" | "CLOSED"; recordStatus?: "DRAFT" | "ACTIVE" | "CANCELLED" | "DELETED"; qualityStatus: string; purchaseOrderCount: number; historicalLineCount: number; operationalAllocationCount: number; historicalCostCount: number };
 type Page = { page: number; pageSize: number; totalCount: number; items: Process[] };
-const empty = { ipNumber: "", importer: "", logisticsStatus: "", qualityStatus: "" };
-type Filters = typeof empty;
+const empty = emptyProcessDirectoryFilters;
+type Filters = ProcessDirectoryFilters;
 
 export default function ProcessDirectory() {
   const [draft, setDraft] = useState<Filters>(empty);
@@ -32,15 +34,13 @@ export default function ProcessDirectory() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const initial = { ipNumber: params.get("ipNumber") ?? "", importer: params.get("importer") ?? "", logisticsStatus: params.get("logisticsStatus") ?? "", qualityStatus: params.get("qualityStatus") ?? "" };
+    const initial = parseProcessDirectoryFilters(params);
     const number = Number(params.get("page"));
     setDraft(initial); setFilters(initial); setPage(Number.isSafeInteger(number) && number > 0 ? number : 1); setReady(true);
   }, []);
 
   function query(nextFilters: Filters, nextPage: number) {
-    const params = new URLSearchParams({ page: String(nextPage), pageSize: "50" });
-    for (const key of Object.keys(empty) as (keyof Filters)[]) if (nextFilters[key].trim()) params.set(key, nextFilters[key].trim());
-    return params;
+    return processDirectoryQuery(nextFilters, nextPage);
   }
   function navigate(nextFilters: Filters, nextPage: number) {
     setFilters(nextFilters); setPage(nextPage);
@@ -86,6 +86,12 @@ export default function ProcessDirectory() {
       <label>Importador<input value={draft.importer} onChange={event => setDraft({ ...draft, importer: event.target.value })} /></label>
       <label>Status logístico<OperationalOptionSelect entity="logistics_status" value={draft.logisticsStatus} values={options} onChange={logisticsStatus => setDraft({ ...draft, logisticsStatus })} /></label>
       <label>Qualidade<input value={draft.qualityStatus} onChange={event => setDraft({ ...draft, qualityStatus: event.target.value })} /></label>
+      <label>Situação do IP<select value={draft.recordStatus} onChange={event => setDraft({ ...draft, recordStatus: event.target.value as ProcessDirectoryRecordStatus })}>
+        <option value="">Ativos, rascunhos e cancelados</option>
+        <option value="active">Ativos</option><option value="draft">Rascunhos</option>
+        <option value="cancelled">Cancelados</option><option value="deleted">Excluídos</option>
+        <option value="all">Todos</option>
+      </select></label>
       <button className="button">Filtrar</button><button type="button" className="button secondary" onClick={() => { setDraft(empty); navigate(empty, 1); }}>Limpar</button>
     </form></section>
     <section className="card" aria-live="polite">
@@ -95,7 +101,7 @@ export default function ProcessDirectory() {
       {!loading && !error && data && <><p>{data.totalCount} IPs encontrados{pages > 0 && ` · página ${page} de ${pages}`}</p>
         {data.items.length === 0 && <p>{data.totalCount ? "Página fora do intervalo." : "Nenhum IP encontrado."}</p>}
         {data.items.length > 0 && <div className="table-scroll"><table><thead><tr><th>IP</th><th>Registro</th><th>Importador</th><th>Status logístico</th><th>Ciclo do IP</th><th>Qualidade</th><th>POs</th><th>Distribuições</th><th>Linhas de origem</th><th>Custos históricos</th><th></th></tr></thead><tbody>
-          {data.items.map(item => <tr key={item.id}><td>{item.ipNumber}</td><td>{item.recordStatus === "DRAFT" ? "Rascunho" : item.recordStatus === "CANCELLED" ? "Cancelado" : "Ativo"}</td><td>{item.importer}</td><td>{item.logisticsStatus ?? "Não informado"}</td><td>{item.lifecycleStatus === "CLOSED" ? "Encerrado" : item.lifecycleStatus === "OPEN" ? "Aberto" : "Indisponível"}</td><td>{item.qualityStatus}</td><td>{item.purchaseOrderCount}</td><td>{item.operationalAllocationCount}</td><td>{item.historicalLineCount}</td><td>{item.historicalCostCount}</td><td><Link className="button" aria-label={`Abrir IP ${item.ipNumber}`} href={`/processes/${item.id}?return=${encodeURIComponent(returnPath)}`}>Abrir IP</Link></td></tr>)}
+          {data.items.map(item => <tr key={item.id}><td>{item.ipNumber}</td><td>{item.recordStatus === "DRAFT" ? "Rascunho" : item.recordStatus === "CANCELLED" ? "Cancelado" : item.recordStatus === "DELETED" ? "Excluído" : "Ativo"}</td><td>{item.importer}</td><td>{item.logisticsStatus ?? "Não informado"}</td><td>{item.lifecycleStatus === "CLOSED" ? "Encerrado" : item.lifecycleStatus === "OPEN" ? "Aberto" : "Indisponível"}</td><td>{item.qualityStatus}</td><td>{item.purchaseOrderCount}</td><td>{item.operationalAllocationCount}</td><td>{item.historicalLineCount}</td><td>{item.historicalCostCount}</td><td><Link className="button" aria-label={`Abrir IP ${item.ipNumber}`} href={`/processes/${item.id}?return=${encodeURIComponent(returnPath)}`}>Abrir IP</Link></td></tr>)}
         </tbody></table></div>}
         {pages > 1 && <nav className="pagination"><button className="button secondary" disabled={page <= 1} onClick={() => navigate(filters, page - 1)}>Anterior</button><span>Página {page} de {pages}</span><button className="button" disabled={page >= pages} onClick={() => navigate(filters, page + 1)}>Próxima</button></nav>}
       </>}

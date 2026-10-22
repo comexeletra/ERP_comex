@@ -5,6 +5,7 @@ import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, isMissingApiRoute, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
+import { deletedIpInvoiceBlockMessage } from "../lib/ip-lifecycle";
 import { SearchableSelect } from "./SearchableSelect";
 import {
   blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsEditor,
@@ -480,7 +481,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         const preflight = await loadInvoicePreflight(invoiceImporter, draft);
         setDuplicateInvoiceIps(preflight.ipNumbers);
         setIpReferenceOtherImporter(preflight.ipReferenceOtherImporter);
-        const query = new URLSearchParams({ ipNumber: draft.ipNumber.trim(), importer: invoiceImporter, page: "1", pageSize: "200" });
+        const query = new URLSearchParams({ ipNumber: draft.ipNumber.trim(), importer: invoiceImporter,
+          page: "1", pageSize: "200", recordStatus: "all" });
         const existing = await readResponse<{ items: Array<{ id: string; ipNumber: string; recordStatus: string; version: string;
           logisticsStatus: string | null; lifecycleStatus: string }> }>(
           await apiFetch(`/api/v1/processes?${query}`, { cache: "no-store" }));
@@ -490,6 +492,11 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           throw new Error("O IP selecionado para revisão não foi encontrado nesta importadora.");
         }
         setInvoiceDuplicate(duplicate ?? null);
+        const deletedMessage = deletedIpInvoiceBlockMessage(duplicate?.recordStatus);
+        if (deletedMessage) {
+          setInvoiceError(deletedMessage);
+          return;
+        }
         if (duplicate?.recordStatus === "CANCELLED" || duplicate?.lifecycleStatus === "CLOSED") {
           setInvoiceError("Este IP está cancelado ou encerrado. Reabra-o ou use o IP REF correto.");
           return;
@@ -541,7 +548,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     if (!importer) { setInvoiceError("Selecione uma importadora antes de carregar as POs."); return; }
     setInvoiceLoading(true); setInvoiceError("");
     try {
-      const duplicateQuery = new URLSearchParams({ ipNumber: invoiceDraft.ipNumber.trim(), importer, page: "1", pageSize: "200" });
+      const duplicateQuery = new URLSearchParams({ ipNumber: invoiceDraft.ipNumber.trim(), importer,
+        page: "1", pageSize: "200", recordStatus: "all" });
       const existing = await readResponse<{ items: Array<{ id: string; ipNumber: string; recordStatus: string; version: string;
         logisticsStatus: string | null; lifecycleStatus: string }> }>(
         await apiFetch(`/api/v1/processes?${duplicateQuery}`, { cache: "no-store" }));
@@ -555,6 +563,11 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       setDuplicateInvoiceIps(preflight.ipNumbers);
       setIpReferenceOtherImporter(preflight.ipReferenceOtherImporter);
       setConfirmDuplicateInvoice(false);
+      const deletedMessage = deletedIpInvoiceBlockMessage(duplicate?.recordStatus);
+      if (deletedMessage) {
+        setInvoiceError(deletedMessage);
+        return;
+      }
       if (duplicate?.recordStatus === "CANCELLED" || duplicate?.lifecycleStatus === "CLOSED") {
         setInvoiceError("Este IP está cancelado ou encerrado. Reabra-o ou use o IP REF correto.");
         return;
