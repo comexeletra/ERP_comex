@@ -1,5 +1,41 @@
 # API ERP na VPS Hostinger
 
+## Restaurar ou substituir PO excluída no HML (2026-10-21)
+
+O commit `b411567` publica a pré-validação com os dados da PO excluída na mesma
+importadora e as rotas `POST /api/v1/purchase-orders/:id/replace/preview` e
+`POST /api/v1/purchase-orders/:id/replace` (permissão
+`purchase-orders.lifecycle.manage`). Não houve migration; o ledger HML segue em
+M001–M066.
+
+O release foi compilado na VPS como `/opt/import-erp/apps/api/hml-release-b411567`,
+com as fontes normalizadas para LF, e ativado pelo drop-in
+`/etc/systemd/system/import-erp-hml-api.service.d/zzzzzzzzzzz-release-b411567.conf`.
+O drop-in e o `ExecStart` anteriores (`hml-release-83c3511`) foram preservados em
+`/var/backups/import-erp/hml-po-replace-d890468-predeploy`. Para rollback do
+código, remova os drop-ins `zzzzzzzzzz-release-d890468.conf` e
+`zzzzzzzzzzz-release-b411567.conf`, execute `systemctl daemon-reload` e reinicie
+`import-erp-hml-api`. Ignorando CR, o `dist` difere do release anterior somente
+em `operations.js` e `purchase-orders.js`. O serviço ficou ativo, `/health/live`
+respondeu 200 e as rotas novas sem sessão responderam 401.
+
+O primeiro release (`d890468`) falhou na validação: a atualização de linha
+reativada ou com produto trocado retornou `42P08` (tipo inconsistente do
+parâmetro `$2`). A transação foi revertida e a PO sintética
+`HMLVAL-PO-REPLACE-EEA323AB955B4FD5` permaneceu `DELETED` na versão 3, com os
+itens originais. A correção foi publicada em `b411567`.
+
+O teste opt-in `apps/api/test/purchase-order-replace-hml.integration.mjs` foi
+executado no release `b411567` com a role `import_erp_hml_app` em
+`erp_po_totvs_hml`. Ele criou a PO sintética
+`HMLVAL-PO-REPLACE-0D2C08C3977D4B64`, removeu uma linha, excluiu a PO, conferiu
+a prévia (1 atualizada, 1 incluída, 1 removida, 1 reativada e 1 com produto
+trocado), aplicou a substituição numa única transação com auditoria `RESTORE` e
+outbox na mesma quantidade da auditoria e, ao final, excluiu a PO logicamente.
+As alocações não mudaram. Após as duas execuções, o HML tem 7 POs (as duas
+sintéticas `DELETED`), 441 itens e 1 alocação. As POs `030201` não foram
+alteradas. Nenhuma produção foi consultada ou alterada.
+
 ## SC junto com PO e exclusão de SC no HML (2026-10-21)
 
 O código da Parte A e da Parte B foi publicado na branch `homologacao` no commit
