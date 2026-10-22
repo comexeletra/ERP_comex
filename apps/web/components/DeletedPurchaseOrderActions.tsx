@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, readApiJson } from "../lib/api";
-import { deletedPurchaseOrderActions } from "../lib/po-lifecycle";
+import { deletedPurchaseOrderActions, replacePreviewHasChanges } from "../lib/po-lifecycle";
 import type { PurchaseRequestPayloadChoice } from "../lib/totvs-purchase-request";
 
 export type PurchaseOrderReplacePayload = {
@@ -80,23 +80,27 @@ export default function DeletedPurchaseOrderActions({ purchaseOrder, canManageLi
     : purchaseRequest ? "A SC selecionada será vinculada à PO." : null;
   return <div className="notice">
     <p><Link className="text-link" href={purchaseOrderHref}>Abrir PO excluída</Link></p>
-    {actions.needsManager && <p>Peça a um Master ou Administrador para restaurar ou substituir esta PO.</p>}
+    {actions.needsManager && <p>Peça a um Master ou Administrador para restaurar esta PO.</p>}
     {(actions.restore || actions.replace) && <div className="button-row">
       {actions.restore && <button className="button secondary" type="button" disabled={busy}
-        onClick={() => { setMode("restore"); setPreview(null); }}>Restaurar PO</button>}
+        onClick={() => { setMode("restore"); setPreview(null); }}>Restaurar como estava</button>}
       {actions.replace && <button className="button secondary" type="button" disabled={busy || !replacePayload}
-        onClick={() => void loadPreview()}>Substituir pela planilha</button>}
+        onClick={() => void loadPreview()}>Restaurar com os dados da planilha</button>}
     </div>}
-    {actions.replace && !replacePayload && <p className="muted">Carregue a planilha TOTVS da PO para substituir.</p>}
+    {actions.restore && <p className="muted">Restaurar como estava: reativa a PO com os itens que ela tinha.</p>}
+    {actions.replace && <p className="muted">Restaurar com os dados da planilha: reativa a PO e atualiza os itens conforme a planilha.</p>}
+    {actions.replace && !replacePayload && <p className="muted">Carregue a planilha TOTVS da PO para restaurar com os dados da planilha.</p>}
     {busy && <p className="muted">Processando…</p>}
     {mode === "replace" && preview && <>
-      <p>Prévia da substituição: {previewGroups.map(([group, label]) => `${label} ${preview[group].length}`).join(" · ")}.</p>
+      <p>Prévia da restauração com a planilha: {previewGroups.map(([group, label]) => `${label} ${preview[group].length}`).join(" · ")}.</p>
       {previewGroups.filter(([group]) => preview[group].length > 0).map(([group, label]) => <p key={group}>
         {label}: {preview[group].slice(0, listedLines).map(line => line.currentProductCode
           ? `${line.externalLineReference} (${line.currentProductCode} → ${line.productCode})`
           : `${line.externalLineReference} (${line.productCode})`).join(", ")}
         {preview[group].length > listedLines ? ` e mais ${preview[group].length - listedLines}` : ""}.
       </p>)}
+      {!replacePreviewHasChanges(preview) && <p className="muted">A planilha é igual à PO excluída; o resultado é o
+        mesmo de restaurar como estava.</p>}
       {preview.blockers.map(blocker => <p key={blocker.code} className="notice error" role="alert">{blocker.message}</p>)}
     </>}
     {(mode === "restore" || (mode === "replace" && preview?.canApply)) && <>
@@ -106,7 +110,7 @@ export default function DeletedPurchaseOrderActions({ purchaseOrder, canManageLi
         onChange={event => setReason(event.target.value)} /></label>
       <button className="button" type="button" disabled={busy || !reasonReady || purchaseRequestBlocker !== null}
         onClick={() => void (mode === "restore" ? restore() : replace())}>
-        {mode === "restore" ? "Confirmar restauração" : "Restaurar e substituir pela planilha"}
+        {mode === "restore" ? "Confirmar restauração" : "Confirmar restauração com a planilha"}
       </button>
     </>}
     {error && <p className="notice error" role="alert">{error}</p>}

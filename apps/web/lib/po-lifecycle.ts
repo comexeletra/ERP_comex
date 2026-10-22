@@ -20,7 +20,7 @@ export function purchaseOrderNumberBlockMessage(
 ): string | null {
   if (preflight.sameImporterDuplicate) return `Já existe uma PO ${number} nesta importadora.`;
   if (preflight.sameImporterDeleted) {
-    return `A PO ${number} desta importadora foi excluída. Restaure-a ou substitua-a pela planilha em vez de criar outra com o mesmo número.`;
+    return `A PO ${number} desta importadora foi excluída. Restaure-a como estava ou com os dados da planilha em vez de criar outra com o mesmo número.`;
   }
   return null;
 }
@@ -32,4 +32,10 @@ export function deletedPurchaseOrderActions(canManageLifecycle: boolean, replace
 export function purchaseOrderActorLabel(actor: string): string {
   const separator = actor.lastIndexOf("#");
   return (separator >= 0 ? actor.slice(separator + 1) : actor).trim() || actor;
+}
+
+export function replacePreviewHasChanges(preview: Record<"updated" | "added" | "removed" | "reactivated" | "productChanged",
+  readonly unknown[]>): boolean {
+  return [preview.updated, preview.added, preview.removed, preview.reactivated, preview.productChanged]
+    .some(lines => lines.length > 0);
 }

@@ -65,5 +65,5 @@ test("offers restore and replace for a deleted PO only to lifecycle managers", (
   assert.deepEqual(deletedPurchaseOrderActions(true, false), { restore: true, replace: false, needsManager: false });
   assert.deepEqual(deletedPurchaseOrderActions(false, true), { restore: false, replace: false, needsManager: true });
   assert.match(purchaseOrderNumberBlockMessage({ sameImporterDuplicate: false, sameImporterDeleted: true }, "030201"),
-    /Restaure-a ou substitua-a pela planilha/u);
+    /Restaure-a como estava ou com os dados da planilha/u);
 });
