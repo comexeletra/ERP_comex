@@ -19,6 +19,7 @@
     "test:purchase-request:hml": "node test/purchase-request-hml.integration.mjs",
     "test:po-restore-sc:hml": "node test/purchase-order-restore-sc-hml.integration.mjs",
     "test:po-sc-sync:hml": "node test/purchase-order-sc-sync-hml.integration.mjs",
+    "test:ip-lifecycle:hml": "node test/process-lifecycle-hml.integration.mjs",
     "bootstrap:admin": "node --env-file-if-exists=.env dist/bootstrap-admin.js",
     "bootstrap:masters": "node dist/bootstrap-masters.js",
     "test:manual-auth": "node test/manual-auth.integration.mjs",
