@@ -5,7 +5,7 @@
 | Data | 2026-10-22 |
 | Branch de trabalho | `homologacao` |
 | Ambiente de validação | HML (VPS `import-erp-hml-api` + banco `erp_po_totvs_hml`) e Preview Vercel |
-| Status | Decisões do usuário em 2026-10-22: opção A; preencher a SC `020028` no HML com os valores dos itens; publicar só na homologação (sem PR para `main`) |
+| Status | Implementado na `homologacao` (`fce5a77`, `5668fa3`, `a71ed42`); API HML no release `a71ed42`, validação sintética concluída e SC `020028` preenchida no HML. Falta a conferência da tela pelo usuário. Sem PR para `main` por decisão do usuário. |
 
 ## Diagnóstico (HML, 2026-10-22)
 

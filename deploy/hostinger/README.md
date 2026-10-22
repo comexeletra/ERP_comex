@@ -1,5 +1,51 @@
 # API ERP na VPS Hostinger
 
+## Dados da SC editados na PO sincronizados com o PCM no HML (2026-10-22)
+
+O commit `a71ed42` faz `PATCH /api/v1/purchase-orders/:id/items/followup` e
+`PATCH /api/v1/purchase-orders/:id/complete` atualizarem a SC vinculada quando
+data da SC, aprovação, solicitante ou recebimento do plano comercial são
+alterados na PO. A atualização é feita na mesma transação, com auditoria
+`PURCHASE_REQUEST / UPDATE`, e propaga para as outras POs da SC pela mesma regra
+do PCM (função `syncPurchaseRequestItems`, agora comum às duas rotas). Também:
+- o número da SC fica bloqueado (`PURCHASE_REQUEST_NUMBER_LOCKED`);
+- o solicitante não pode ficar vazio;
+- salvar a PO mantém os valores editados, em vez de sobrescrevê-los com os da SC;
+- a edição por item não pode divergir da SC (`PURCHASE_REQUEST_FIELDS_SHARED`).
+
+Não houve migration; o ledger HML segue em M001–M066.
+
+O release foi compilado na VPS como `/opt/import-erp/apps/api/hml-release-a71ed42`,
+com as fontes do `git archive` normalizadas para LF antes do build (`src` e
+`dist` sem CR), e ativado pelo drop-in
+`/etc/systemd/system/import-erp-hml-api.service.d/zzzzzzzzzzzzzz-release-a71ed42.conf`.
+O drop-in e o `ExecStart` anteriores (`hml-release-1104ee1`) foram preservados em
+`/var/backups/import-erp/hml-po-sc-sync-a71ed42-predeploy`. Para reverter,
+remova o drop-in novo, execute `systemctl daemon-reload` e reinicie
+`import-erp-hml-api`. Ignorando CR, o `dist` difere do release anterior em
+`followup.js`, `operations.js` e `purchase-requests.js`. O serviço está
+`active`, `/health/live` respondeu 200 e `items/followup` sem sessão respondeu 401.
+
+Correção do registro anterior: o release `hml-release-1104ee1` foi compilado com
+fontes em CRLF, porque o `git archive` desta máquina aplica a conversão de fim de
+linha. O funcionamento não foi afetado, e a validação daquele release passou.
+Daqui em diante, normalize as fontes para LF (`sed -i 's/$//'`) antes do build.
+
+O teste opt-in `apps/api/test/purchase-order-sc-sync-hml.integration.mjs`
+(`npm run test:po-sc-sync:hml`) foi executado com a role `import_erp_hml_app`.
+Ele criou a SC sintética `HMLVAL-SC-SYNC-B8AB7695FEA74C87` com duas POs, aplicou
+data da SC e aprovação pela primeira PO e conferiu a SC no PCM, os itens das duas
+POs e uma auditoria `UPDATE`. Também confirmou o bloqueio do número da SC. Ao
+final, as duas POs ficaram `DELETED` e a SC foi apagada.
+
+A pedido do usuário (fase de testes), a SC `020028` da PO `030201` foi
+preenchida no HML pela rota `PATCH /api/v1/purchase-requests/:id`, com os valores
+que já estavam nos 215 itens: data da SC 2026-10-01, aprovação 2026-10-05 e plano
+comercial 2026-10-11. O ator foi `hml-maintenance#agent-fill-sc-020028`, e a SC
+passou da versão 1 para a 2. Os itens não mudaram. Depois disso, o HML ficou com
+2 SCs, 12 POs (11 `DELETED`) e 446 itens. O Preview Vercel do commit está com
+status `success`. Nenhuma produção foi consultada ou alterada.
+
 ## SC ao restaurar ou substituir PO excluída no HML (2026-10-22)
 
 O commit `1104ee1` faz `POST /api/v1/purchase-orders/:id/restore` e
