@@ -16,6 +16,8 @@ const fixtureOrders = [
 
 const identities = {
   reader: [{ role: "Consulta", importer_code: "ELETRA MATRIZ" }],
+  writer: [{ role: "Importação", importer_code: "ELETRA MATRIZ" }],
+  admin: [{ role: "Administrador", importer_code: "ELETRA MATRIZ" }],
   buyer: [
     { role: "Compras", importer_code: "ELETRA MATRIZ" },
     { role: "Compras", importer_code: "ELETRA FOR" },
@@ -29,6 +31,7 @@ const identities = {
 async function createApp(allImporters = ["ELETRA MATRIZ", "ELETRA FOR"]) {
   let policyQueries = 0;
   let resourceQueries = 0;
+  let lifecycleQueries = 0;
   const pool = {
     async query(sql, parameters) {
       policyQueries += 1;
@@ -82,6 +85,12 @@ async function createApp(allImporters = ["ELETRA MATRIZ", "ELETRA FOR"]) {
     resourceQueries += 1;
     return { ok: true };
   });
+  app.get("/api/v1/test/process-lifecycle", {
+    config: permissionConfig("processes.lifecycle.manage"),
+  }, async () => {
+    lifecycleQueries += 1;
+    return { ok: true };
+  });
   app.get("/api/v1/data-issues", {
     config: permissionConfig("quality.read"),
   }, async (request) => {
@@ -96,7 +105,7 @@ async function createApp(allImporters = ["ELETRA MATRIZ", "ELETRA FOR"]) {
   });
   app.setNotFoundHandler((_request, reply) => reply.code(404).send({ error: "Recurso não encontrado." }));
 
-  return { app, counters: () => ({ policyQueries, resourceQueries }) };
+  return { app, counters: () => ({ policyQueries, resourceQueries, lifecycleQueries }) };
 }
 
 test("requires an authenticated identity before the handler or grants query", async (t) => {
@@ -175,9 +184,16 @@ test("enforces role permissions and keeps global user management master-only", a
   assert.equal(deniedGlobal.statusCode, 403);
   const deniedAdmin = await app.inject({ method: "GET", url: "/api/v1/users", headers: { "x-test-subject": "unscoped" } });
   assert.equal(deniedAdmin.statusCode, 403);
+  const deniedLifecycle = await app.inject({ method: "GET", url: "/api/v1/test/process-lifecycle", headers: { "x-test-subject": "writer" } });
+  assert.equal(deniedLifecycle.statusCode, 403);
+  const allowedAdminLifecycle = await app.inject({ method: "GET", url: "/api/v1/test/process-lifecycle", headers: { "x-test-subject": "admin" } });
+  assert.equal(allowedAdminLifecycle.statusCode, 200);
+  const allowedMasterLifecycle = await app.inject({ method: "GET", url: "/api/v1/test/process-lifecycle", headers: { "x-test-subject": "master" } });
+  assert.equal(allowedMasterLifecycle.statusCode, 200);
   const allowedGlobal = await app.inject({ method: "GET", url: "/api/v1/users", headers: { "x-test-subject": "master" } });
   assert.equal(allowedGlobal.statusCode, 200);
   assert.equal(counters().resourceQueries, 1);
+  assert.equal(counters().lifecycleQueries, 2);
 });
 
 test("re-reads grants on each request so scope revocation takes effect immediately", async (t) => {

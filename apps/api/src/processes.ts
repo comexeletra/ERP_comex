@@ -14,6 +14,7 @@ const processQuery = z.object({
   importer: z.string().trim().max(120).optional(),
   logisticsStatus: z.string().trim().max(40).optional(),
   qualityStatus: z.string().trim().max(32).optional(),
+  recordStatus: z.enum(["active", "draft", "cancelled", "deleted", "all"]).optional(),
 }).strict();
 const itemQuery = z.object(paging).strict();
 const pendingQuery = z.object({
@@ -42,7 +43,7 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
   app.get("/api/v1/processes", { config: permissionConfig("processes.read") }, async (request, reply) => {
     const parsed = processQuery.safeParse(request.query);
     if (!parsed.success) return problem(reply, 400, "Revise os filtros e a paginação.");
-    const { page, pageSize, ipNumber, importer, logisticsStatus, qualityStatus } = parsed.data;
+    const { page, pageSize, ipNumber, importer, logisticsStatus, qualityStatus, recordStatus } = parsed.data;
     const scope = importerScopePredicate("process.importer", 1, request.authorizationContext?.importerScopes ?? []);
     const result = await pool.query<{ total_count: number; items: Record<string, unknown>[] }>(
       `WITH filtered AS MATERIALIZED (
@@ -67,8 +68,10 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
            AND ($3::text IS NULL OR strpos(lower(process.importer), lower($3)) > 0)
            AND ($4::text IS NULL OR process.logistics_status = $4)
            AND ($5::text IS NULL OR process.quality_status = $5)
+           AND (($6::text IS NULL AND process.record_status <> 'DELETED')
+             OR $6::text = 'all' OR lower(process.record_status) = $6)
        ), page AS (
-         SELECT * FROM filtered ORDER BY ip_number, id LIMIT $6 OFFSET $7
+         SELECT * FROM filtered ORDER BY ip_number, id LIMIT $7 OFFSET $8
        )
        SELECT (SELECT count(*)::int FROM filtered) AS total_count,
          coalesce(jsonb_agg(jsonb_build_object(
@@ -84,7 +87,8 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
            'historicalCostCount', page.historical_cost_count
          ) ORDER BY page.ip_number, page.id) FILTER (WHERE page.id IS NOT NULL), '[]'::jsonb) AS items
        FROM page`,
-      [scope.values[0], ipNumber || null, importer || null, logisticsStatus || null, qualityStatus || null, pageSize, (page - 1) * pageSize],
+      [scope.values[0], ipNumber || null, importer || null, logisticsStatus || null, qualityStatus || null,
+        recordStatus ?? null, pageSize, (page - 1) * pageSize],
     );
     return { page, pageSize, totalCount: Number(result.rows[0]?.total_count ?? 0), items: result.rows[0]?.items ?? [] };
   });
@@ -105,6 +109,7 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
          'notes', process.notes, 'version', process.version::text,
          'lifecycleStatus', process.lifecycle_status, 'closedAt', process.closed_at,
          'closedBy', process.closed_by, 'closeReason', process.close_reason,
+         'deletedAt', process.deleted_at, 'deletedBy', process.deleted_by, 'deleteReason', process.delete_reason,
          'processDocumentCount', (SELECT count(*)::int FROM imports.process_document AS document
            WHERE document.process_id = process.id),
          'purchaseOrders', coalesce((SELECT jsonb_agg(jsonb_build_object(

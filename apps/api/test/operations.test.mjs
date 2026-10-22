@@ -102,7 +102,7 @@ test("invoice import validates SHA-256 and stores it in document metadata", asyn
 function invoiceImportClient({ revision = false, supplierMatchesExporter = true, otherImporterIp = false,
   canceledItem = false, duplicateKind = null, poUnit = null, poUnitPrice = null, poCurrency = null,
   linkedOrphanPo = false, draft = false, insufficientBalance = false, purchaseOrderStatus = "ACTIVE",
-  previousAllocationPoStatus = "ACTIVE" } = {}) {
+  previousAllocationPoStatus = "ACTIVE", recordStatus = "ACTIVE" } = {}) {
   const processId = "00000000-0000-4000-8000-000000000021";
   const oldDocumentId = "00000000-0000-4000-8000-000000000022";
   const oldAllocationId = "00000000-0000-4000-8000-000000000023";
@@ -137,7 +137,7 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true,
           return { rows: [{ id: processId, importer: "OTHER IMPORTER", ip_number: "IPH/TEST" }], rowCount: 1 };
         }
         return revision || draft ? { rows: [{ id: processId, importer: "ELETRA MATRIZ", ip_number: "IPH/TEST",
-          normalized_ip_number: "IPH/TEST", record_status: draft ? "DRAFT" : "ACTIVE", lifecycle_status: "OPEN", version: "2" }], rowCount: 1 }
+          normalized_ip_number: "IPH/TEST", record_status: draft ? "DRAFT" : recordStatus, lifecycle_status: "OPEN", version: "2" }], rowCount: 1 }
           : { rows: [], rowCount: 0 };
       }
       if (sql.includes("FROM procurement.process_purchase_order link") && sql.includes("link.process_id")) {
@@ -600,6 +600,20 @@ test("invoice revision cancels the previous allocation and invoice before replac
   assert.equal(queries.some(query => query.sql.includes("UPDATE procurement.po_item_allocation SET status = 'CANCELLED'")), true);
   assert.equal(queries.some(query => query.sql.includes("INSERT INTO imports.import_process")), false);
   assert.equal(queries.filter(query => query.sql.includes("INSERT INTO procurement.po_item_allocation")).length, 1);
+});
+
+test("invoice revision asks to restore a deleted IP before reusing its number", async t => {
+  const { client, queries } = invoiceImportClient({ revision: true, recordStatus: "DELETED" });
+  const app = await invoiceImportApp(t, client);
+  const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-revision-deleted-ip", "x-record-version": '"2"' },
+    payload: invoicePayload(),
+  });
+
+  assert.equal(response.statusCode, 409, response.body);
+  assert.equal(response.json().code, "DELETED_IP_REFERENCE");
+  assert.equal(queries.some(query => query.sql.includes("UPDATE imports.import_process")), false);
+  assert.equal(queries.some(query => query.sql.includes("INSERT INTO imports.process_document")), false);
 });
 
 test("invoice revision requires reopening a PO before changing its allocations", async t => {

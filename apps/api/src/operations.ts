@@ -134,6 +134,7 @@ const updateAllocation = z.object({
 const cancelAllocation = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
 const closeProcess = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
 const purchaseOrderLifecycleReason = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
+const processLifecycleReason = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
 const purchaseOrderPurchaseRequestBody = newPurchaseRequestFields.extend({
   reason: z.string().trim().min(3).max(1000),
 }).strict();
@@ -902,6 +903,109 @@ function purchaseOrderLifecycleHandler(pool: Pool, action: PurchaseOrderLifecycl
   };
 }
 
+type ProcessLifecycleAction = "SOFT_DELETE" | "REACTIVATE" | "RESTORE";
+
+async function processDependencies(client: PoolClient, id: string) {
+  const result = await client.query<{ has_active_allocations: boolean; has_active_documents: boolean;
+    has_linked_purchase_orders: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM procurement.po_item_allocation
+             WHERE process_id = $1 AND status = 'ACTIVE') AS has_active_allocations,
+       EXISTS (SELECT 1 FROM imports.process_document
+             WHERE process_id = $1 AND status = 'ACTIVE') AS has_active_documents,
+       EXISTS (SELECT 1 FROM procurement.process_purchase_order WHERE process_id = $1) AS has_linked_purchase_orders`,
+    [id]);
+  return result.rows[0] ?? { has_active_allocations: false, has_active_documents: false,
+    has_linked_purchase_orders: false };
+}
+
+async function changeProcessLifecycle(client: PoolClient, id: string, expected: string,
+  auth: ReturnType<typeof actorAndScopes>, action: ProcessLifecycleAction, reason: string) {
+  const found = await client.query<Record<string, unknown>>(
+    `SELECT * FROM imports.import_process
+     WHERE id = $1 AND importer = ANY($2::text[]) FOR UPDATE`, [id, auth.scopes]);
+  const process = found.rows[0];
+  if (!process) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "IP não encontrado.");
+  checkVersion(process, expected);
+
+  const actor = `${auth.actor.issuer}#${auth.actor.subject}`;
+  if (action === "SOFT_DELETE") {
+    if (process.record_status === "DELETED") {
+      throw new BusinessError(409, "PROCESS_ALREADY_DELETED", "Este IP já foi excluído da lista ativa.");
+    }
+    if (process.lifecycle_status !== "OPEN") {
+      throw new BusinessError(409, "PROCESS_CLOSED", "Reabra o IP antes de excluí-lo.");
+    }
+    const dependencies = await processDependencies(client, id);
+    if (dependencies.has_active_allocations || dependencies.has_active_documents
+      || dependencies.has_linked_purchase_orders) {
+      throw new BusinessError(409, "IP_HAS_DEPENDENCIES",
+        "Este IP tem distribuições, documentos ou POs vinculadas. Cancele o IP e encaminhe as POs antes de excluí-lo.");
+    }
+    const deleted = await client.query<{ version: string; deleted_at: Date }>(
+      `UPDATE imports.import_process SET record_status = 'DELETED', deleted_at = now(), deleted_by = $2,
+         delete_reason = $3, record_status_before_delete = $4, version = version + 1, updated_at = now()
+       WHERE id = $1 RETURNING version::text, deleted_at`,
+      [id, actor, reason, process.record_status]);
+    const after = { ...process, record_status: "DELETED", deleted_at: deleted.rows[0].deleted_at,
+      deleted_by: actor, delete_reason: reason, record_status_before_delete: process.record_status,
+      version: deleted.rows[0].version };
+    await record(client, "IMPORT_PROCESS", id, "IMPORT_PROCESS", id, "SOFT_DELETE",
+      process, after, auth.actor, reason);
+    return { id, recordStatus: "DELETED", version: deleted.rows[0].version };
+  }
+
+  if (action === "REACTIVATE") {
+    if (process.record_status !== "CANCELLED") {
+      throw new BusinessError(409, "IP_NOT_CANCELLED", "Somente um IP cancelado pode ser reativado.");
+    }
+    const dependencies = await processDependencies(client, id);
+    if (dependencies.has_active_allocations || dependencies.has_active_documents
+      || dependencies.has_linked_purchase_orders) {
+      throw new BusinessError(409, "IP_HAS_DEPENDENCIES",
+        "Resolva as distribuições, documentos e POs vinculadas antes de reativar este IP.");
+    }
+    const reactivated = await client.query<{ version: string }>(
+      `UPDATE imports.import_process SET record_status = 'ACTIVE', lifecycle_status = 'OPEN',
+         logistics_status = NULL, closed_at = NULL, closed_by = NULL, close_reason = NULL,
+         version = version + 1, updated_at = now()
+       WHERE id = $1 RETURNING version::text`, [id]);
+    const after = { ...process, record_status: "ACTIVE", lifecycle_status: "OPEN", logistics_status: null,
+      closed_at: null, closed_by: null, close_reason: null, version: reactivated.rows[0].version };
+    await record(client, "IMPORT_PROCESS", id, "IMPORT_PROCESS", id, "REACTIVATE",
+      process, after, auth.actor, reason);
+    return { id, recordStatus: "ACTIVE", version: reactivated.rows[0].version };
+  }
+
+  if (process.record_status !== "DELETED") {
+    throw new BusinessError(409, "IP_NOT_DELETED", "Somente um IP excluído pode ser restaurado.");
+  }
+  const restoredStatus = String(process.record_status_before_delete);
+  const restored = await client.query<{ version: string }>(
+    `UPDATE imports.import_process SET record_status = $2, deleted_at = NULL, deleted_by = NULL,
+       delete_reason = NULL, record_status_before_delete = NULL, version = version + 1, updated_at = now()
+     WHERE id = $1 RETURNING version::text`, [id, restoredStatus]);
+  const after = { ...process, record_status: restoredStatus, deleted_at: null, deleted_by: null,
+    delete_reason: null, record_status_before_delete: null, version: restored.rows[0].version };
+  await record(client, "IMPORT_PROCESS", id, "IMPORT_PROCESS", id, "RESTORE",
+    process, after, auth.actor, reason);
+  return { id, recordStatus: restoredStatus, version: restored.rows[0].version };
+}
+
+function processLifecycleHandler(pool: Pool, action: ProcessLifecycleAction) {
+  return async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    const id = uuid.safeParse(request.params.id);
+    const parsed = processLifecycleReason.safeParse(request.body);
+    if (!id.success || !parsed.success) {
+      return problem(reply, 400, "INVALID_PROCESS_LIFECYCLE", "Informe um motivo válido para alterar o ciclo do IP.");
+    }
+    let expected: string; let auth: ReturnType<typeof actorAndScopes>;
+    try { expected = versionFrom(request); auth = actorAndScopes(request); }
+    catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
+    return transaction(pool, reply, client => changeProcessLifecycle(
+      client, id.data, expected, auth, action, parsed.data.reason));
+  };
+}
+
 export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool): Promise<void> {
   app.get("/api/v1/processes/invoice-duplicates", { config: permissionConfig("processes.write") },
     async (request, reply) => {
@@ -1137,6 +1241,10 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         if (previousProcess.rows[0] && previousProcess.rows[0].importer !== body.process.importer) {
           throw new BusinessError(409, "IP_REFERENCE_OTHER_IMPORTER",
             "O IP REF da invoice já pertence a outra importadora.");
+        }
+        if (previousProcess.rows[0]?.record_status === "DELETED") {
+          throw new BusinessError(409, "DELETED_IP_REFERENCE",
+            "Este IP foi excluído. Restaure o IP antes de revisar a invoice.");
         }
         const linkedPos = previousProcess.rows[0] ? await client.query<{
           purchase_order_id: string; external_number: string; source_kind: string }>(
@@ -1924,6 +2032,14 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const claim = await receipt(client, auth.actor.userId, key, "IP", body);
         if (claim.existingId) return { id: claim.existingId, replayed: true };
         await knownImporter(client, body.importer);
+        const deletedReference = await client.query<{ id: string }>(
+          `SELECT id FROM imports.import_process
+           WHERE normalized_ip_number = upper(btrim($1)) AND importer = $2 AND record_status = 'DELETED'`,
+          [body.ipNumber, body.importer]);
+        if (deletedReference.rowCount) {
+          throw new BusinessError(409, "DELETED_IP_REFERENCE",
+            "Este número pertence a um IP excluído. Restaure o IP antes de reutilizar o número.");
+        }
         const id = randomUUID();
         await client.query(
           `INSERT INTO imports.import_process
@@ -1935,6 +2051,15 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         return { id, ipNumber: body.ipNumber, version: "1" };
       }, 201);
     });
+
+  app.delete<{ Params: { id: string } }>("/api/v1/processes/:id",
+    { config: permissionConfig("processes.write") }, processLifecycleHandler(pool, "SOFT_DELETE"));
+
+  app.post<{ Params: { id: string } }>("/api/v1/processes/:id/reactivate",
+    { config: permissionConfig("processes.lifecycle.manage") }, processLifecycleHandler(pool, "REACTIVATE"));
+
+  app.post<{ Params: { id: string } }>("/api/v1/processes/:id/restore",
+    { config: permissionConfig("processes.lifecycle.manage") }, processLifecycleHandler(pool, "RESTORE"));
 
   app.post<{ Params: { id: string } }>("/api/v1/processes/:id/close",
     { config: permissionConfig("processes.write") }, async (request, reply) => {
@@ -2041,6 +2166,9 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
               `SELECT id, importer, record_status, lifecycle_status FROM imports.import_process
                WHERE id = $1 AND importer = $2 AND importer = ANY($3::text[]) FOR UPDATE`,
               [route.processId, process.importer, auth.scopes]);
+            if (target.rows[0]?.record_status === "DELETED") {
+              throw new BusinessError(409, "DELETED_IP_REFERENCE", "O IP de destino foi excluído. Restaure-o antes de encaminhar POs.");
+            }
             if (!target.rows[0] || target.rows[0].record_status === "CANCELLED" || target.rows[0].lifecycle_status !== "OPEN") {
               throw new BusinessError(409, "INVALID_CANCELLATION_DESTINATION", "O IP de destino nÃ£o existe, estÃ¡ encerrado ou cancelado.");
             }

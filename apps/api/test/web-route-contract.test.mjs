@@ -64,6 +64,8 @@ const webRoutes = [
   ["PATCH", "/api/v1/processes/:id/followup"],
   ["POST", "/api/v1/processes/:id/close"], ["POST", "/api/v1/processes/:id/reopen"],
   ["POST", "/api/v1/processes/:id/cancel"],
+  ["DELETE", "/api/v1/processes/:id"], ["POST", "/api/v1/processes/:id/reactivate"],
+  ["POST", "/api/v1/processes/:id/restore"],
   ["POST", "/api/v1/processes/:id/documents"],
   ["PATCH", "/api/v1/processes/:id/documents/:docId"],
   ["DELETE", "/api/v1/processes/:id/documents/:docId"],
