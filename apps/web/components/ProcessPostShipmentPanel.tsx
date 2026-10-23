@@ -5,14 +5,18 @@ import Link from "next/link";
 import { apiFetch, hasIpLifecycleSupport, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
 import { formatNumber } from "../lib/format-number";
-import { IpCalculatedSummary as IpSummary, ipPostShipmentFields, newProcessDocumentKinds, withDateWarnings } from "../lib/ip-post-shipment-fields";
+import { booleanOptions, displayValue, fieldLabel, statusLabel } from "../lib/i18n/labels";
+import type { Messages } from "../lib/i18n/pt-BR";
+import { IpCalculatedSummary as IpSummary, IpPostShipmentField, ipPostShipmentFields, newProcessDocumentKinds,
+  withDateWarnings } from "../lib/ip-post-shipment-fields";
+import { getMessages, useI18n } from "./I18nProvider";
 import IpCalculatedSummary from "./IpCalculatedSummary";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 import { SearchableSelect } from "./SearchableSelect";
 
 type Value = string | number | boolean | null;
 type Row = Record<string, Value>;
-type Field = { key: string; label: string; type?: "date" | "number" | "money" | "boolean" | "select"; max?: number; entity?: string };
+type Field = IpPostShipmentField;
 type Document = { id: string; kind: "INVOICE" | "BL" | "NF"; number: string; purchaseOrderItemId: string | null;
   issueDate: string | null; homologationDate: string | null; quantity: string | null; unitPrice: string | null;
   amount: string | null; currencyCode: string | null; notes: string; version: string };
@@ -38,66 +42,48 @@ const documentKindLabels: Record<string, string> = { INVOICE: "Invoice", NF: "NF
 const documentKindOptions = newProcessDocumentKinds.map(kind => ({ value: kind, label: documentKindLabels[kind] ?? kind }));
 const blankDoc = (): DocDraft => ({ kind: "INVOICE", purchaseOrderItemId: "", number: "", issueDate: "",
   homologationDate: "", quantity: "", unitPrice: "", amount: "", currencyCode: "", notes: "" });
-function formatList(value: Value | string[] | undefined) { return Array.isArray(value) ? value.join(", ") || "—" : format(value); }
-function format(value: Value | undefined) { return value == null || value === "" ? "—" : typeof value === "boolean" ? value ? "Sim" : "Não" : String(value); }
-function formatField(field: Field, value: Value | undefined) {
-  return field.type === "number" || field.type === "money" ? formatNumber(value) : format(value);
+function formatField(field: Field, value: Value | undefined, m: Messages) {
+  return field.type === "number" || field.type === "money" ? formatNumber(value) : displayValue(m, value);
 }
-const processHistoryLabels: Record<string, string> = {
-  importer: "Importadora", ipNumber: "Número do IP", logisticsStatus: "Status logístico", priority: "Prioridade",
-  notes: "Observações", lifecycleStatus: "Ciclo do IP", closedAt: "Encerrado em", closedBy: "Encerrado por",
-  closeReason: "Motivo do encerramento", sourceKind: "Origem",
-  ...Object.fromEntries(fields.map(field => [field.key, field.label])),
-};
-const documentHistoryLabels: Record<string, string> = {
-  kind: "Tipo", number: "Número", purchaseOrderItemId: "Item relacionado", issueDate: "Data de emissão",
-  homologationDate: "Data de homologação", quantity: "Quantidade", unitPrice: "Preço unitário",
-  amount: "Valor informado", currencyCode: "Moeda", notes: "Observações", status: "Status",
-};
-const allocationHistoryLabels: Record<string, string> = {
-  itemId: "Item da PO", quantity: "Quantidade distribuída", notes: "Observações", factoryShipDate: "Saída da fábrica",
-  status: "Status da distribuição",
-};
-const historyOperationLabels: Record<string, string> = {
-  CREATE: "Cadastro", UPDATE: "Alteração", FOLLOWUP_UPDATE: "Atualização do acompanhamento",
-  CANCEL: "Cancelamento", CLOSE: "Encerramento", REOPEN: "Reabertura",
-  HISTORICAL_BACKFILL: "Preenchimento a partir do histórico",
-};
+function processHistoryLabels(m: Messages): Record<string, string> {
+  return { ...m.postShipment.processLabels, ...Object.fromEntries(fields.map(field => [field.key, fieldLabel(m, field)])) };
+}
 function camelCaseKey(key: string) { return key.replace(/_([a-z])/gu, (_, letter: string) => letter.toUpperCase()); }
 function formatHistoryActor(actor: string) {
   const separator = actor.lastIndexOf("#");
   return (separator >= 0 ? actor.slice(separator + 1) : actor).trim() || actor;
 }
-function formatHistoryValue(key: string, value: Value | undefined) {
+function formatHistoryValue(key: string, value: Value | undefined, m: Messages) {
   if (value == null || value === "") return "—";
   const field = fields.find(candidate => candidate.key === key);
   if (field?.type === "number" || field?.type === "money" || key === "quantity" || key === "unitPrice" || key === "amount") {
     return formatNumber(value);
   }
-  return typeof value === "boolean" ? value ? "Sim" : "Não" : String(value);
+  return displayValue(m, value);
 }
-function historyChanges(event: Event) {
+function historyChanges(event: Event, m: Messages) {
+  const t = m.postShipment;
   if (event.entityType === "PO_ITEM_ALLOCATION" && !event.oldValue) {
     const quantity = event.newValue?.quantity;
-    return [quantity == null ? "Distribuição cadastrada." :
-      `Quantidade distribuída: ${formatHistoryValue("quantity", quantity)}${event.unit ? ` ${event.unit}` : ""}.`];
+    return [quantity == null ? t.allocationCreated :
+      t.allocationQuantity(`${formatHistoryValue("quantity", quantity, m)}${event.unit ? ` ${event.unit}` : ""}`)];
   }
   if (event.entityType === "PO_ITEM_ALLOCATION" && event.operation === "CANCEL") {
     const quantity = event.oldValue?.quantity;
-    return [quantity == null ? "Distribuição cancelada." :
-      `Distribuição cancelada: ${formatHistoryValue("quantity", quantity)}${event.unit ? ` ${event.unit}` : ""}.`];
+    return [quantity == null ? t.allocationCancelled :
+      t.allocationCancelledQuantity(`${formatHistoryValue("quantity", quantity, m)}${event.unit ? ` ${event.unit}` : ""}`)];
   }
   if (!event.oldValue) {
     if (event.entityType === "PROCESS_DOCUMENT") {
       const kind = event.newValue?.kind;
       const number = event.newValue?.number;
-      return [`Documento${kind ? ` ${String(kind)}` : ""}${number ? ` ${String(number)}` : ""} cadastrado.`];
+      return [t.documentRegistered(kind ? String(kind) : "", number ? String(number) : "")];
     }
-    return ["IP cadastrado."];
+    return [t.ipCreated];
   }
 
-  const labels = event.entityType === "PROCESS_DOCUMENT" ? documentHistoryLabels
-    : event.entityType === "PO_ITEM_ALLOCATION" ? allocationHistoryLabels : processHistoryLabels;
+  const labels: Record<string, string> = event.entityType === "PROCESS_DOCUMENT" ? t.documentLabels
+    : event.entityType === "PO_ITEM_ALLOCATION" ? t.allocationLabels : processHistoryLabels(m);
   const beforeValues = new Map(Object.entries(event.oldValue).map(([key, value]) => [camelCaseKey(key), value]));
   const changes = Object.entries(event.newValue ?? {}).flatMap(([rawKey, after]) => {
     const key = camelCaseKey(rawKey);
@@ -105,18 +91,20 @@ function historyChanges(event: Event) {
     const before = beforeValues.get(key);
     if (JSON.stringify(before ?? null) === JSON.stringify(after ?? null)) return [];
     const label = labels[key] ?? key.replace(/([A-Z])/gu, " $1").replace(/^./u, letter => letter.toUpperCase());
-    return [`${label}: ${formatHistoryValue(key, before)} → ${formatHistoryValue(key, after)}`];
+    return [`${label}: ${formatHistoryValue(key, before, m)} → ${formatHistoryValue(key, after, m)}`];
   });
-  return changes.length ? changes : ["Evento registrado sem campos alterados."];
+  return changes.length ? changes : [t.noChanges];
 }
-function historyEntityLabel(event: Event) {
+function historyEntityLabel(event: Event, m: Messages) {
+  const t = m.postShipment;
   if (event.entityType === "PO_ITEM_ALLOCATION") {
-    return `PO ${event.purchaseOrderNumber ?? "—"} · ${event.productCode ?? "Produto"}${event.lineNumber ? ` · item ${event.lineNumber}` : ""}`;
+    return t.allocationEntity(event.purchaseOrderNumber ?? "—", event.productCode ?? t.productFallback)
+      + (event.lineNumber ? t.itemSuffix(event.lineNumber) : "");
   }
-  if (event.entityType !== "PROCESS_DOCUMENT") return "Dados do IP";
+  if (event.entityType !== "PROCESS_DOCUMENT") return t.ipData;
   const kind = event.newValue?.kind ?? event.oldValue?.kind;
   const number = event.newValue?.number ?? event.oldValue?.number;
-  return `Documento${kind ? ` ${String(kind)}` : ""}${number ? ` · ${String(number)}` : ""}`;
+  return t.documentEntity(kind ? String(kind) : "", number ? String(number) : "");
 }
 function toDraft(row: Row) { return Object.fromEntries(fields.map(field => [field.key, row[field.key] == null ? "" : String(row[field.key])])) as Record<string, string>; }
 function makePayload(values: Record<string, string>) {
@@ -128,6 +116,10 @@ function makePayload(values: Record<string, string>) {
 }
 
 export default function ProcessPostShipmentPanel({ id }: { id: string }) {
+  const { m } = useI18n();
+  const t = m.postShipment;
+  const format = (value: Value | undefined) => displayValue(m, value);
+  const formatList = (value: Value | string[] | undefined) => Array.isArray(value) ? value.join(", ") || "—" : format(value);
   const [data, setData] = useState<Data>(); const [roles, setRoles] = useState<string[]>([]);
   const [legacyProcess, setLegacyProcess] = useState<LegacyProcess>();
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -146,13 +138,13 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
       if (!hasIpLifecycleSupport(summary)) {
         if (!controller.signal.aborted) {
           setLegacyProcess(summary); setData(undefined); setRoles(user.roles); setOptions(optionValues);
-          setCompatibilityWarning("A API publicada ainda não tem todos os recursos de acompanhamento do IP. Os vínculos e as quantidades já cadastrados são exibidos abaixo; documentos e demais dados do pós embarque dependem da atualização da API.");
+          setCompatibilityWarning(getMessages().postShipment.legacyApi);
         }
         return;
       }
       const followupResponse = await apiFetch(`/api/v1/processes/${id}/followup`, { signal: controller.signal });
       const raw = await readApiJson<Partial<Data>>(followupResponse);
-      if (!raw.process) throw new Error("A API retornou um formato antigo para o Pós Embarque. Atualize a API antes de continuar.");
+      if (!raw.process) throw new Error(getMessages().postShipment.oldFormat);
       const missingCollections = ["purchaseOrders", "allocations", "documents", "events"]
         .filter(key => !Array.isArray(raw[key as keyof Data]));
       const body: Data = { ...raw, process: raw.process,
@@ -164,10 +156,9 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
       if (!controller.signal.aborted) {
         setData(body); setLegacyProcess(undefined); setRoles(user.roles); setOptions(optionValues); setDraft(toDraft(body.process));
         setCompatibilityWarning(missingCollections.length
-          ? `A API está desatualizada e não retornou: ${missingCollections.join(", ")}. Os dados principais foram carregados; solicite a atualização da API.`
-          : "");
+          ? getMessages().postShipment.outdated(missingCollections.join(", ")) : "");
       }
-    }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro inesperado."); })
+    }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : getMessages().common.unexpectedError); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [id, reload]);
@@ -187,7 +178,7 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
       setNotice(typeof success === "string" ? success : success(result));
       setEditingDoc(undefined); setDocDraft(blankDoc()); setReload(value => value + 1);
     }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : m.common.unexpectedError); }
     finally { setBusy(false); }
   }
   function documentBody(value: DocDraft) {
@@ -200,47 +191,46 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
       notes: value.notes, reason: automaticAuditReason };
   }
   const currencyTotals = data?.invoiceTotals.amounts.map(item => `${formatNumber(item.amount)} ${item.currency}`).join(" · ") || "—";
-  return <section className="card operational-panel" aria-label="Pós Embarque do IP">
-    <h2>Pós Embarque · operação do IP</h2>
-    <p className="muted">Um registro por IP. Aqui ficam os dados da operação e os documentos do IP, reunindo todas as POs relacionadas.</p>
-    {loading && <p role="status">Carregando Pós Embarque…</p>}
+  return <section className="card operational-panel" aria-label={t.ariaLabel}>
+    <h2>{t.title}</h2>
+    <p className="muted">{t.intro}</p>
+    {loading && <p role="status">{t.loading}</p>}
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
     {compatibilityWarning && <p className="notice" role="status">{compatibilityWarning}</p>}
     {!loading && legacyProcess && <>
-      <h3>POs nesta operação</h3>
-      {legacyProcess.purchaseOrders.length === 0 ? <p>Nenhuma PO vinculada ao IP.</p> :
+      <h3>{t.posTitle}</h3>
+      {legacyProcess.purchaseOrders.length === 0 ? <p>{t.noPos}</p> :
         <ul>{legacyProcess.purchaseOrders.map(po => <li key={po.id}><Link className="text-link" href={`/purchase-orders/${po.id}`}>PO {po.number}</Link> · {po.importer}</li>)}</ul>}
-      <h3>POs, itens e quantidades nesta operação</h3>
-      {legacyProcess.operationalAllocations.length === 0 ? <p>Nenhuma quantidade distribuída operacionalmente. Para vincular uma PO, abra a PO e distribua a quantidade do item para este IP.</p> :
-        <div className="table-scroll"><table><thead><tr><th>PO</th><th>Produto</th><th>Quantidade</th></tr></thead><tbody>
+      <h3>{t.itemsTitle}</h3>
+      {legacyProcess.operationalAllocations.length === 0 ? <p>{t.noLegacyAllocations}</p> :
+        <div className="table-scroll"><table><thead><tr><th>PO</th><th>{m.followup.product}</th><th>{m.followup.quantity}</th></tr></thead><tbody>
           {legacyProcess.operationalAllocations.map(item => <tr key={item.id}><td><Link className="text-link" href={`/purchase-orders/${item.poId}`}>{item.poNumber}</Link></td>
             <td>{item.productCode}</td><td>{formatNumber(item.quantity)} {item.unit}</td></tr>)}
         </tbody></table></div>}
     </>}
     {!loading && data && <>
-      {data.process.invoiceSupplierDivergence && <p className="notice" role="status">O Exporter da invoice diverge do fornecedor de uma ou mais POs; os dois valores permanecem preservados.</p>}
-      <h3>POs nesta operação</h3>
-      {data.purchaseOrders.length === 0 ? <p>Nenhuma PO vinculada ao IP.</p> :
+      {data.process.invoiceSupplierDivergence && <p className="notice" role="status">{t.exporterDivergence}</p>}
+      <h3>{t.posTitle}</h3>
+      {data.purchaseOrders.length === 0 ? <p>{t.noPos}</p> :
         <ul>{data.purchaseOrders.map(po => <li key={po.id}><Link className="text-link" href={`/purchase-orders/${po.id}`}>PO {po.number}</Link> · {po.importer}</li>)}</ul>}
       {(data.openSourceConflicts ?? 0) > 0 && <p className="notice" role="status">
-        Há {data.openSourceConflicts} pendência(s) de origem nas datas deste IP: a planilha histórica tinha valores
-        diferentes para o mesmo campo. Revise em <Link className="text-link" href="/quality">Qualidade</Link>, filtrando
-        pelo código IP_SOURCE_CONFLICT.</p>}
+        {t.sourceConflictsBefore(data.openSourceConflicts ?? 0)}<Link className="text-link" href="/quality">{t.sourceConflictsLink}</Link>
+        {t.sourceConflictsAfter}</p>}
       {(data.dateWarnings?.length ?? 0) > 0 && <p className="notice" role="status">
-        Confira as datas deste IP: {data.dateWarnings!.join("; ")}.</p>}
-      <h3>Situação calculada</h3>
-      <p className="muted">Calculada a partir das datas deste IP e repetida em todos os produtos dele.</p>
+        {t.checkDates(data.dateWarnings!.join("; "))}</p>}
+      <h3>{t.calculatedTitle}</h3>
+      <p className="muted">{t.calculatedHelp}</p>
       <IpCalculatedSummary summary={data.calculated} />
-      <h3>Dados operacionais</h3>
+      <h3>{t.operationalData}</h3>
       {canWrite ? <>
         <form className="stack-form" onSubmit={event => void save(event, () =>
           send(`/api/v1/processes/${id}/followup`, "PATCH", { fields: makePayload(draft), reason: automaticAuditReason }, data.process.version),
-        result => withDateWarnings("Dados do Pós Embarque atualizados.", result))}>
-          <div className="operational-fields">{fields.map(field => <label key={field.key}>{field.label}
-            {field.type === "boolean" ? <SearchableSelect ariaLabel={field.label} placeholder="" value={String(draft[field.key] ?? "")}
+        result => withDateWarnings(t.updated, result, m))}>
+          <div className="operational-fields">{fields.map(field => <label key={field.key}>{fieldLabel(m, field)}
+            {field.type === "boolean" ? <SearchableSelect ariaLabel={fieldLabel(m, field)} placeholder="" value={String(draft[field.key] ?? "")}
               onChange={value => setDraft({ ...draft, [field.key]: value })}
-              options={[{ value: "", label: "Não informado" }, { value: "true", label: "Sim" }, { value: "false", label: "Não" }]} /> :
+              options={booleanOptions(m)} /> :
               field.type === "select" ? <OperationalOptionSelect entity={field.entity ?? ""} value={draft[field.key] ?? ""} values={options}
                 onChange={value => setDraft({ ...draft, [field.key]: value })} /> :
                 <input type={field.type === "date" ? "date" : field.type === "number" ? "number" : "text"}
@@ -248,84 +238,84 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
                   inputMode={field.type === "money" ? "decimal" : undefined} value={draft[field.key] ?? ""}
                   onChange={event => setDraft({ ...draft, [field.key]: event.target.value })} />}
           </label>)}</div>
-          <button className="button" disabled={busy}>{busy ? "Salvando…" : "Salvar dados do IP"}</button>
+          <button className="button" disabled={busy}>{busy ? m.newRecord.saving : t.saveIp}</button>
         </form>
-      </> : <dl className="followup-grid">{fields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{formatField(field, data.process[field.key])}</dd></div>)}</dl>}
-      <h3>POs, itens e quantidades nesta operação</h3>
-      {data.allocations.length === 0 ? <p>Nenhum item operacional distribuído para este IP.</p> :
-        <div className="table-scroll"><table><thead><tr><th>PO</th><th>Item</th><th>Pedido</th><th>Neste IP</th><th>Saída da fábrica</th><th>Invoice</th><th>Status calculado</th><th>Alerta</th></tr></thead><tbody>
+      </> : <dl className="followup-grid">{fields.map(field => <div key={field.key}><dt>{fieldLabel(m, field)}</dt><dd>{formatField(field, data.process[field.key], m)}</dd></div>)}</dl>}
+      <h3>{t.itemsTitle}</h3>
+      {data.allocations.length === 0 ? <p>{t.noAllocations}</p> :
+        <div className="table-scroll"><table><thead><tr><th>PO</th><th>{t.item}</th><th>{t.ordered}</th><th>{t.inThisIp}</th><th>{m.followup.factoryShip}</th><th>{t.invoice}</th><th>{t.calculatedStatus}</th><th>{m.followup.alert}</th></tr></thead><tbody>
           {data.allocations.map(allocation => <tr key={allocation.id}><td><Link className="text-link" href={`/purchase-orders/${allocation.purchaseOrder.id}`}>{allocation.purchaseOrder.number}</Link></td>
             <td>{allocation.item.productCode} · {allocation.item.description}</td>
             <td>{formatNumber(allocation.item.orderedQuantity)} {allocation.item.unit}</td><td>{formatNumber(allocation.allocationQuantity)} {allocation.item.unit}</td>
             <td>{allocation.factoryShipDate ?? "—"}</td>
             <td>{formatList(allocation.calculated.invoiceNumbers)}</td>
-            <td>{format(allocation.calculated.status as Value)}</td><td>{format(allocation.calculated.alert as Value)}</td></tr>)}
+            <td>{format(statusLabel(m, allocation.calculated.status) || null)}</td><td>{format(allocation.calculated.alert as Value)}</td></tr>)}
         </tbody></table></div>}
-      <h3>Invoices, BLs e NFs deste IP</h3>
-      <p>Total das Invoices: {currencyTotals}{data.invoiceTotals.incompleteLines ? ` · ${data.invoiceTotals.incompleteLines} linha(s) sem valor ou moeda` : ""}</p>
+      <h3>{t.documentsTitle}</h3>
+      <p>{t.invoiceTotals(currencyTotals, data.invoiceTotals.incompleteLines)}</p>
       {data.documents.map(document => <div className="followup-document" key={document.id}>
-        <strong>{document.kind} {document.number}</strong> · {document.issueDate ?? "sem data"} · {document.purchaseOrderItemId
-          ? data.allocations.find(item => item.item.id === document.purchaseOrderItemId)?.item.productCode ?? "Item relacionado a PO" : "IP geral"}
-        {document.kind === "INVOICE" && <> · {formatNumber(document.quantity)} × {formatNumber(document.unitPrice)} · {formatNumber(document.amount, "valor calculado")} {document.currencyCode ?? ""}</>}
-        {document.kind === "NF" && <> · Homologação {document.homologationDate ?? "—"}</>}
+        <strong>{document.kind} {document.number}</strong> · {document.issueDate ?? t.noDate} · {document.purchaseOrderItemId
+          ? data.allocations.find(item => item.item.id === document.purchaseOrderItemId)?.item.productCode ?? t.poItem : t.generalIp}
+        {document.kind === "INVOICE" && <> · {formatNumber(document.quantity)} × {formatNumber(document.unitPrice)} · {formatNumber(document.amount, t.calculatedValue)} {document.currencyCode ?? ""}</>}
+        {document.kind === "NF" && <> · {t.homologation(document.homologationDate ?? "—")}</>}
         {canWrite && <div className="operational-actions">{document.kind !== "BL" && <button type="button" className="button secondary" onClick={() => {
           setEditingDoc(document.id); setDocDraft({ kind: document.kind, purchaseOrderItemId: document.purchaseOrderItemId ?? "",
             number: document.number, issueDate: document.issueDate ?? "", homologationDate: document.homologationDate ?? "",
             quantity: document.quantity ?? "", unitPrice: document.unitPrice ?? "", amount: document.amount ?? "",
             currencyCode: document.currencyCode ?? "", notes: document.notes });
-        }}>Editar</button>}<button type="button" className="button secondary" disabled={busy}
+        }}>{t.edit}</button>}<button type="button" className="button secondary" disabled={busy}
           onClick={() => void (async () => { setBusy(true); setError(""); try {
             await send(`/api/v1/processes/${id}/documents/${document.id}`, "DELETE", { reason: automaticAuditReason }, document.version);
-            setNotice("Documento cancelado."); setReload(value => value + 1);
-          } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); } finally { setBusy(false); } })()}>Cancelar</button></div>}
+            setNotice(t.documentCancelled); setReload(value => value + 1);
+          } catch (cause) { setError(cause instanceof Error ? cause.message : m.common.unexpectedError); } finally { setBusy(false); } })()}>{t.cancel}</button></div>}
         {editingDoc === document.id && <form className="stack-form" onSubmit={event => void save(event, async () => {
           await send(`/api/v1/processes/${id}/documents/${document.id}`, "PATCH", { ...documentBody(docDraft), kind: undefined, purchaseOrderItemId: undefined }, document.version);
-        }, "Documento atualizado.")}>
-          <label>Número<input required maxLength={120} value={docDraft.number} onChange={event => setDocDraft({ ...docDraft, number: event.target.value })} /></label>
-          <label>Emissão<input type="date" value={docDraft.issueDate} onChange={event => setDocDraft({ ...docDraft, issueDate: event.target.value })} /></label>
-          {docDraft.kind === "NF" && <label>Homologação<input type="date" value={docDraft.homologationDate} onChange={event => setDocDraft({ ...docDraft, homologationDate: event.target.value })} /></label>}
-          {docDraft.kind === "INVOICE" && <><label>Quantidade<input inputMode="decimal" value={docDraft.quantity} onChange={event => setDocDraft({ ...docDraft, quantity: event.target.value })} /></label>
-            <label>Preço unitário<input inputMode="decimal" value={docDraft.unitPrice} onChange={event => setDocDraft({ ...docDraft, unitPrice: event.target.value })} /></label>
-            <label>Valor informado<input inputMode="decimal" value={docDraft.amount} onChange={event => setDocDraft({ ...docDraft, amount: event.target.value })} /></label>
-            <label>Moeda<OperationalOptionSelect entity="currency" value={docDraft.currencyCode} values={options} onChange={value => setDocDraft({ ...docDraft, currencyCode: value })} /></label></>}
-          <label>Observações<textarea maxLength={4000} value={docDraft.notes} onChange={event => setDocDraft({ ...docDraft, notes: event.target.value })} /></label>
-          <button className="button" disabled={busy}>Salvar documento</button>
+        }, m.followup.documentUpdated)}>
+          <label>{m.followup.number}<input required maxLength={120} value={docDraft.number} onChange={event => setDocDraft({ ...docDraft, number: event.target.value })} /></label>
+          <label>{m.followup.issue}<input type="date" value={docDraft.issueDate} onChange={event => setDocDraft({ ...docDraft, issueDate: event.target.value })} /></label>
+          {docDraft.kind === "NF" && <label>{m.followup.homologationLabel}<input type="date" value={docDraft.homologationDate} onChange={event => setDocDraft({ ...docDraft, homologationDate: event.target.value })} /></label>}
+          {docDraft.kind === "INVOICE" && <><label>{m.followup.quantity}<input inputMode="decimal" value={docDraft.quantity} onChange={event => setDocDraft({ ...docDraft, quantity: event.target.value })} /></label>
+            <label>{m.followup.unitPrice}<input inputMode="decimal" value={docDraft.unitPrice} onChange={event => setDocDraft({ ...docDraft, unitPrice: event.target.value })} /></label>
+            <label>{t.informedValue}<input inputMode="decimal" value={docDraft.amount} onChange={event => setDocDraft({ ...docDraft, amount: event.target.value })} /></label>
+            <label>{m.followup.currency}<OperationalOptionSelect entity="currency" value={docDraft.currencyCode} values={options} onChange={value => setDocDraft({ ...docDraft, currencyCode: value })} /></label></>}
+          <label>{m.followup.notes}<textarea maxLength={4000} value={docDraft.notes} onChange={event => setDocDraft({ ...docDraft, notes: event.target.value })} /></label>
+          <button className="button" disabled={busy}>{m.followup.saveDocument}</button>
         </form>}
       </div>)}
       {canWrite && <form className="stack-form" onSubmit={event => void save(event, async () => {
         await send(`/api/v1/processes/${id}/documents`, "POST", documentBody(docDraft));
-      }, "Documento cadastrado.")}>
-        <h4>{editingDoc ? "Edite o documento selecionado acima" : "Adicionar documento ao IP"}</h4>
+      }, m.followup.documentCreated)}>
+        <h4>{editingDoc ? t.editSelected : t.addToIp}</h4>
         {!editingDoc && <><div className="operational-fields">
-          <label>Tipo<SearchableSelect ariaLabel="Tipo do documento" placeholder="" value={docDraft.kind}
+          <label>{m.followup.type}<SearchableSelect ariaLabel={m.followup.documentType} placeholder="" value={docDraft.kind}
             onChange={kind => setDocDraft({ ...docDraft, kind: kind as DocDraft["kind"] })}
             options={documentKindOptions} /></label>
-          <label>Item relacionado<SearchableSelect ariaLabel="Item relacionado" placeholder="Documento geral do IP"
+          <label>{m.followup.relatedItem}<SearchableSelect ariaLabel={m.followup.relatedItem} placeholder={m.followup.generalDocument}
             value={docDraft.purchaseOrderItemId} onChange={purchaseOrderItemId => setDocDraft({ ...docDraft, purchaseOrderItemId })}
             options={data.allocations.map(allocation => ({ value: allocation.item.id,
-              label: `PO ${allocation.purchaseOrder.number} · ${allocation.item.productCode} · linha ${allocation.item.lineNumber}`,
+              label: t.itemOption(allocation.purchaseOrder.number, allocation.item.productCode, allocation.item.lineNumber),
               searchText: allocation.item.description }))} /></label>
-          <label>Número<input required maxLength={120} value={docDraft.number} onChange={event => setDocDraft({ ...docDraft, number: event.target.value })} /></label>
-          <label>Emissão<input type="date" value={docDraft.issueDate} onChange={event => setDocDraft({ ...docDraft, issueDate: event.target.value })} /></label>
-          {docDraft.kind === "NF" && <label>Homologação<input type="date" value={docDraft.homologationDate} onChange={event => setDocDraft({ ...docDraft, homologationDate: event.target.value })} /></label>}
-          {docDraft.kind === "INVOICE" && <><label>Quantidade<input inputMode="decimal" value={docDraft.quantity} onChange={event => setDocDraft({ ...docDraft, quantity: event.target.value })} /></label>
-            <label>Preço unitário<input inputMode="decimal" value={docDraft.unitPrice} onChange={event => setDocDraft({ ...docDraft, unitPrice: event.target.value })} /></label>
-            <label>Valor informado<input inputMode="decimal" value={docDraft.amount} onChange={event => setDocDraft({ ...docDraft, amount: event.target.value })} /></label>
-            <label>Moeda<OperationalOptionSelect entity="currency" value={docDraft.currencyCode} values={options} onChange={value => setDocDraft({ ...docDraft, currencyCode: value })} /></label></>}
-        </div><label>Observações<textarea maxLength={4000} value={docDraft.notes} onChange={event => setDocDraft({ ...docDraft, notes: event.target.value })} /></label></>}
-        <button className="button" disabled={busy || Boolean(editingDoc)}>{busy ? "Salvando…" : "Adicionar documento"}</button>
+          <label>{m.followup.number}<input required maxLength={120} value={docDraft.number} onChange={event => setDocDraft({ ...docDraft, number: event.target.value })} /></label>
+          <label>{m.followup.issue}<input type="date" value={docDraft.issueDate} onChange={event => setDocDraft({ ...docDraft, issueDate: event.target.value })} /></label>
+          {docDraft.kind === "NF" && <label>{m.followup.homologationLabel}<input type="date" value={docDraft.homologationDate} onChange={event => setDocDraft({ ...docDraft, homologationDate: event.target.value })} /></label>}
+          {docDraft.kind === "INVOICE" && <><label>{m.followup.quantity}<input inputMode="decimal" value={docDraft.quantity} onChange={event => setDocDraft({ ...docDraft, quantity: event.target.value })} /></label>
+            <label>{m.followup.unitPrice}<input inputMode="decimal" value={docDraft.unitPrice} onChange={event => setDocDraft({ ...docDraft, unitPrice: event.target.value })} /></label>
+            <label>{t.informedValue}<input inputMode="decimal" value={docDraft.amount} onChange={event => setDocDraft({ ...docDraft, amount: event.target.value })} /></label>
+            <label>{m.followup.currency}<OperationalOptionSelect entity="currency" value={docDraft.currencyCode} values={options} onChange={value => setDocDraft({ ...docDraft, currencyCode: value })} /></label></>}
+        </div><label>{m.followup.notes}<textarea maxLength={4000} value={docDraft.notes} onChange={event => setDocDraft({ ...docDraft, notes: event.target.value })} /></label></>}
+        <button className="button" disabled={busy || Boolean(editingDoc)}>{busy ? m.newRecord.saving : m.followup.addDocument}</button>
       </form>}
-      <section className="ip-history" aria-label="Histórico do IP">
-        <h3>Histórico do IP</h3>
-        {data.events.length === 0 ? <p>Nenhum evento operacional registrado.</p> : data.events.map(event =>
+      <section className="ip-history" aria-label={t.historyTitle}>
+        <h3>{t.historyTitle}</h3>
+        {data.events.length === 0 ? <p>{t.noEvents}</p> : data.events.map(event =>
           <article className="ip-history-event" key={event.id}>
-            <p><strong>{historyOperationLabels[event.operation] ?? event.operation}</strong> · {new Date(event.occurredAt).toLocaleString("pt-BR")}</p>
-            <p className="ip-history-entity">{historyEntityLabel(event)}</p>
+            <p><strong>{(t.operations as Record<string, string>)[event.operation] ?? event.operation}</strong> · {new Date(event.occurredAt).toLocaleString("pt-BR")}</p>
+            <p className="ip-history-entity">{historyEntityLabel(event, m)}</p>
             {event.productDescription && <p className="ip-history-product-description">{event.productDescription}</p>}
-            <ul>{historyChanges(event).map(change => <li key={change}>{change}</li>)}</ul>
+            <ul>{historyChanges(event, m).map(change => <li key={change}>{change}</li>)}</ul>
             <dl className="ip-history-meta">
-              <div><dt>Responsável</dt><dd>{formatHistoryActor(event.actorId)}</dd></div>
-              {event.reason && event.reason !== automaticAuditReason && <div><dt>Motivo</dt><dd>{event.reason}</dd></div>}
+              <div><dt>{t.responsible}</dt><dd>{formatHistoryActor(event.actorId)}</dd></div>
+              {event.reason && event.reason !== automaticAuditReason && <div><dt>{t.reason}</dt><dd>{event.reason}</dd></div>}
             </dl>
           </article>)}
       </section>

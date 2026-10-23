@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useI18n } from "./I18nProvider";
 import { OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 import { suggestedPurchaseRequestNumber } from "../lib/po-sc-link";
 import { classifyTotvsPurchaseRequest, TotvsPurchaseRequestChoice } from "../lib/totvs-purchase-request";
@@ -17,6 +18,8 @@ export default function PurchaseOrderScLink({ importer, supplierCode, items, pur
   saving: boolean;
   onCreate: (body: PurchaseOrderScLinkBody) => Promise<void>;
 }) {
+  const { m } = useI18n();
+  const t = m.scLink;
   const [scNumber, setScNumber] = useState(() => suggestedPurchaseRequestNumber(items));
   const [requester, setRequester] = useState("");
   const [scDate, setScDate] = useState("");
@@ -31,25 +34,23 @@ export default function PurchaseOrderScLink({ importer, supplierCode, items, pur
       approvalDate: approvalDate || null, commercialPlanReceivedDate: commercialPlanReceivedDate || null });
   }
 
-  return <section className="po-entry-section" aria-label="SC da PO">
-    <h4>SC da PO</h4>
-    <p className="muted">Esta PO não tem SC vinculada. Crie a SC a partir do número informado nos itens ou vincule uma SC existente.</p>
-    {!supplierCode && <p className="notice error" role="alert">Informe o fornecedor da PO antes de vincular a SC.</p>}
+  return <section className="po-entry-section" aria-label={t.title}>
+    <h4>{t.title}</h4>
+    <p className="muted">{t.intro}</p>
+    {!supplierCode && <p className="notice error" role="alert">{t.supplierFirst}</p>}
     <form className="stack-form" onSubmit={submit}>
-      <label>Número da SC<input required maxLength={80} value={scNumber} onChange={event => setScNumber(event.target.value)} /></label>
-      {classification.kind === "match" && <p className="notice">A SC {classification.request.scNumber} já existe para esta
-        importadora e fornecedor. Selecione-a no campo SC em &quot;Dados da PO&quot; e salve.</p>}
-      {classification.kind === "supplier-mismatch" && <p className="notice error" role="alert">A SC {classification.request.scNumber} já
-        existe com o fornecedor {classification.request.supplierText ?? "não informado"}, diferente do fornecedor da PO.
-        Corrija a SC no PCM ou o fornecedor da PO.</p>}
+      <label>{m.fields.scNumber}<input required maxLength={80} value={scNumber} onChange={event => setScNumber(event.target.value)} /></label>
+      {classification.kind === "match" && <p className="notice">{t.exists(classification.request.scNumber)}</p>}
+      {classification.kind === "supplier-mismatch" && <p className="notice error" role="alert">
+        {t.supplierMismatch(classification.request.scNumber, classification.request.supplierText ?? t.supplierNotInformed)}</p>}
       {classification.kind === "missing" && <>
-        <label>Solicitante<OperationalOptionSelect required entity="requester" value={requester} values={options}
+        <label>{m.fields.requester}<OperationalOptionSelect required entity="requester" value={requester} values={options}
           onChange={setRequester} /></label>
-        <label>Data da SC<input type="date" value={scDate} onChange={event => setScDate(event.target.value)} /></label>
-        <label>Data de aprovação da SC<input type="date" value={approvalDate} onChange={event => setApprovalDate(event.target.value)} /></label>
-        <label>Data de recebimento do plano comercial<input type="date" value={commercialPlanReceivedDate}
+        <label>{m.fields.scDate}<input type="date" value={scDate} onChange={event => setScDate(event.target.value)} /></label>
+        <label>{m.fields.scApprovalDate}<input type="date" value={approvalDate} onChange={event => setApprovalDate(event.target.value)} /></label>
+        <label>{m.fields.commercialPlanReceivedDate}<input type="date" value={commercialPlanReceivedDate}
           onChange={event => setCommercialPlanReceivedDate(event.target.value)} /></label>
-        <button className="button" disabled={saving || !supplierCode || !requester.trim()}>Criar SC e vincular</button>
+        <button className="button" disabled={saving || !supplierCode || !requester.trim()}>{t.create}</button>
       </>}
     </form>
   </section>;

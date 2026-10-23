@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { en } from "../lib/i18n/en.ts";
+import { ptBR } from "../lib/i18n/pt-BR.ts";
 import { deletedIpInvoiceBlockMessage, processLifecycleActions } from "../lib/ip-lifecycle.ts";
 
 test("offers active open lifecycle actions to writers", () => {
@@ -27,6 +29,7 @@ test("unknown states and non-writers expose no lifecycle actions", () => {
 });
 
 test("deleted invoice references show a restore instruction", () => {
-  assert.match(deletedIpInvoiceBlockMessage("DELETED"), /Peça a restauração para um Master ou Administrador/u);
-  assert.equal(deletedIpInvoiceBlockMessage("ACTIVE"), null);
+  assert.match(deletedIpInvoiceBlockMessage("DELETED", ptBR), /Peça a restauração para um Master ou Administrador/u);
+  assert.equal(deletedIpInvoiceBlockMessage("ACTIVE", ptBR), null);
+  assert.match(deletedIpInvoiceBlockMessage("DELETED", en), /Ask a Master or Administrator to restore it/u);
 });

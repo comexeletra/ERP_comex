@@ -1,3 +1,5 @@
+import type { Messages } from "./i18n/pt-BR";
+
 export type PurchaseOrderLifecycleStatus = "ACTIVE" | "CLOSED" | "CANCELLED" | "DELETED";
 export type PurchaseOrderLifecycleAction = "close" | "cancel" | "delete" | "reopen" | "reactivate" | "restore";
 
@@ -17,11 +19,10 @@ export function purchaseOrderLifecycleActions(
 export function purchaseOrderNumberBlockMessage(
   preflight: { sameImporterDuplicate: boolean; sameImporterDeleted?: boolean },
   number: string,
+  m: Messages,
 ): string | null {
-  if (preflight.sameImporterDuplicate) return `Já existe uma PO ${number} nesta importadora.`;
-  if (preflight.sameImporterDeleted) {
-    return `A PO ${number} desta importadora foi excluída. Restaure-a como estava ou com os dados da planilha em vez de criar outra com o mesmo número.`;
-  }
+  if (preflight.sameImporterDuplicate) return m.poNumber.duplicate(number);
+  if (preflight.sameImporterDeleted) return m.poNumber.deleted(number);
   return null;
 }
 

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { roleLabel } from "../lib/i18n/labels";
 import type { Messages } from "../lib/i18n/pt-BR";
 import { useI18n } from "./I18nProvider";
 import LanguageSwitcher from "./LanguageSwitcher";
@@ -84,7 +85,7 @@ export default function AppSidebar({ collapsed, isMaster, displayName, roles, im
   ];
   const userName = displayName ?? t.authenticatedUser;
   const initials = userName.split(/\s+/u).filter(Boolean).slice(0, 2).map(name => name[0]).join("").toLocaleUpperCase(locale);
-  const roleText = roles.length > 0 ? roles.join(", ") : t.noRole;
+  const roleText = roles.length > 0 ? roles.map(role => roleLabel(m, role)).join(", ") : t.noRole;
   const importerText = isMaster ? t.allImporters : importerScopes.length > 0 ? importerScopes.join(", ") : t.noImporters;
 
   return <aside className={collapsed ? "app-sidebar is-collapsed" : "app-sidebar"}>

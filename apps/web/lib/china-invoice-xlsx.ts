@@ -1,4 +1,5 @@
 import type { Cell, Worksheet } from "exceljs";
+import type { Messages } from "./i18n/pt-BR";
 
 const maxFileBytes = 10 * 1024 * 1024;
 
@@ -105,26 +106,27 @@ function decimalCell(cell: Cell): string {
 }
 
 /** Parses both the preferred one-PO-per-row format and legacy multi-PO cells. */
-export function parseInvoicePoAssignments(value: string, lineQuantity: string): InvoicePoAssignment[] {
+export function parseInvoicePoAssignments(value: string, lineQuantity: string, m: Messages): InvoicePoAssignment[] {
+  const t = m.invoiceSheet;
   const quantity = decimalValue(lineQuantity);
-  if (quantity === null || quantity <= 0) throw new Error("Informe uma quantidade total válida para a linha.");
+  if (quantity === null || quantity <= 0) throw new Error(t.invalidLineQuantity);
 
   const pattern = /\bPO\s*([0-9]{3,})(?:\s*=\s*([0-9][0-9,.]*)\s*(?:units?|pcs?)\b)?/giu;
   const matches = [...value.matchAll(pattern)];
   const residue = value.replace(pattern, "").replace(/[\s,;]+/gu, "");
-  if (!matches.length || residue) throw new Error("Não foi possível interpretar a PO nesta linha.");
+  if (!matches.length || residue) throw new Error(t.poUnreadable);
   if (matches.length > 1 && matches.some(match => !match[2])) {
-    throw new Error("Informe a quantidade para cada PO quando uma linha estiver dividida.");
+    throw new Error(t.splitNeedsQuantity);
   }
 
   const allocations = matches.map(match => {
     const allocated = match[2] ? decimalValue(match[2]) : quantity;
-    if (allocated === null || allocated <= 0) throw new Error("A quantidade de cada PO precisa ser maior que zero.");
+    if (allocated === null || allocated <= 0) throw new Error(t.poQuantityPositive);
     return { poNumber: match[1], quantity: String(allocated), explicitQuantity: Boolean(match[2]) };
   });
   const sum = allocations.reduce((total, allocation) => total + Number(allocation.quantity), 0);
   if (Math.abs(sum - quantity) > 0.00000001) {
-    throw new Error("A soma das quantidades das POs não confere com a quantidade total da linha.");
+    throw new Error(t.poSumMismatch);
   }
 
   return allocations;
@@ -184,7 +186,8 @@ function cnpjDigits(value: string): string {
   return match ? match[0].replace(/\D/gu, "") : "";
 }
 
-function parseLine(sheet: Worksheet, rowNumber: number, columns: Map<string, number>): ChinaInvoiceLine {
+function parseLine(sheet: Worksheet, rowNumber: number, columns: Map<string, number>, m: Messages): ChinaInvoiceLine {
+  const t = m.invoiceSheet;
   const get = (key: string) => textOf(sheet.getRow(rowNumber).getCell(columns.get(key)!));
   const issues: string[] = [];
   const quantity = decimalCell(sheet.getRow(rowNumber).getCell(columns.get("qty pcs kgs mts")!));
@@ -199,24 +202,24 @@ function parseLine(sheet: Worksheet, rowNumber: number, columns: Map<string, num
     : amountNumber !== null && quantityNumber !== null && quantityNumber > 0
       ? String(amountNumber / quantityNumber) : "";
 
-  if (!get("material code")) issues.push("Material Code aus der invoice está vazio.");
-  if (!/^\d{8}$/u.test(get("ncm"))) issues.push("O NCM precisa conter 8 dígitos.");
-  if (!get("product description")) issues.push("A descrição do produto está vazia.");
-  if (!quantityNumber || quantityNumber <= 0) issues.push("A quantidade precisa ser maior que zero.");
-  if (!get("qty unit")) issues.push("A unidade está vazia.");
-  if (amountNumber === null || amountNumber < 0) issues.push("O total da linha está vazio ou inválido.");
-  if (!unitPrice) issues.push("O preço unitário não pôde ser calculado.");
-  if (!get("po")) issues.push("A PO da linha está vazia.");
+  if (!get("material code")) issues.push(t.materialCodeEmpty);
+  if (!/^\d{8}$/u.test(get("ncm"))) issues.push(t.ncmDigits);
+  if (!get("product description")) issues.push(t.descriptionEmpty);
+  if (!quantityNumber || quantityNumber <= 0) issues.push(t.quantityPositive);
+  if (!get("qty unit")) issues.push(t.unitEmpty);
+  if (amountNumber === null || amountNumber < 0) issues.push(t.lineTotalInvalid);
+  if (!unitPrice) issues.push(t.unitPriceMissing);
+  if (!get("po")) issues.push(t.poEmpty);
 
   let poAssignments: InvoicePoAssignment[] = [];
   if (quantity && get("po")) {
-    try { poAssignments = parseInvoicePoAssignments(get("po"), quantity); }
-    catch (error) { issues.push(error instanceof Error ? error.message : "A PO da linha está inválida."); }
+    try { poAssignments = parseInvoicePoAssignments(get("po"), quantity, m); }
+    catch (error) { issues.push(error instanceof Error ? error.message : t.poInvalid); }
   }
 
   if (quantityNumber !== null && amountNumber !== null && unitPrice) {
     if (Math.abs(quantityNumber * Number(unitPrice) - amountNumber) > 0.011) {
-      issues.push("Quantidade × preço unitário não confere com o total da linha.");
+      issues.push(t.lineTotalMismatch);
     }
   }
 
@@ -229,32 +232,33 @@ function parseLine(sheet: Worksheet, rowNumber: number, columns: Map<string, num
   };
 }
 
-export async function parseChinaInvoiceXlsx(file: File): Promise<ChinaInvoiceDraft> {
+export async function parseChinaInvoiceXlsx(file: File, m: Messages): Promise<ChinaInvoiceDraft> {
+  const t = m.invoiceSheet;
   if (!file.name.toLocaleLowerCase("pt-BR").endsWith(".xlsx")) {
-    throw new Error("Selecione uma invoice no formato .xlsx.");
+    throw new Error(t.xlsxRequired);
   }
   if (file.size === 0 || file.size > maxFileBytes) {
-    throw new Error("O arquivo precisa ter conteúdo e ser menor que 10 MB.");
+    throw new Error(t.fileSize);
   }
 
   const { default: ExcelJS } = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
   const bytes = await file.arrayBuffer();
   try { await workbook.xlsx.load(bytes); }
-  catch { throw new Error("Não foi possível ler a planilha. Salve-a como .xlsx e tente novamente."); }
+  catch { throw new Error(t.unreadable); }
   const sheet = workbook.getWorksheet("INV");
-  if (!sheet) throw new Error("Não encontrei a aba obrigatória INV.");
+  if (!sheet) throw new Error(t.invMissing);
   const header = headerColumns(sheet);
-  if (!header) throw new Error("Não encontrei o cabeçalho de produtos esperado na aba INV.");
+  if (!header) throw new Error(t.headerMissing);
   const { row: headerRow, columns } = header;
   if (!columns.has("price cny") || !columns.has("total cny")) {
-    throw new Error("As colunas Price (CNY) e Total (CNY) são obrigatórias; outras moedas não são aceitas.");
+    throw new Error(t.cnyRequired);
   }
   const required = ["no", "ncm", "material code", "product description", "manufacturer",
     "manufacturer s address", "manufacturer s country", "qty pcs kgs mts", "qty unit", "price cny",
     "net weight kg", "gross weight kg", "total cny", "po"];
   const missingHeaders = required.filter(key => !columns.has(key));
-  if (missingHeaders.length) throw new Error(`A aba INV está sem colunas obrigatórias: ${missingHeaders.join(", ")}.`);
+  if (missingHeaders.length) throw new Error(t.missingColumns(missingHeaders.join(", ")));
 
   const lines: ChinaInvoiceLine[] = [];
   let totalRow = 0;
@@ -266,9 +270,9 @@ export async function parseChinaInvoiceXlsx(file: File): Promise<ChinaInvoiceDra
     if (hasTotal && !totalRow) totalRow = row;
     const lineNo = textOf(sheet.getRow(row).getCell(columns.get("no")!));
     if (!/^\d+$/u.test(lineNo)) continue;
-    lines.push(parseLine(sheet, row, columns));
+    lines.push(parseLine(sheet, row, columns, m));
   }
-  if (!lines.length) throw new Error("Não encontrei produtos na aba INV.");
+  if (!lines.length) throw new Error(t.noProducts);
   const lastLineRow = lines.at(-1)!.sourceRow;
   for (let row = lastLineRow + 1; row <= Math.min(sheet.rowCount, lastLineRow + 10); row += 1) {
     if (["qty pcs kgs mts", "net weight kg", "gross weight kg", "total cny"]
@@ -287,36 +291,36 @@ export async function parseChinaInvoiceXlsx(file: File): Promise<ChinaInvoiceDra
   };
   const warnings: string[] = [];
   const issues: string[] = [];
-  if (!totalRow) issues.push("A linha TOTAL da invoice não foi encontrada.");
+  if (!totalRow) issues.push(t.totalRowMissing);
   else for (const [column, value, label] of [
-    ["qty pcs kgs mts", sum(line => line.quantity), "quantidade"],
-    ["net weight kg", sum(line => line.netWeightKg), "peso líquido"],
-    ["gross weight kg", sum(line => line.grossWeightKg), "peso bruto"],
-    ["total cny", sum(line => line.amount), "valor"],
+    ["qty pcs kgs mts", sum(line => line.quantity), t.totalLabels.quantity],
+    ["net weight kg", sum(line => line.netWeightKg), t.totalLabels.netWeight],
+    ["gross weight kg", sum(line => line.grossWeightKg), t.totalLabels.grossWeight],
+    ["total cny", sum(line => line.amount), t.totalLabels.amount],
   ] as const) {
     const declared = decimalValue(decimalCell(sheet.getRow(totalRow).getCell(columns.get(column)!)));
     if (declared === null || Math.abs(declared - Number(value)) > 0.011) {
-      issues.push(`O TOTAL de ${label} não confere com a soma das linhas.`);
+      issues.push(t.totalMismatch(label));
     }
   }
   for (const line of lines) {
     const net = decimalValue(line.netWeightKg);
     const gross = decimalValue(line.grossWeightKg);
     if (net !== null && gross !== null && net > gross) {
-      warnings.push(`Linha ${line.sourceRow}: o peso líquido é maior que o peso bruto.`);
+      warnings.push(t.netOverGross(line.sourceRow));
     }
   }
   const ipNumber = headerValue(sheet, "IP REF.");
-  if (!ipNumber.trim()) throw new Error("The IP REF header is required on the INV sheet.");
+  if (!ipNumber.trim()) throw new Error(t.ipRefRequired);
   const importerText = headerValue(sheet, "Importer:") || textOf(sheet.getCell("E6"));
   const exporterText = headerValue(sheet, "Exporter:") || textOf(sheet.getCell("A6"));
-  if (!importerText) issues.push("Importador não identificado no cabeçalho.");
-  if (!exporterText) issues.push("Exporter não identificado no cabeçalho.");
+  if (!importerText) issues.push(t.importerMissing);
+  if (!exporterText) issues.push(t.exporterMissing);
   const headerPoNumber = headerValue(sheet, "PO REF.");
   const poNumbers = new Set(lines.flatMap(line => line.poAssignments.map(item => item.poNumber)));
   const normalizedHeaderPo = headerPoNumber.replace(/\D/gu, "");
   if (normalizedHeaderPo && poNumbers.size > 1) {
-    warnings.push("O PO REF do cabeçalho é apenas uma referência: as linhas da invoice apontam para mais de uma PO.");
+    warnings.push(t.headerPoReference);
   }
 
   return {

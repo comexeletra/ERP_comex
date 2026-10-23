@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { filterSearchableOptions, type SearchableOption } from "../lib/searchable-options";
+import { useI18n } from "./I18nProvider";
 
 export function SearchableSelect({
   value,
@@ -10,9 +11,9 @@ export function SearchableSelect({
   onChange,
   required = false,
   disabled = false,
-  placeholder = "Selecione",
-  searchPlaceholder = "Digite para buscar",
-  emptyMessage = "Nenhuma opção encontrada.",
+  placeholder: placeholderProp,
+  searchPlaceholder: searchPlaceholderProp,
+  emptyMessage: emptyMessageProp,
   ariaLabel,
 }: {
   value: string;
@@ -25,6 +26,10 @@ export function SearchableSelect({
   emptyMessage?: string;
   ariaLabel?: string;
 }) {
+  const { m } = useI18n();
+  const placeholder = placeholderProp ?? m.select.placeholder;
+  const searchPlaceholder = searchPlaceholderProp ?? m.select.searchPlaceholder;
+  const emptyMessage = emptyMessageProp ?? m.select.empty;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -35,7 +40,7 @@ export function SearchableSelect({
   const menuRef = useRef<HTMLDivElement>(null);
   const listId = `searchable-options-${useId().replaceAll(":", "")}`;
   const selected = options.find(option => option.value === value);
-  const fallback = value && !selected ? { value, label: `${value} (valor atual)` } : undefined;
+  const fallback = value && !selected ? { value, label: m.select.currentValue(value) } : undefined;
   const allOptions: SearchableOption[] = [
     ...(placeholder ? [{ value: "", label: placeholder }] : []),
     ...(fallback ? [fallback] : []),
@@ -73,8 +78,8 @@ export function SearchableSelect({
   }
 
   useEffect(() => {
-    inputRef.current?.setCustomValidity(required && !value ? "Selecione uma opção." : "");
-  }, [required, value]);
+    inputRef.current?.setCustomValidity(required && !value ? m.select.required : "");
+  }, [m, required, value]);
 
   useEffect(() => {
     if (!open) return;
@@ -124,12 +129,12 @@ export function SearchableSelect({
         if (value) onChange("");
       }} onClick={() => { if (!open) showMenu(); }}
       onKeyDown={handleKeyDown} placeholder={placeholder} ref={inputRef} role="combobox" type="text"
-      value={selected?.label ?? fallback?.label.replace(" (valor atual)", "") ?? ""} />
+      value={selected?.label ?? fallback?.value ?? ""} />
     {open && typeof document !== "undefined" && createPortal(<div className="searchable-select-menu" ref={menuRef}
       style={{ top: position.top, left: position.left, width: position.width }}>
       <input aria-activedescendant={activeOptionId} aria-autocomplete="list" aria-controls={listId}
         aria-expanded="true" aria-haspopup="listbox"
-        aria-label={ariaLabel ? `Buscar ${ariaLabel.toLocaleLowerCase("pt-BR")}` : "Buscar opção"} autoComplete="off"
+        aria-label={ariaLabel ? m.select.searchNamed(ariaLabel) : m.select.searchOption} autoComplete="off"
         className="searchable-select-search" onChange={event => {
           setQuery(event.target.value); setActiveIndex(0);
           if (value) onChange("");

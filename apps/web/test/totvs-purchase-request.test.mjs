@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { en } from "../lib/i18n/en.ts";
+import { ptBR } from "../lib/i18n/pt-BR.ts";
 import { classifyTotvsPurchaseRequest, totvsPurchaseRequestPayload } from "../lib/totvs-purchase-request.ts";
 
 const choices = [
@@ -35,14 +37,14 @@ const filledRequest = { requester: " Solicitante HML ", scDate: "2026-10-01", ap
 
 test("a missing SC is created with the requester, used by new, restored and replaced POs alike", () => {
   assert.deepEqual(totvsPurchaseRequestPayload({ classification: { kind: "missing", scNumber: "020028" },
-    selectedPurchaseRequestId: "", newRequest: filledRequest }), {
+    selectedPurchaseRequestId: "", newRequest: filledRequest }, ptBR), {
     choice: { newPurchaseRequest: { scNumber: "020028", requester: "Solicitante HML", scDate: "2026-10-01",
       approvalDate: null, commercialPlanReceivedDate: null } }, blocker: null });
 });
 
 test("a missing SC without requester blocks saving and restoring", () => {
   const result = totvsPurchaseRequestPayload({ classification: { kind: "missing", scNumber: "020028" },
-    selectedPurchaseRequestId: "", newRequest: blankRequest });
+    selectedPurchaseRequestId: "", newRequest: blankRequest }, ptBR);
   assert.equal(result.choice, null);
   assert.match(result.blocker, /solicitante/u);
   assert.match(result.blocker, /020028/u);
@@ -50,23 +52,25 @@ test("a missing SC without requester blocks saving and restoring", () => {
 
 test("a selected SC is linked by id, including the automatic link of a matching SC", () => {
   assert.deepEqual(totvsPurchaseRequestPayload({ classification: { kind: "match", request: choices[0] },
-    selectedPurchaseRequestId: "sc-1", newRequest: blankRequest }), { choice: { purchaseRequestId: "sc-1" }, blocker: null });
+    selectedPurchaseRequestId: "sc-1", newRequest: blankRequest }, ptBR), { choice: { purchaseRequestId: "sc-1" }, blocker: null });
   assert.deepEqual(totvsPurchaseRequestPayload({ classification: { kind: "missing", scNumber: "SC-200" },
-    selectedPurchaseRequestId: "sc-1", newRequest: blankRequest }), { choice: { purchaseRequestId: "sc-1" }, blocker: null });
+    selectedPurchaseRequestId: "sc-1", newRequest: blankRequest }, ptBR), { choice: { purchaseRequestId: "sc-1" }, blocker: null });
 });
 
 test("an SC with another supplier blocks even with another SC selected", () => {
   const result = totvsPurchaseRequestPayload({ classification: { kind: "supplier-mismatch", request: choices[0] },
-    selectedPurchaseRequestId: "sc-2", newRequest: filledRequest });
+    selectedPurchaseRequestId: "sc-2", newRequest: filledRequest }, ptBR);
   assert.equal(result.choice, null);
   assert.match(result.blocker, /sc-100.*SUP-1/u);
+  assert.match(totvsPurchaseRequestPayload({ classification: { kind: "missing", scNumber: "020028" },
+    selectedPurchaseRequestId: "", newRequest: blankRequest }, en).blocker, /Enter the requester to create SC 020028/u);
 });
 
 test("without SC in the spreadsheet only a manually selected SC is sent", () => {
   assert.deepEqual(totvsPurchaseRequestPayload({ classification: { kind: "none" }, selectedPurchaseRequestId: "",
-    newRequest: filledRequest }), { choice: null, blocker: null });
+    newRequest: filledRequest }, ptBR), { choice: null, blocker: null });
   assert.deepEqual(totvsPurchaseRequestPayload({ classification: { kind: "none" }, selectedPurchaseRequestId: "sc-2",
-    newRequest: blankRequest }), { choice: { purchaseRequestId: "sc-2" }, blocker: null });
+    newRequest: blankRequest }, ptBR), { choice: { purchaseRequestId: "sc-2" }, blocker: null });
   assert.deepEqual(totvsPurchaseRequestPayload({ classification: { kind: "match", request: choices[0] },
-    selectedPurchaseRequestId: "", newRequest: blankRequest }), { choice: null, blocker: null });
+    selectedPurchaseRequestId: "", newRequest: blankRequest }, ptBR), { choice: null, blocker: null });
 });

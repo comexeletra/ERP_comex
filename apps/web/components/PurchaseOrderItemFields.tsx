@@ -1,11 +1,13 @@
 "use client";
 
+import { booleanOptions, fieldLabel, type FieldLabelKey } from "../lib/i18n/labels";
+import { useI18n } from "./I18nProvider";
 import { OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 import { SearchableSelect } from "./SearchableSelect";
 
 export type OperationalField = {
   key: string;
-  label: string;
+  labelKey?: FieldLabelKey;
   type?: "date" | "number" | "money" | "boolean" | "select";
   max?: number;
   entity?: string;
@@ -14,31 +16,31 @@ export type OperationalField = {
 export type OperationalFieldDraft = Record<string, string>;
 
 export const purchaseOrderItemFields: OperationalField[] = [
-  { key: "necessityDate", label: "Data de necessidade", type: "date" },
-  { key: "scNumber", label: "Número da SC", max: 80 },
-  { key: "scDate", label: "Data da SC", type: "date" },
-  { key: "scApprovalDate", label: "Data de aprovação da SC", type: "date" },
-  { key: "commercialPlanReceivedDate", label: "Data de recebimento do plano comercial", type: "date" },
-  { key: "priority", label: "Prioridade", type: "select", entity: "priority" },
-  { key: "demand", label: "Demanda", type: "select", entity: "demand" },
-  { key: "requester", label: "Solicitante", type: "select", entity: "requester" },
-  { key: "purpose", label: "Finalidade", type: "select", entity: "purpose" },
-  { key: "costCenter", label: "Centro de custo", type: "select", entity: "cost_center" },
-  { key: "draftPo", label: "Número da Draft PO", max: 80 },
-  { key: "poApprovalDate", label: "Data de aprovação da PO", type: "date" },
-  { key: "poSentDate", label: "Data de envio da PO", type: "date" },
-  { key: "category", label: "Categoria", type: "select", entity: "category" },
-  { key: "productGroup", label: "Grupo do produto", type: "select", entity: "product_group" },
-  { key: "group", label: "Group", type: "select", entity: "group" },
-  { key: "ncm", label: "NCM", max: 16 },
-  { key: "remarks", label: "Observações do item", max: 4000 },
-  { key: "mrpCompletedDate", label: "Data de conclusão do MRP", type: "date" },
-  { key: "targetMrpDays", label: "Meta MRP (dias)", type: "number" },
-  { key: "targetOrderDays", label: "Meta do pedido (dias)", type: "number" },
-  { key: "targetShipmentDays", label: "Meta de embarque (dias)", type: "number" },
-  { key: "targetPortDays", label: "Meta até o porto (dias)", type: "number" },
-  { key: "targetTransitDays", label: "Meta de trânsito (dias)", type: "number" },
-  { key: "targetCustomsDays", label: "Meta de desembaraço (dias)", type: "number" },
+  { key: "necessityDate", type: "date" },
+  { key: "scNumber", max: 80 },
+  { key: "scDate", type: "date" },
+  { key: "scApprovalDate", type: "date" },
+  { key: "commercialPlanReceivedDate", type: "date" },
+  { key: "priority", type: "select", entity: "priority" },
+  { key: "demand", type: "select", entity: "demand" },
+  { key: "requester", type: "select", entity: "requester" },
+  { key: "purpose", type: "select", entity: "purpose" },
+  { key: "costCenter", type: "select", entity: "cost_center" },
+  { key: "draftPo", max: 80 },
+  { key: "poApprovalDate", type: "date" },
+  { key: "poSentDate", type: "date" },
+  { key: "category", type: "select", entity: "category" },
+  { key: "productGroup", type: "select", entity: "product_group" },
+  { key: "group", type: "select", entity: "group" },
+  { key: "ncm", max: 16 },
+  { key: "remarks", max: 4000 },
+  { key: "mrpCompletedDate", type: "date" },
+  { key: "targetMrpDays", type: "number" },
+  { key: "targetOrderDays", type: "number" },
+  { key: "targetShipmentDays", type: "number" },
+  { key: "targetPortDays", type: "number" },
+  { key: "targetTransitDays", type: "number" },
+  { key: "targetCustomsDays", type: "number" },
 ];
 
 const sharedItemFieldKeys = new Set([
@@ -69,10 +71,11 @@ export function purchaseOrderItemFieldsPayload(values: OperationalFieldDraft, in
 export function OperationalFieldsEditor({ fields, values, setValues, options, readOnlyKeys }:
   { fields: OperationalField[]; values: OperationalFieldDraft; setValues: (value: OperationalFieldDraft) => void;
     options: OperationalOption[]; readOnlyKeys?: ReadonlySet<string> }) {
-  return <div className="operational-fields">{fields.map(field => <label key={field.key}>{field.label}
-    {field.type === "boolean" ? <SearchableSelect ariaLabel={field.label} placeholder="" value={values[field.key] ?? ""}
+  const { m } = useI18n();
+  return <div className="operational-fields">{fields.map(field => <label key={field.key}>{fieldLabel(m, field)}
+    {field.type === "boolean" ? <SearchableSelect ariaLabel={fieldLabel(m, field)} placeholder="" value={values[field.key] ?? ""}
       onChange={value => setValues({ ...values, [field.key]: value })}
-      options={[{ value: "", label: "Não informado" }, { value: "true", label: "Sim" }, { value: "false", label: "Não" }]} /> :
+      options={booleanOptions(m)} /> :
       field.type === "select" ? <OperationalOptionSelect entity={field.entity ?? ""} value={values[field.key] ?? ""} values={options}
         onChange={value => setValues({ ...values, [field.key]: value })} /> :
       <input type={field.type === "date" ? "date" : field.type === "number" ? "number" : "text"}

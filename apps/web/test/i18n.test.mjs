@@ -4,6 +4,7 @@ import test from "node:test";
 import { en } from "../lib/i18n/en.ts";
 import { defaultLocale, localeOptions, locales, localeStorageKey, normalizeLocale, readStoredLocale, storeLocale }
   from "../lib/i18n/locales.ts";
+import { roleLabel } from "../lib/i18n/labels.ts";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
 import { zhCN } from "../lib/i18n/zh-CN.ts";
 
@@ -19,7 +20,8 @@ function shape(value, path = "") {
 function texts(value, path = "") {
   if (typeof value === "string") return [[path, value]];
   if (typeof value === "function") {
-    const sample = value(...Array.from({ length: value.length }, (_, index) => index + 2));
+    // Numeric strings work for both text and number parameters.
+    const sample = value(...Array.from({ length: value.length }, (_, index) => String(index + 2)));
     return [[path, sample]];
   }
   return Object.entries(value).flatMap(([key, child]) => texts(child, path ? `${path}.${key}` : key));
@@ -70,6 +72,13 @@ test("the Chinese dictionary is written in Chinese, not copied from another lang
   const chinese = /[一-鿿]/u;
   const translated = texts(zhCN).filter(([, text]) => chinese.test(text)).length;
   assert.ok(translated / texts(zhCN).length > 0.9, `only ${translated} Chinese texts`);
+});
+
+test("role names keep the API value and are translated only for display", () => {
+  assert.equal(roleLabel(ptBR, "Importação"), "Importação");
+  assert.equal(roleLabel(en, "Importação"), "Import");
+  assert.equal(roleLabel(zhCN, "Compras"), "采购");
+  assert.equal(roleLabel(en, "Papel novo"), "Papel novo");
 });
 
 test("the language selector is in the side menu and on the login page", async () => {

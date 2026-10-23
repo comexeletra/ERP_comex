@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { hasIpLifecycleSupport, hasPoLifecycleSupport, isMissingApiRoute } from "../lib/api.ts";
 import { deletedPurchaseOrderActions, purchaseOrderLifecycleActions, purchaseOrderNumberBlockMessage } from "../lib/po-lifecycle.ts";
+import { en } from "../lib/i18n/en.ts";
+import { ptBR } from "../lib/i18n/pt-BR.ts";
 
 test("recognizes the API's custom not-found response for the legacy PO fallback", () => {
   assert.equal(isMissingApiRoute(404, { error: "Recurso não encontrado." }), true);
@@ -62,17 +64,19 @@ test("shows lifecycle actions only for supported PO states and writers", () => {
 });
 
 test("blocks a new PO when the number is active or deleted in the same importer", () => {
-  assert.equal(purchaseOrderNumberBlockMessage({ sameImporterDuplicate: true, sameImporterDeleted: false }, "030201"),
+  assert.equal(purchaseOrderNumberBlockMessage({ sameImporterDuplicate: true, sameImporterDeleted: false }, "030201", ptBR),
     "Já existe uma PO 030201 nesta importadora.");
-  assert.match(purchaseOrderNumberBlockMessage({ sameImporterDuplicate: false, sameImporterDeleted: true }, "030201"),
+  assert.match(purchaseOrderNumberBlockMessage({ sameImporterDuplicate: false, sameImporterDeleted: true }, "030201", ptBR),
     /PO 030201 desta importadora foi excluída.*Restaure-a/u);
-  assert.equal(purchaseOrderNumberBlockMessage({ sameImporterDuplicate: false }, "030201"), null);
+  assert.equal(purchaseOrderNumberBlockMessage({ sameImporterDuplicate: false }, "030201", ptBR), null);
+  assert.equal(purchaseOrderNumberBlockMessage({ sameImporterDuplicate: true }, "030201", en),
+    "PO 030201 already exists for this importer.");
 });
 
 test("offers restore and replace for a deleted PO only to lifecycle managers", () => {
   assert.deepEqual(deletedPurchaseOrderActions(true, true), { restore: true, replace: true, needsManager: false });
   assert.deepEqual(deletedPurchaseOrderActions(true, false), { restore: true, replace: false, needsManager: false });
   assert.deepEqual(deletedPurchaseOrderActions(false, true), { restore: false, replace: false, needsManager: true });
-  assert.match(purchaseOrderNumberBlockMessage({ sameImporterDuplicate: false, sameImporterDeleted: true }, "030201"),
+  assert.match(purchaseOrderNumberBlockMessage({ sameImporterDuplicate: false, sameImporterDeleted: true }, "030201", ptBR),
     /Restaure-a como estava ou com os dados da planilha/u);
 });

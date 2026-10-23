@@ -17,26 +17,12 @@ const pending = new Set([
   "app/requests/page.tsx",
   "app/requests/[id]/page.tsx",
   "app/source-audit/page.tsx",
-  "components/DeletedPurchaseOrderActions.tsx",
   "components/E2eFlowDemo.tsx",
-  "components/FollowupPanel.tsx",
-  "components/IpCalculatedSummary.tsx",
   "components/LegacyQueue.tsx",
-  "components/NewOperationalRecord.tsx",
-  "components/OperationalOptionSelect.tsx",
-  "components/OperationalPoPanel.tsx",
   "components/ProcessDirectory.tsx",
-  "components/ProcessPostShipmentPanel.tsx",
   "components/ProcessWorkspace.tsx",
   "components/ProductLinesView.tsx",
-  "components/PurchaseOrderCalculatedFields.tsx",
-  "components/PurchaseOrderItemFields.tsx",
-  "components/PurchaseOrderScLink.tsx",
-  "components/PurchaseOrderWorkspace.tsx",
-  "components/PurchaseRequestSelect.tsx",
   "components/ReportsView.tsx",
-  "components/SearchableSelect.tsx",
-  "components/ShippedChangeConfirmation.tsx",
 ]);
 
 async function tsxFiles(directory) {
@@ -49,6 +35,8 @@ async function tsxFiles(directory) {
 
 // Brand names stay the same in every language.
 const brandNames = new Set(["ERP Comex", "Supply Chain", "TMS", "Eletra Energy Solutions"]);
+// Values exchanged with the API, such as role identifiers used in permission checks.
+const apiValues = new Set(["Importação", "Logística"]);
 
 function stripComments(code) {
   return code.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/(^|[^:"'`])\/\/.*$/gmu, "$1");
@@ -69,7 +57,7 @@ export function findHardcodedTexts(code) {
     if (/[a-zà-ÿ]{3}/u.test(match[1]) && !brandNames.has(match[1])) found.push(match[1]);
   }
   for (const match of body.matchAll(/(["'`])((?:(?!\1)[^\n\\]|\\.)*)\1/gu)) {
-    if (/[ãõçáéíóúâêôàü]/iu.test(match[2]) && /[a-zà-ÿ]{2}/u.test(match[2])) found.push(match[2]);
+    if (/[ãõçáéíóúâêôàü]/iu.test(match[2]) && /[a-zà-ÿ]{2}/u.test(match[2]) && !apiValues.has(match[2])) found.push(match[2]);
   }
   return found;
 }
@@ -84,6 +72,7 @@ test("the scanner flags loose Portuguese text and accepts dictionary lookups", (
   assert.deepEqual(findHardcodedTexts('<p className="eyebrow">ERP Comex</p><img alt="Eletra Energy Solutions" />'), []);
   assert.deepEqual(findHardcodedTexts("const icons = { a: <><path /></>,\n  ship: <><path /></> };"), []);
   assert.deepEqual(findHardcodedTexts('status === "AGUARDANDO PRODUÇÃO"'), []);
+  assert.deepEqual(findHardcodedTexts('roles.includes("Importação")'), []);
   assert.deepEqual(findHardcodedTexts('const api = "Senha atual inválida."; // i18n-ignore: API contract'), []);
 });
 

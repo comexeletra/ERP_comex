@@ -17,6 +17,8 @@ import { loadPurchaseRequests, purchaseRequestOperationalFields, PurchaseRequest
 import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
 import { formatUsDate, formatUsDateTime } from "../lib/date-format";
 import { formatNumber } from "../lib/format-number";
+import type { Messages } from "../lib/i18n/pt-BR";
+import { getMessages, useI18n } from "./I18nProvider";
 import { estimatedProductTotal, productPriceReferenceForCurrency, type ProductPriceReference } from "../lib/product-price-reference";
 import { parseTotvsPoXlsx } from "../lib/totvs-po-xlsx";
 
@@ -69,8 +71,6 @@ function operationalDraft(item: Item): OperationalFieldDraft {
 }
 const poWriters = new Set(["Master", "Administrador", "Importação", "Compras"]);
 const allocationWriters = new Set(["Master", "Administrador", "Importação"]);
-const reimportFieldLabels: Record<string, string> = { description: "Descrição", orderedQuantity: "Quantidade",
-  unitPrice: "Preço unitário", currency: "Moeda" };
 
 async function responseData<T>(response: Response): Promise<T> {
   return readApiJson<T>(response);
@@ -78,8 +78,8 @@ async function responseData<T>(response: Response): Promise<T> {
 function formatItemQuantity(value: string) {
   return formatNumber(value);
 }
-function formatItemPrice(value: string | null, currency: string | null) {
-  if (value == null) return "Não informado";
+function formatItemPrice(value: string | null, currency: string | null, m: Messages) {
+  if (value == null) return m.common.notInformed;
   const formatted = formatNumber(value);
   return currency ? `${formatted} ${currency}` : formatted;
 }
@@ -104,7 +104,7 @@ async function missingRoute(response: Response, route: string): Promise<boolean>
 async function loadFollowupItems(poId: string, signal?: AbortSignal): Promise<FollowupItem[]> {
   const followup = await responseData<{ items: FollowupItem[] }>(await apiFetch(
     `/api/v1/purchase-orders/${poId}/followup`, { signal, cache: "no-store" }));
-  if (!Array.isArray(followup.items)) throw new Error("A API não retornou os campos operacionais dos produtos.");
+  if (!Array.isArray(followup.items)) throw new Error(getMessages().poPanel.noFollowupFields);
   return followup.items;
 }
 
@@ -114,7 +114,7 @@ function combineOperationalItems(items: Item[], followupItems: FollowupItem[], s
     const followup = byId.get(item.id);
     if (!followup || purchaseOrderItemFields.some(field => (field.key !== "group" || supportsGroup)
       && !Object.prototype.hasOwnProperty.call(followup, field.key))) {
-      throw new Error("A API não retornou todos os campos operacionais dos produtos.");
+      throw new Error(getMessages().poPanel.missingFollowupFields);
     }
     const fields = Object.fromEntries(purchaseOrderItemFields.map(field => [field.key, followup[field.key] ?? ""]));
     return { ...item, ...fields };
@@ -128,7 +128,7 @@ async function verifySavedItemFields(poId: string, expectedByItem: Map<string, R
     return !saved || Object.entries(fields).some(([key, expected]) =>
       String(saved[key] ?? "") !== String(expected ?? ""));
   });
-  if (notSaved) throw new Error("A API confirmou a alteração, mas os campos não foram encontrados na releitura dos produtos.");
+  if (notSaved) throw new Error(getMessages().poPanel.fieldsNotReread);
 }
 
 async function verifySavedItem(poId: string, itemId: string,
@@ -144,11 +144,13 @@ async function verifySavedItem(poId: string, itemId: string,
       (base.unitPrice === null ? null : Number(base.unitPrice)) ||
     (saved.currencyCode ?? null) !== base.currency ||
     Object.entries(fields).some(([key, value]) => String(saved[key] ?? "") !== String(value ?? ""))) {
-    throw new Error("A API confirmou a alteração, mas a releitura não encontrou todos os dados do produto.");
+    throw new Error(getMessages().poPanel.itemNotReread);
   }
 }
 
 export default function OperationalPoPanel({ id, onChanged }: { id: string; onChanged?: () => void }) {
+  const { m } = useI18n();
+  const t = m.poPanel;
   const [data, setData] = useState<OperationalPo>();
   const [roles, setRoles] = useState<string[]>([]);
   const [importer, setImporter] = useState("");
@@ -239,7 +241,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       setCommonOperationalDraft(commonDraft);
       setCommonFieldsTouched(new Set());
       setItemId(current => po.items.some(item => item.id === current) ? current : po.items[0]?.id ?? "");
-    }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro inesperado."); })
+    }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : getMessages().common.unexpectedError); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [id, reload]);
@@ -278,14 +280,14 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             { fields, reason: automaticAuditReason }, latest.version);
           completed += 1;
         } catch (cause) {
-          const detail = cause instanceof Error ? cause.message : "Erro inesperado.";
-          throw new Error(`Falha no produto ${item.productCode}. ${completed} produto(s) anterior(es) podem ter sido salvos. Atualize a página e confira os itens antes de repetir. ${detail}`);
+          const detail = cause instanceof Error ? cause.message : m.common.unexpectedError;
+          throw new Error(t.productFailed(item.productCode, completed, detail));
         }
       }
     } else {
       const saved = await responseData<{ updatedCount: number; purchaseRequestUpdated?: boolean }>(batch);
       if (saved.updatedCount !== data.items.length) {
-        throw new Error("A API atualizou uma quantidade inesperada de produtos. Recarregue a PO e confira os campos.");
+        throw new Error(t.unexpectedCount);
       }
       purchaseRequestUpdated = saved.purchaseRequestUpdated === true;
     }
@@ -295,16 +297,14 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   async function save<T>(action: () => Promise<T>, success: string | ((result: T) => string)) {
     setSaving(true); setError(""); setNotice("");
     try { const result = await action(); setNotice(typeof success === "function" ? success(result) : success); setReload(value => value + 1); onChanged?.(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : m.common.unexpectedError); }
     finally { setSaving(false); }
   }
   async function changeLifecycle(action: "cancel" | "close" | "reopen" | "delete" | "reactivate" | "restore") {
     if (!data) return;
-    if (action === "delete" && !window.confirm("Excluir esta PO da carteira ativa? Os dados e vínculos históricos serão preservados.")) return;
+    if (action === "delete" && !window.confirm(t.confirmDelete)) return;
     const method = action === "delete" ? "DELETE" : "POST";
-    const success = action === "cancel" ? "PO cancelada." : action === "close" ? "PO encerrada."
-      : action === "reopen" ? "PO reaberta." : action === "reactivate" ? "PO reativada."
-        : action === "restore" ? "PO restaurada." : "PO excluída da carteira ativa.";
+    const success = t.lifecycleDone[action];
     await save(async () => {
       const response = await apiFetch(`/api/v1/purchase-orders/${id}${action === "delete" ? "" : `/${action}`}`, {
         method, headers: { "content-type": "application/json", "X-Record-Version": data.version },
@@ -320,10 +320,10 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     setReimportFileName(file.name); setReimportPayload(undefined); setReimportPreview(undefined);
     setReimportFileError(""); setReimportReason(""); setReimportLoading(true);
     try {
-      const result = await parseTotvsPoXlsx(file);
+      const result = await parseTotvsPoXlsx(file, m);
       const invalidTotals = result.rows.filter(row => !row.totalWithinTolerance);
       if (invalidTotals.length) {
-        throw new Error(`O Valor Total difere do preço derivado em mais de 0,01 nos itens ${invalidTotals.slice(0, 8).map(row => row.externalLineReference).join(", ")}.`);
+        throw new Error(t.totalMismatch(invalidTotals.slice(0, 8).map(row => row.externalLineReference).join(", ")));
       }
       const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
       const fileSha256 = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
@@ -332,7 +332,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
           productCode: row.productCode, description: row.description, orderedQuantity: row.orderedQuantity,
           unitPrice: row.unitPrice })) });
       setReimportCurrency("CNY");
-    } catch (cause) { setReimportFileError(cause instanceof Error ? cause.message : "Não foi possível ler a planilha."); }
+    } catch (cause) { setReimportFileError(cause instanceof Error ? cause.message : t.readSheetFailed); }
     finally { setReimportLoading(false); }
   }
   async function previewReimport() {
@@ -343,10 +343,10 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       const response = await apiFetch(route, { method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ ...reimportPayload, currency: reimportCurrency }) });
       if (await missingRoute(response, `POST:${route}`)) {
-        throw new Error("A API publicada ainda não oferece a prévia de reimportação desta PO.");
+        throw new Error(t.noReimportPreview);
       }
       setReimportPreview(await responseData<ReimportPreview>(response));
-    } catch (cause) { setReimportFileError(cause instanceof Error ? cause.message : "Não foi possível comparar a planilha."); }
+    } catch (cause) { setReimportFileError(cause instanceof Error ? cause.message : t.compareFailed); }
     finally { setReimportLoading(false); }
   }
   async function applyReimport() {
@@ -357,22 +357,22 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         headers: { "content-type": "application/json", "X-Record-Version": reimportPreview.version },
         body: JSON.stringify({ ...reimportPayload, currency: reimportCurrency, reason: reimportReason.trim() }) });
       if (await missingRoute(response, `POST:${route}`)) {
-        throw new Error("A API publicada ainda não oferece a reimportação transacional desta PO.");
+        throw new Error(t.noReimport);
       }
       const result = await responseData<{ updatedCount: number }>(response);
       setReimportPreview(undefined); setReimportPayload(undefined); setReimportFileName(""); setReimportReason("");
       return result.updatedCount;
-    }, "Reimportação aplicada e auditada.");
+    }, t.reimportApplied);
   }
   async function removeItem(item: Item) {
     if (!data) return;
     const itemReason = itemRemovalReasons[item.id]?.trim() ?? "";
-    if (itemReason.length < 3) { setError("Informe um motivo com pelo menos 3 caracteres para remover o item."); return; }
+    if (itemReason.length < 3) { setError(t.removalReasonRequired); return; }
     await save(async () => {
       await send(`/api/v1/purchase-orders/${id}/items/${item.id}/remove`, "POST",
         { reason: itemReason }, data.version);
       setItemRemovalReasons(current => ({ ...current, [item.id]: "" }));
-    }, "Item removido da PO; o histórico foi preservado.");
+    }, t.itemRemoved);
   }
   async function saveHeader(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!data) return;
@@ -394,7 +394,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         } else {
           const result = await responseData<{ updatedCount: number; purchaseRequestUpdated?: boolean }>(response);
           if (result.updatedCount !== data.items.length) {
-            throw new Error("A API atualizou uma quantidade inesperada de produtos. Recarregue a PO e confira os campos da SC.");
+            throw new Error(t.unexpectedCountSc);
           }
           await verifySavedItemFields(id, new Map(data.items.map(item => [item.id, fields])));
           purchaseRequestUpdated = result.purchaseRequestUpdated === true;
@@ -407,16 +407,16 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         return false;
       }
     }, purchaseRequestUpdated => sharedFieldsSavedMessage(
-      commonFieldsTouched.size ? "PO e dados compartilhados atualizados." : "PO atualizada.",
-      purchaseRequestUpdated, data.purchaseRequest?.scNumber ?? null));
+      commonFieldsTouched.size ? t.poAndSharedUpdated : t.poUpdated,
+      purchaseRequestUpdated, data.purchaseRequest?.scNumber ?? null, m));
   }
   async function saveItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!data) return;
-    if (commonFieldsTouched.size) { setError("Salve primeiro os dados compartilhados para aplicá-los a todos os produtos."); return; }
+    if (commonFieldsTouched.size) { setError(t.saveSharedFirst); return; }
     const item = data.items.find(row => row.id === event.currentTarget.dataset.itemId);
     if (!item) return;
     const draft = itemDrafts[item.id];
-    if (!draft?.productCode) { setError("Selecione o produto deste item."); return; }
+    if (!draft?.productCode) { setError(t.selectProduct); return; }
     const body = { externalLineReference: draft.externalLineReference || null,
       productCode: draft.productCode, description: draft.description,
       orderedQuantity: draft.orderedQuantity.replace(",", "."), unit: draft.unit,
@@ -435,11 +435,11 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
           await send(`/api/v1/purchase-orders/${id}/items/${item.id}/followup`, "PATCH",
             { fields, reason: automaticAuditReason }, latest.version);
         } catch (cause) {
-          throw new Error(`Os dados básicos podem ter sido salvos; confira o produto antes de repetir. ${cause instanceof Error ? cause.message : "Erro inesperado."}`);
+          throw new Error(t.basicMaybeSaved(cause instanceof Error ? cause.message : m.common.unexpectedError));
         }
       } else await responseData(result);
       await verifySavedItem(id, item.id, body, fields);
-    }, "Item e campos operacionais atualizados.");
+    }, t.itemUpdated);
   }
   function updateCommonField(key: string, value: string) {
     setCommonOperationalDraft(current => ({ ...current, [key]: value }));
@@ -463,14 +463,14 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       const purchaseRequestUpdated = await applyCommonFieldsToItems(fields);
       setCommonFieldsTouched(new Set());
       return purchaseRequestUpdated;
-    }, purchaseRequestUpdated => sharedFieldsSavedMessage("Dados compartilhados aplicados a todos os produtos.",
-      purchaseRequestUpdated, data.purchaseRequest?.scNumber ?? null));
+    }, purchaseRequestUpdated => sharedFieldsSavedMessage(t.sharedApplied,
+      purchaseRequestUpdated, data.purchaseRequest?.scNumber ?? null, m));
   }
   async function createItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!data) return;
-    if (commonFieldsTouched.size && data.items.length) { setError("Salve primeiro os dados compartilhados para aplicá-los a todos os produtos."); return; }
+    if (commonFieldsTouched.size && data.items.length) { setError(t.saveSharedFirst); return; }
     const draft = itemDraft;
-    if (!draft.productCode) { setError("Selecione o produto do novo item."); return; }
+    if (!draft.productCode) { setError(t.selectNewProduct); return; }
     await save(async () => {
       const base = { externalLineReference: draft.externalLineReference || null, productCode: draft.productCode,
         description: draft.description, orderedQuantity: draft.orderedQuantity.replace(",", "."),
@@ -494,14 +494,14 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
               { fields: operational, reason: automaticAuditReason }, latest.version);
           }
         } catch (cause) {
-          throw new Error(`O produto básico pode ter sido criado; confira a PO antes de repetir. ${cause instanceof Error ? cause.message : "Erro inesperado."}`);
+          throw new Error(t.basicMaybeCreated(cause instanceof Error ? cause.message : m.common.unexpectedError));
         }
       } else {
         created = await responseData<{ id: string }>(result);
       }
       await verifySavedItem(id, created.id, base, operational);
       setItemDraft(blankItem());
-    }, "Item cadastrado.");
+    }, t.itemCreated);
   }
   async function searchIps(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -510,7 +510,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     if (!searchTerm) {
       setIpOptions([]);
       setProcessId("");
-      setIpSearchMessage("Informe o número ou parte do IP para buscar.");
+      setIpSearchMessage(t.enterIp);
       return;
     }
     setSearchingIps(true);
@@ -526,17 +526,16 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         === searchTerm.toLocaleLowerCase());
       if (exactNumberMatches.length === 1) {
         setProcessId(exactNumberMatches[0].id);
-        setIpSearchMessage(`IP ${exactNumberMatches[0].ipNumber} encontrado e selecionado. Informe a quantidade e clique em “Distribuir quantidade” para criar o vínculo.`);
+        setIpSearchMessage(t.ipFound(exactNumberMatches[0].ipNumber));
       } else {
         if (!matches.some(item => item.id === processId)) setProcessId("");
         setIpSearchMessage(matches.length === 0
-          ? `Nenhum IP encontrado para a importadora ${data.importer}. Confira o número e se o IP foi cadastrado para a mesma importadora da PO.`
-          : `${matches.length} IP(s) encontrado(s). Selecione um no campo IP, informe a quantidade e clique em “Distribuir quantidade” para criar o vínculo.`);
+          ? t.noIpFound(data.importer) : t.ipsFound(matches.length));
       }
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : "Erro inesperado.";
+      const message = cause instanceof Error ? cause.message : m.common.unexpectedError;
       setError(message);
-      setIpSearchMessage(`Não foi possível buscar o IP: ${message}`);
+      setIpSearchMessage(t.ipSearchFailed(message));
     } finally { setSearchingIps(false); }
   }
   async function createIp(event: FormEvent<HTMLFormElement>) {
@@ -554,7 +553,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       setIpQuery(created.ipNumber);
       setNewIpNumber(""); setNewIpStatus(""); setNewIpPriority(""); setNewIpNotes("");
       setCreatingIp(false);
-    }, "IP cadastrado e selecionado. Para criar o vínculo com a PO, informe a quantidade e clique em Distribuir quantidade.");
+    }, t.ipCreated);
   }
   const allocationIpShipped = editingAllocation ? Boolean(editingAllocation.processShipped)
     : Boolean(ipOptions.find(option => option.id === processId)?.shipped);
@@ -563,10 +562,10 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     && (!editingAllocation || quantityChanged(editingAllocation.quantity, allocationQuantity));
   async function saveAllocation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (commonFieldsTouched.size) { setError("Salve primeiro os dados compartilhados da PO."); return; }
+    if (commonFieldsTouched.size) { setError(t.saveSharedPoFirst); return; }
     if (!itemId || (!processId && !editingAllocation)) return;
     if (!shippedChangeReady(allocationNeedsConfirmation, shippedChange)) {
-      setError("Confirme a alteração no IP já embarcado e informe a justificativa."); return;
+      setError(t.confirmShipped); return;
     }
     await save(async () => {
       const body = { quantity: allocationQuantity, notes: allocationNotes,
@@ -575,95 +574,94 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         `/api/v1/purchase-orders/${id}/allocations`, editingAllocation ? "PATCH" : "POST",
       editingAllocation ? body : { ...body, itemId, processId }, editingAllocation?.version);
       setEditingAllocation(undefined); setAllocationQuantity(""); setAllocationNotes(""); setShippedChange(emptyShippedChange);
-    }, editingAllocation ? "Distribuição atualizada." : "Quantidade distribuída para o IP.");
+    }, editingAllocation ? t.allocationUpdated : t.quantityAllocated);
   }
   async function cancelAllocation() {
-    if (commonFieldsTouched.size) { setError("Salve primeiro os dados compartilhados da PO."); return; }
+    if (commonFieldsTouched.size) { setError(t.saveSharedPoFirst); return; }
     if (!editingAllocation) return;
     const shipped = Boolean(editingAllocation.processShipped);
     if (!shippedChangeReady(shipped, shippedChange)) {
-      setError("Confirme o cancelamento no IP já embarcado e informe a justificativa."); return;
+      setError(t.confirmShippedCancel); return;
     }
     await save(async () => {
       await send(`/api/v1/purchase-orders/${id}/allocations/${editingAllocation.id}`, "DELETE",
         shippedChangeFields(shipped, shippedChange), editingAllocation.version);
       setEditingAllocation(undefined); setAllocationQuantity(""); setAllocationNotes(""); setShippedChange(emptyShippedChange);
-    }, "Distribuição cancelada; o saldo voltou ao item.");
+    }, t.allocationCancelled);
   }
 
   const commonValuesDiffer = Boolean(data && data.items.length > 1 &&
     purchaseOrderCommonItemFields.some(field =>
       new Set(data.items.map(item => operationalDraft(item)[field.key] ?? "")).size > 1));
-  return <section id="po-record" className="card operational-panel" aria-label="Registro operacional da PO">
-    <h2>Itens da PO</h2>
-    <p className="muted">Saldo por item: quantidade pedida menos quantidade distribuída aos IPs.</p>
-    {loading && <p role="status">Carregando preenchimento…</p>}
+  return <section id="po-record" className="card operational-panel" aria-label={t.ariaLabel}>
+    <h2>{t.title}</h2>
+    <p className="muted">{t.intro}</p>
+    {loading && <p role="status">{t.loading}</p>}
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
     {!loading && data && <>
       {(data.createdAt || data.lastRestore) && <p className="muted">
-        {data.createdAt && <>Criada em {formatUsDateTime(data.createdAt)}</>}
+        {data.createdAt && <>{t.createdAt(formatUsDateTime(data.createdAt))}</>}
         {data.createdAt && data.lastRestore && " · "}
-        {data.lastRestore && <>Restaurada em {formatUsDateTime(data.lastRestore.at)} por {purchaseOrderActorLabel(data.lastRestore.by)}
+        {data.lastRestore && <>{t.restoredAt(formatUsDateTime(data.lastRestore.at), purchaseOrderActorLabel(data.lastRestore.by))}
           {data.lastRestore.reason && <> — {data.lastRestore.reason}</>}</>}
       </p>}
-      {!lifecycleSupported && <p className="notice" role="status">Ciclo da PO indisponível nesta versão da API.</p>}
+      {!lifecycleSupported && <p className="notice" role="status">{t.noLifecycle}</p>}
       {lifecycleSupported && data.lifecycleStatus !== "ACTIVE" && <p className="notice" role="status">
-        {data.lifecycleStatus === "CLOSED" ? "PO encerrada: alterações e novas alocações estão bloqueadas. Reabra com um motivo para continuar."
-          : data.lifecycleStatus === "CANCELLED" ? "PO cancelada: permanece disponível para consulta e histórico."
-            : "PO excluída da carteira ativa: os dados e vínculos históricos permanecem disponíveis para consulta."}
-        {data.lifecycleReason && <> Motivo: {data.lifecycleReason}</>}
+        {data.lifecycleStatus === "CLOSED" ? t.closedNotice
+          : data.lifecycleStatus === "CANCELLED" ? t.cancelledNotice : t.deletedNotice}
+        {data.lifecycleReason && t.reasonInline(data.lifecycleReason)}
       </p>}
       {lifecycleSupported && (lifecycleActions.length > 0 || data.lifecycleStatus === "DELETED") && <section className="card po-lifecycle-actions">
-        <h3>Ciclo da PO</h3>
-        {lifecycleActions.length > 0 && <label className="po-lifecycle-reason"><span>Motivo da ação</span><textarea required minLength={3} maxLength={1000} value={lifecycleReason}
+        <h3>{t.lifecycleTitle}</h3>
+        {lifecycleActions.length > 0 && <label className="po-lifecycle-reason"><span>{t.actionReason}</span><textarea required minLength={3} maxLength={1000} value={lifecycleReason}
           onChange={event => setLifecycleReason(event.target.value)} /></label>}
         {lifecycleActions.length > 0 && <div className="operational-actions">
           {lifecycleActions.includes("close") && <button className="button secondary" type="button" disabled={saving || !lifecycleReason.trim()}
-            onClick={() => void changeLifecycle("close")}>Encerrar PO</button>}
+            onClick={() => void changeLifecycle("close")}>{t.close}</button>}
           {lifecycleActions.includes("cancel") && <button className="button secondary" type="button" disabled={saving || !lifecycleReason.trim() || data.allocations.length > 0}
-            onClick={() => void changeLifecycle("cancel")}>Cancelar PO</button>}
+            onClick={() => void changeLifecycle("cancel")}>{t.cancel}</button>}
           {lifecycleActions.includes("delete") && <button className="button secondary" type="button" disabled={saving || !lifecycleReason.trim() || data.allocations.length > 0}
-            onClick={() => void changeLifecycle("delete")}>Excluir da carteira</button>}
+            onClick={() => void changeLifecycle("delete")}>{t.delete}</button>}
         {lifecycleActions.includes("reopen") && <button className="button" type="button" disabled={saving || !lifecycleReason.trim()}
-          onClick={() => void changeLifecycle("reopen")}>Reabrir PO</button>}
+          onClick={() => void changeLifecycle("reopen")}>{t.reopen}</button>}
           {lifecycleActions.includes("reactivate") && <button className="button" type="button" disabled={saving || !lifecycleReason.trim()}
-            onClick={() => void changeLifecycle("reactivate")}>Reativar PO</button>}
+            onClick={() => void changeLifecycle("reactivate")}>{t.reactivate}</button>}
           {lifecycleActions.includes("restore") && <button className="button" type="button" disabled={saving || !lifecycleReason.trim()}
-            onClick={() => void changeLifecycle("restore")}>Restaurar PO</button>}
+            onClick={() => void changeLifecycle("restore")}>{t.restore}</button>}
         </div>}
-        {data.allocations.length > 0 && <p className="muted">Cancele ou encaminhe as distribuições ativas pelos IPs antes de cancelar ou excluir esta PO.</p>}
+        {data.allocations.length > 0 && <p className="muted">{t.allocationsBlock}</p>}
       </section>}
-      {canEditPo && data.sourceKind === "MANUAL_TOTVS_REFERENCE" && <section className="card po-reimport" aria-label="Atualizar PO pela planilha TOTVS">
-        <h3>Atualizar PO pela planilha TOTVS</h3>
-        <p className="muted">Compare por Item. A aplicação atualiza somente descrição, quantidade, preço e moeda, em uma transação auditada.</p>
-        <label>Arquivo Excel (.xlsx)<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      {canEditPo && data.sourceKind === "MANUAL_TOTVS_REFERENCE" && <section className="card po-reimport" aria-label={t.reimportTitle}>
+        <h3>{t.reimportTitle}</h3>
+        <p className="muted">{t.reimportHelp}</p>
+        <label>{t.excelFile}<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           disabled={reimportLoading || saving} onChange={event => void selectReimportFile(event)} /></label>
         {reimportFileName && <p className="muted">{reimportFileName}</p>}
-        <label>Moeda dos itens<OperationalOptionSelect entity="currency" value={reimportCurrency} values={options}
+        <label>{t.itemsCurrency}<OperationalOptionSelect entity="currency" value={reimportCurrency} values={options}
           onChange={currency => { setReimportCurrency(currency); setReimportPreview(undefined); }} /></label>
         {reimportFileError && <p className="notice error" role="alert">{reimportFileError}</p>}
         {reimportPayload && <button className="button secondary" type="button" disabled={reimportLoading || saving}
-          onClick={() => void previewReimport()}>{reimportLoading ? "Comparando…" : "Conferir diferenças"}</button>}
+          onClick={() => void previewReimport()}>{reimportLoading ? t.comparing : t.checkDifferences}</button>}
         {reimportPreview && <>
           {reimportPreview.differences.length === 0 && reimportPreview.canApply
-            ? <p className="notice" role="status">Nenhuma diferença encontrada. A PO não será alterada.</p>
+            ? <p className="notice" role="status">{t.noDifferences}</p>
             : <>
-              {reimportPreview.missingReferences.length > 0 && <p className="notice error">Itens ausentes na planilha: {reimportPreview.missingReferences.join(", ")}</p>}
-              {reimportPreview.unknownReferences.length > 0 && <p className="notice error">Itens sem correspondência nesta PO: {reimportPreview.unknownReferences.join(", ")}</p>}
-              {reimportPreview.cancelledReferences.length > 0 && <p className="notice error">Itens já removidos: {reimportPreview.cancelledReferences.join(", ")}</p>}
-              {reimportPreview.productCodeMismatches.length > 0 && <p className="notice error">Código do produto diferente para o item {reimportPreview.productCodeMismatches.map(value => value.externalLineReference).join(", ")}.</p>}
-              {reimportPreview.differences.length > 0 && <div className="table-scroll"><table><thead><tr><th>Item</th><th>Produto</th><th>Campo</th><th>Atual</th><th>Planilha</th></tr></thead><tbody>
+              {reimportPreview.missingReferences.length > 0 && <p className="notice error">{t.missingRefs(reimportPreview.missingReferences.join(", "))}</p>}
+              {reimportPreview.unknownReferences.length > 0 && <p className="notice error">{t.unknownRefs(reimportPreview.unknownReferences.join(", "))}</p>}
+              {reimportPreview.cancelledReferences.length > 0 && <p className="notice error">{t.cancelledRefs(reimportPreview.cancelledReferences.join(", "))}</p>}
+              {reimportPreview.productCodeMismatches.length > 0 && <p className="notice error">{t.productMismatch(reimportPreview.productCodeMismatches.map(value => value.externalLineReference).join(", "))}</p>}
+              {reimportPreview.differences.length > 0 && <div className="table-scroll"><table><thead><tr><th>{t.item}</th><th>{t.product}</th><th>{t.field}</th><th>{t.current}</th><th>{t.sheet}</th></tr></thead><tbody>
                 {reimportPreview.differences.flatMap(difference => Object.entries(difference.changes).map(([field, values]) => <tr key={`${difference.externalLineReference}-${field}`}>
-                  <td>{difference.externalLineReference}</td><td>{difference.productCode}</td><td>{reimportFieldLabels[field] ?? field}</td>
+                  <td>{difference.externalLineReference}</td><td>{difference.productCode}</td><td>{(t.reimportFields as Record<string, string>)[field] ?? field}</td>
                   <td>{values.before ?? "—"}</td><td>{values.after}</td>
                 </tr>))}
               </tbody></table></div>}
               {reimportPreview.canApply && reimportPreview.differences.length > 0 && <>
-                <label>Motivo da reimportação<textarea required minLength={3} maxLength={1000} value={reimportReason}
+                <label>{t.reimportReason}<textarea required minLength={3} maxLength={1000} value={reimportReason}
                   onChange={event => setReimportReason(event.target.value)} /></label>
                 <button className="button" type="button" disabled={saving || reimportLoading || reimportReason.trim().length < 3}
-                  onClick={() => void applyReimport()}>Aplicar {reimportPreview.differences.length} diferença(s)</button>
+                  onClick={() => void applyReimport()}>{t.applyDifferences(reimportPreview.differences.length)}</button>
               </>}
             </>}
         </>}
@@ -671,36 +669,34 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       {canEditPo && !data.purchaseRequestId && <PurchaseOrderScLink importer={data.importer}
         supplierCode={data.supplierText} items={data.items} purchaseRequests={purchaseRequests} options={options}
         saving={saving} onCreate={body => save(() => send(`/api/v1/purchase-orders/${id}/purchase-request`, "POST",
-          { ...body, reason: automaticAuditReason }, data.version), "SC vinculada à PO e aplicada aos produtos.")} />}
+          { ...body, reason: automaticAuditReason }, data.version), t.scLinked)} />}
       {canEditPo && <details className="po-header-disclosure">
-        <summary>Dados da PO</summary>
+        <summary>{t.poData}</summary>
         <section className="po-entry-section">
           <form className="stack-form" onSubmit={saveHeader}>
-            <label>Número da PO no TOTVS<input required maxLength={80} disabled={data.sourceKind !== "MANUAL_TOTVS_REFERENCE"}
+            <label>{t.totvsNumber}<input required maxLength={80} disabled={data.sourceKind !== "MANUAL_TOTVS_REFERENCE"}
               value={number} onChange={event => setNumber(event.target.value)} /></label>
-            {canChangeImporter && <label>Importadora<SearchableSelect ariaLabel="Importadora" required value={importer}
+            {canChangeImporter && <label>{t.importer}<SearchableSelect ariaLabel={t.importer} required value={importer}
               onChange={setImporter} options={importers.filter(option => option.acceptsNewPurchaseOrders || option.code === data.importer)
-                .map(option => ({ value: option.code, label: `${option.shortName || option.code}${option.cnpj ? ` · ${option.cnpj}` : " · sem CNPJ"}` }))} />
-              <small className="po-field-hint">A troca exige ausência de alocações ativas e uma importadora de destino com CNPJ.</small></label>}
-            <label>Fornecedor<SearchableSelect ariaLabel="Fornecedor" required disabled={Boolean(purchaseRequestId)} value={supplier}
+                .map(option => ({ value: option.code, label: `${option.shortName || option.code} · ${option.cnpj ?? t.noCnpj}` }))} />
+              <small className="po-field-hint">{t.importerHint}</small></label>}
+            <label>{t.supplier}<SearchableSelect ariaLabel={t.supplier} required disabled={Boolean(purchaseRequestId)} value={supplier}
               onChange={setSupplier} options={suppliers.map(item => ({ value: item.code, label: `${item.code} · ${item.name}` }))} />
-              {purchaseRequestId ? <small className="po-field-hint">Preenchido pela SC vinculada.</small> : null}</label>
-            <label>Data da PO<input type="date" value={orderDate} readOnly aria-readonly="true" /></label>
+              {purchaseRequestId ? <small className="po-field-hint">{t.fromSc}</small> : null}</label>
+            <label>{t.poDate}<input type="date" value={orderDate} readOnly aria-readonly="true" /></label>
             <PurchaseRequestSelect importer={data.importer} value={purchaseRequestId} choices={purchaseRequests}
               onChange={selectPurchaseRequest} />
-            <label>Observações<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
-            <button className="button" disabled={saving}>Salvar PO</button>
+            <label>{t.notes}<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
+            <button className="button" disabled={saving}>{t.savePo}</button>
           </form>
         </section>
       </details>}
-      <h3>Dados e saldo por item</h3>
+      <h3>{t.itemsTitle}</h3>
       {canEditPo && <section className="po-entry-section po-common-fields">
-        <h4>Dados compartilhados pelos produtos</h4>
-        <p className="muted">Preencha uma vez para manter iguais nos produtos. A data da PO é compartilhada no cabeçalho.</p>
-        {data.purchaseRequestId && <p className="muted">Com a SC {data.purchaseRequest?.scNumber ?? ""} vinculada, data da SC,
-          data de aprovação, solicitante e recebimento do plano comercial também atualizam a SC no PCM. O número da SC é
-          alterado no PCM.</p>}
-        {commonValuesDiffer && <p className="notice">Há valores diferentes entre produtos. Ao aplicar um campo, ele será padronizado em todos.</p>}
+        <h4>{t.sharedTitle}</h4>
+        <p className="muted">{t.sharedHelp}</p>
+        {data.purchaseRequestId && <p className="muted">{t.sharedWithSc(data.purchaseRequest?.scNumber ?? "")}</p>}
+        {commonValuesDiffer && <p className="notice">{t.valuesDiffer}</p>}
         <form className="stack-form" onSubmit={saveCommonFields}>
           <OperationalFieldsEditor fields={purchaseOrderCommonItemFields} values={commonOperationalDraft} options={options}
             readOnlyKeys={lockedSharedFieldKeys(data.purchaseRequestId)}
@@ -709,52 +705,52 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
               if (value !== commonOperationalDraft[field.key]) updateCommonField(field.key, value);
             })} />
           <button className="button" disabled={saving || !data.items.length || !commonFieldsTouched.size}>
-            Aplicar campos alterados a todos os produtos</button>
+            {t.applyShared}</button>
         </form>
       </section>}
-      {data.items.length === 0 && <p>Nenhum item cadastrado para esta PO.</p>}
+      {data.items.length === 0 && <p>{t.noItems}</p>}
       {data.items.map(item => {
         const draft = itemDrafts[item.id] ?? blankItem();
         const setDraft = (change: Partial<ItemDraft>) => setItemDrafts(current => ({ ...current, [item.id]: { ...draft, ...change } }));
         const canceled = item.sourceStatus?.toUpperCase() === "CANCELLED" || item.sourceStatus?.toUpperCase() === "CANCELED";
         const itemAllocations = data.allocations.filter(allocation => allocation.itemId === item.id);
-        const price = formatItemPrice(item.unitPrice, item.currency);
-        const totalPrice = item.unitPrice == null ? "Não informado" : formatItemPrice(
-          String(Number(item.orderedQuantity) * Number(item.unitPrice)), item.currency);
+        const price = formatItemPrice(item.unitPrice, item.currency, m);
+        const totalPrice = item.unitPrice == null ? m.common.notInformed : formatItemPrice(
+          String(Number(item.orderedQuantity) * Number(item.unitPrice)), item.currency, m);
         const reference = item.priceReference ?? productPriceReferenceForCurrency(item.referencePrices, item.currency);
         const estimate = item.unitPrice !== null && Number(item.unitPrice) === 0
           ? estimatedProductTotal(item.orderedQuantity, reference) : null;
         return <details className="po-entry-item po-item-card" key={item.id}>
           <summary className="po-item-summary">
             <div className="po-item-heading">
-              <span className="po-item-number">Item {item.lineNumber}</span>
+              <span className="po-item-number">{t.itemNumber(item.lineNumber)}</span>
               <strong className="po-item-code">{item.productCode}</strong>
               <span className={`po-item-status${canceled ? " is-canceled" : ""}`}>
-                {canceled ? "Cancelado" : item.sourceStatus || "Ativo"}
+                {canceled ? t.cancelled : item.sourceStatus || t.active}
               </span>
             </div>
-            <p className="po-item-description">{item.description || "Descrição não informada"}</p>
-            <div className="po-item-metrics" aria-label={`Resumo do item ${item.lineNumber}`}>
-              <div><span>Quantidade pedida</span><strong>{formatItemQuantity(item.orderedQuantity)}{item.unit ? ` ${item.unit}` : ""}</strong></div>
-              <div><span>Distribuída</span><strong>{formatItemQuantity(item.allocatedQuantity)}{item.unit ? ` ${item.unit}` : ""}</strong></div>
+            <p className="po-item-description">{item.description || t.noDescription}</p>
+            <div className="po-item-metrics" aria-label={t.itemSummary(item.lineNumber)}>
+              <div><span>{t.orderedQuantity}</span><strong>{formatItemQuantity(item.orderedQuantity)}{item.unit ? ` ${item.unit}` : ""}</strong></div>
+              <div><span>{t.allocated}</span><strong>{formatItemQuantity(item.allocatedQuantity)}{item.unit ? ` ${item.unit}` : ""}</strong></div>
               <div className={canceled ? "is-muted" : "is-balance"}>
-                <span>{canceled ? "Saldo bloqueado" : "Saldo disponível"}</span>
+                <span>{canceled ? t.blockedBalance : t.availableBalance}</span>
                 <strong>{formatItemQuantity(canceled ? "0" : item.remainingQuantity)}{item.unit ? ` ${item.unit}` : ""}</strong>
               </div>
             </div>
             <div className="po-item-details">
-              <div><span>Preço unitário</span><strong>{price}</strong></div>
-              <div><span>Valor total</span><strong>{totalPrice}</strong></div>
-              <div><span>Data de necessidade</span><strong>{formatUsDate(item.necessityDate) || "Não informada"}</strong></div>
+              <div><span>{t.unitPrice}</span><strong>{price}</strong></div>
+              <div><span>{t.totalValue}</span><strong>{totalPrice}</strong></div>
+              <div><span>{t.needDate}</span><strong>{formatUsDate(item.necessityDate) || t.notInformedFeminine}</strong></div>
             </div>
             {item.unitPrice !== null && Number(item.unitPrice) === 0 && <p className="muted">
-              {reference ? <>Preço de referência: {formatNumber(reference.unitPrice)} {reference.currency}
-                (PO {reference.purchaseOrderNumber}, {formatUsDate(reference.observedAt)})
-                {estimate !== null && <> · Valor estimado: {formatNumber(estimate)} {reference.currency}</>}
-              </> : "Sem preço real conhecido nesta moeda."}
+              {reference ? <>{t.referencePrice(formatNumber(reference.unitPrice), reference.currency,
+                reference.purchaseOrderNumber, formatUsDate(reference.observedAt))}
+                {estimate !== null && t.estimated(formatNumber(estimate), reference.currency)}
+              </> : t.noRealPrice}
             </p>}
             {itemAllocations.length > 0 && <div className="po-item-ip-summary">
-              <span>Distribuição por IP</span>
+              <span>{t.ipDistribution}</span>
               <div>{itemAllocations.map(allocation => <span className="po-item-ip-chip" key={allocation.id}>
                 {allocation.ipNumber} · {formatItemQuantity(allocation.quantity)}{item.unit ? ` ${item.unit}` : ""}
               </span>)}</div>
@@ -763,73 +759,73 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
           </summary>
           {canEditPo && !canceled ? <form className="stack-form" data-item-id={item.id} onSubmit={saveItem}>
             <div className="operational-fields">
-              <label>Linha no TOTVS<input maxLength={80} value={draft.externalLineReference} onChange={event => setDraft({ externalLineReference: event.target.value })} /></label>
-              <label>Produto<CatalogProductSelect required value={draft.productCode} fallbackName={draft.description} products={products}
+              <label>{t.totvsLine}<input maxLength={80} value={draft.externalLineReference} onChange={event => setDraft({ externalLineReference: event.target.value })} /></label>
+              <label>{t.product}<CatalogProductSelect required value={draft.productCode} fallbackName={draft.description} products={products}
                 onChange={product => setDraft({ productCode: product?.code ?? "",
                   description: product?.latestTotvsDescription?.trim() || product?.name || "",
                   operational: { ...draft.operational, ncm: product?.ncmCode ?? "" } })} /></label>
-              <label>Código do produto<input value={draft.productCode} onChange={event => {
+              <label>{t.productCode}<input value={draft.productCode} onChange={event => {
                 const code = event.target.value;
                 const product = products.find(option => option.code.trim().toLocaleUpperCase("en-US") === code.trim().toLocaleUpperCase("en-US"));
                 setDraft({ productCode: code, description: product?.latestTotvsDescription?.trim() || product?.name || "",
                   operational: { ...draft.operational, ncm: product?.ncmCode ?? "" } });
               }} /></label>
-              <label>Descrição<input value={draft.description} onChange={event => setDraft({ description: event.target.value })} /></label>
-              <label>Quantidade pedida<input required inputMode="decimal" value={draft.orderedQuantity} onChange={event => setDraft({ orderedQuantity: event.target.value })} /></label>
-              <label>Unidade<OperationalOptionSelect required entity="unit_of_measure" value={draft.unit} values={options}
+              <label>{t.description}<input value={draft.description} onChange={event => setDraft({ description: event.target.value })} /></label>
+              <label>{t.orderedQuantity}<input required inputMode="decimal" value={draft.orderedQuantity} onChange={event => setDraft({ orderedQuantity: event.target.value })} /></label>
+              <label>{t.unit}<OperationalOptionSelect required entity="unit_of_measure" value={draft.unit} values={options}
                 onChange={unit => setDraft({ unit })} /></label>
-              <label>Preço unitário<input inputMode="decimal" value={draft.unitPrice} onChange={event => setDraft({ unitPrice: event.target.value })} /></label>
-              <label>Moeda do preço<OperationalOptionSelect entity="currency" value={draft.currency} values={options} onChange={currency => setDraft({ currency })} /></label>
+              <label>{t.unitPrice}<input inputMode="decimal" value={draft.unitPrice} onChange={event => setDraft({ unitPrice: event.target.value })} /></label>
+              <label>{t.priceCurrency}<OperationalOptionSelect entity="currency" value={draft.currency} values={options} onChange={currency => setDraft({ currency })} /></label>
             </div>
-            <h5>Planejamento e acompanhamento</h5>
+            <h5>{t.planning}</h5>
             <OperationalFieldsEditor fields={specificItemFields} values={draft.operational} options={options}
               setValues={operational => setDraft({ operational })} />
             <PurchaseOrderCalculatedFields quantity={draft.orderedQuantity} unitPrice={draft.unitPrice} currency={draft.currency} />
-            <button className="button" disabled={saving || commonFieldsTouched.size > 0}>Salvar todos os campos deste item</button>
+            <button className="button" disabled={saving || commonFieldsTouched.size > 0}>{t.saveItemFields}</button>
           </form> : <p>{formatItemQuantity(item.orderedQuantity)}{item.unit ? ` ${item.unit}` : ""} · {item.description}</p>}
-          {canEditPo && !canceled && <section className="po-item-removal" aria-label={`Remover item ${item.lineNumber}`}>
+          {canEditPo && !canceled && <section className="po-item-removal" aria-label={t.removeItemAria(item.lineNumber)}>
             {itemAllocations.length > 0
-              ? <p className="muted">Cancele as alocações ativas deste item antes de removê-lo.</p>
+              ? <p className="muted">{t.cancelAllocationsFirst}</p>
               : <>
-                <label>Motivo para remover o item<textarea required minLength={3} maxLength={1000}
+                <label>{t.removalReason}<textarea required minLength={3} maxLength={1000}
                   value={itemRemovalReasons[item.id] ?? ""} onChange={event => setItemRemovalReasons(current => ({ ...current, [item.id]: event.target.value }))} /></label>
                 <button className="button secondary" type="button" disabled={saving || (itemRemovalReasons[item.id]?.trim().length ?? 0) < 3}
-                  onClick={() => void removeItem(item)}>Remover item</button>
+                  onClick={() => void removeItem(item)}>{t.removeItem}</button>
               </>}
           </section>}
         </details>;
       })}
-      {canEditPo && <details><summary>Adicionar item à PO</summary>
+      {canEditPo && <details><summary>{t.addItem}</summary>
         <form className="stack-form" onSubmit={createItem}>
           <div className="operational-fields">
-            <label>Linha no TOTVS<input maxLength={80} value={itemDraft.externalLineReference} onChange={event => setItemDraft({ ...itemDraft, externalLineReference: event.target.value })} /></label>
-            <label>Produto<CatalogProductSelect required value={itemDraft.productCode} fallbackName={itemDraft.description} products={products}
+            <label>{t.totvsLine}<input maxLength={80} value={itemDraft.externalLineReference} onChange={event => setItemDraft({ ...itemDraft, externalLineReference: event.target.value })} /></label>
+            <label>{t.product}<CatalogProductSelect required value={itemDraft.productCode} fallbackName={itemDraft.description} products={products}
               onChange={product => setItemDraft({ ...itemDraft, productCode: product?.code ?? "",
                 description: product?.latestTotvsDescription?.trim() || product?.name || "",
                 operational: { ...itemDraft.operational, ncm: product?.ncmCode ?? "" } })} /></label>
-            <label>Código do produto<input value={itemDraft.productCode} onChange={event => {
+            <label>{t.productCode}<input value={itemDraft.productCode} onChange={event => {
               const code = event.target.value;
               const product = products.find(option => option.code.trim().toLocaleUpperCase("en-US") === code.trim().toLocaleUpperCase("en-US"));
               setItemDraft({ ...itemDraft, productCode: code, description: product?.latestTotvsDescription?.trim() || product?.name || "",
                 operational: { ...itemDraft.operational, ncm: product?.ncmCode ?? "" } });
             }} /></label>
-            <label>Descrição<input value={itemDraft.description} onChange={event => setItemDraft({ ...itemDraft, description: event.target.value })} /></label>
-            <label>Quantidade pedida<input required inputMode="decimal" value={itemDraft.orderedQuantity} onChange={event => setItemDraft({ ...itemDraft, orderedQuantity: event.target.value })} /></label>
-            <label>Unidade<OperationalOptionSelect required entity="unit_of_measure" value={itemDraft.unit} values={options}
+            <label>{t.description}<input value={itemDraft.description} onChange={event => setItemDraft({ ...itemDraft, description: event.target.value })} /></label>
+            <label>{t.orderedQuantity}<input required inputMode="decimal" value={itemDraft.orderedQuantity} onChange={event => setItemDraft({ ...itemDraft, orderedQuantity: event.target.value })} /></label>
+            <label>{t.unit}<OperationalOptionSelect required entity="unit_of_measure" value={itemDraft.unit} values={options}
               onChange={unit => setItemDraft({ ...itemDraft, unit })} /></label>
-            <label>Preço unitário<input inputMode="decimal" value={itemDraft.unitPrice} onChange={event => setItemDraft({ ...itemDraft, unitPrice: event.target.value })} /></label>
-            <label>Moeda do preço<OperationalOptionSelect entity="currency" value={itemDraft.currency} values={options} onChange={currency => setItemDraft({ ...itemDraft, currency })} /></label>
+            <label>{t.unitPrice}<input inputMode="decimal" value={itemDraft.unitPrice} onChange={event => setItemDraft({ ...itemDraft, unitPrice: event.target.value })} /></label>
+            <label>{t.priceCurrency}<OperationalOptionSelect entity="currency" value={itemDraft.currency} values={options} onChange={currency => setItemDraft({ ...itemDraft, currency })} /></label>
           </div>
             <OperationalFieldsEditor fields={specificItemFields} values={itemDraft.operational} options={options}
             setValues={operational => setItemDraft({ ...itemDraft, operational })} />
           <PurchaseOrderCalculatedFields quantity={itemDraft.orderedQuantity} unitPrice={itemDraft.unitPrice} currency={itemDraft.currency} />
-          <button className="button" disabled={saving || (commonFieldsTouched.size > 0 && data.items.length > 0)}>Salvar item completo</button>
+          <button className="button" disabled={saving || (commonFieldsTouched.size > 0 && data.items.length > 0)}>{t.saveItem}</button>
         </form>
       </details>}
-      <h3 id="ip-distribution">Distribuição por IP</h3>
-      <p className="muted">O saldo restante é calculado por item na PO, somando as quantidades distribuídas a todos os IPs vinculados.</p>
-      {data.allocations.length === 0 ? <p>Nenhuma quantidade distribuída operacionalmente.</p> :
-        <div className="table-scroll"><table><thead><tr><th>Item</th><th>IP</th><th>Quantidade neste IP</th><th>Quantidade pedida</th><th>Saldo restante na PO</th><th>Saída da fábrica</th><th>Ação</th></tr></thead>
+      <h3 id="ip-distribution">{t.ipDistribution}</h3>
+      <p className="muted">{t.distributionHelp}</p>
+      {data.allocations.length === 0 ? <p>{t.noAllocations}</p> :
+        <div className="table-scroll"><table><thead><tr><th>{t.item}</th><th>IP</th><th>{t.quantityInIp}</th><th>{t.orderedQuantity}</th><th>{t.remaining}</th><th>{t.factoryShip}</th><th>{t.action}</th></tr></thead>
           <tbody>{data.allocations.map(allocation => {
             const item = data.items.find(row => row.id === allocation.itemId);
             return <tr key={allocation.id}>
@@ -842,59 +838,60 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
               <td>{canAllocate && <button className="button secondary" type="button" onClick={() => {
                 setEditingAllocation(allocation); setItemId(allocation.itemId); setProcessId(allocation.processId);
                 setAllocationQuantity(allocation.quantity); setAllocationNotes(allocation.notes);
-              }}>Editar</button>}</td>
+              }}>{t.edit}</button>}</td>
             </tr>;
           })}</tbody></table></div>}
       {canAllocate && data.items.length > 0 && <div className="operational-allocation">
-        <h4>{editingAllocation ? `Editar distribuição para ${editingAllocation.ipNumber}` : "Distribuir item para um IP"}</h4>
+        <h4>{editingAllocation ? t.editAllocation(editingAllocation.ipNumber) : t.allocateItem}</h4>
         {!editingAllocation && <form className="operational-search" onSubmit={searchIps}>
-          <label>Buscar IP<input value={ipQuery} onChange={event => {
+          <label>{t.searchIp}<input value={ipQuery} onChange={event => {
             setIpQuery(event.target.value);
             setIpOptions([]); setProcessId(""); setIpSearchMessage("");
-          }} placeholder="Número ou parte do IP" /></label>
+          }} placeholder={t.ipPlaceholder} /></label>
           <button className="button secondary" type="submit" disabled={searchingIps || saving}>
-            {searchingIps ? "Buscando…" : "Buscar IPs"}</button>
+            {searchingIps ? t.searching : t.searchIps}</button>
           <button className="button secondary" type="button" onClick={() => setCreatingIp(value => !value)}>
-            {creatingIp ? "Fechar cadastro de IP" : "Cadastrar IP nesta PO"}</button>
+            {creatingIp ? t.closeIpForm : t.openIpForm}</button>
         </form>}
         {ipSearchMessage && <p className="notice" role="status">{ipSearchMessage}</p>}
-        {!editingAllocation && ipOptions.length > 0 && <label>IP encontrado<SearchableSelect ariaLabel="IP encontrado" required
-          value={processId} placeholder="Selecione um IP" onChange={setProcessId}
+        {!editingAllocation && ipOptions.length > 0 && <label>{t.foundIp}<SearchableSelect ariaLabel={t.foundIp} required
+          value={processId} placeholder={t.selectIp} onChange={setProcessId}
           options={ipOptions.map(item => ({ value: item.id, label: item.ipNumber }))} /></label>}
         {!editingAllocation && creatingIp && <form className="stack-form inline-ip-form" onSubmit={createIp}>
-          <h5>Novo IP · importadora {data.importer}</h5>
+          <h5>{t.newIp(data.importer)}</h5>
           <div className="operational-fields">
-            <label>Número do IP<input required maxLength={80} value={newIpNumber}
+            <label>{t.ipNumber}<input required maxLength={80} value={newIpNumber}
               onChange={event => setNewIpNumber(event.target.value)} /></label>
-            <label>Status logístico<OperationalOptionSelect entity="logistics_status" value={newIpStatus}
+            <label>{t.logisticsStatus}<OperationalOptionSelect entity="logistics_status" value={newIpStatus}
               values={options} onChange={setNewIpStatus} /></label>
-            <label>Prioridade<OperationalOptionSelect entity="priority" value={newIpPriority} values={options}
+            <label>{t.priority}<OperationalOptionSelect entity="priority" value={newIpPriority} values={options}
               onChange={setNewIpPriority} /></label>
-            <label>Observações<textarea maxLength={4000} value={newIpNotes}
+            <label>{t.notes}<textarea maxLength={4000} value={newIpNotes}
               onChange={event => setNewIpNotes(event.target.value)} /></label>
           </div>
-          <button className="button" disabled={saving || commonFieldsTouched.size > 0}>Cadastrar IP e selecionar</button>
+          <button className="button" disabled={saving || commonFieldsTouched.size > 0}>{t.createIp}</button>
         </form>}
         <form className="stack-form" onSubmit={saveAllocation}>
-          <label>Item<SearchableSelect ariaLabel="Item" required value={itemId} disabled={Boolean(editingAllocation)}
+          <label>{t.item}<SearchableSelect ariaLabel={t.item} required value={itemId} disabled={Boolean(editingAllocation)}
             onChange={setItemId} options={data.items.map(item => {
               const cancelled = item.sourceStatus?.toUpperCase() === "CANCELLED" || item.sourceStatus?.toUpperCase() === "CANCELED";
-              return { value: item.id, label: `${item.productCode} · item ${item.lineNumber} · ${cancelled ? "cancelado" : `saldo ${formatItemQuantity(item.remainingQuantity)}${item.unit ? ` ${item.unit}` : ""}`}`,
+              return { value: item.id, label: t.itemOption(item.productCode, item.lineNumber, cancelled ? t.itemCancelled
+                : t.itemBalance(`${formatItemQuantity(item.remainingQuantity)}${item.unit ? ` ${item.unit}` : ""}`)),
                 searchText: item.description, disabled: cancelled };
             })} /></label>
-          <label>Quantidade neste IP<input required inputMode="decimal" value={allocationQuantity}
-            onChange={event => setAllocationQuantity(event.target.value)} placeholder="Ex.: 40" /></label>
-          <label>Observações<textarea maxLength={2000} value={allocationNotes}
+          <label>{t.quantityInIp}<input required inputMode="decimal" value={allocationQuantity}
+            onChange={event => setAllocationQuantity(event.target.value)} placeholder={t.quantityPlaceholder} /></label>
+          <label>{t.notes}<textarea maxLength={2000} value={allocationNotes}
             onChange={event => setAllocationNotes(event.target.value)} /></label>
           {allocationIpShipped && <ShippedChangeConfirmation value={shippedChange} onChange={setShippedChange} />}
           <button className="button" disabled={saving || commonFieldsTouched.size > 0 || (!editingAllocation && !processId)}>
-            {editingAllocation ? "Atualizar distribuição" : "Distribuir quantidade"}</button>
+            {editingAllocation ? t.updateAllocation : t.distribute}</button>
           {editingAllocation && <div className="operational-actions">
             <button className="button secondary" type="button" onClick={() => {
               setEditingAllocation(undefined); setAllocationQuantity(""); setAllocationNotes(""); setShippedChange(emptyShippedChange);
-            }}>Cancelar edição</button>
+            }}>{t.cancelEdit}</button>
             <button className="button secondary" type="button" disabled={saving || commonFieldsTouched.size > 0}
-              onClick={() => void cancelAllocation()}>Cancelar distribuição</button>
+              onClick={() => void cancelAllocation()}>{t.cancelAllocation}</button>
           </div>}
         </form>
       </div>}

@@ -38,7 +38,8 @@ function subscribe(listener: () => void) {
 
 const currentLocale = () => chosenLocale ?? readStoredLocale(window.localStorage);
 const serverLocale = () => defaultLocale;
-const currentMessages = () => typeof window === "undefined" ? ptBR : dictionaries[currentLocale()];
+/** Current dictionary for code outside React components, such as loaders and validators. */
+export const getMessages = () => typeof window === "undefined" ? ptBR : dictionaries[currentLocale()];
 
 export default function I18nProvider({ children }: { children: ReactNode }) {
   const locale = useSyncExternalStore(subscribe, currentLocale, serverLocale);
@@ -53,7 +54,7 @@ export default function I18nProvider({ children }: { children: ReactNode }) {
     listeners.forEach(listener => listener());
   }, []);
 
-  const value = useMemo(() => ({ locale, m: dictionaries[locale], messages: currentMessages, setLocale }), [locale, setLocale]);
+  const value = useMemo(() => ({ locale, m: dictionaries[locale], messages: getMessages, setLocale }), [locale, setLocale]);
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 

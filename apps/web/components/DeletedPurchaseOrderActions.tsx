@@ -5,7 +5,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, readApiJson } from "../lib/api";
 import { deletedPurchaseOrderActions, replacePreviewHasChanges } from "../lib/po-lifecycle";
+import type { Messages } from "../lib/i18n/pt-BR";
 import type { PurchaseRequestPayloadChoice } from "../lib/totvs-purchase-request";
+import { useI18n } from "./I18nProvider";
 
 export type PurchaseOrderReplacePayload = {
   header: { number: string; supplierCode: string }; fileName: string; fileSha256: string; currency: string;
@@ -17,10 +19,8 @@ type ReplacePreview = { version: string; updated: ReplaceLine[]; added: ReplaceL
   reactivated: ReplaceLine[]; productChanged: ReplaceLine[]; blockers: Array<{ code: string; message: string }>;
   canApply: boolean };
 
-const previewGroups: Array<[keyof Pick<ReplacePreview, "updated" | "added" | "removed" | "reactivated" | "productChanged">, string]> = [
-  ["updated", "Atualizadas"], ["added", "Incluídas"], ["removed", "Removidas"],
-  ["reactivated", "Reativadas"], ["productChanged", "Produto trocado"],
-];
+const previewGroups: Array<keyof Pick<ReplacePreview, "updated" | "added" | "removed" | "reactivated" | "productChanged">
+  & keyof Messages["deletedPo"]["groups"]> = ["updated", "added", "removed", "reactivated", "productChanged"];
 const listedLines = 20;
 
 export default function DeletedPurchaseOrderActions({ purchaseOrder, canManageLifecycle, replacePayload,
@@ -32,6 +32,8 @@ export default function DeletedPurchaseOrderActions({ purchaseOrder, canManageLi
   purchaseRequestBlocker: string | null;
 }) {
   const router = useRouter();
+  const { m } = useI18n();
+  const t = m.deletedPo;
   const actions = deletedPurchaseOrderActions(canManageLifecycle, purchaseOrder.replaceSupported);
   const [mode, setMode] = useState<"restore" | "replace" | null>(null);
   const [reason, setReason] = useState("");
@@ -43,7 +45,7 @@ export default function DeletedPurchaseOrderActions({ purchaseOrder, canManageLi
   async function run(action: () => Promise<void>) {
     setBusy(true); setError("");
     try { await action(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível concluir a operação."); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : m.common.operationFailed); }
     finally { setBusy(false); }
   }
   function restore() {
@@ -75,42 +77,40 @@ export default function DeletedPurchaseOrderActions({ purchaseOrder, canManageLi
 
   const reasonReady = reason.trim().length >= 3;
   const purchaseRequestNotice = purchaseRequest && "newPurchaseRequest" in purchaseRequest
-    ? `A SC ${purchaseRequest.newPurchaseRequest.scNumber} será criada com o solicitante `
-      + `${purchaseRequest.newPurchaseRequest.requester} e vinculada à PO.`
-    : purchaseRequest ? "A SC selecionada será vinculada à PO." : null;
+    ? t.newScNotice(purchaseRequest.newPurchaseRequest.scNumber, purchaseRequest.newPurchaseRequest.requester)
+    : purchaseRequest ? t.selectedScNotice : null;
   return <div className="notice">
-    <p><Link className="text-link" href={purchaseOrderHref}>Abrir PO excluída</Link></p>
-    {actions.needsManager && <p>Peça a um Master ou Administrador para restaurar esta PO.</p>}
+    <p><Link className="text-link" href={purchaseOrderHref}>{t.open}</Link></p>
+    {actions.needsManager && <p>{t.needsManager}</p>}
     {(actions.restore || actions.replace) && <div className="button-row">
       {actions.restore && <button className="button secondary" type="button" disabled={busy}
-        onClick={() => { setMode("restore"); setPreview(null); }}>Restaurar como estava</button>}
+        onClick={() => { setMode("restore"); setPreview(null); }}>{t.restore}</button>}
       {actions.replace && <button className="button secondary" type="button" disabled={busy || !replacePayload}
-        onClick={() => void loadPreview()}>Restaurar com os dados da planilha</button>}
+        onClick={() => void loadPreview()}>{t.replace}</button>}
     </div>}
-    {actions.restore && <p className="muted">Restaurar como estava: reativa a PO com os itens que ela tinha.</p>}
-    {actions.replace && <p className="muted">Restaurar com os dados da planilha: reativa a PO e atualiza os itens conforme a planilha.</p>}
-    {actions.replace && !replacePayload && <p className="muted">Carregue a planilha TOTVS da PO para restaurar com os dados da planilha.</p>}
-    {busy && <p className="muted">Processando…</p>}
+    {actions.restore && <p className="muted">{t.restoreHelp}</p>}
+    {actions.replace && <p className="muted">{t.replaceHelp}</p>}
+    {actions.replace && !replacePayload && <p className="muted">{t.loadSheet}</p>}
+    {busy && <p className="muted">{m.common.processing}</p>}
     {mode === "replace" && preview && <>
-      <p>Prévia da restauração com a planilha: {previewGroups.map(([group, label]) => `${label} ${preview[group].length}`).join(" · ")}.</p>
-      {previewGroups.filter(([group]) => preview[group].length > 0).map(([group, label]) => <p key={group}>
-        {label}: {preview[group].slice(0, listedLines).map(line => line.currentProductCode
+      <p>{t.preview(previewGroups.map(group => `${t.groups[group]} ${preview[group].length}`).join(" · "))}</p>
+      {previewGroups.filter(group => preview[group].length > 0).map(group => <p key={group}>
+        {t.groups[group]}: {preview[group].slice(0, listedLines).map(line => line.currentProductCode
           ? `${line.externalLineReference} (${line.currentProductCode} → ${line.productCode})`
           : `${line.externalLineReference} (${line.productCode})`).join(", ")}
-        {preview[group].length > listedLines ? ` e mais ${preview[group].length - listedLines}` : ""}.
+        {preview[group].length > listedLines ? t.andMore(preview[group].length - listedLines) : ""}.
       </p>)}
-      {!replacePreviewHasChanges(preview) && <p className="muted">A planilha é igual à PO excluída; o resultado é o
-        mesmo de restaurar como estava.</p>}
+      {!replacePreviewHasChanges(preview) && <p className="muted">{t.sameAsDeleted}</p>}
       {preview.blockers.map(blocker => <p key={blocker.code} className="notice error" role="alert">{blocker.message}</p>)}
     </>}
     {(mode === "restore" || (mode === "replace" && preview?.canApply)) && <>
       {purchaseRequestBlocker ? <p className="notice error" role="alert">{purchaseRequestBlocker}</p>
         : purchaseRequestNotice && <p className="muted">{purchaseRequestNotice}</p>}
-      <label>Motivo<input required minLength={3} maxLength={1000} value={reason}
+      <label>{t.reason}<input required minLength={3} maxLength={1000} value={reason}
         onChange={event => setReason(event.target.value)} /></label>
       <button className="button" type="button" disabled={busy || !reasonReady || purchaseRequestBlocker !== null}
         onClick={() => void (mode === "restore" ? restore() : replace())}>
-        {mode === "restore" ? "Confirmar restauração" : "Confirmar restauração com a planilha"}
+        {mode === "restore" ? t.confirmRestore : t.confirmReplace}
       </button>
     </>}
     {error && <p className="notice error" role="alert">{error}</p>}

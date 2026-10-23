@@ -1,3 +1,5 @@
+import type { Messages } from "./i18n/pt-BR";
+
 export type ProcessRecordStatus = "DRAFT" | "ACTIVE" | "CANCELLED" | "DELETED";
 export type ProcessLifecycleStatus = "OPEN" | "CLOSED";
 export type ProcessLifecycleAction = "close" | "cancel" | "delete" | "reopen" | "reactivate" | "restore";
@@ -61,8 +63,6 @@ export function processLifecycleActions(
   return [];
 }
 
-export function deletedIpInvoiceBlockMessage(recordStatus: unknown): string | null {
-  return recordStatus === "DELETED"
-    ? "Este IP foi excluído. Peça a restauração para um Master ou Administrador antes de revisar a invoice."
-    : null;
+export function deletedIpInvoiceBlockMessage(recordStatus: unknown, m: Messages): string | null {
+  return recordStatus === "DELETED" ? m.ipDeleted.invoiceBlocked : null;
 }

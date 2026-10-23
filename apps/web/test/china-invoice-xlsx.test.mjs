@@ -5,6 +5,11 @@ import ExcelJS from "exceljs";
 import { parseChinaInvoiceXlsx, parseInvoicePoAssignments } from "../lib/china-invoice-xlsx.ts";
 import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
   invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping.ts";
+import { en } from "../lib/i18n/en.ts";
+import { ptBR } from "../lib/i18n/pt-BR.ts";
+import { zhCN } from "../lib/i18n/zh-CN.ts";
+
+const parseInvoice = file => parseChinaInvoiceXlsx(file, ptBR);
 
 test("suggests only an unambiguous invoice item and reports code/supplier divergences", () => {
   const candidates = [
@@ -49,25 +54,25 @@ test("rebuilds invoice PO assignments after an importer is selected manually", (
 });
 
 test("parses one PO with the full line quantity", () => {
-  assert.deepEqual(parseInvoicePoAssignments("PO030201", "1030"), [
+  assert.deepEqual(parseInvoicePoAssignments("PO030201", "1030", ptBR), [
     { poNumber: "030201", quantity: "1030", explicitQuantity: false },
   ]);
 });
 
 test("parses explicit multi-PO splits and preserves leading zeroes", () => {
-  assert.deepEqual(parseInvoicePoAssignments("PO 030321 = 412 unit\nPO 032025 = 8 unit", "420"), [
+  assert.deepEqual(parseInvoicePoAssignments("PO 030321 = 412 unit\nPO 032025 = 8 unit", "420", ptBR), [
     { poNumber: "030321", quantity: "412", explicitQuantity: true },
     { poNumber: "032025", quantity: "8", explicitQuantity: true },
   ]);
-  assert.deepEqual(parseInvoicePoAssignments("PO 030321 = 29046 units\nPO 032025 = 154 units", "29200").map(item => item.quantity), ["29046", "154"]);
+  assert.deepEqual(parseInvoicePoAssignments("PO 030321 = 29046 units\nPO 032025 = 154 units", "29200", ptBR).map(item => item.quantity), ["29046", "154"]);
 });
 
 test("rejects incomplete, malformed, and inconsistent multi-PO assignments", () => {
-  assert.throws(() => parseInvoicePoAssignments("", "12"), /interpretar a PO/);
-  assert.throws(() => parseInvoicePoAssignments("PO ???", "12"), /interpretar a PO/);
-  assert.throws(() => parseInvoicePoAssignments("PO 030321 = 4 unit\nPO 032025", "12"), /quantidade para cada PO/);
-  assert.throws(() => parseInvoicePoAssignments("PO 030321 = 4 unit\nPO 032025 = 7 unit", "12"), /soma das quantidades/);
-  assert.throws(() => parseInvoicePoAssignments("PO 030321 = 0 unit", "0"), /quantidade total válida/);
+  assert.throws(() => parseInvoicePoAssignments("", "12", ptBR), /interpretar a PO/);
+  assert.throws(() => parseInvoicePoAssignments("PO ???", "12", ptBR), /interpretar a PO/);
+  assert.throws(() => parseInvoicePoAssignments("PO 030321 = 4 unit\nPO 032025", "12", ptBR), /quantidade para cada PO/);
+  assert.throws(() => parseInvoicePoAssignments("PO 030321 = 4 unit\nPO 032025 = 7 unit", "12", ptBR), /soma das quantidades/);
+  assert.throws(() => parseInvoicePoAssignments("PO 030321 = 0 unit", "0", ptBR), /quantidade total válida/);
 });
 
 async function fixtureWorkbook({ includeInv = true, includeIpReference = true, mutate } = {}) {
@@ -105,7 +110,7 @@ async function fixtureWorkbook({ includeInv = true, includeIpReference = true, m
 }
 
 test("maps header and product fields from INV and expands PO splits", async () => {
-  const result = await parseChinaInvoiceXlsx(await fixtureWorkbook());
+  const result = await parseInvoice(await fixtureWorkbook());
   assert.equal(result.ipNumber, "IPH034B/2026");
   assert.equal(result.invoiceNumber, "PWBR260205-10B");
   assert.equal(result.invoiceDate, "2026-10-15");
@@ -127,14 +132,14 @@ test("keeps numbered rows with missing material and reports total discrepancies"
     sheet.getCell("D17").value = null;
     sheet.getCell("I18").value = 1451;
   } });
-  const result = await parseChinaInvoiceXlsx(file);
+  const result = await parseInvoice(file);
   assert.equal(result.lines.length, 2);
   assert.match(result.lines[1].issues.join(" "), /Material Code/);
   assert.match(result.issues.join(" "), /TOTAL.*quantidade/);
 });
 
 test("finds header labels outside J/K and reads textual dates and party labels", async () => {
-  const result = await parseChinaInvoiceXlsx(await fixtureWorkbook({ mutate(sheet) {
+  const result = await parseInvoice(await fixtureWorkbook({ mutate(sheet) {
     for (const row of [4, 5, 6, 7, 9, 10, 11, 12, 13, 14]) {
       sheet.getCell(row, 3).value = sheet.getCell(row, 10).value;
       sheet.getCell(row, 4).value = sheet.getCell(row, 11).value;
@@ -161,13 +166,13 @@ test("finds header labels outside J/K and reads textual dates and party labels",
 
 test("accepts ISO and English month dates", async () => {
   for (const [input, expected] of [["2026-10-15", "2026-10-15"], ["OCT. 15, 2026", "2026-10-15"]]) {
-    const result = await parseChinaInvoiceXlsx(await fixtureWorkbook({ mutate(sheet) { sheet.getCell("K6").value = input; } }));
+    const result = await parseInvoice(await fixtureWorkbook({ mutate(sheet) { sheet.getCell("K6").value = input; } }));
     assert.equal(result.invoiceDate, expected);
   }
 });
 
 test("reads INV labels and values combined in one cell, including comma month dates", async () => {
-  const result = await parseChinaInvoiceXlsx(await fixtureWorkbook({ mutate(sheet) {
+  const result = await parseInvoice(await fixtureWorkbook({ mutate(sheet) {
     sheet.getCell("J4").value = "IP REF.:  IPH034B/2026";
     sheet.getCell("K4").value = null;
     sheet.getCell("J5").value = "INVOICE: PWBR260205-10B";
@@ -181,7 +186,7 @@ test("reads INV labels and values combined in one cell, including comma month da
 });
 
 test("reads English month dates with an 'of' separator", async () => {
-  const result = await parseChinaInvoiceXlsx(await fixtureWorkbook({ mutate(sheet) {
+  const result = await parseInvoice(await fixtureWorkbook({ mutate(sheet) {
     sheet.getCell("J6").value = "DATE:OCT, 09 of 2026";
     sheet.getCell("K6").value = null;
   } }));
@@ -189,7 +194,7 @@ test("reads English month dates with an 'of' separator", async () => {
 });
 
 test("reads formula totals immediately after the last product before later TOTAL text", async () => {
-  const result = await parseChinaInvoiceXlsx(await fixtureWorkbook({ mutate(sheet) {
+  const result = await parseInvoice(await fixtureWorkbook({ mutate(sheet) {
     sheet.getCell("D18").value = null;
     for (const [column, value] of [["I", 1450], ["L", 9.7], ["M", 14.04], ["N", 895.86]]) {
       sheet.getCell(`${column}18`).value = { formula: `SUM(${column}16:${column}17)`, result: value };
@@ -202,7 +207,7 @@ test("reads formula totals immediately after the last product before later TOTAL
 
 test("parses the anonymized A:N layout derived from the long INV example", async () => {
   const bytes = await readFile(new URL("./fixtures/inv-layout-a-n-anonymized.xlsx", import.meta.url));
-  const result = await parseChinaInvoiceXlsx(new File([bytes], "inv-layout-a-n-anonymized.xlsx"));
+  const result = await parseInvoice(new File([bytes], "inv-layout-a-n-anonymized.xlsx"));
   assert.equal(result.lines.length, 91);
   assert.equal(result.ipNumber, "IPH-ANON-2026");
   assert.equal(result.invoiceDate, "2026-10-15");
@@ -213,7 +218,7 @@ test("parses the anonymized A:N layout derived from the long INV example", async
 });
 
 test("reports invalid NCM and warns when net weight exceeds gross weight", async () => {
-  const result = await parseChinaInvoiceXlsx(await fixtureWorkbook({ mutate(sheet) {
+  const result = await parseInvoice(await fixtureWorkbook({ mutate(sheet) {
     sheet.getCell("C16").value = 123;
     sheet.getCell("L16").value = 14;
     sheet.getCell("L18").value = 14.4;
@@ -223,18 +228,23 @@ test("reports invalid NCM and warns when net weight exceeds gross weight", async
 });
 
 test("rejects price and total columns in a currency other than CNY", async () => {
-  await assert.rejects(parseChinaInvoiceXlsx(await fixtureWorkbook({ mutate(sheet) {
+  await assert.rejects(parseInvoice(await fixtureWorkbook({ mutate(sheet) {
     sheet.getCell("K15").value = "Price (USD)";
     sheet.getCell("N15").value = "Total (USD)";
   } })), /CNY/);
 });
 
 test("requires the INV sheet and an XLSX file", async () => {
-  await assert.rejects(parseChinaInvoiceXlsx(await fixtureWorkbook({ includeInv: false })), /aba obrigatória INV/);
+  await assert.rejects(parseInvoice(await fixtureWorkbook({ includeInv: false })), /aba obrigatória INV/);
   const invalidExtension = new File(["x"], "invoice.csv");
-  await assert.rejects(parseChinaInvoiceXlsx(invalidExtension), /formato .xlsx/);
+  await assert.rejects(parseInvoice(invalidExtension), /formato .xlsx/);
 });
 
 test("requires IP REF in the INV header", async () => {
-  await assert.rejects(parseChinaInvoiceXlsx(await fixtureWorkbook({ includeIpReference: false })), /IP REF header is required/);
+  await assert.rejects(parseInvoice(await fixtureWorkbook({ includeIpReference: false })), /IP REF header is required/);
+});
+
+test("invoice parsing messages follow the chosen language", () => {
+  assert.throws(() => parseInvoicePoAssignments("PO ???", "12", en), /Could not interpret the PO on this line/);
+  assert.throws(() => parseInvoicePoAssignments("PO ???", "12", zhCN), /无法识别该行的 PO/);
 });

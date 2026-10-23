@@ -1,27 +1,32 @@
 "use client";
 
-export function calculatedTotal(quantity: string, price: string): string {
+import type { Messages } from "../lib/i18n/pt-BR";
+import { useI18n } from "./I18nProvider";
+
+export function calculatedTotal(quantity: string, price: string, m: Messages): string {
   const normalizedQuantity = quantity.trim().replace(",", ".");
   const normalizedPrice = price.trim().replace(",", ".");
-  if (!normalizedQuantity || !normalizedPrice) return "Aguardando quantidade e preço";
+  if (!normalizedQuantity || !normalizedPrice) return m.poCalculated.waitingQuantityPrice;
   const total = Number(normalizedQuantity) * Number(normalizedPrice);
   return Number.isFinite(total)
     ? new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(total)
-    : "Aguardando valores válidos";
+    : m.poCalculated.waitingValidValues;
 }
 
 export default function PurchaseOrderCalculatedFields({ quantity, unitPrice, currency }:
   { quantity: string; unitPrice: string; currency: string }) {
-  const total = calculatedTotal(quantity, unitPrice);
-  return <section className="po-calculated-fields" aria-label="Campos calculados automaticamente">
-    <h5>Campos calculados automaticamente</h5>
+  const { m } = useI18n();
+  const t = m.poCalculated;
+  const total = calculatedTotal(quantity, unitPrice, m);
+  return <section className="po-calculated-fields" aria-label={t.title}>
+    <h5>{t.title}</h5>
     <dl className="followup-grid">
-      <div><dt>Alerta do embarque</dt><dd>Aguardando dados do IP e do embarque</dd></div>
-      <div><dt>Status do embarque</dt><dd>Consultado no acompanhamento do IP</dd></div>
-      <div><dt>Valor total</dt><dd>{total}{currency && total.includes(",") ? ` ${currency}` : ""}</dd></div>
-      <div><dt>Tempo de trânsito</dt><dd>Calculado com ETD e ETA do IP</dd></div>
-      <div><dt>Prazo total</dt><dd>Calculado com envio da PO e entrega do IP</dd></div>
-      <div><dt>Risco de ruptura</dt><dd>Calculado com necessidade e ETA/ETE do IP</dd></div>
+      <div><dt>{t.shipmentAlert}</dt><dd>{t.waitingIp}</dd></div>
+      <div><dt>{t.shipmentStatus}</dt><dd>{t.fromIpFollowup}</dd></div>
+      <div><dt>{t.totalValue}</dt><dd>{total}{currency && total.includes(",") ? ` ${currency}` : ""}</dd></div>
+      <div><dt>{t.transitTime}</dt><dd>{t.transitHelp}</dd></div>
+      <div><dt>{t.totalLeadTime}</dt><dd>{t.totalHelp}</dd></div>
+      <div><dt>{t.ruptureRisk}</dt><dd>{t.ruptureHelp}</dd></div>
     </dl>
   </section>;
 }

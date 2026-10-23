@@ -28,6 +28,7 @@ import { persistSessionDraft } from "../lib/po-draft-storage";
 import { purchaseOrderNumberBlockMessage } from "../lib/po-lifecycle";
 import DeletedPurchaseOrderActions, { PurchaseOrderReplacePayload } from "./DeletedPurchaseOrderActions";
 import { classifyTotvsPurchaseRequest, totvsPurchaseRequestPayload } from "../lib/totvs-purchase-request";
+import { getMessages, useI18n } from "./I18nProvider";
 import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
   invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping";
 
@@ -166,6 +167,8 @@ async function loadPurchaseOrderPreflight(body: { importer: string; number: stri
 export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId }: {
   kind: "po" | "ip"; returnHref?: string; reviewInvoiceId?: string }) {
   const router = useRouter();
+  const { m } = useI18n();
+  const t = m.newRecord;
   const [roles, setRoles] = useState<string[]>([]);
   const [importers, setImporters] = useState<string[]>([]);
   const [importerCnpjs, setImporterCnpjs] = useState<Record<string, string>>({});
@@ -258,16 +261,16 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     const draft: PoDraft = { importer, number, supplier, notes, items, commonItemFields, purchaseRequestId, createdPoId };
     const compact = { ...draft, items: items.map(item => ({ ...item, operational: blankPurchaseOrderItemFields() })) };
     try {
-      setDraftStorageWarning(persistSessionDraft(sessionStorage, poDraftKey, draft, compact));
+      setDraftStorageWarning(persistSessionDraft(sessionStorage, poDraftKey, draft, compact, getMessages()));
     } catch {
-      setDraftStorageWarning("Não foi possível guardar o rascunho neste navegador.");
+      setDraftStorageWarning(getMessages().poDraft.failed);
     }
   }, [kind, draftReady, importer, number, supplier, notes, items, commonItemFields, purchaseRequestId, createdPoId]);
 
   useEffect(() => {
     Promise.all([apiFetch("/auth/me"), apiFetch("/api/v1/importers", { cache: "no-store" }), loadOperationalCatalog()])
       .then(async ([identity, list, operationalCatalog]) => {
-        if (!identity.ok || !list.ok) throw new Error("Não foi possível consultar suas permissões e importadoras.");
+        if (!identity.ok || !list.ok) throw new Error(getMessages().newRecord.permissionsFailed);
         const user = await identity.json() as { roles: string[] };
         const data = await list.json() as { items: InvoiceImporterOption[] };
         const visibleImporters = data.items.filter(item => kind !== "po" || Boolean(item.cnpj));
@@ -282,7 +285,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
             && option.value === item.code)?.shortName?.trim() || item.code])));
         if (kind === "po") setImporter(current => visibleImporters.some(item => item.code === current) ? current : "");
       })
-      .catch(cause => setError(cause instanceof Error ? cause.message : "Erro inesperado."))
+      .catch(cause => setError(cause instanceof Error ? cause.message : getMessages().common.unexpectedError))
       .finally(() => setLoading(false));
   }, [kind]);
 
@@ -291,7 +294,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     apiFetch(`/api/v1/processes/${reviewInvoiceId}`, { cache: "no-store" })
       .then(response => readResponse<InvoiceExistingProcess>(response))
       .then(process => { setReviewTarget(process); setImporter(process.importer); setNumber(process.ipNumber); })
-      .catch(cause => setError(cause instanceof Error ? cause.message : "Não foi possível abrir o IP para revisão."));
+      .catch(cause => setError(cause instanceof Error ? cause.message : getMessages().newRecord.reviewOpenFailed));
   }, [reviewInvoiceId]);
 
   useEffect(() => {
@@ -305,7 +308,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         setProducts(productItems);
       })
       .catch(cause => {
-        if (active) setError(cause instanceof Error ? cause.message : "Erro ao carregar produtos e fornecedores.");
+        if (active) setError(cause instanceof Error ? cause.message : getMessages().newRecord.catalogFailed);
       })
       .finally(() => { if (active) setCatalogLoading(false); });
     return () => { active = false; };
@@ -316,7 +319,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     const controller = new AbortController();
     loadPurchaseRequests("", controller.signal)
       .then(setPurchaseRequests)
-      .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro ao carregar SCs."); });
+      .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : getMessages().newRecord.scsFailed); });
     return () => controller.abort();
   }, [kind]);
 
@@ -348,7 +351,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     : { kind: "none" as const };
   const totvsScPayload = totvsPurchaseRequestPayload({ classification: totvsScClassification,
     selectedPurchaseRequestId: purchaseRequestId, newRequest: { requester: newScRequester, scDate: newScDate,
-      approvalDate: newScApprovalDate, commercialPlanReceivedDate: newScCommercialPlanReceivedDate } });
+      approvalDate: newScApprovalDate, commercialPlanReceivedDate: newScCommercialPlanReceivedDate } }, m);
   const totvsSupplierOption = suppliers.find(item => normalizeLookup(item.code) === normalizeLookup(totvsHeader?.supplierCode));
   const totvsSupplierNameDiverges = Boolean(totvsHeader && totvsSupplierOption
     && normalizeLookup(totvsSupplierOption.name) !== normalizeLookup(totvsHeader.supplierName));
@@ -374,7 +377,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     || poPreflight.missingCostCenters.length));
   const poDuplicateNeedsConfirmation = Boolean(poPreflight?.otherImporterDuplicates.length
     && (!confirmDuplicateNumber || duplicateNumberJustification.trim().length < 3));
-  const poNumberBlockMessage = poPreflight ? purchaseOrderNumberBlockMessage(poPreflight, number) : null;
+  const poNumberBlockMessage = poPreflight ? purchaseOrderNumberBlockMessage(poPreflight, number, m) : null;
   const canManagePoLifecycle = roles.some(role => role === "Master" || role === "Administrador");
   const poReplacePayload: PurchaseOrderReplacePayload | null = totvsHeader && totvsRows.length && totvsImportHash ? {
     header: { number: totvsHeader.number, supplierCode: totvsHeader.supplierCode }, fileName: totvsFileName,
@@ -419,7 +422,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     setNewScRequester(""); setNewScDate(""); setNewScApprovalDate(""); setNewScCommercialPlanReceivedDate("");
     setPoPreflight(null); setConfirmDuplicateNumber(false); setDuplicateNumberJustification("");
     try {
-      const result = await parseTotvsPoXlsx(file);
+      const result = await parseTotvsPoXlsx(file, m);
       const loadedPurchaseRequests = await loadPurchaseRequests("");
       setPurchaseRequests(loadedPurchaseRequests);
       setTotvsRows(result.rows); setTotvsHeader(result.header);
@@ -442,7 +445,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
       setTotvsImportHash(Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join(""));
     }
-    catch (cause) { setTotvsFileError(cause instanceof Error ? cause.message : "Não foi possível ler a planilha."); }
+    catch (cause) { setTotvsFileError(cause instanceof Error ? cause.message : m.poPanel.readSheetFailed); }
     finally { setTotvsParsing(false); }
   }
 
@@ -454,11 +457,11 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     setDuplicateInvoiceIps([]); setConfirmDuplicateInvoice(false); setIpReferenceOtherImporter(false);
     setInvoiceExistingProcess(null); setOrphanPoDecisions({}); setInvoiceLoading(true);
     try {
-      const draft = await parseChinaInvoiceXlsx(file);
-      if (!draft.ipNumber.trim()) throw new Error("IP REF vazio no cabeçalho da aba INV.");
+      const draft = await parseChinaInvoiceXlsx(file, m);
+      if (!draft.ipNumber.trim()) throw new Error(t.ipRefEmpty);
       if (reviewTarget && draft.ipNumber.trim().toLocaleUpperCase("en-US")
         !== reviewTarget.ipNumber.trim().toLocaleUpperCase("en-US")) {
-        throw new Error(`O IP REF da invoice deve ser ${reviewTarget.ipNumber} nesta revisão.`);
+        throw new Error(t.ipRefMustBe(reviewTarget.ipNumber));
       }
       setInvoiceDraft(draft);
       setNumber(draft.ipNumber.trim());
@@ -470,13 +473,9 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       setConfirmImporterCnpjMismatch(false);
       if (invoiceImporter) setSuppliers(await loadCatalogChoices("suppliers", invoiceImporter));
       const importerWarning = !cnpj || cnpj.length !== 14
-        ? "O CNPJ do importador não foi identificado. Selecione manualmente a importadora e confirme a divergência."
-        : cnpjMatches.length > 1
-          ? "O CNPJ corresponde a mais de uma importadora. Selecione manualmente a correta."
-          : cnpjMatches.length === 0
-            ? "O CNPJ não corresponde a uma importadora cadastrada. Selecione manualmente e confirme a divergência."
-            : "";
-      const lineIssues = draft.lines.flatMap(line => line.issues.map(issue => `Linha ${line.sourceRow}: ${issue}`));
+        ? t.cnpjNotIdentified
+        : cnpjMatches.length > 1 ? t.cnpjMultiple : cnpjMatches.length === 0 ? t.cnpjUnknown : "";
+      const lineIssues = draft.lines.flatMap(line => line.issues.map(issue => t.lineIssue(line.sourceRow, issue)));
       if (lineIssues.length || draft.issues.length) { setInvoiceError([...draft.issues, ...lineIssues].join(" ")); return; }
 
       if (invoiceImporter) {
@@ -491,16 +490,16 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         const duplicate = existing.items.find(item => item.ipNumber.trim().toLocaleUpperCase("en-US")
           === draft.ipNumber.trim().toLocaleUpperCase("en-US"));
         if (reviewInvoiceId && duplicate?.id !== reviewInvoiceId) {
-          throw new Error("O IP selecionado para revisão não foi encontrado nesta importadora.");
+          throw new Error(t.reviewIpNotFound);
         }
         setInvoiceDuplicate(duplicate ?? null);
-        const deletedMessage = deletedIpInvoiceBlockMessage(duplicate?.recordStatus);
+        const deletedMessage = deletedIpInvoiceBlockMessage(duplicate?.recordStatus, m);
         if (deletedMessage) {
           setInvoiceError(deletedMessage);
           return;
         }
         if (duplicate?.recordStatus === "CANCELLED" || duplicate?.lifecycleStatus === "CLOSED") {
-          setInvoiceError("Este IP está cancelado ou encerrado. Reabra-o ou use o IP REF correto.");
+          setInvoiceError(t.ipCancelledOrClosed);
           return;
         }
         setInvoiceExistingProcess(duplicate ? await readResponse<InvoiceExistingProcess>(
@@ -541,13 +540,13 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       });
       setInvoiceMatches(matches);
       setInvoiceError(!invoiceImporter ? importerWarning : "");
-    } catch (cause) { setInvoiceError(cause instanceof Error ? cause.message : "Não foi possível processar a invoice."); }
+    } catch (cause) { setInvoiceError(cause instanceof Error ? cause.message : t.invoiceFailed); }
     finally { setInvoiceLoading(false); }
   }
 
   async function revalidateInvoiceMatches() {
     if (!invoiceDraft) return;
-    if (!importer) { setInvoiceError("Selecione uma importadora antes de carregar as POs."); return; }
+    if (!importer) { setInvoiceError(t.selectImporterFirst); return; }
     setInvoiceLoading(true); setInvoiceError("");
     try {
       const duplicateQuery = new URLSearchParams({ ipNumber: invoiceDraft.ipNumber.trim(), importer,
@@ -558,20 +557,20 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       const duplicate = existing.items.find(item => item.ipNumber.trim().toLocaleUpperCase("en-US")
         === invoiceDraft.ipNumber.trim().toLocaleUpperCase("en-US"));
       if (reviewInvoiceId && duplicate?.id !== reviewInvoiceId) {
-        throw new Error("O IP selecionado para revisão não foi encontrado nesta importadora.");
+        throw new Error(t.reviewIpNotFound);
       }
       setInvoiceDuplicate(duplicate ?? null);
       const preflight = await loadInvoicePreflight(importer, invoiceDraft);
       setDuplicateInvoiceIps(preflight.ipNumbers);
       setIpReferenceOtherImporter(preflight.ipReferenceOtherImporter);
       setConfirmDuplicateInvoice(false);
-      const deletedMessage = deletedIpInvoiceBlockMessage(duplicate?.recordStatus);
+      const deletedMessage = deletedIpInvoiceBlockMessage(duplicate?.recordStatus, m);
       if (deletedMessage) {
         setInvoiceError(deletedMessage);
         return;
       }
       if (duplicate?.recordStatus === "CANCELLED" || duplicate?.lifecycleStatus === "CLOSED") {
-        setInvoiceError("Este IP está cancelado ou encerrado. Reabra-o ou use o IP REF correto.");
+        setInvoiceError(t.ipCancelledOrClosed);
         return;
       }
       setInvoiceExistingProcess(duplicate ? await readResponse<InvoiceExistingProcess>(
@@ -616,7 +615,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           confirmPriceMismatch: Boolean(previous && match.confirmPriceMismatch) };
       });
       setInvoiceMatches(refreshed);
-    } catch (cause) { setInvoiceError(cause instanceof Error ? cause.message : "Não foi possível revalidar as distribuições da invoice."); }
+    } catch (cause) { setInvoiceError(cause instanceof Error ? cause.message : t.revalidateFailed); }
     finally { setInvoiceLoading(false); }
   }
 
@@ -637,7 +636,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       && !items[0].currency && Object.values(items[0].operational).every(value => !value);
     const existing = mode === "append" && !onlyBlankStarter ? items : [];
     if (existing.length + imported.length > 500) {
-      setTotvsFileError("A PO pode ter até 500 produtos. Substitua os itens atuais ou reduza a planilha.");
+      setTotvsFileError(t.maxProducts);
       return;
     }
     setItems(mode === "replace" ? imported : [...existing, ...imported]);
@@ -657,7 +656,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   }
 
   async function createPurchaseOrder(preflight: PurchaseOrderPreflight | null) {
-    if (items.length === 0) throw new Error("Adicione ao menos um item à PO.");
+    if (items.length === 0) throw new Error(t.addOneItem);
     if (totvsScPayload.blocker) throw new Error(totvsScPayload.blocker);
     const newPurchaseRequest = totvsScPayload.choice && "newPurchaseRequest" in totvsScPayload.choice
       ? totvsScPayload.choice.newPurchaseRequest : undefined;
@@ -667,35 +666,35 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       : commonItemFields;
     if (preflight) {
       if (!preflight.importerAcceptsNewPurchaseOrders) {
-        throw new Error("A API aceita novas POs somente para importadoras cadastradas com CNPJ.");
+        throw new Error(t.importerNeedsCnpj);
       }
-      const numberBlockMessage = purchaseOrderNumberBlockMessage(preflight, number);
+      const numberBlockMessage = purchaseOrderNumberBlockMessage(preflight, number, m);
       if (numberBlockMessage) throw new Error(numberBlockMessage);
-      if (!preflight.supplierFound) throw new Error("Selecione um código de fornecedor ativo do catálogo global.");
-      if (preflight.missingProducts.length) throw new Error(`Produtos fora do catálogo global: ${preflight.missingProducts.slice(0, 8).join(", ")}.`);
-      if (preflight.missingUnits.length) throw new Error(`Unidades fora dos valores operacionais: ${preflight.missingUnits.slice(0, 8).join(", ")}.`);
-      if (preflight.missingCostCenters.length) throw new Error(`Centros de custo fora dos valores operacionais: ${preflight.missingCostCenters.slice(0, 8).join(", ")}.`);
+      if (!preflight.supplierFound) throw new Error(t.selectActiveSupplier);
+      if (preflight.missingProducts.length) throw new Error(t.productsOutside(preflight.missingProducts.slice(0, 8).join(", ")));
+      if (preflight.missingUnits.length) throw new Error(t.unitsOutside(preflight.missingUnits.slice(0, 8).join(", ")));
+      if (preflight.missingCostCenters.length) throw new Error(t.costCentersOutside(preflight.missingCostCenters.slice(0, 8).join(", ")));
       if (preflight.otherImporterDuplicates.length && (!confirmDuplicateNumber || duplicateNumberJustification.trim().length < 3)) {
-        throw new Error("Confirme a duplicidade em outra importadora e informe uma justificativa.");
+        throw new Error(t.confirmDuplicateNumber);
       }
     }
     if (totvsApplied) {
       if (!totvsHeader || !totvsImporterResolved) {
-        throw new Error("Resolva o CNPJ da empresa da planilha antes de salvar a PO.");
+        throw new Error(t.resolveCnpj);
       }
       if (!totvsSupplierOption || normalizeLookup(supplier) !== normalizeLookup(totvsHeader.supplierCode)) {
-        throw new Error("Selecione o fornecedor Codigo da planilha no catálogo global.");
+        throw new Error(t.selectSheetSupplier);
       }
-      if (totvsTotalIssues.length) throw new Error("Corrija as linhas cujo preço calculado não confere com Valor Total em até 0,01 na moeda da PO.");
-      if (totvsMissingProducts.length) throw new Error("Corrija os produtos da planilha que não estão ativos no catálogo global.");
-      if (totvsMissingUnits.length) throw new Error("Corrija as unidades da planilha que não existem nos valores operacionais.");
-      if (totvsMissingCostCenters.length) throw new Error("Corrija os centros de custo da planilha que não existem nos valores operacionais.");
-      if (selectedScConflictsWithTotvs) throw new Error("A SC vinculada tem importadora ou fornecedor diferente dos informados na planilha.");
+      if (totvsTotalIssues.length) throw new Error(t.fixTotals);
+      if (totvsMissingProducts.length) throw new Error(t.fixProducts);
+      if (totvsMissingUnits.length) throw new Error(t.fixUnits);
+      if (totvsMissingCostCenters.length) throw new Error(t.fixCostCenters);
+      if (selectedScConflictsWithTotvs) throw new Error(t.scConflict);
     }
     for (const [index, item] of items.entries()) {
-      if (!item.productCode) throw new Error(`Selecione o produto do item ${index + 1}.`);
+      if (!item.productCode) throw new Error(t.selectItemProduct(index + 1));
       if (Boolean(item.unitPrice.trim()) !== Boolean(item.currency)) {
-        throw new Error(`No item ${index + 1}, preencha preço e moeda juntos ou deixe os dois vazios.`);
+        throw new Error(t.priceAndCurrency(index + 1));
       }
     }
 
@@ -756,7 +755,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
               (saved.currencyCode ?? null) !== item.base.currency ||
               Object.entries(item.fields).some(([key, value]) => String(saved[key] ?? "") !== String(value ?? ""));
           })) {
-        throw new Error("A PO foi criada, mas a releitura não confirmou todos os produtos e campos. Abra a PO para conferir.");
+        throw new Error(t.createdNotConfirmed);
       }
       setDraftReady(false);
       sessionStorage.removeItem(poDraftKey);
@@ -766,7 +765,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     }
 
     if (newPurchaseRequest) {
-      throw new Error("A API ainda não oferece criação de SC junto com a PO. Tente novamente após a atualização da API de homologação.");
+      throw new Error(t.noScWithPo);
     }
 
     const header = await readResponse<{ id: string }>(await apiFetch("/api/v1/purchase-orders", {
@@ -779,13 +778,13 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     }));
     setCreatedPoId(header.id);
 
-    let saveStep = "itens da PO";
+    let saveStep = t.stepItems;
     let itemNumber = 0;
     const expectedItems = new Map<string, Record<string, string | number | null>>();
     try {
       for (const [index, item] of items.entries()) {
         itemNumber = index + 1;
-        saveStep = `item ${itemNumber}`;
+        saveStep = t.stepItem(itemNumber);
         const createdItem = await readResponse<{ id: string }>(await apiFetch(`/api/v1/purchase-orders/${header.id}/items`, {
           method: "POST",
           headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
@@ -802,7 +801,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         };
         expectedItems.set(createdItem.id, fields);
         if (Object.keys(fields).length > 0) {
-          saveStep = `dados operacionais do item ${itemNumber}`;
+          saveStep = t.stepItemFields(itemNumber);
           const operationalPo = await readResponse<{ version: string }>(
             await apiFetch(`/api/v1/purchase-orders/${header.id}/operational`, { cache: "no-store" }));
           await readResponse(await apiFetch(`/api/v1/purchase-orders/${header.id}/items/${createdItem.id}/followup`, {
@@ -812,19 +811,19 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           }));
         }
       }
-      saveStep = "conferência dos itens da PO";
+      saveStep = t.stepCheck;
       const followup = await readResponse<{ items: ({ id: string } & Record<string, unknown>)[] }>(
         await apiFetch(`/api/v1/purchase-orders/${header.id}/followup`, { cache: "no-store" }));
-      if (!Array.isArray(followup.items)) throw new Error("A API não retornou os itens da PO para conferência.");
+      if (!Array.isArray(followup.items)) throw new Error(t.noItemsForCheck);
       const savedItems = new Map(followup.items.map(item => [item.id, item]));
       if ([...expectedItems].some(([id, fields]) => {
         const saved = savedItems.get(id);
         return !saved || Object.entries(fields).some(([key, value]) =>
           String(saved[key] ?? "") !== String(value ?? ""));
-      })) throw new Error("Os itens ou campos operacionais não apareceram na releitura da PO.");
+      })) throw new Error(t.itemsNotReread);
     } catch (cause) {
-      const detail = cause instanceof Error ? cause.message : "Erro inesperado.";
-      setError(`A PO foi criada, mas houve falha ao salvar ${saveStep}. Os dados preenchidos ficaram guardados nesta aba. ${detail}`);
+      const detail = cause instanceof Error ? cause.message : m.common.unexpectedError;
+      setError(t.partialFailure(saveStep, detail));
       return;
     }
     setDraftReady(false);
@@ -852,19 +851,19 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         const currentDuplicateIps = preflight.ipNumbers;
         setIpReferenceOtherImporter(preflight.ipReferenceOtherImporter);
         if (preflight.ipReferenceOtherImporter) {
-          throw new Error("O IP REF da invoice já pertence a outra importadora.");
+          throw new Error(t.ipRefOtherImporter);
         }
         if (JSON.stringify([...currentDuplicateIps].sort()) !== JSON.stringify([...duplicateInvoiceIps].sort())) {
           setDuplicateInvoiceIps(currentDuplicateIps);
           setConfirmDuplicateInvoice(false);
-          throw new Error("A lista de IPs com esta invoice mudou. Revise a duplicidade e confirme novamente.");
+          throw new Error(t.duplicateListChanged);
         }
         if (currentDuplicateIps.length && !confirmDuplicateInvoice) {
-          throw new Error("Confirme a invoice duplicada antes de continuar.");
+          throw new Error(t.confirmDuplicateInvoiceFirst);
         }
         const invoiceIpShipped = Boolean(invoiceDuplicate?.shipped);
         if (!shippedChangeReady(invoiceIpShipped, shippedChange)) {
-          throw new Error("O IP já embarcou: confirme a revisão das distribuições e informe a justificativa.");
+          throw new Error(t.ipShippedConfirm);
         }
         const invoiceAllocationTotals = new Map<number, number>();
         for (const match of invoiceMatches) {
@@ -887,7 +886,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           || orphanPos.some(order => !orphanPoDecisions[order.id])
           || (importerCnpjMismatch && !confirmImporterCnpjMismatch)
           || invoiceDraft.lines.some(line => Math.abs((invoiceAllocationTotals.get(line.sourceRow) ?? 0) - Number(line.quantity)) > 0.00000001))
-          throw new Error("Revise e selecione o item de PO para todas as linhas da invoice.");
+          throw new Error(t.reviewAllLines);
         const productUpdates = new Map<string, Record<string, unknown>>();
         const poItemUpdates = new Map<string, Record<string, unknown>>();
         for (const match of invoiceMatches) {
@@ -962,136 +961,129 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       const result = await readResponse<{ id: string }>(response);
       router.push(`/processes/${result.id}`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Erro inesperado.");
+      setError(cause instanceof Error ? cause.message : m.common.unexpectedError);
     } finally {
       setSaving(false);
     }
   }
 
   return <main className="shell">
-    <Link className="back" href={returnHref ?? (kind === "po" ? "/" : "/processes")}>← Voltar</Link>
+    <Link className="back" href={returnHref ?? (kind === "po" ? "/" : "/processes")}>{t.back}</Link>
     <header className="page-header">
-      <p className="eyebrow">Registro operacional</p>
-      <h1>{kind === "po" ? "Cadastrar PO do TOTVS" : "Criar IP"}</h1>
-      <p>{kind === "po"
-        ? "Preencha os dados do pedido e de cada produto nesta tela. Datas, prazos e indicadores são calculados automaticamente quando houver informações suficientes."
-        : "Cadastre o processo de importação. Ele poderá receber itens de várias POs da mesma importadora."}</p>
+      <p className="eyebrow">{t.eyebrow}</p>
+      <h1>{kind === "po" ? t.titlePo : t.titleIp}</h1>
+      <p>{kind === "po" ? t.introPo : t.introIp}</p>
     </header>
-    {loading && <p role="status">Carregando seus dados…</p>}
+    {loading && <p role="status">{t.loading}</p>}
     {error && <p className="notice error" role="alert">{error}</p>}
-    {!loading && !allowed && <p className="notice">Seu perfil não permite criar {kind === "po" ? "POs" : "IPs"}.</p>}
+    {!loading && !allowed && <p className="notice">{kind === "po" ? t.notAllowedPo : t.notAllowedIp}</p>}
     {!loading && allowed && <form className="stack-form" onSubmit={submit}>
       {kind === "po" ? <>
         <section className="card po-entry-section">
-          <h2>Dados do pedido</h2>
-          <p className="muted">Informe a importadora e os dados que identificam a PO no TOTVS.</p>
+          <h2>{t.orderData}</h2>
+          <p className="muted">{t.orderHelp}</p>
           <div className="operational-fields po-header-fields">
             <PurchaseRequestSelect importer={importer} value={purchaseRequestId} choices={purchaseRequests} onChange={selectPurchaseRequest} />
-            <label>Importadora<SearchableSelect ariaLabel="Importadora" required disabled={Boolean(purchaseRequestId || invoiceDraft)}
+            <label>{m.poPanel.importer}<SearchableSelect ariaLabel={m.poPanel.importer} required disabled={Boolean(purchaseRequestId || invoiceDraft)}
               value={importer} onChange={value => {
               setPoPreflight(null); setConfirmDuplicateNumber(false); setDuplicateNumberJustification("");
               setImporter(value); selectPurchaseRequest("");
             }} options={(totvsHeader && totvsImporterMatches.length > 1 ? totvsImporterMatches : importers)
-              .map(value => ({ value, label: `${importerNames[value] ?? value} · CNPJ ${importerCnpjs[value] ?? ""}` }))} />
-              {purchaseRequestId ? <small className="po-field-hint">Definida pela SC vinculada.</small> : null}</label>
-            <label>Número da PO no TOTVS<input required maxLength={80} value={number} onChange={event => {
+              .map(value => ({ value, label: t.importerOption(importerNames[value] ?? value, importerCnpjs[value] ?? "") }))} />
+              {purchaseRequestId ? <small className="po-field-hint">{t.importerFromSc}</small> : null}</label>
+            <label>{m.poPanel.totvsNumber}<input required maxLength={80} value={number} onChange={event => {
               setPoPreflight(null); setConfirmDuplicateNumber(false); setDuplicateNumberJustification(""); setNumber(event.target.value);
             }} /></label>
-            <label>Fornecedor<SearchableSelect ariaLabel="Fornecedor" required disabled={Boolean(purchaseRequestId)} value={supplier}
+            <label>{m.poPanel.supplier}<SearchableSelect ariaLabel={m.poPanel.supplier} required disabled={Boolean(purchaseRequestId)} value={supplier}
               onChange={value => { setPoPreflight(null); setSupplier(value); }} options={suppliers.map(item => ({ value: item.code, label: `${item.code} · ${item.name}` }))} />
-              {purchaseRequestId ? <small className="po-field-hint">Preenchido pela SC vinculada.</small> : null}</label>
-            <label>Data da PO<input type="text" value="Automática ao salvar" readOnly aria-readonly="true" /></label>
+              {purchaseRequestId ? <small className="po-field-hint">{m.poPanel.fromSc}</small> : null}</label>
+            <label>{m.poPanel.poDate}<input type="text" value={t.poDateAuto} readOnly aria-readonly="true" /></label>
           </div>
-          <label>Observações do pedido<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
-          <h3>Dados compartilhados por todos os produtos</h3>
+          <label>{t.orderNotes}<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
+          <h3>{t.sharedAll}</h3>
           <OperationalFieldsEditor fields={purchaseOrderCommonItemFields} values={commonItemFields}
             options={options} setValues={setCommonItemFields} />
         </section>
 
         <section className="card po-entry-section">
           <div className="po-entry-heading">
-            <div><h2>Produtos e quantidades</h2><p className="muted">Adicione uma linha para cada produto da PO.</p></div>
-            <button className="button secondary" type="button" onClick={() => setItems(current => [...current, blankPoItem()])}>Adicionar produto</button>
+            <div><h2>{t.productsTitle}</h2><p className="muted">{t.productsHelp}</p></div>
+            <button className="button secondary" type="button" onClick={() => setItems(current => [...current, blankPoItem()])}>{t.addProduct}</button>
           </div>
           <div className="totvs-po-import">
-            <div><h3>Importar produtos de planilha TOTVS</h3>
-              <p className="muted">Lê o cabeçalho e os itens do export TOTVS Pedido de Compras. O preço vem de Valor Total ÷ Quantidade.</p>
+            <div><h3>{t.importTitle}</h3>
+              <p className="muted">{t.importHelp}</p>
             </div>
-            <label>Arquivo Excel (.xlsx)<input className="file-upload-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            <label>{m.poPanel.excelFile}<input className="file-upload-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               disabled={totvsParsing || saving || Boolean(createdPoId)} onChange={event => void selectTotvsProductFile(event)} /></label>
-            {totvsParsing && <p role="status">Lendo a planilha…</p>}
+            {totvsParsing && <p role="status">{t.readingSheet}</p>}
             {totvsFileError && <p className="notice error" role="alert">{totvsFileError}</p>}
             {draftStorageWarning && <p className="notice" role="status">{draftStorageWarning}</p>}
             {totvsRows.length > 0 && !totvsFileError && <>
               <div className="notice" role="status">
-                <p>{totvsFileName}: {totvsRows.length} produtos válidos.</p>
-                <p>PO {totvsHeader?.number || "—"} · CNPJ {totvsHeader?.importerCnpj || "—"} · Importadora {importer || "selecione uma correspondência"}</p>
-                {totvsImporterMatches.length === 0 && <p role="alert">O CNPJ da planilha não corresponde a uma importadora cadastrada com CNPJ.</p>}
-                {totvsImporterMatches.length > 1 && <p role="alert">O CNPJ corresponde a mais de uma importadora. Selecione a correta acima.</p>}
-                {totvsHeader && <p>Fornecedor {totvsHeader.supplierCode} · {totvsHeader.supplierName}
-                  {totvsSupplierOption ? ` · Catálogo: ${totvsSupplierOption.name}` : importer ? " · Fornecedor não encontrado no catálogo global" : ""}</p>}
+                <p>{t.validProducts(totvsFileName, totvsRows.length)}</p>
+                <p>{t.sheetSummary(totvsHeader?.number || "—", totvsHeader?.importerCnpj || "—", importer || t.selectMatch)}</p>
+                {totvsImporterMatches.length === 0 && <p role="alert">{t.cnpjNoImporter}</p>}
+                {totvsImporterMatches.length > 1 && <p role="alert">{t.cnpjMultipleAbove}</p>}
+                {totvsHeader && <p>{t.sheetSupplier(totvsHeader.supplierCode, totvsHeader.supplierName)}
+                  {totvsSupplierOption ? t.catalogSupplier(totvsSupplierOption.name) : importer ? t.supplierNotInCatalog : ""}</p>}
                 {totvsHeader && supplier && normalizeLookup(supplier) !== normalizeLookup(totvsHeader.supplierCode)
-                  && <p role="alert">Selecione o código {totvsHeader.supplierCode} do fornecedor informado na planilha.</p>}
-                {totvsSupplierNameDiverges && <p>Confira a razão social: ela difere do nome do fornecedor no catálogo.</p>}
-                {totvsHeader?.scNumber && <p>Nro.SC {totvsHeader.scNumber}
+                  && <p role="alert">{t.selectSupplierCode(totvsHeader.supplierCode)}</p>}
+                {totvsSupplierNameDiverges && <p>{t.checkCompanyName}</p>}
+                {totvsHeader?.scNumber && <p>{t.scNumberLine(totvsHeader.scNumber)}
                   {totvsScClassification.kind === "match"
-                    ? purchaseRequestId === totvsScClassification.request.id
-                      ? " · SC existente vinculada automaticamente. Você pode removê-la no seletor de SC."
-                      : " · SC existente encontrada; o vínculo foi removido no seletor de SC."
-                    : totvsScClassification.kind === "missing"
-                      ? " · SC não cadastrada para esta importadora e fornecedor."
-                      : ""}</p>}
+                    ? purchaseRequestId === totvsScClassification.request.id ? t.scLinkedAuto : t.scFoundUnlinked
+                    : totvsScClassification.kind === "missing" ? t.scMissing : ""}</p>}
                 {totvsScClassification.kind === "supplier-mismatch" && <p className="notice error" role="alert">
-                  A SC {totvsScClassification.request.scNumber} já existe para o fornecedor {totvsScClassification.request.supplierText ?? "não informado"}.
-                  O salvamento da PO está bloqueado.
+                  {t.scSupplierBlocked(totvsScClassification.request.scNumber, totvsScClassification.request.supplierText ?? m.scLink.supplierNotInformed)}
                 </p>}
                 {totvsScClassification.kind === "missing" && !purchaseRequestId && totvsImporterResolved && <div className="notice totvs-sc-create">
-                  <h3>Criar SC {totvsScClassification.scNumber} junto com a PO</h3>
-                  <p>Importadora, número e fornecedor vêm da planilha TOTVS.</p>
+                  <h3>{t.createScTitle(totvsScClassification.scNumber)}</h3>
+                  <p>{t.createScHelp}</p>
                   <div className="operational-fields">
-                    <label>Importadora<input readOnly aria-readonly="true" value={importer} /></label>
-                    <label>Número da SC<input readOnly aria-readonly="true" value={totvsScClassification.scNumber} /></label>
-                    <label>Fornecedor<input readOnly aria-readonly="true" value={totvsHeader?.supplierCode ?? ""} /></label>
-                    <label>Solicitante<OperationalOptionSelect required entity="requester" value={newScRequester} values={options}
+                    <label>{m.poPanel.importer}<input readOnly aria-readonly="true" value={importer} /></label>
+                    <label>{m.fields.scNumber}<input readOnly aria-readonly="true" value={totvsScClassification.scNumber} /></label>
+                    <label>{m.poPanel.supplier}<input readOnly aria-readonly="true" value={totvsHeader?.supplierCode ?? ""} /></label>
+                    <label>{m.fields.requester}<OperationalOptionSelect required entity="requester" value={newScRequester} values={options}
                       onChange={setNewScRequester} /></label>
-                    <label>Data da SC<input type="date" value={newScDate} onChange={event => setNewScDate(event.target.value)} /></label>
-                    <label>Data de aprovação<input type="date" value={newScApprovalDate}
+                    <label>{m.fields.scDate}<input type="date" value={newScDate} onChange={event => setNewScDate(event.target.value)} /></label>
+                    <label>{t.approvalDate}<input type="date" value={newScApprovalDate}
                       onChange={event => setNewScApprovalDate(event.target.value)} /></label>
-                    <label>Recebimento do plano comercial<input type="date" value={newScCommercialPlanReceivedDate}
+                    <label>{t.commercialPlan}<input type="date" value={newScCommercialPlanReceivedDate}
                       onChange={event => setNewScCommercialPlanReceivedDate(event.target.value)} /></label>
                   </div>
                 </div>}
-                {selectedScConflictsWithTotvs && <p role="alert">A SC selecionada tem importadora ou fornecedor diferente dos informados na planilha.</p>}
-                <p>Totais {totvsCurrency}: planilha {formatNumber(totvsSpreadsheetTotal)} · calculado {formatNumber(totvsCalculatedTotal)}</p>
-                <label>Moeda da PO<OperationalOptionSelect entity="currency" value={totvsCurrency} values={options}
+                {selectedScConflictsWithTotvs && <p role="alert">{t.selectedScConflict}</p>}
+                <p>{t.totals(totvsCurrency, formatNumber(totvsSpreadsheetTotal), formatNumber(totvsCalculatedTotal))}</p>
+                <label>{t.poCurrency}<OperationalOptionSelect entity="currency" value={totvsCurrency} values={options}
                   onChange={setTotvsCurrency} required /></label>
               </div>
               <details className="totvs-import-details">
-                <summary>Conferir os {totvsRows.length} produtos mapeados</summary>
+                <summary>{t.checkMapped(totvsRows.length)}</summary>
                 <div className="totvs-import-table-wrap"><table className="totvs-import-table">
-                  <thead><tr><th>Item</th><th>Produto</th><th>Descrição TOTVS</th><th>Quantidade</th><th>UM</th><th>Preço {totvsCurrency}</th><th>Valor Total</th><th>Referência / estimativa</th><th>CC</th><th>Pendência</th></tr></thead>
+                  <thead><tr><th>{m.poPanel.item}</th><th>{m.poPanel.product}</th><th>{t.totvsDescription}</th><th>{t.quantity}</th><th>{t.unitShort}</th><th>{t.priceIn(totvsCurrency)}</th><th>{t.sheetTotal}</th><th>{t.reference}</th><th>{t.costCenterShort}</th><th>{t.pending}</th></tr></thead>
                   <tbody>{totvsRows.map(row => {
                     const product = products.find(choice => normalizeLookup(choice.code) === normalizeLookup(row.productCode));
                     const reference = productPriceReferenceForCurrency(product?.referencePrices, totvsCurrency);
                     const estimate = Number(row.unitPrice) === 0 ? estimatedProductTotal(row.orderedQuantity, reference) : null;
                     const catalogDescription = product?.latestTotvsDescription?.trim() || product?.name;
                     const pending = [
-                      !row.totalWithinTolerance ? "Preço calculado difere do Valor Total em mais de 0,01." : "",
-                      totvsMissingProducts.includes(row) ? "Produto fora do catálogo global ativo." : "",
-                      totvsMissingUnits.includes(row) ? "UM fora dos valores operacionais." : "",
-                      totvsMissingCostCenters.includes(row) ? "CC fora dos valores operacionais." : "",
+                      !row.totalWithinTolerance ? t.pendingTotal : "",
+                      totvsMissingProducts.includes(row) ? t.pendingProduct : "",
+                      totvsMissingUnits.includes(row) ? t.pendingUnit : "",
+                      totvsMissingCostCenters.includes(row) ? t.pendingCostCenter : "",
                       catalogDescription && normalizeLookup(catalogDescription) !== normalizeLookup(row.description)
-                        ? "Descrição TOTVS difere da descrição disponível no catálogo; confira." : "",
-                      Number(row.unitPrice) === 0 && !reference ? "Sem preço real conhecido nesta moeda." : "",
+                        ? t.pendingDescription : "",
+                      Number(row.unitPrice) === 0 && !reference ? m.poPanel.noRealPrice : "",
                     ].filter(Boolean).join(" ");
                     return <tr key={row.sourceRow}>
                     <td>{row.externalLineReference}</td><td>{row.productCode}</td><td>{row.description}</td>
                     <td>{formatNumber(row.orderedQuantity)}</td><td>{row.unit}</td><td>{formatNumber(row.unitPrice)} {totvsCurrency}</td>
                     <td>{formatNumber(row.spreadsheetLineTotal)} {totvsCurrency}</td>
                     <td>{Number(row.unitPrice) === 0 ? reference
-                      ? <>Preço de referência: {formatNumber(reference.unitPrice)} {reference.currency} (PO {reference.purchaseOrderNumber}, {formatUsDate(reference.observedAt)})
-                        {estimate !== null && <> · Valor estimado: {formatNumber(estimate)} {reference.currency}</>}</>
-                      : "Sem preço real conhecido" : "—"}</td>
+                      ? <>{m.poPanel.referencePrice(formatNumber(reference.unitPrice), reference.currency, reference.purchaseOrderNumber, formatUsDate(reference.observedAt))}
+                        {estimate !== null && m.poPanel.estimated(formatNumber(estimate), reference.currency)}</>
+                      : t.noRealPriceShort : "—"}</td>
                     <td>{row.costCenter}</td><td>{pending || "—"}</td>
                     </tr>;
                   })}</tbody>
@@ -1099,22 +1091,22 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
               </details>
               <div className="totvs-import-actions">
                 <button className="button" type="button" disabled={!totvsImportReady || totvsApplied || saving || Boolean(createdPoId)}
-                  onClick={() => applyTotvsProducts("replace")}>Substituir itens atuais</button>
+                  onClick={() => applyTotvsProducts("replace")}>{t.replaceItems}</button>
                 <button className="button secondary" type="button" disabled={!totvsImportReady || totvsApplied || saving || Boolean(createdPoId)}
-                  onClick={() => applyTotvsProducts("append")}>Adicionar ao formulário</button>
+                  onClick={() => applyTotvsProducts("append")}>{t.appendItems}</button>
               </div>
-              {totvsApplied && <p className="muted" role="status">Os produtos foram preenchidos no formulário; confira os itens antes de salvar a PO.</p>}
-              {totvsApplied && !totvsImportReady && <p className="notice" role="status">Resolva as pendências da planilha antes de salvar a PO.</p>}
+              {totvsApplied && <p className="muted" role="status">{t.appliedNotice}</p>}
+              {totvsApplied && !totvsImportReady && <p className="notice" role="status">{t.resolvePending}</p>}
             </>}
           </div>
-          {catalogLoading && <p role="status">Carregando produtos e fornecedores…</p>}
+          {catalogLoading && <p role="status">{t.loadingCatalog}</p>}
           {compactPoItems && <div className="totvs-import-table-wrap"><table className="totvs-import-table">
-            <thead><tr><th>Item</th><th>Produto</th><th>Descrição</th><th>Quantidade</th><th>Preço</th><th>Valor total</th><th>Ação</th></tr></thead>
+            <thead><tr><th>{m.poPanel.item}</th><th>{m.poPanel.product}</th><th>{m.poPanel.description}</th><th>{t.quantity}</th><th>{t.price}</th><th>{m.poPanel.totalValue}</th><th>{m.poPanel.action}</th></tr></thead>
             <tbody>{items.map((item, index) => <tr key={item.draftId}>
               <td>{item.externalLineReference || index + 1}</td><td>{item.productCode || "—"}</td><td>{item.description || "—"}</td>
               <td>{formatNumber(item.orderedQuantity)} {item.unit}</td><td>{formatNumber(item.unitPrice)} {item.currency}</td>
               <td>{formatNumber(String(Number(item.orderedQuantity.replace(",", ".")) * Number(item.unitPrice.replace(",", "."))))} {item.currency}</td>
-              <td><button className="button secondary" type="button" onClick={() => setTotvsItemEditing(item.draftId)}>Editar</button></td>
+              <td><button className="button secondary" type="button" onClick={() => setTotvsItemEditing(item.draftId)}>{m.poPanel.edit}</button></td>
             </tr>)}</tbody>
           </table></div>}
           {items.map((item, index) => {
@@ -1124,32 +1116,32 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
             const estimate = estimatedProductTotal(item.orderedQuantity, reference);
             return <article className="po-entry-item" key={item.draftId}>
             <div className="po-entry-heading">
-              <h3>Produto {index + 1}</h3>
-              {compactPoItems && <button className="button secondary" type="button" onClick={() => setTotvsItemEditing(null)}>Fechar edição</button>}
+              <h3>{t.productNumber(index + 1)}</h3>
+              {compactPoItems && <button className="button secondary" type="button" onClick={() => setTotvsItemEditing(null)}>{t.closeEdit}</button>}
               {items.length > 1 && <button className="button secondary" type="button"
-                onClick={() => setItems(current => current.filter((_, itemIndex) => itemIndex !== index))}>Remover</button>}
+                onClick={() => setItems(current => current.filter((_, itemIndex) => itemIndex !== index))}>{t.remove}</button>}
             </div>
             <div className="operational-fields">
-              <label>Linha no TOTVS<input maxLength={80} value={item.externalLineReference}
+              <label>{m.poPanel.totvsLine}<input maxLength={80} value={item.externalLineReference}
                 onChange={event => updateItem(index, { externalLineReference: event.target.value })} /></label>
-              <label>Produto<CatalogProductSelect required value={item.productCode} fallbackName={item.description} products={products}
+              <label>{m.poPanel.product}<CatalogProductSelect required value={item.productCode} fallbackName={item.description} products={products}
                 onChange={product => updateProductCode(index, product?.code ?? "")} /></label>
-              <label>Código do produto<input value={item.productCode} onChange={event => updateProductCode(index, event.target.value)} /></label>
-              <label>Descrição<input value={item.description} onChange={event => updateItem(index, { description: event.target.value })}
-                placeholder="Sugerida pelo catálogo e editável" /></label>
-              <label>Quantidade pedida<input required inputMode="decimal" value={item.orderedQuantity}
-                onChange={event => updateItem(index, { orderedQuantity: event.target.value })} placeholder="Ex.: 100 ou 100,5" /></label>
-              <label>Unidade<OperationalOptionSelect required entity="unit_of_measure" value={item.unit} values={options}
+              <label>{m.poPanel.productCode}<input value={item.productCode} onChange={event => updateProductCode(index, event.target.value)} /></label>
+              <label>{m.poPanel.description}<input value={item.description} onChange={event => updateItem(index, { description: event.target.value })}
+                placeholder={t.descriptionPlaceholder} /></label>
+              <label>{m.poPanel.orderedQuantity}<input required inputMode="decimal" value={item.orderedQuantity}
+                onChange={event => updateItem(index, { orderedQuantity: event.target.value })} placeholder={t.quantityPlaceholder} /></label>
+              <label>{m.poPanel.unit}<OperationalOptionSelect required entity="unit_of_measure" value={item.unit} values={options}
                 onChange={unit => updateItem(index, { unit })} /></label>
-              <label>Preço unitário<input inputMode="decimal" value={item.unitPrice}
+              <label>{m.poPanel.unitPrice}<input inputMode="decimal" value={item.unitPrice}
                 onChange={event => updateItem(index, { unitPrice: event.target.value })} /></label>
-              <label>Moeda do preço<OperationalOptionSelect entity="currency" value={item.currency} values={options}
+              <label>{m.poPanel.priceCurrency}<OperationalOptionSelect entity="currency" value={item.currency} values={options}
                 onChange={currency => updateItem(index, { currency })} /></label>
             </div>
-            {reference && <p className="muted">Preço de referência: {formatNumber(reference.unitPrice)} {reference.currency}
-              (PO {reference.purchaseOrderNumber}, {formatUsDate(reference.observedAt)})
-              {estimate !== null && <> · Valor estimado: {formatNumber(estimate)} {reference.currency}</>}</p>}
-            <h4>Planejamento e acompanhamento deste produto</h4>
+            {reference && <p className="muted">{m.poPanel.referencePrice(formatNumber(reference.unitPrice), reference.currency,
+              reference.purchaseOrderNumber, formatUsDate(reference.observedAt))}
+              {estimate !== null && m.poPanel.estimated(formatNumber(estimate), reference.currency)}</p>}
+            <h4>{t.productPlanning}</h4>
             <OperationalFieldsEditor fields={specificItemFields} values={item.operational} options={options}
               setValues={operational => updateItem(index, { operational })} />
             <PurchaseOrderCalculatedFields quantity={item.orderedQuantity} unitPrice={item.unitPrice} currency={item.currency} />
@@ -1158,8 +1150,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         </section>
 
         <section className="card po-entry-section">
-          <h2>Confirmação</h2>
-          {createdPoId && <p className="notice error">A PO já foi criada. <Link className="text-link" href={`/purchase-orders/${createdPoId}`}>Abrir a PO e continuar o preenchimento</Link>.</p>}
+          <h2>{t.confirmation}</h2>
+          {createdPoId && <p className="notice error">{t.alreadyCreated}<Link className="text-link" href={`/purchase-orders/${createdPoId}`}>{t.openCreated}</Link>.</p>}
           {poNumberBlockMessage && <p className="notice error" role="alert">{poNumberBlockMessage}</p>}
           {poPreflight?.sameImporterDeletedPurchaseOrder && <DeletedPurchaseOrderActions
             purchaseOrder={poPreflight.sameImporterDeletedPurchaseOrder} canManageLifecycle={canManagePoLifecycle}
@@ -1167,71 +1159,70 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
             purchaseRequestBlocker={totvsScPayload.blocker} />}
           {poPreflight && (!poPreflight.importerAcceptsNewPurchaseOrders || !poPreflight.supplierFound
             || poPreflight.missingProducts.length > 0 || poPreflight.missingUnits.length > 0 || poPreflight.missingCostCenters.length > 0)
-            && <p className="notice error" role="alert">A pré-validação encontrou pendências no CNPJ, fornecedor, produto, UM ou centro de custo. Corrija os itens e tente novamente.</p>}
+            && <p className="notice error" role="alert">{t.preflightIssues}</p>}
           {poPreflight && poPreflight.otherImporterDuplicates.length > 0 && <div className="notice">
-            <p>O número {number} já existe nas importadoras: {poPreflight.otherImporterDuplicates.join(", ")}.</p>
+            <p>{t.numberExists(number, poPreflight.otherImporterDuplicates.join(", "))}</p>
             <label><input type="checkbox" checked={confirmDuplicateNumber}
-              onChange={event => setConfirmDuplicateNumber(event.target.checked)} />Confirmo a criação desta PO com o mesmo número.</label>
-            <label>Justificativa<input required minLength={3} maxLength={1000} value={duplicateNumberJustification}
+              onChange={event => setConfirmDuplicateNumber(event.target.checked)} />{t.confirmSameNumber}</label>
+            <label>{t.justification}<input required minLength={3} maxLength={1000} value={duplicateNumberJustification}
               onChange={event => setDuplicateNumberJustification(event.target.value)} /></label>
           </div>}
           <button className="button" disabled={saving || !importer || Boolean(createdPoId)
             || (totvsApplied && !totvsImportReady) || poPreflightBlocksSave
             || totvsScPayload.blocker !== null}>
-            {saving ? "Salvando pedido e produtos…" : "Salvar PO e produtos"}
+            {saving ? t.savingPo : t.savePo}
           </button>
         </section>
       </> : <section className="card ip-entry-section">
         <div className="totvs-po-import">
-          <h2>{reviewInvoiceId ? "Revisar invoice" : "Importar invoice da China"}</h2>
-          <p className="muted">Use a aba INV. O sistema confere as POs da importadora, relaciona os itens pelo código e distribui as quantidades antes de criar o IP.</p>
-          <label>Invoice (.xlsx)<input className="file-upload-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          <h2>{reviewInvoiceId ? t.reviewInvoice : t.importInvoice}</h2>
+          <p className="muted">{t.invoiceHelp}</p>
+          <label>{t.invoiceFile}<input className="file-upload-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             disabled={invoiceLoading || saving || Boolean(reviewInvoiceId && !reviewTarget)} onChange={event => void selectChinaInvoice(event)} /></label>
-          {invoiceLoading && <p role="status">Lendo INV e conferindo as POs cadastradas, sem limitar pela idade do pedido…</p>}
+          {invoiceLoading && <p role="status">{t.readingInvoice}</p>}
           {invoiceDraft && <>
-            <p className="notice invoice-summary" role="status">{invoiceDraft.fileName}: {invoiceDraft.lines.length} linhas, {invoiceMatches.length} destinos, {formatNumber(invoiceDraft.totalQuantity)} unidades, {formatNumber(invoiceDraft.totalAmount)} CNY.</p>
-              <p className="muted invoice-importer">CNPJ do importador: {invoiceDraft.importerCnpj || "não identificado"} → {importer || "sem correspondência no cadastro"}.</p>
+            <p className="notice invoice-summary" role="status">{t.invoiceSummary(invoiceDraft.fileName, invoiceDraft.lines.length, invoiceMatches.length, formatNumber(invoiceDraft.totalQuantity), formatNumber(invoiceDraft.totalAmount))}</p>
+              <p className="muted invoice-importer">{t.invoiceImporter(invoiceDraft.importerCnpj || t.notIdentified, importer || t.noMatch)}</p>
             {invoiceDuplicate && <p className="notice" role="alert">
                {invoiceDuplicate.recordStatus === "DRAFT"
-                 ? `O IP REF ${invoiceDraft.ipNumber} já existe como rascunho. Esta carga preencherá esse cadastro e aplicará as distribuições revisadas.`
-                 : `O IP REF ${invoiceDraft.ipNumber} já existe. Ao confirmar, será criada uma revisão e as distribuições ativas anteriores serão substituídas.`}
+                 ? t.draftExists(invoiceDraft.ipNumber) : t.ipExists(invoiceDraft.ipNumber)}
             </p>}
             {invoiceDuplicate?.shipped && <ShippedChangeConfirmation value={shippedChange} onChange={setShippedChange} />}
             {duplicateInvoiceIps.length > 0 && <div className="notice error" role="alert">
-              <p>Esta invoice já está associada aos IPs ativos: {duplicateInvoiceIps.join(", ")}.</p>
+              <p>{t.invoiceInIps(duplicateInvoiceIps.join(", "))}</p>
               <label><input type="checkbox" checked={confirmDuplicateInvoice}
-                onChange={event => setConfirmDuplicateInvoice(event.target.checked)} />Confirmo a duplicidade desta invoice.</label>
+                onChange={event => setConfirmDuplicateInvoice(event.target.checked)} />{t.confirmDuplicateInvoice}</label>
             </div>}
             {ipReferenceOtherImporter && <p className="notice error" role="alert">
-              O IP REF da invoice já pertence a outra importadora. Confira o número antes de continuar.
+              {t.ipRefOtherImporterCheck}
             </p>}
             {importerCnpjMismatch && <div className="notice error" role="alert">
-              <p>O CNPJ da invoice ({invoiceDraft.importerCnpj || "não identificado"}) diverge do CNPJ cadastrado para {importer} ({importerCnpjs[importer] || "não cadastrado"}).</p>
+              <p>{t.cnpjMismatch(invoiceDraft.importerCnpj || t.notIdentified, importer, importerCnpjs[importer] || t.notRegistered)}</p>
               <label><input type="checkbox" checked={confirmImporterCnpjMismatch}
-                onChange={event => setConfirmImporterCnpjMismatch(event.target.checked)} />Confirmo a importadora selecionada apesar da divergencia de CNPJ.</label>
+                onChange={event => setConfirmImporterCnpjMismatch(event.target.checked)} />{t.confirmImporter}</label>
             </div>}
             <div className="operational-fields invoice-header-fields">
-              <label>Número da invoice<input required maxLength={120} value={invoiceDraft.invoiceNumber}
+              <label>{t.invoiceNumber}<input required maxLength={120} value={invoiceDraft.invoiceNumber}
                 onChange={event => { setDuplicateInvoiceIps([]); setConfirmDuplicateInvoice(false);
                   setInvoiceDraft(current => current ? { ...current, invoiceNumber: event.target.value } : current); }} /></label>
-              <label>Data da invoice<input required type="date" value={/^\d{4}-\d{2}-\d{2}$/u.test(invoiceDraft.invoiceDate) ? invoiceDraft.invoiceDate : ""}
+              <label>{t.invoiceDate}<input required type="date" value={/^\d{4}-\d{2}-\d{2}$/u.test(invoiceDraft.invoiceDate) ? invoiceDraft.invoiceDate : ""}
                 onChange={event => setInvoiceDraft(current => current ? { ...current, invoiceDate: event.target.value } : current)} /></label>
-              <label>Total da invoice (CNY)<input required inputMode="decimal" value={invoiceDraft.totalAmount}
+              <label>{t.invoiceTotal}<input required inputMode="decimal" value={invoiceDraft.totalAmount}
                 onChange={event => setInvoiceDraft(current => current ? { ...current, totalAmount: event.target.value.replace(",", ".") } : current)} /></label>
             </div>
-            <p className="muted">A PO informada em cada linha da INV determina o destino. O sistema sugere o produto cadastrado nessa PO; divergências de código exigem confirmação e podem ser ajustadas manualmente dentro da própria PO. A quantidade original da PO permanece registrada.</p>
+            <p className="muted">{t.destinationHelp}</p>
             {invoiceDraft.warnings.map(warning => <p className="notice" key={warning}>{warning}</p>)}
             {destinationIssues.length > 0 && <div className="notice error" role="alert">
-              <p>{destinationIssues.filter(entry => entry.issue?.kind === "PO_NOT_ACTIVE").length} PO(s) inativa(s).</p>
-              <p>{destinationIssues.length} destino(s) da invoice precisam de ação antes de gravar:</p>
-              <p>{destinationIssues.filter(entry => entry.issue?.kind === "PO_NOT_REGISTERED").length} PO(s) não cadastrada(s),
-                {" "}{destinationIssues.filter(entry => entry.issue?.kind === "ITEM_NOT_FOUND").length} item(ns) não encontrado(s),
-                {" "}{destinationIssues.filter(entry => entry.issue?.kind === "INSUFFICIENT_BALANCE").length} saldo(s) insuficiente(s).</p>
+              <p>{t.inactivePos(destinationIssues.filter(entry => entry.issue?.kind === "PO_NOT_ACTIVE").length)}</p>
+              <p>{t.destinationsNeedAction(destinationIssues.length)}</p>
+              <p>{t.destinationCounts(destinationIssues.filter(entry => entry.issue?.kind === "PO_NOT_REGISTERED").length,
+                destinationIssues.filter(entry => entry.issue?.kind === "ITEM_NOT_FOUND").length,
+                destinationIssues.filter(entry => entry.issue?.kind === "INSUFFICIENT_BALANCE").length)}</p>
             </div>}
             <div className="totvs-import-actions"><button className="button secondary" type="button" disabled={invoiceLoading || !importer}
-              onClick={() => void revalidateInvoiceMatches()}>Revalidar POs e saldos</button></div>
+              onClick={() => void revalidateInvoiceMatches()}>{t.revalidate}</button></div>
             <div className="totvs-import-table-wrap invoice-match-table-wrap"><table className="totvs-import-table invoice-match-table">
-              <thead><tr><th>Linha / PO da INV</th><th>Produto da INV</th><th>Quantidade destinada</th><th>Produto cadastrado na PO indicada</th></tr></thead>
+              <thead><tr><th>{t.invLine}</th><th>{t.invProduct}</th><th>{t.destinedQuantity}</th><th>{t.poProduct}</th></tr></thead>
               <tbody>{invoiceMatches.map(match => {
                 const sourceLine = invoiceDraft.lines.find(line => line.sourceRow === match.sourceRow);
                 const rowParts = invoiceMatches.filter(item => item.sourceRow === match.sourceRow);
@@ -1246,18 +1237,18 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                 const destinationIssue = classifyInvoiceDestination(match.candidates, match.poExists,
                   match.productCode, match.quantity, match.itemId, match.poStatus ?? "ACTIVE");
                 return <tr key={match.key}>
-                  <td>{match.sourceRow}<small>INV: PO {match.sourcePoNumber || "?"}</small></td>
+                  <td>{match.sourceRow}<small>{t.invPo(match.sourcePoNumber || "?")}</small></td>
                   <td>{match.productCode}<small>{match.description}</small></td>
-                  <td><input aria-label={`Quantidade destinada da linha ${match.sourceRow}`} inputMode="decimal" value={match.quantity}
+                  <td><input aria-label={t.destinedQuantityAria(match.sourceRow)} inputMode="decimal" value={match.quantity}
                     onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
                       ? { ...item, quantity: event.target.value.replace(",", "."), itemId: "", updateProduct: false,
                         updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
                         confirmUnitMismatch: false, confirmPriceMismatch: false } : item))} />
                     <small>{formatNumber(String(allocated))} / {formatNumber(sourceLine?.quantity ?? "0")} {sourceLine?.unit}</small>
-                    {!balanced && <small className="notice error">A soma distribuída difere da quantidade da invoice.</small>}
+                    {!balanced && <small className="notice error">{t.sumDiffers}</small>}
                   </td>
-                  <td><SearchableSelect ariaLabel={`Item da invoice ${match.sourceRow}`} required value={match.itemId}
-                    placeholder="Selecione PO e item" searchPlaceholder="Buscar PO, código ou item"
+                  <td><SearchableSelect ariaLabel={t.invoiceItemAria(match.sourceRow)} required value={match.itemId}
+                    placeholder={t.selectPoItem} searchPlaceholder={t.searchPoItem}
                     onChange={selectedId => setInvoiceMatches(current => current.map(item => {
                       if (item.key !== match.key) return item;
                       const candidate = item.candidates.find(value => value.id === selectedId);
@@ -1265,85 +1256,85 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                         updateProduct: false, updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
                         confirmUnitMismatch: false, confirmPriceMismatch: false };
                     }))} options={match.candidates.map(candidate => ({ value: candidate.id,
-                      label: `PO ${candidate.poNumber} | ${candidate.productCode} | linha ${candidate.lineNumber} | saldo ${formatNumber(candidate.remainingQuantity)} ${candidate.unit ?? ""}`,
+                      label: t.candidate(candidate.poNumber, candidate.productCode, candidate.lineNumber, `${formatNumber(candidate.remainingQuantity)} ${candidate.unit ?? ""}`),
                       searchText: candidate.description,
                       disabled: Number(candidate.remainingQuantity) < Number(match.quantity) }))} />
                     {destinationIssue && <div className="notice error" role="alert">
-                      <p>Linha {match.sourceRow}, PO {match.sourcePoNumber}: {destinationIssue.kind === "PO_NOT_REGISTERED"
-                        ? "PO não cadastrada." : destinationIssue.kind === "ITEM_NOT_FOUND"
-                          ? `Item/produto ${match.productCode} não encontrado na PO.`
+                      <p>{t.destinationIssue(match.sourceRow, match.sourcePoNumber, destinationIssue.kind === "PO_NOT_REGISTERED"
+                        ? t.poNotRegistered : destinationIssue.kind === "ITEM_NOT_FOUND"
+                          ? t.itemNotFound(match.productCode)
                           : destinationIssue.kind === "PO_NOT_ACTIVE"
-                            ? `PO ${destinationIssue.status === "CLOSED" ? "encerrada" : destinationIssue.status === "CANCELLED" ? "cancelada" : "excluída"}; não pode receber a invoice.`
-                            : `Saldo insuficiente: quantidade pedida ${formatNumber(destinationIssue.requested)}, disponível ${formatNumber(destinationIssue.available)}.`}</p>
-                      {match.poId ? <Link href={`/purchase-orders/${match.poId}`} target="_blank" rel="noopener noreferrer">Abrir PO para ajustar</Link>
-                        : <Link href="/purchase-orders/new" target="_blank" rel="noopener noreferrer">Cadastrar PO em nova aba</Link>}
+                            ? t.poInactive(destinationIssue.status === "CLOSED" ? t.poStatusClosed : destinationIssue.status === "CANCELLED" ? t.poStatusCancelled : t.poStatusDeleted)
+                            : t.insufficient(formatNumber(destinationIssue.requested), formatNumber(destinationIssue.available)))}</p>
+                      {match.poId ? <Link href={`/purchase-orders/${match.poId}`} target="_blank" rel="noopener noreferrer">{t.openPoAdjust}</Link>
+                        : <Link href="/purchase-orders/new" target="_blank" rel="noopener noreferrer">{t.createPoTab}</Link>}
                     </div>}
                     {selectedCandidate && <small>{selectedCandidate.description}</small>}
                     {codeMismatch && selectedCandidate && <div className="notice error" role="alert">
-                      <p>Código divergente: invoice {match.productCode}; produto da PO {selectedCandidate.productCode}. A distribuição usará o produto da PO indicada e manterá o código original da invoice.</p>
+                      <p>{t.codeMismatch(match.productCode, selectedCandidate.productCode)}</p>
                       <label><input type="checkbox" checked={match.confirmCodeMismatch}
                         onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
-                          ? { ...item, confirmCodeMismatch: event.target.checked } : item))} />Confirmo esta divergencia e aprovo a distribuicao.</label>
+                          ? { ...item, confirmCodeMismatch: event.target.checked } : item))} />{t.confirmCode}</label>
                     </div>}
                     {selectedCandidate && !supplierMatchesExporter(selectedCandidate, invoiceDraft.exporterText) && <div className="notice error" role="alert">
-                      <p>Fornecedor divergente: PO {selectedCandidate.poNumber} — {[selectedCandidate.supplierName, selectedCandidate.supplierText, selectedCandidate.supplierCode].filter(Boolean).join(" · ") || "sem fornecedor cadastrado"}; Exporter da invoice — {invoiceDraft.exporterText}. Os dois valores serão preservados.</p>
+                      <p>{t.supplierMismatch(selectedCandidate.poNumber, [selectedCandidate.supplierName, selectedCandidate.supplierText, selectedCandidate.supplierCode].filter(Boolean).join(" · ") || t.noSupplierRegistered, invoiceDraft.exporterText)}</p>
                       <label><input type="checkbox" checked={match.confirmSupplierMismatch}
                         onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
-                          ? { ...item, confirmSupplierMismatch: event.target.checked } : item))} />Confirmo a divergencia de fornecedor e aprovo a distribuicao.</label>
+                          ? { ...item, confirmSupplierMismatch: event.target.checked } : item))} />{t.confirmSupplier}</label>
                     </div>}
                     {unitMismatch && selectedCandidate && sourceLine && <div className="notice error" role="alert">
-                      <p>Unidade divergente: invoice {sourceLine.unit}; item da PO {selectedCandidate.unit}.</p>
+                      <p>{t.unitMismatch(sourceLine.unit, selectedCandidate.unit)}</p>
                       <label><input type="checkbox" checked={match.confirmUnitMismatch}
                         onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
-                          ? { ...item, confirmUnitMismatch: event.target.checked } : item))} />Confirmo a divergência de unidade deste destino.</label>
+                          ? { ...item, confirmUnitMismatch: event.target.checked } : item))} />{t.confirmUnit}</label>
                     </div>}
                     {priceMismatch && selectedCandidate && sourceLine && <div className="notice error" role="alert">
-                      <p>Preço divergente: invoice {sourceLine.unitPrice} CNY; item da PO {selectedCandidate.unitPrice} CNY.</p>
+                      <p>{t.priceMismatch(sourceLine.unitPrice, selectedCandidate.unitPrice ?? "—")}</p>
                       <label><input type="checkbox" checked={match.confirmPriceMismatch}
                         onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
-                          ? { ...item, confirmPriceMismatch: event.target.checked } : item))} />Confirmo a divergência de preço deste destino.</label>
+                          ? { ...item, confirmPriceMismatch: event.target.checked } : item))} />{t.confirmPrice}</label>
                     </div>}
                     {selectedCandidate && selectedCandidate.currency && selectedCandidate.currency !== "CNY"
-                      && <p className="notice">Preço da PO em {selectedCandidate.currency}: a comparação com CNY requer análise manual.</p>}
-                    {match.itemId && <details><summary>Comparar invoice e cadastros</summary>
+                      && <p className="notice">{t.currencyManual(selectedCandidate.currency)}</p>}
+                    {match.itemId && <details><summary>{t.compare}</summary>
                       {(() => {
                         const candidate = match.candidates.find(value => value.id === match.itemId);
                         return candidate ? <>
-                          <p>Cadastro do produto: {candidate.productName ?? "não cadastrado"} | NCM {candidate.productNcmCode ?? "—"} | {candidate.manufacturer ?? "fabricante não cadastrado"}</p>
-                          <p>Invoice: {sourceLine?.description} | NCM {sourceLine?.ncm || "—"} | {sourceLine?.manufacturer || "fabricante não informado"}</p>
-                          <p>Item da PO: {candidate.description} | unidade {candidate.unit} | NCM {candidate.poNcmCode ?? "—"} | {candidate.unitPrice ?? "—"} {candidate.currency ?? ""}</p>
-                          <p>Linha da invoice: {sourceLine?.unitPrice} CNY por {sourceLine?.unit} | NCM {sourceLine?.ncm || "—"}</p>
+                          <p>{t.productRecord(candidate.productName ?? t.notRegistered, candidate.productNcmCode ?? "—", candidate.manufacturer ?? t.manufacturerNotRegistered)}</p>
+                          <p>{t.invoiceRecord(sourceLine?.description ?? "", sourceLine?.ncm || "—", sourceLine?.manufacturer || t.manufacturerNotInformed)}</p>
+                          <p>{t.poItemRecord(candidate.description, candidate.unit, candidate.poNcmCode ?? "—", candidate.unitPrice ?? "—", candidate.currency ?? "")}</p>
+                          <p>{t.invoiceLineRecord(sourceLine?.unitPrice ?? "", sourceLine?.unit ?? "", sourceLine?.ncm || "—")}</p>
                         </> : null;
                       })()}
                     </details>}
                     {match.itemId && <div className="operational-fields">
                       <label><input type="checkbox" disabled={!match.candidates.find(candidate => candidate.id === match.itemId)?.productId}
                         checked={match.updateProduct} onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
-                          ? { ...item, updateProduct: event.target.checked } : item))} />Atualizar cadastro do produto</label>
+                          ? { ...item, updateProduct: event.target.checked } : item))} />{t.updateProduct}</label>
                       <label><input type="checkbox" checked={match.updatePoItem} onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
-                        ? { ...item, updatePoItem: event.target.checked } : item))} />Atualizar este item da PO</label>
+                        ? { ...item, updatePoItem: event.target.checked } : item))} />{t.updatePoItem}</label>
                     </div>}
                   </td>
                 </tr>;
               })}</tbody>
             </table></div>
-            {invoiceExistingProcess && <section className="notice" aria-label="Resumo antes e depois da invoice">
-              <h3>Resumo antes × depois</h3>
-              <p>Antes: {invoiceExistingProcess.operationalAllocations.length} distribuições ativas em {invoiceExistingProcess.purchaseOrders.length} POs vinculadas.</p>
+            {invoiceExistingProcess && <section className="notice" aria-label={t.beforeAfterAria}>
+              <h3>{t.beforeAfter}</h3>
+              <p>{t.before(invoiceExistingProcess.operationalAllocations.length, invoiceExistingProcess.purchaseOrders.length)}</p>
               {invoiceExistingProcess.operationalAllocations.map(allocation =>
-                <p key={allocation.id}>Antes · PO {allocation.poNumber} · {allocation.productCode} · {formatNumber(allocation.quantity)} {allocation.unit}</p>)}
-              <p>Depois: {invoiceMatches.length} destinos da invoice.</p>
+                <p key={allocation.id}>{t.beforeLine(allocation.poNumber, allocation.productCode, formatNumber(allocation.quantity), allocation.unit)}</p>)}
+              <p>{t.after(invoiceMatches.length)}</p>
               {invoiceMatches.map(match => {
                 const candidate = match.candidates.find(item => item.id === match.itemId);
-                return <p key={match.key}>Depois · linha {match.sourceRow} · PO {candidate?.poNumber ?? match.sourcePoNumber}
-                  · {candidate?.productCode ?? "item pendente"} · {formatNumber(match.quantity)}</p>;
+                return <p key={match.key}>{t.afterLine(match.sourceRow, candidate?.poNumber ?? match.sourcePoNumber,
+                  candidate?.productCode ?? t.pendingItem, formatNumber(match.quantity))}</p>;
               })}
               {orphanPos.map(order => <fieldset key={order.id}>
-                <legend>PO {order.number} ficará sem alocação nesta invoice</legend>
+                <legend>{t.orphan(order.number)}</legend>
                 <label><input type="radio" name={`orphan-${order.id}`} checked={orphanPoDecisions[order.id] === "KEEP"}
-                  onChange={() => setOrphanPoDecisions(current => ({ ...current, [order.id]: "KEEP" }))} />Manter vínculo sem alocação</label>
+                  onChange={() => setOrphanPoDecisions(current => ({ ...current, [order.id]: "KEEP" }))} />{t.keepLink}</label>
                 <label><input type="radio" name={`orphan-${order.id}`} checked={orphanPoDecisions[order.id] === "REMOVE"}
-                  onChange={() => setOrphanPoDecisions(current => ({ ...current, [order.id]: "REMOVE" }))} />Remover vínculo</label>
+                  onChange={() => setOrphanPoDecisions(current => ({ ...current, [order.id]: "REMOVE" }))} />{t.removeLink}</label>
               </fieldset>)}
             </section>}
             <button className="button secondary" type="button" disabled={saving} onClick={() => {
@@ -1351,28 +1342,28 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
               setInvoiceDraft(null); setInvoiceMatches([]); setInvoiceDuplicate(null);
               setDuplicateInvoiceIps([]); setConfirmDuplicateInvoice(false); setIpReferenceOtherImporter(false);
               setInvoiceExistingProcess(null); setOrphanPoDecisions({}); setInvoiceError("");
-            }}>Remover invoice e continuar manualmente</button>
+            }}>{t.removeInvoice}</button>
           </>}
           {invoiceError && <p className="notice error" role="alert">{invoiceError}</p>}
         </div>
         <div className="ip-entry-grid invoice-ip-fields">
-        {invoiceDraft ? <label>Fornecedor (Exporter da invoice)<input readOnly value={invoiceDraft.exporterText} /></label> :
-          <label>Supplier<SearchableSelect ariaLabel="Fornecedor" required value={supplier} onChange={setSupplier}
+        {invoiceDraft ? <label>{t.exporterSupplier}<input readOnly value={invoiceDraft.exporterText} /></label> :
+          <label>{m.poPanel.supplier}<SearchableSelect ariaLabel={m.poPanel.supplier} required value={supplier} onChange={setSupplier}
             options={suppliers.map(item => ({ value: item.code, label: `${item.code} · ${item.name}` }))} /></label>}
-        <label>Importadora<SearchableSelect ariaLabel="Importadora" required disabled={Boolean(reviewInvoiceId)} value={importer} onChange={value => {
+        <label>{m.poPanel.importer}<SearchableSelect ariaLabel={m.poPanel.importer} required disabled={Boolean(reviewInvoiceId)} value={importer} onChange={value => {
           setImporter(value); setConfirmImporterCnpjMismatch(false); setInvoiceDuplicate(null); setInvoiceError("");
           setDuplicateInvoiceIps([]); setConfirmDuplicateInvoice(false); setIpReferenceOtherImporter(false);
           setInvoiceMatches(current => current.map(match => ({ ...match, itemId: "", candidates: [],
             updateProduct: false, updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
             confirmUnitMismatch: false, confirmPriceMismatch: false })));
         }} options={importers.map(value => ({ value, label: value }))} /></label>
-        <label>IP Reference<input required maxLength={80} readOnly={Boolean(invoiceDraft || reviewInvoiceId)}
+        <label>{t.ipReference}<input required maxLength={80} readOnly={Boolean(invoiceDraft || reviewInvoiceId)}
           value={invoiceDraft?.ipNumber ?? number} onChange={event => setNumber(event.target.value)} /></label>
-        {invoiceDraft ? <label>Logistics status<input readOnly value="WAITING SHIPMENT" /></label> :
-          <label>Logistics status<OperationalOptionSelect entity="logistics_status" value={status} values={options} onChange={setStatus} /></label>}
-        <label>Prioridade<OperationalOptionSelect entity="priority" value={priority} values={options}
+        {invoiceDraft ? <label>{t.logisticsStatus}<input readOnly value="WAITING SHIPMENT" /></label> :
+          <label>{t.logisticsStatus}<OperationalOptionSelect entity="logistics_status" value={status} values={options} onChange={setStatus} /></label>}
+        <label>{m.poPanel.priority}<OperationalOptionSelect entity="priority" value={priority} values={options}
           onChange={setPriority} /></label>
-        <label>Observações<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
+        <label>{m.poPanel.notes}<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
         </div>
         <button className="button" disabled={saving || invoiceLoading || !importer || Boolean(invoiceDraft && (invoiceError
           || invoiceMatches.some(match => !match.itemId || !Number(match.quantity)
@@ -1385,7 +1376,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           || (importerCnpjMismatch && !confirmImporterCnpjMismatch)
           || invoiceDraft.lines.some(line => Math.abs(invoiceMatches.filter(match => match.sourceRow === line.sourceRow)
             .reduce((total, match) => total + (Number(match.quantity) || 0), 0) - Number(line.quantity)) > 0.00000001)))}>
-          {saving ? "Salvando…" : invoiceDraft ? "Criar IP, distribuir POs e registrar invoice" : "Salvar IP"}</button>
+          {saving ? t.saving : invoiceDraft ? t.createIpWithInvoice : t.saveIp}</button>
       </section>}
     </form>}
   </main>;

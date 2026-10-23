@@ -1,3 +1,5 @@
+import type { Messages } from "./i18n/pt-BR";
+
 export function suggestedPurchaseRequestNumber(items: ReadonlyArray<{ scNumber: string | null }>): string {
   const counts = new Map<string, number>();
   for (const item of items) {
@@ -15,7 +17,8 @@ export function lockedSharedFieldKeys(purchaseRequestId: string | null): Readonl
   return new Set(purchaseRequestId ? ["scNumber"] : []);
 }
 
-export function sharedFieldsSavedMessage(base: string, purchaseRequestUpdated: boolean, scNumber: string | null): string {
+export function sharedFieldsSavedMessage(base: string, purchaseRequestUpdated: boolean, scNumber: string | null,
+  m: Messages): string {
   if (!purchaseRequestUpdated) return base;
-  return `${base} SC ${scNumber ? `${scNumber} ` : ""}atualizada no PCM.`;
+  return m.scLink.updatedInPcm(base, scNumber);
 }

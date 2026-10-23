@@ -1,4 +1,5 @@
 import type { Cell, Worksheet } from "exceljs";
+import type { Messages } from "./i18n/pt-BR";
 
 export type TotvsPoProductRow = {
   sourceRow: number;
@@ -71,10 +72,11 @@ function textCell(cell: Cell): string {
   return "";
 }
 
-function numericText(value: string | number, fieldName: string, rowNumber: number, positive: boolean): string {
+function numericText(value: string | number, fieldName: string, rowNumber: number, positive: boolean,
+  m: Messages): string {
   let normalized: string;
   if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new Error(`Linha ${rowNumber}: ${fieldName} não é numérico.`);
+    if (!Number.isFinite(value)) throw new Error(m.totvsSheet.notNumeric(rowNumber, fieldName));
     normalized = value.toFixed(8);
     while (normalized.endsWith("0")) normalized = normalized.slice(0, -1);
     if (normalized.endsWith(".")) normalized = normalized.slice(0, -1);
@@ -91,22 +93,22 @@ function numericText(value: string | number, fieldName: string, rowNumber: numbe
     }
   }
   if (!/^(?:0|[1-9]\d{0,15})(?:\.\d{1,8})?$/u.test(normalized)) {
-    throw new Error(`Linha ${rowNumber}: ${fieldName} tem um formato numérico inválido.`);
+    throw new Error(m.totvsSheet.invalidNumber(rowNumber, fieldName));
   }
   const number = Number(normalized);
   if (!Number.isFinite(number) || number < 0 || (positive && number <= 0)) {
-    throw new Error(`Linha ${rowNumber}: ${fieldName} precisa ser ${positive ? "maior que zero" : "zero ou maior"}.`);
+    throw new Error(positive ? m.totvsSheet.mustBePositive(rowNumber, fieldName) : m.totvsSheet.mustBeNonNegative(rowNumber, fieldName));
   }
   return normalized;
 }
 
-function decimalCell(cell: Cell, fieldName: string, rowNumber: number, positive: boolean): string {
+function decimalCell(cell: Cell, fieldName: string, rowNumber: number, positive: boolean, m: Messages): string {
   const raw = cellValue(cell);
-  if (typeof raw === "number") return numericText(raw, fieldName, rowNumber, positive);
+  if (typeof raw === "number") return numericText(raw, fieldName, rowNumber, positive, m);
   if (typeof raw !== "string" || !raw.trim()) {
-    throw new Error(`Linha ${rowNumber}: ${fieldName} está vazio ou não é numérico.`);
+    throw new Error(m.totvsSheet.emptyOrNotNumeric(rowNumber, fieldName));
   }
-  return numericText(raw, fieldName, rowNumber, positive);
+  return numericText(raw, fieldName, rowNumber, positive, m);
 }
 
 function decimalUnits(value: string): bigint {
@@ -149,15 +151,15 @@ function rowIsBlank(worksheet: Worksheet, rowNumber: number, columns: Map<string
 }
 
 function singleHeaderValue(worksheet: Worksheet, rows: readonly number[], column: number,
-  label: string, required = true): string {
+  label: string, m: Messages, required = true): string {
   const distinct = new Map<string, string>();
   for (const rowNumber of rows) {
     const value = textCell(worksheet.getRow(rowNumber).getCell(column));
     if (value) distinct.set(value.toLocaleUpperCase("pt-BR"), value);
   }
-  if (distinct.size > 1) throw new Error(`O campo ${label} tem mais de um valor na planilha.`);
+  if (distinct.size > 1) throw new Error(m.totvsSheet.multipleValues(label));
   const value = [...distinct.values()][0] ?? "";
-  if (required && !value) throw new Error(`O campo ${label} está vazio na planilha.`);
+  if (required && !value) throw new Error(m.totvsSheet.emptyField(label));
   return value;
 }
 
@@ -166,24 +168,25 @@ function normalizeCnpj(value: string): string {
   return digits.length > 0 && digits.length <= 14 ? digits.padStart(14, "0") : digits;
 }
 
-export async function parseTotvsPoXlsx(file: File): Promise<TotvsPoParseResult> {
+export async function parseTotvsPoXlsx(file: File, m: Messages): Promise<TotvsPoParseResult> {
+  const t = m.totvsSheet;
   if (!file.name.toLocaleLowerCase("pt-BR").endsWith(".xlsx")) {
-    throw new Error("Selecione uma planilha do Excel no formato .xlsx.");
+    throw new Error(t.xlsxRequired);
   }
   if (file.size === 0 || file.size > maxFileBytes) {
-    throw new Error("O arquivo precisa ter conteúdo e ser menor que 10 MB.");
+    throw new Error(t.fileSize);
   }
 
   const excelJs = await import("exceljs") as typeof import("exceljs") & {
     default?: { Workbook?: typeof import("exceljs").Workbook };
   };
   const Workbook = excelJs.Workbook ?? excelJs.default?.Workbook;
-  if (!Workbook) throw new Error("Não foi possível inicializar o leitor de planilhas.");
+  if (!Workbook) throw new Error(t.readerFailed);
   const workbook = new Workbook();
   try {
     await workbook.xlsx.load(await file.arrayBuffer());
   } catch {
-    throw new Error("Não foi possível ler a planilha. Salve-a como .xlsx e tente novamente.");
+    throw new Error(t.unreadable);
   }
 
   const candidates = workbook.worksheets.map(worksheet => ({ worksheet, header: findHeaderColumns(worksheet) }))
@@ -191,14 +194,14 @@ export async function parseTotvsPoXlsx(file: File): Promise<TotvsPoParseResult> 
   const found = candidates.find(candidate => requiredHeaders.every(header => candidate.header!.columns.has(header)))
     ?? candidates[0];
   if (!found?.header) {
-    throw new Error("Não encontrei as colunas de itens do layout TOTVS Pedido de Compras: Item, Produto, Descrição, UM, Quantidade e Valor Total.");
+    throw new Error(t.itemColumnsMissing);
   }
 
   const { worksheet, header } = found;
   const missing = requiredHeaders.filter(name => !header.columns.has(name));
   if (missing.length) {
     const names = missing.map(name => headerLabels[name]).join(", ");
-    throw new Error(`Layout TOTVS Pedido de Compras incompleto. Colunas obrigatórias ausentes: ${names}.`);
+    throw new Error(t.layoutIncomplete(names));
   }
 
   const dataRows: number[] = [];
@@ -206,20 +209,20 @@ export async function parseTotvsPoXlsx(file: File): Promise<TotvsPoParseResult> 
     if (!rowIsBlank(worksheet, rowNumber, header.columns)) dataRows.push(rowNumber);
   }
   if (dataRows.length > maxProductRows) {
-    throw new Error(`A planilha excede o limite de ${maxProductRows} produtos por importação.`);
+    throw new Error(t.tooManyRows(maxProductRows));
   }
-  if (!dataRows.length) throw new Error("Não encontrei produtos depois da linha de cabeçalho.");
+  if (!dataRows.length) throw new Error(t.noProducts);
 
   const column = (name: (typeof requiredHeaders)[number]) => header.columns.get(name)!;
   const headerValues = {
-    number: singleHeaderValue(worksheet, dataRows, column("pc ae"), "PC / AE"),
-    importerCnpj: normalizeCnpj(singleHeaderValue(worksheet, dataRows, column("cnpj cpf"), "CNPJ/CPF")),
-    supplierCode: singleHeaderValue(worksheet, dataRows, column("codigo"), "Codigo"),
-    supplierName: singleHeaderValue(worksheet, dataRows, column("razao social"), "Razao Social"),
-    scNumber: singleHeaderValue(worksheet, dataRows, column("nro sc"), "Nro.SC", false),
+    number: singleHeaderValue(worksheet, dataRows, column("pc ae"), "PC / AE", m),
+    importerCnpj: normalizeCnpj(singleHeaderValue(worksheet, dataRows, column("cnpj cpf"), "CNPJ/CPF", m)),
+    supplierCode: singleHeaderValue(worksheet, dataRows, column("codigo"), "Codigo", m),
+    supplierName: singleHeaderValue(worksheet, dataRows, column("razao social"), "Razao Social", m),
+    scNumber: singleHeaderValue(worksheet, dataRows, column("nro sc"), "Nro.SC", m, false),
   };
   if (!/^\d{14}$/u.test(headerValues.importerCnpj)) {
-    throw new Error("O CNPJ/CPF da empresa não tem 14 dígitos na planilha.");
+    throw new Error(t.cnpjDigits);
   }
 
   const imported: TotvsPoProductRow[] = [];
@@ -233,20 +236,20 @@ export async function parseTotvsPoXlsx(file: File): Promise<TotvsPoParseResult> 
       const description = textCell(row.getCell(column("descricao")));
       const unit = textCell(row.getCell(column("um")));
       const externalLineReference = textCell(row.getCell(column("item")));
-      const quantity = decimalCell(row.getCell(column("quantidade")), "Quantidade", rowNumber, true);
-      const lineTotal = decimalCell(row.getCell(column("valor total")), "Valor Total", rowNumber, false);
+      const quantity = decimalCell(row.getCell(column("quantidade")), "Quantidade", rowNumber, true, m);
+      const lineTotal = decimalCell(row.getCell(column("valor total")), "Valor Total", rowNumber, false, m);
       const costCenter = textCell(row.getCell(column("cc")));
 
-      if (!productCode) throw new Error(`Linha ${rowNumber}: Produto está vazio.`);
-      if (productCode.length > 120) throw new Error(`Linha ${rowNumber}: Produto excede 120 caracteres.`);
-      if (!description) throw new Error(`Linha ${rowNumber}: Descrição está vazia.`);
-      if (description.length > 1000) throw new Error(`Linha ${rowNumber}: Descrição excede 1.000 caracteres.`);
-      if (!unit) throw new Error(`Linha ${rowNumber}: UM está vazia.`);
-      if (unit.length > 32) throw new Error(`Linha ${rowNumber}: UM excede 32 caracteres.`);
-      if (!externalLineReference) throw new Error(`Linha ${rowNumber}: Item está vazio.`);
-      if (externalLineReference.length > 80) throw new Error(`Linha ${rowNumber}: Item excede 80 caracteres.`);
-      if (!costCenter) throw new Error(`Linha ${rowNumber}: CC está vazio.`);
-      if (costCenter.length > 80) throw new Error(`Linha ${rowNumber}: CC excede 80 caracteres.`);
+      if (!productCode) throw new Error(t.productEmpty(rowNumber));
+      if (productCode.length > 120) throw new Error(t.productTooLong(rowNumber));
+      if (!description) throw new Error(t.descriptionEmpty(rowNumber));
+      if (description.length > 1000) throw new Error(t.descriptionTooLong(rowNumber));
+      if (!unit) throw new Error(t.unitEmpty(rowNumber));
+      if (unit.length > 32) throw new Error(t.unitTooLong(rowNumber));
+      if (!externalLineReference) throw new Error(t.itemEmpty(rowNumber));
+      if (externalLineReference.length > 80) throw new Error(t.itemTooLong(rowNumber));
+      if (!costCenter) throw new Error(t.costCenterEmpty(rowNumber));
+      if (costCenter.length > 80) throw new Error(t.costCenterTooLong(rowNumber));
 
       const quantityUnits = decimalUnits(quantity);
       const lineTotalUnits = decimalUnits(lineTotal);
@@ -261,12 +264,12 @@ export async function parseTotvsPoXlsx(file: File): Promise<TotvsPoParseResult> 
         spreadsheetLineTotal: lineTotal, calculatedLineTotal: formatUnits(calculatedLineTotal),
         totalWithinTolerance, costCenter });
     } catch (error) {
-      errors.push(error instanceof Error ? error.message : `Linha ${rowNumber}: dados inválidos.`);
+      errors.push(error instanceof Error ? error.message : t.invalidRow(rowNumber));
     }
   }
 
   if (errors.length) {
-    throw new Error(`A planilha tem ${errors.length} linha(s) para corrigir: ${errors.slice(0, 8).join(" ")}${errors.length > 8 ? " …" : ""}`);
+    throw new Error(t.rowsToFix(errors.length, `${errors.slice(0, 8).join(" ")}${errors.length > 8 ? " …" : ""}`));
   }
   return { header: headerValues, rows: imported, spreadsheetTotal: formatUnits(spreadsheetTotal),
     calculatedTotal: formatUnits(calculatedTotal) };

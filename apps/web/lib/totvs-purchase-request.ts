@@ -1,3 +1,5 @@
+import type { Messages } from "./i18n/pt-BR";
+
 export type TotvsPurchaseRequestChoice = {
   id: string;
   importer: string;
@@ -43,17 +45,17 @@ export function totvsPurchaseRequestPayload(options: {
   classification: TotvsPurchaseRequestClassification;
   selectedPurchaseRequestId: string;
   newRequest: { requester: string; scDate: string; approvalDate: string; commercialPlanReceivedDate: string };
-}): { choice: PurchaseRequestPayloadChoice | null; blocker: string | null } {
+}, m: Messages): { choice: PurchaseRequestPayloadChoice | null; blocker: string | null } {
   const { classification, selectedPurchaseRequestId, newRequest } = options;
   if (classification.kind === "supplier-mismatch") {
-    return { choice: null, blocker: `A SC ${classification.request.scNumber} já existe para o fornecedor `
-      + `${classification.request.supplierText ?? "não informado"}.` };
+    return { choice: null, blocker: m.scRequest.supplierExists(classification.request.scNumber,
+      classification.request.supplierText ?? m.scLink.supplierNotInformed) };
   }
   if (selectedPurchaseRequestId) return { choice: { purchaseRequestId: selectedPurchaseRequestId }, blocker: null };
   if (classification.kind !== "missing") return { choice: null, blocker: null };
   const requester = newRequest.requester.trim();
   if (!requester) {
-    return { choice: null, blocker: `Informe o solicitante para criar a SC ${classification.scNumber}.` };
+    return { choice: null, blocker: m.scRequest.requesterRequired(classification.scNumber) };
   }
   return { choice: { newPurchaseRequest: { scNumber: classification.scNumber, requester,
     scDate: newRequest.scDate || null, approvalDate: newRequest.approvalDate || null,

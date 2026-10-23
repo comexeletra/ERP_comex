@@ -5,8 +5,11 @@ import Link from "next/link";
 import { apiFetch, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
 import { formatNumber } from "../lib/format-number";
-import { IpCalculatedSummary as IpSummary, ipPostShipmentFields, newProcessDocumentKinds, productLineIpFields,
-  withDateWarnings } from "../lib/ip-post-shipment-fields";
+import { booleanOptions, displayValue, fieldLabel, statusLabel } from "../lib/i18n/labels";
+import type { Messages } from "../lib/i18n/pt-BR";
+import { IpCalculatedSummary as IpSummary, IpPostShipmentField, ipPostShipmentFields, newProcessDocumentKinds,
+  productLineIpFields, withDateWarnings } from "../lib/ip-post-shipment-fields";
+import { getMessages, useI18n } from "./I18nProvider";
 import IpCalculatedSummary from "./IpCalculatedSummary";
 import { itemShipmentSummary } from "../lib/purchase-order-lines";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
@@ -14,7 +17,7 @@ import { purchaseOrderItemFields } from "./PurchaseOrderItemFields";
 import { calculatedTotal } from "./PurchaseOrderCalculatedFields";
 import { SearchableSelect } from "./SearchableSelect";
 
-type Field = { key: string; label: string; type?: "date" | "number" | "money" | "boolean" | "select"; max?: number; entity?: string };
+type Field = IpPostShipmentField;
 const processFields: Field[] = ipPostShipmentFields;
 type DataRow = Record<string, string | number | boolean | null | undefined>;
 type Document = { id: string; kind: "INVOICE" | "BL" | "NF"; number: string;
@@ -51,10 +54,11 @@ function payload(fields: Field[], values: Draft) {
   }));
 }
 function FieldEditor({ fields, values, setValues, options }: { fields: Field[]; values: Draft; setValues: (value: Draft) => void; options: OperationalOption[] }) {
-  return <div className="operational-fields">{fields.map(field => <label key={field.key}>{field.label}
-    {field.type === "boolean" ? <SearchableSelect ariaLabel={field.label} placeholder="" value={values[field.key] ?? ""}
+  const { m } = useI18n();
+  return <div className="operational-fields">{fields.map(field => <label key={field.key}>{fieldLabel(m, field)}
+    {field.type === "boolean" ? <SearchableSelect ariaLabel={fieldLabel(m, field)} placeholder="" value={values[field.key] ?? ""}
       onChange={value => setValues({ ...values, [field.key]: value })}
-      options={[{ value: "", label: "Não informado" }, { value: "true", label: "Sim" }, { value: "false", label: "Não" }]} /> :
+      options={booleanOptions(m)} /> :
       field.type === "select" ? <OperationalOptionSelect entity={field.entity ?? ""} value={values[field.key] ?? ""} values={options}
         onChange={value => setValues({ ...values, [field.key]: value })} /> :
       <input type={field.type === "date" ? "date" : field.type === "number" ? "number" : "text"}
@@ -65,40 +69,19 @@ function FieldEditor({ fields, values, setValues, options }: { fields: Field[]; 
 async function read<T>(response: Response): Promise<T> {
   return readApiJson<T>(response);
 }
-function value(value: unknown): string {
-  if (Array.isArray(value)) return value.length ? value.join(", ") : "—";
-  return value == null || value === "" ? "—" : typeof value === "boolean" ? value ? "Sim" : "Não" : String(value);
-}
-const calcLabels: [string, string][] = [
-  ["status", "Status"], ["alert", "Alerta"], ["ruptureRisk", "Risco de ruptura"],
-  ["totalPrice", "Total do item (qtd. pedida × preço)"], ["eta", "ETA"], ["ete", "ETE"],
-  ["transitDays", "Trânsito previsto (dias)"], ["storageDueDate", "Vencimento da armazenagem"],
-  ["leadTimeDays", "Lead time total (dias)"], ["poApprovalDays", "SC até aprovação PO (dias)"],
-  ["poAfterScDays", "SC até envio PO (dias)"], ["poOnTime", "PO até dia 8"],
-  ["poDeviationDays", "Desvio do dia 10 (dias)"], ["factoryLeadDays", "PO até BL (dias)"],
-  ["actualTransitDays", "Trânsito real (dias)"], ["clearanceDays", "Chegada até entrega (dias)"],
-  ["commercialDeadline", "Prazo do plano comercial"], ["commercialDeviationDays", "Desvio plano comercial (dias)"],
-  ["mrpTargetDate", "Meta MRP"], ["portTargetDate", "Meta saída do porto"],
-  ["arrivalTargetDate", "Meta chegada Brasil"], ["deliveryTargetDate", "Meta entrega"],
-  ["billDate", "BL emitido"], ["nfIssueDate", "NF emitida"], ["nfHomologationDate", "NF homologada"],
-  ["billNumber", "BL nº"], ["invoiceNumbers", "Invoices"], ["nfNumber", "NF"], ["informedStatus", "Status informado"],
-  ["invoiceQuantity", "Qtd. da Invoice no item/IP"],
-  ["quantityMatchesInvoice", "Qtd. Invoice confere com o IP"],
-  ["invoiceUnitPrice", "Preço da Invoice"], ["priceMatchesInvoice", "Preço da Invoice confere"],
-  ["totalTargetDays", "Meta total (dias)"], ["totalActualDays", "Real total (dias)"],
-  ["totalDelayDays", "Desvio total (dias)"], ["bottleneck", "Etapa com maior desvio"],
-  ["arrivalYearMonth", "Mês da chegada"],
+/** Calculated indicators shown for each PO line, in display order. */
+const calcKeys: (keyof Messages["calc"])[] = [
+  "status", "alert", "ruptureRisk", "totalPrice", "eta", "ete", "transitDays", "storageDueDate", "leadTimeDays",
+  "poApprovalDays", "poAfterScDays", "poOnTime", "poDeviationDays", "factoryLeadDays", "actualTransitDays", "clearanceDays",
+  "commercialDeadline", "commercialDeviationDays", "mrpTargetDate", "portTargetDate", "arrivalTargetDate",
+  "deliveryTargetDate", "billDate", "nfIssueDate", "nfHomologationDate", "billNumber", "invoiceNumbers", "nfNumber",
+  "informedStatus", "invoiceQuantity", "quantityMatchesInvoice", "invoiceUnitPrice", "priceMatchesInvoice",
+  "totalTargetDays", "totalActualDays", "totalDelayDays", "bottleneck", "arrivalYearMonth",
 ];
 const numericCalculatedFields = new Set(["totalPrice", "transitDays", "leadTimeDays", "poApprovalDays", "poAfterScDays",
   "poDeviationDays", "factoryLeadDays", "actualTransitDays", "clearanceDays", "invoiceQuantity", "invoiceUnitPrice",
   "totalTargetDays", "totalActualDays", "totalDelayDays", "commercialDeviationDays"]);
-const eventEntityLabels: Record<string, string> = {
-  PURCHASE_ORDER: "Dados da PO", PURCHASE_ORDER_ITEM: "Item da PO", PO_ITEM_ALLOCATION: "Distribuição PO–IP",
-  IMPORT_PROCESS: "Dados logísticos do IP", PROCESS_DOCUMENT: "Documento do IP",
-};
-const eventOperationLabels: Record<string, string> = { CREATE: "cadastrado", UPDATE: "alterado", FOLLOWUP_UPDATE: "dados atualizados", CANCEL: "cancelado", CLOSE: "encerrado", REOPEN: "reaberto",
-  HISTORICAL_BACKFILL: "preenchido a partir do histórico" };
-function eventSnapshot(value: unknown) { return value == null ? "Sem valor anterior" : JSON.stringify(value, null, 2); }
+function eventSnapshot(value: unknown, m: Messages) { return value == null ? m.events.noPrevious : JSON.stringify(value, null, 2); }
 function eventDate(value: string) { return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short",
   timeZone: "America/Sao_Paulo" }).format(new Date(value)); }
 function shipmentLines(data: Followup) {
@@ -115,6 +98,9 @@ const documentKindLabels: Record<string, string> = { INVOICE: "Invoice", NF: "NF
 const documentKindOptions = newProcessDocumentKinds.map(kind => ({ value: kind, label: documentKindLabels[kind] ?? kind }));
 
 export default function FollowupPanel({ id }: { id: string }) {
+  const { m } = useI18n();
+  const t = m.followup;
+  const value = (raw: unknown) => displayValue(m, raw);
   const [data, setData] = useState<Followup>(); const [roles, setRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [notice, setNotice] = useState("");
   const [compatibilityWarning, setCompatibilityWarning] = useState("");
@@ -131,7 +117,7 @@ export default function FollowupPanel({ id }: { id: string }) {
       apiFetch("/auth/me", { signal: controller.signal }), loadOperationalOptions()]).then(async ([followup, me, optionValues]) => {
       const raw = await read<Partial<Followup>>(followup); const identity = await read<{ roles: string[] }>(me);
       if (!Array.isArray(raw.items) || !Array.isArray(raw.processes)) {
-        throw new Error("A API retornou um formato antigo para o acompanhamento da PO. Atualize a API antes de continuar.");
+        throw new Error(getMessages().followup.oldApiFormat);
       }
       const missingCollections = ["shipments", "events"].filter(key => !Array.isArray(raw[key as keyof Followup]));
       const processes = raw.processes.map(entry => ({ ...entry,
@@ -144,14 +130,14 @@ export default function FollowupPanel({ id }: { id: string }) {
         typeof entry.allocationVersion !== "string" || !("factoryShipDate" in entry));
       if (controller.signal.aborted) return;
       setData(result); setRoles(identity.roles); setOptions(optionValues);
+      const text = getMessages().followup;
       setCompatibilityWarning([
-        missingCollections.length
-          ? `A API não retornou: ${missingCollections.join(", ")}.` : "",
-        missingAllocationDates ? "A API ainda não suporta datas por divisão PO–IP; o campo ficará disponível após a atualização do serviço." : "",
+        missingCollections.length ? text.missingCollections(missingCollections.join(", ")) : "",
+        missingAllocationDates ? text.noAllocationDates : "",
       ].filter(Boolean).join(" "));
       setProcessDrafts(Object.fromEntries(result.processes.map(entry => [entry.process.id, draft(entry.process, processFields)])));
       setFactoryShipDrafts(Object.fromEntries(result.shipments.map(entry => [entry.allocationId, entry.factoryShipDate ?? ""])));
-    }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro inesperado."); })
+    }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : getMessages().common.unexpectedError); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [id, reload]);
@@ -163,21 +149,21 @@ export default function FollowupPanel({ id }: { id: string }) {
   async function save(action: () => Promise<unknown>, success: string | ((result: unknown) => string)) {
     setBusy(true); setError(""); setNotice("");
     try { const result = await action(); setNotice(typeof success === "string" ? success : success(result)); setReload(value => value + 1); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : m.common.unexpectedError); }
     finally { setBusy(false); }
   }
   function saveProcess(event: FormEvent<HTMLFormElement>, processId: string, version: string) {
     event.preventDefault();
     void save(() => send(`/api/v1/processes/${processId}/followup`, "PATCH",
       { fields: payload(processFields, processDrafts[processId]), reason: automaticAuditReason }, version),
-    result => withDateWarnings("Dados do IP atualizados.", result));
+    result => withDateWarnings(t.ipUpdated, result, m));
   }
   function saveFactoryShipDate(event: FormEvent<HTMLFormElement>, shipment: Shipment) {
     event.preventDefault();
     const factoryShipDate = factoryShipDrafts[shipment.allocationId] ?? "";
     void save(() => send(`/api/v1/purchase-orders/${id}/allocations/${shipment.allocationId}`, "PATCH",
       { factoryShipDate: factoryShipDate || null, reason: automaticAuditReason }, shipment.allocationVersion),
-    "Data de saída da fábrica atualizada para este IP.");
+    t.factoryShipSaved);
   }
   function documentBody(d: DocDraft, editing: boolean) {
     const body = { number: d.number, issueDate: d.issueDate || null,
@@ -197,23 +183,23 @@ export default function FollowupPanel({ id }: { id: string }) {
         activeId ? "PATCH" : "POST", documentBody(d, Boolean(activeId)), current?.version);
       setEditingDoc(previous => ({ ...previous, [processId]: "" }));
       setDocDrafts(previous => ({ ...previous, [processId]: blankDoc() }));
-    }, activeId ? "Documento atualizado." : "Documento cadastrado.");
+    }, activeId ? t.documentUpdated : t.documentCreated);
   }
   const processes = data?.processes ?? [];
-  return <section id="shipment-followup" className="card operational-panel" aria-label="Acompanhamento da PO">
-    <h2>Acompanhamento da PO</h2>
-    <p className="muted">Prazos e alertas são calculados automaticamente após distribuir quantidades.</p>
-    <details className="operational-help"><summary>Adicionar opções aos campos</summary><p>Fornecedores e produtos ficam em <Link className="text-link" href="/catalog">Cadastros</Link>; as demais opções ficam em <Link className="text-link" href="/catalog/values">Valores das entidades</Link>.</p></details>
-    {loading && <p role="status">Carregando acompanhamento…</p>}
+  return <section id="shipment-followup" className="card operational-panel" aria-label={t.title}>
+    <h2>{t.title}</h2>
+    <p className="muted">{t.intro}</p>
+    <details className="operational-help"><summary>{t.addOptions}</summary><p>{t.optionsBefore}<Link className="text-link" href="/catalog">{t.optionsCatalog}</Link>{t.optionsMiddle}<Link className="text-link" href="/catalog/values">{t.optionsValues}</Link>{t.optionsAfter}</p></details>
+    {loading && <p role="status">{t.loading}</p>}
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
     {compatibilityWarning && <p className="notice" role="status">{compatibilityWarning}</p>}
     {!loading && data && <>
       {data.items.length > 0 && <>
-        <h3>Resumo por item</h3>
-        <p className="muted">Onde está a quantidade pedida de cada item: por status do IP, o que falta distribuir e a próxima ETA.</p>
+        <h3>{t.itemSummary}</h3>
+        <p className="muted">{t.itemSummaryHelp}</p>
         <div className="table-scroll"><table><thead><tr>
-          <th>Produto</th><th>Qtd. pedida</th><th>A distribuir</th><th>Por status</th><th>Próxima ETA</th>
+          <th>{t.product}</th><th>{t.ordered}</th><th>{t.toDistribute}</th><th>{t.byStatus}</th><th>{t.nextEta}</th>
         </tr></thead><tbody>{data.items.map(item => {
           const summary = itemShipmentSummary(item.orderedQuantity,
             /^(CANCELLED|CANCELED)$/i.test(String(item.sourceStatus ?? "")),
@@ -224,16 +210,16 @@ export default function FollowupPanel({ id }: { id: string }) {
             <td><strong>{item.productCode}</strong><small>{value(item.description)}</small></td>
             <td>{formatNumber(item.orderedQuantity)} {value(item.unit) === "—" ? "" : value(item.unit)}</td>
             <td>{formatNumber(summary.toDistribute)}</td>
-            <td>{summary.byStatus.length ? summary.byStatus.map(entry => `${entry.status}: ${formatNumber(entry.quantity)}`).join(" · ") : "—"}</td>
+            <td>{summary.byStatus.length ? summary.byStatus.map(entry => `${statusLabel(m, entry.status)}: ${formatNumber(entry.quantity)}`).join(" · ") : "—"}</td>
             <td>{value(summary.nextEta)}</td>
           </tr>;
         })}</tbody></table></div>
       </>}
-      <h3>Linhas da PO por IP</h3>
-      <p className="muted">Cada distribuição gera uma linha. Os campos da PO vêm do pedido; os de pós embarque vêm do IP e aparecem em todas as linhas vinculadas a ele.</p>
-      {data.items.length === 0 ? <p>Cadastre um item na PO para iniciar o acompanhamento.</p> :
+      <h3>{t.linesTitle}</h3>
+      <p className="muted">{t.linesHelp}</p>
+      {data.items.length === 0 ? <p>{t.noItems}</p> :
         <div className="table-scroll po-ip-lines"><table><thead><tr>
-          <th>PO</th><th>Produto</th><th>Qtd. pedida</th><th>IP</th><th>Qtd. neste IP</th><th>Status</th><th>ETD</th><th>Departure</th><th>BL date</th><th>ETA</th><th>Chegada</th><th>ETE</th><th>Entrega</th><th>Detalhes</th>
+          <th>PO</th><th>{t.product}</th><th>{t.ordered}</th><th>IP</th><th>{t.inThisIp}</th><th>{t.status}</th><th>ETD</th><th>{t.departure}</th><th>{m.fields.blDate}</th><th>ETA</th><th>{t.arrival}</th><th>ETE</th><th>{t.delivery}</th><th>{t.details}</th>
         </tr></thead><tbody>{shipmentLines(data).map(({ item, shipment }) => {
           const process = shipment && processes.find(entry => entry.process.id === shipment.process.id);
           const documents = process?.documents ?? [];
@@ -241,12 +227,12 @@ export default function FollowupPanel({ id }: { id: string }) {
           const detailsId = `po-ip-line-${rowId}`;
           const lineExpanded = expandedLine === rowId;
           return <Fragment key={rowId}><tr>
-            <td><strong>{data.number}</strong><small>{data.supplierText || "Fornecedor não informado"}</small></td>
+            <td><strong>{data.number}</strong><small>{data.supplierText || t.noSupplier}</small></td>
             <td><strong>{item.productCode}</strong><small>{value(item.description)}</small></td>
             <td>{formatNumber(item.orderedQuantity)} {value(item.unit) === "—" ? "" : value(item.unit)}</td>
-            <td>{shipment ? <strong>{shipment.process.ipNumber}</strong> : <span className="po-ip-pending">Sem IP</span>}</td>
+            <td>{shipment ? <strong>{shipment.process.ipNumber}</strong> : <span className="po-ip-pending">{t.noIp}</span>}</td>
             <td>{shipment ? `${formatNumber(shipment.allocationQuantity)} ${item.unit ?? ""}` : "—"}</td>
-            <td>{shipment ? value(shipment.calculated.status) : /^(CANCELLED|CANCELED)$/i.test(String(item.sourceStatus ?? "")) ? "Cancelado" : "A distribuir"}</td>
+            <td>{shipment ? value(statusLabel(m, shipment.calculated.status)) : /^(CANCELLED|CANCELED)$/i.test(String(item.sourceStatus ?? "")) ? t.lineCancelled : t.toDistribute}</td>
             <td>{shipment ? value(shipment.process.etd) : "—"}</td>
             <td>{shipment ? value(shipment.process.actualPortDepartureDate) : "—"}</td>
             <td>{shipment ? value(shipment.process.blDate) : "—"}</td>
@@ -255,67 +241,68 @@ export default function FollowupPanel({ id }: { id: string }) {
             <td>{shipment ? value(shipment.calculated.ete) : "—"}</td>
             <td>{shipment ? value(shipment.process.deliveryDate) : "—"}</td>
             <td><button className="po-ip-line-toggle" type="button" aria-expanded={lineExpanded} aria-controls={detailsId}
-              onClick={() => setExpandedLine(current => current === rowId ? "" : rowId)}>{lineExpanded ? "Ocultar linha" : "Ver linha"}</button></td>
+              onClick={() => setExpandedLine(current => current === rowId ? "" : rowId)}>{lineExpanded ? t.hideLine : t.showLine}</button></td>
           </tr>{lineExpanded && <tr className="po-ip-line-detail"><td colSpan={14}><section id={detailsId} className="po-ip-line-detail-panel">
-              <h4>Pré embarque · PO {data.number}</h4>
+              <h4>{t.preShipmentPo(data.number)}</h4>
               <dl className="followup-grid">
-                {([["Importadora", data.importer], ["Fornecedor", data.supplierText], ["Data da PO", data.orderDate],
-                  ["Produto", item.productCode], ["Descrição", item.description], ["Quantidade pedida", formatNumber(item.orderedQuantity)],
-                  ["Preço unitário", item.unitPrice ? formatNumber(item.unitPrice) : null], ["Valor total", item.unitPrice ? calculatedTotal(item.orderedQuantity, item.unitPrice) : null],
-                  ["Moeda", item.currencyCode]] as [string, unknown][]).map(([label, fieldValue]) =>
+                {([[t.importer, data.importer], [t.supplier, data.supplierText], [t.poDate, data.orderDate],
+                  [t.product, item.productCode], [t.description, item.description], [t.orderedQuantity, formatNumber(item.orderedQuantity)],
+                  [t.unitPrice, item.unitPrice ? formatNumber(item.unitPrice) : null], [t.totalValue, item.unitPrice ? calculatedTotal(item.orderedQuantity, item.unitPrice, m) : null],
+                  [t.currency, item.currencyCode]] as [string, unknown][]).map(([label, fieldValue]) =>
                   <div key={label}><dt>{label}</dt><dd>{value(fieldValue)}</dd></div>)}
-                {purchaseOrderItemFields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{field.type === "number" || field.type === "money" ? formatNumber(item[field.key]) : value(item[field.key])}</dd></div>)}
+                {purchaseOrderItemFields.map(field => <div key={field.key}><dt>{fieldLabel(m, field)}</dt><dd>{field.type === "number" || field.type === "money" ? formatNumber(item[field.key]) : value(item[field.key])}</dd></div>)}
               </dl>
               {shipment ? <>
-                <h4>Pós embarque · IP {shipment.process.ipNumber}</h4>
+                <h4>{t.postShipmentIp(shipment.process.ipNumber)}</h4>
                 <dl className="followup-grid">
-                  <div><dt>Quantidade neste IP</dt><dd>{formatNumber(shipment.allocationQuantity)} {item.unit ?? ""}</dd></div>
-                  <div><dt>Saída da fábrica</dt><dd>{value(shipment.factoryShipDate)}</dd></div>
-                  <div><dt>Alerta</dt><dd>{value(shipment.calculated.alert)}</dd></div>
-                  {productLineIpFields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{field.type === "number" || field.type === "money" ? formatNumber(shipment.process[field.key]) : value(shipment.process[field.key])}</dd></div>)}
+                  <div><dt>{t.quantityInIp}</dt><dd>{formatNumber(shipment.allocationQuantity)} {item.unit ?? ""}</dd></div>
+                  <div><dt>{t.factoryShip}</dt><dd>{value(shipment.factoryShipDate)}</dd></div>
+                  <div><dt>{t.alert}</dt><dd>{value(shipment.calculated.alert)}</dd></div>
+                  {productLineIpFields.map(field => <div key={field.key}><dt>{fieldLabel(m, field)}</dt><dd>{field.type === "number" || field.type === "money" ? formatNumber(shipment.process[field.key]) : value(shipment.process[field.key])}</dd></div>)}
                 </dl>
-                {shipment.legacyFactoryShipDate && <p className="notice">Data antiga de saída da fábrica ({value(shipment.legacyFactoryShipDate)}) sem IP associado. Informe a data deste vínculo se necessário.</p>}
+                {shipment.legacyFactoryShipDate && <p className="notice">{t.legacyFactoryShip(value(shipment.legacyFactoryShipDate))}</p>}
                 {canWriteProcess && typeof shipment.allocationVersion === "string" && <form className="shipment-date-form" onSubmit={event => saveFactoryShipDate(event, shipment)}>
-                  <label>Saída da fábrica deste IP<input type="date" value={factoryShipDrafts[shipment.allocationId] ?? ""}
+                  <label>{t.factoryShipForIp}<input type="date" value={factoryShipDrafts[shipment.allocationId] ?? ""}
                     onChange={event => setFactoryShipDrafts(current => ({ ...current, [shipment.allocationId]: event.target.value }))} /></label>
-                  <button className="button secondary" disabled={busy || (factoryShipDrafts[shipment.allocationId] ?? "") === (shipment.factoryShipDate ?? "")}>Salvar data</button>
+                  <button className="button secondary" disabled={busy || (factoryShipDrafts[shipment.allocationId] ?? "") === (shipment.factoryShipDate ?? "")}>{t.saveDate}</button>
                 </form>}
-                <h4>Documentos do IP</h4>
+                <h4>{t.ipDocuments}</h4>
                 {documents.length ? <ul>{documents.map(document => <li key={document.id}>{document.kind} {document.number} · {value(document.issueDate)}
-                  {document.kind === "INVOICE" ? ` · ${formatNumber(document.quantity)} un. · ${formatNumber(document.amount)} ${document.currencyCode ?? ""}` : ""}
-                  {document.kind === "NF" ? ` · homologação ${value(document.homologationDate)}` : ""}</li>)}</ul> : <p>Nenhum documento registrado.</p>}
-                <details><summary>Indicadores calculados</summary><dl className="followup-grid">{calcLabels.map(([key, label]) =>
-                  <div key={key}><dt>{label}</dt><dd>{numericCalculatedFields.has(key) ? formatNumber(shipment.calculated[key]) : value(shipment.calculated[key])}</dd></div>)}</dl>
+                  {document.kind === "INVOICE" ? ` · ${formatNumber(document.quantity)} ${t.units} · ${formatNumber(document.amount)} ${document.currencyCode ?? ""}` : ""}
+                  {document.kind === "NF" ? ` · ${t.homologation(value(document.homologationDate))}` : ""}</li>)}</ul> : <p>{t.noDocuments}</p>}
+                <details><summary>{t.calculatedIndicators}</summary><dl className="followup-grid">{calcKeys.map(key =>
+                  <div key={key}><dt>{m.calc[key]}</dt><dd>{numericCalculatedFields.has(key) ? formatNumber(shipment.calculated[key])
+                    : key === "status" || key === "informedStatus" ? value(statusLabel(m, shipment.calculated[key])) : value(shipment.calculated[key])}</dd></div>)}</dl>
                   {shipment.calculated.stages && <dl className="followup-grid">{Object.entries(shipment.calculated.stages as Record<string, { targetDays: number | null; actualDays: number | null; delayDays: number | null }>).map(([name, stage]) =>
-                    <div key={name}><dt>{name.toUpperCase()}</dt><dd>Meta {formatNumber(stage.targetDays)} · Real {formatNumber(stage.actualDays)} · Desvio {formatNumber(stage.delayDays)} dias</dd></div>)}</dl>}
+                    <div key={name}><dt>{name.toUpperCase()}</dt><dd>{t.stage(formatNumber(stage.targetDays), formatNumber(stage.actualDays), formatNumber(stage.delayDays))}</dd></div>)}</dl>}
                 </details>
-              </> : <p>Distribua uma quantidade deste item para um IP na seção acima.</p>}
+              </> : <p>{t.distributeFirst}</p>}
             </section></td></tr>}</Fragment>;
         })}</tbody></table></div>}
-      <h3>Atualizar pós embarque por IP</h3>
-      <p className="muted">Preencha cada IP uma vez. As alterações serão exibidas em todas as linhas de PO ligadas a ele.</p>
+      <h3>{t.updateTitle}</h3>
+      <p className="muted">{t.updateHelp}</p>
       {processes.map(entry => {
         const p = entry.process;
         const totals = entry.invoiceTotals.amounts.map(total => `${formatNumber(total.amount)} ${total.currency}`).join(" · ") || "—";
         const documentDraft = docDrafts[p.id] ?? blankDoc();
         const editable = canWriteProcess && p.lifecycleStatus !== "CLOSED";
         return <article className="followup-document" key={p.id}>
-          <details><summary>IP {p.ipNumber} · {p.lifecycleStatus === "CLOSED" ? "encerrado" : "aberto"} · {entry.documents.length} documento(s)</summary>
-            <p>Invoices: {totals}{entry.invoiceTotals.incompleteLines ? ` · ${entry.invoiceTotals.incompleteLines} incompleta(s)` : ""}</p>
+          <details><summary>{t.ipLine(p.ipNumber, p.lifecycleStatus === "CLOSED", entry.documents.length)}</summary>
+            <p>{t.invoices(totals, entry.invoiceTotals.incompleteLines)}</p>
             <IpCalculatedSummary summary={entry.calculated} />
             {editable ? <form className="stack-form" onSubmit={event => saveProcess(event, p.id, p.version)}>
-              <h4>Dados do IP</h4>
+              <h4>{t.ipData}</h4>
               <FieldEditor fields={processFields} values={processDrafts[p.id] ?? {}}
                 setValues={values => setProcessDrafts(current => ({ ...current, [p.id]: values }))} options={options} />
-              <button className="button" disabled={busy}>Salvar IP</button>
+              <button className="button" disabled={busy}>{t.saveIp}</button>
             </form> : <dl className="followup-grid">{processFields.map(field =>
-              <div key={field.key}><dt>{field.label}</dt><dd>{field.type === "number" || field.type === "money" ? formatNumber(p[field.key]) : value(p[field.key])}</dd></div>)}</dl>}
-            <h4>Invoices, BLs e NFs</h4>
-            {entry.documents.length === 0 && <p>Nenhum documento registrado.</p>}
+              <div key={field.key}><dt>{fieldLabel(m, field)}</dt><dd>{field.type === "number" || field.type === "money" ? formatNumber(p[field.key]) : value(p[field.key])}</dd></div>)}</dl>}
+            <h4>{t.documentsTitle}</h4>
+            {entry.documents.length === 0 && <p>{t.noDocuments}</p>}
             {entry.documents.map(document => <div className="followup-document" key={document.id}>
               <strong>{document.kind} {document.number}</strong> · {value(document.issueDate)}
-              {document.kind === "INVOICE" && <> · {formatNumber(document.quantity)} un. · {formatNumber(document.amount)} {document.currencyCode ?? ""}</>}
-              {document.kind === "NF" && <> · homologação {value(document.homologationDate)}</>}
+              {document.kind === "INVOICE" && <> · {formatNumber(document.quantity)} {t.units} · {formatNumber(document.amount)} {document.currencyCode ?? ""}</>}
+              {document.kind === "NF" && <> · {t.homologation(value(document.homologationDate))}</>}
               {editable && document.kind !== "BL" && <button className="button secondary" type="button" onClick={() => {
                 setEditingDoc(current => ({ ...current, [p.id]: document.id }));
                 setDocDrafts(current => ({ ...current, [p.id]: {
@@ -325,56 +312,56 @@ export default function FollowupPanel({ id }: { id: string }) {
                   unitPrice: document.unitPrice ?? "", amount: document.amount ?? "",
                   currencyCode: document.currencyCode ?? "", notes: document.notes,
                 } }));
-              }}>Editar documento</button>}
+              }}>{t.editDocument}</button>}
             </div>)}
             {editable && <form className="stack-form" onSubmit={event => saveDoc(event, p.id, entry.documents)}>
-              <h4>{editingDoc[p.id] ? "Editar documento" : "Adicionar documento"}</h4>
+              <h4>{editingDoc[p.id] ? t.editDocument : t.addDocument}</h4>
               {!editingDoc[p.id] && <div className="operational-fields">
-                <label>Tipo<SearchableSelect ariaLabel="Tipo do documento" placeholder="" value={documentDraft.kind}
+                <label>{t.type}<SearchableSelect ariaLabel={t.documentType} placeholder="" value={documentDraft.kind}
                   onChange={kind => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, kind: kind as DocDraft["kind"] } }))}
                   options={documentKindOptions} /></label>
-                <label>Item relacionado<SearchableSelect ariaLabel="Item relacionado" placeholder="Documento geral do IP"
+                <label>{t.relatedItem}<SearchableSelect ariaLabel={t.relatedItem} placeholder={t.generalDocument}
                   value={documentDraft.purchaseOrderItemId} onChange={purchaseOrderItemId => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, purchaseOrderItemId } }))}
                   options={data.shipments.filter(shipment => shipment.process.id === p.id).flatMap(shipment => {
                     const item = data.items.find(row => row.id === shipment.itemId);
-                    return item ? [{ value: item.id, label: `${item.productCode} · linha ${item.lineNumber}`,
+                    return item ? [{ value: item.id, label: t.itemLine(item.productCode, item.lineNumber),
                       searchText: item.description == null ? "" : String(item.description) }] : [];
                   })} /></label>
               </div>}
               <div className="operational-fields">
-                <label>Número<input required maxLength={120} value={documentDraft.number} onChange={event => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, number: event.target.value } }))} /></label>
-                <label>Emissão<input type="date" value={documentDraft.issueDate} onChange={event => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, issueDate: event.target.value } }))} /></label>
-                {documentDraft.kind === "NF" && <label>Homologação<input type="date" value={documentDraft.homologationDate} onChange={event => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, homologationDate: event.target.value } }))} /></label>}
+                <label>{t.number}<input required maxLength={120} value={documentDraft.number} onChange={event => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, number: event.target.value } }))} /></label>
+                <label>{t.issue}<input type="date" value={documentDraft.issueDate} onChange={event => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, issueDate: event.target.value } }))} /></label>
+                {documentDraft.kind === "NF" && <label>{t.homologationLabel}<input type="date" value={documentDraft.homologationDate} onChange={event => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, homologationDate: event.target.value } }))} /></label>}
                 {documentDraft.kind === "INVOICE" && <>
-                  <label>Quantidade<input inputMode="decimal" value={documentDraft.quantity} onChange={event => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, quantity: event.target.value } }))} /></label>
-                  <label>Preço unitário<input inputMode="decimal" value={documentDraft.unitPrice} onChange={event => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, unitPrice: event.target.value } }))} /></label>
-                  <label>Valor total<input inputMode="decimal" value={documentDraft.amount} onChange={event => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, amount: event.target.value } }))} /></label>
-                  <label>Moeda<OperationalOptionSelect entity="currency" value={documentDraft.currencyCode} values={options}
+                  <label>{t.quantity}<input inputMode="decimal" value={documentDraft.quantity} onChange={event => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, quantity: event.target.value } }))} /></label>
+                  <label>{t.unitPrice}<input inputMode="decimal" value={documentDraft.unitPrice} onChange={event => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, unitPrice: event.target.value } }))} /></label>
+                  <label>{t.totalValue}<input inputMode="decimal" value={documentDraft.amount} onChange={event => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, amount: event.target.value } }))} /></label>
+                  <label>{t.currency}<OperationalOptionSelect entity="currency" value={documentDraft.currencyCode} values={options}
                     onChange={currencyCode => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, currencyCode } }))} /></label>
                 </>}
               </div>
-              <label>Observações<textarea maxLength={4000} value={documentDraft.notes} onChange={event => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, notes: event.target.value } }))} /></label>
-              <div className="operational-actions"><button className="button" disabled={busy}>{editingDoc[p.id] ? "Salvar documento" : "Adicionar documento"}</button>
+              <label>{t.notes}<textarea maxLength={4000} value={documentDraft.notes} onChange={event => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, notes: event.target.value } }))} /></label>
+              <div className="operational-actions"><button className="button" disabled={busy}>{editingDoc[p.id] ? t.saveDocument : t.addDocument}</button>
                 {editingDoc[p.id] && <button className="button secondary" type="button" onClick={() => {
                   setEditingDoc(current => ({ ...current, [p.id]: "" }));
                   setDocDrafts(current => ({ ...current, [p.id]: blankDoc() }));
-                }}>Cancelar edição</button>}</div>
+                }}>{t.cancelEdit}</button>}</div>
             </form>}
-            <Link className="text-link" href={`/processes/${p.id}`}>Ver histórico completo do IP →</Link>
+            <Link className="text-link" href={`/processes/${p.id}`}>{t.fullHistory}</Link>
           </details>
         </article>;
       })}
-      <details className="operational-event-history"><summary>Histórico de alterações ({data.events.length})</summary>
-        {data.events.length === 0 ? <p>Nenhum evento registrado.</p> : <ol className="operational-event-list">{data.events.map(event => <li key={event.id}>
+      <details className="operational-event-history"><summary>{m.events.history(data.events.length)}</summary>
+        {data.events.length === 0 ? <p>{m.events.none}</p> : <ol className="operational-event-list">{data.events.map(event => <li key={event.id}>
           <div className="operational-event-heading"><time dateTime={event.occurredAt}>{eventDate(event.occurredAt)}</time>
             <strong>{event.aggregateType === "IMPORT_PROCESS" ? `IP ${event.aggregateLabel}` : `PO ${event.aggregateLabel}`}</strong>
-            <span>{eventEntityLabels[event.entityType] ?? event.entityType} · {eventOperationLabels[event.operation] ?? event.operation}</span>
+            <span>{(m.events.entities as Record<string, string>)[event.entityType] ?? event.entityType} · {(m.events.operations as Record<string, string>)[event.operation] ?? event.operation}</span>
             {event.relatedLabel && <span>{event.relatedLabel}</span>}
           </div>
-          {event.reason && event.reason !== automaticAuditReason && <p>Justificativa: {event.reason}</p>}
-          <details><summary>Ver valores registrados</summary><div className="operational-event-values">
-            <div><strong>Antes</strong><pre>{eventSnapshot(event.oldValue)}</pre></div>
-            <div><strong>Depois</strong><pre>{eventSnapshot(event.newValue)}</pre></div>
+          {event.reason && event.reason !== automaticAuditReason && <p>{m.events.justification(event.reason)}</p>}
+          <details><summary>{m.events.viewValues}</summary><div className="operational-event-values">
+            <div><strong>{m.events.before}</strong><pre>{eventSnapshot(event.oldValue, m)}</pre></div>
+            <div><strong>{m.events.after}</strong><pre>{eventSnapshot(event.newValue, m)}</pre></div>
           </div></details>
         </li>)}</ol>}
       </details>

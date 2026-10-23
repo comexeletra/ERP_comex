@@ -6,6 +6,7 @@ import { apiFetch } from "../lib/api";
 import { formatNumber } from "../lib/format-number";
 import OperationalPoPanel from "./OperationalPoPanel";
 import FollowupPanel from "./FollowupPanel";
+import { useI18n } from "./I18nProvider";
 
 type Process = {
   id: string;
@@ -26,6 +27,8 @@ type Overview = {
 };
 
 export default function PurchaseOrderWorkspace({ id, returnPath }: { id: string; returnPath: string }) {
+  const { m, messages } = useI18n();
+  const t = m.poWorkspace;
   const [data, setData] = useState<Overview>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
@@ -44,57 +47,58 @@ export default function PurchaseOrderWorkspace({ id, returnPath }: { id: string;
     setLoading(true);
     apiFetch(`/api/v1/purchase-orders/${id}/overview`, { signal: controller.signal })
       .then(async overviewResponse => {
-        if (overviewResponse.status === 401) throw new Error("Sua sessão expirou. Entre novamente.");
-        if (overviewResponse.status === 403) throw new Error("Seu acesso não permite consultar esta PO.");
+        const text = messages();
+        if (overviewResponse.status === 401) throw new Error(text.common.sessionExpired);
+        if (overviewResponse.status === 403) throw new Error(text.poWorkspace.forbidden);
         if (overviewResponse.status === 404) {
-          throw new Error("PO não encontrada ou fora do seu escopo de acesso.");
+          throw new Error(text.poWorkspace.notFound);
         }
         if (!overviewResponse.ok) {
-          throw new Error("Não foi possível carregar os dados da PO.");
+          throw new Error(text.poWorkspace.loadFailed);
         }
         const overview = await overviewResponse.json() as Overview;
         if (!controller.signal.aborted) setData(overview);
       })
-      .catch((reason: unknown) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Erro inesperado."); })
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : messages().common.unexpectedError);
+      })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [id, retry]);
+  }, [id, messages, retry]);
 
   if (loading || error || !data) return <main className="shell">
-    <Link href={returnPath} className="back">← Carteira de POs</Link>
-    {loading && <p role="status">Carregando PO…</p>}
-    {error && <div className="notice error" role="alert"><p>{error}</p><button className="button" onClick={() => setRetry(value => value + 1)}>Tentar novamente</button></div>}
+    <Link href={returnPath} className="back">{m.common.backToPortfolio}</Link>
+    {loading && <p role="status">{t.loading}</p>}
+    {error && <div className="notice error" role="alert"><p>{error}</p><button className="button" onClick={() => setRetry(value => value + 1)}>{m.common.retry}</button></div>}
   </main>;
 
   return (
     <main className="shell">
-      <Link href={returnPath} className="back">← Carteira de POs</Link>
+      <Link href={returnPath} className="back">{m.common.backToPortfolio}</Link>
       <header className="page-header">
         <p className="eyebrow">PO TOTVS · {data.importer}</p>
         <h1>{data.number}</h1>
-        <p>Status da PO: {data.lifecycleStatus === "CLOSED" ? "Encerrada"
-          : data.lifecycleStatus === "CANCELLED" ? "Cancelada"
-            : data.lifecycleStatus === "DELETED" ? "Excluída da carteira ativa" : "Ativa"}.</p>
-        <p>{data.itemCount} itens · {data.processes.length} IPs vinculados.</p>
-        <p>Pré embarque na PO; quantidades e pós embarque por IP nesta mesma tela.</p>
+        <p>{t.status(m.poStatus[data.lifecycleStatus] ?? m.poStatus.ACTIVE)}</p>
+        <p>{t.counts(data.itemCount, data.processes.length)}</p>
+        <p>{t.flowHelp}</p>
       </header>
 
-      <nav className="po-workflow-nav" aria-label="Etapas do fluxo da PO">
-        <a href="#po-record">1. Dados da PO</a>
-        <a href="#ip-distribution">2. Quantidades por IP</a>
-        <a href="#shipment-followup">3. Linhas e pós embarque</a>
+      <nav className="po-workflow-nav" aria-label={t.steps}>
+        <a href="#po-record">{t.step1}</a>
+        <a href="#ip-distribution">{t.step2}</a>
+        <a href="#shipment-followup">{t.step3}</a>
       </nav>
 
       <OperationalPoPanel id={id} onChanged={() => { refreshOverview(); setOperationalRevision(value => value + 1); }} />
       <FollowupPanel key={operationalRevision} id={id} />
 
       <details id="linked-ips" className="card po-linked-ip-summary">
-        <summary>Resumo dos {data.processes.length} IPs relacionados e custos históricos</summary>
-        {data.processes.length === 0 && <p>Nenhum IP vinculado disponível no escopo desta PO.</p>}
-        {data.processes.map(process => <article className="process" key={process.id}><h3>{process.ipNumber} <span>{process.logisticsStatus ?? "Status logístico não informado"}</span></h3>
-          <p className="muted">Qualidade do IP: {process.qualityStatus}. Vínculo: {process.linkSource}. POs visíveis vinculadas a este IP: {process.linkedPurchaseOrderCount}.</p>
-          <Link className="text-link" href={`/processes/${process.id}`}>Abrir detalhe do IP →</Link>
-          {process.costs.length > 0 && <details className="historical-costs"><summary>Custos históricos ({process.costs.length})</summary><ul>{process.costs.map((cost, index) => <li key={`${cost.type}-${cost.currency}-${index}`}>{cost.type}: {formatNumber(cost.amount)} {cost.currency} · {cost.status}</li>)}</ul></details>}
+        <summary>{t.linkedSummary(data.processes.length)}</summary>
+        {data.processes.length === 0 && <p>{t.noLinked}</p>}
+        {data.processes.map(process => <article className="process" key={process.id}><h3>{process.ipNumber} <span>{process.logisticsStatus ?? t.noLogisticsStatus}</span></h3>
+          <p className="muted">{t.ipQuality(process.qualityStatus, process.linkSource, process.linkedPurchaseOrderCount)}</p>
+          <Link className="text-link" href={`/processes/${process.id}`}>{t.openIp}</Link>
+          {process.costs.length > 0 && <details className="historical-costs"><summary>{t.historicalCosts(process.costs.length)}</summary><ul>{process.costs.map((cost, index) => <li key={`${cost.type}-${cost.currency}-${index}`}>{cost.type}: {formatNumber(cost.amount)} {cost.currency} · {cost.status}</li>)}</ul></details>}
         </article>)}
       </details>
     </main>
