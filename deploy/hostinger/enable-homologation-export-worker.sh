@@ -56,7 +56,7 @@ chmod 0644 "$dropin_file"
 
 systemd-analyze verify "$unit_file"
 systemctl daemon-reload
-readonly started_at=$(date --iso-8601=seconds)
+readonly started_at=$(date '+%Y-%m-%d %H:%M:%S')
 systemctl enable --now import-erp-hml-export-worker
 if [[ $was_active == true ]]; then
   systemctl restart import-erp-hml-export-worker
