@@ -387,7 +387,8 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
                     { value: "NEW", label: t.createDraft }]} /></label>
                 {route.type === "EXISTING" && <label>{t.destinationIp}<SearchableSelect ariaLabel={t.destinationIp} required value={route.processId}
                   onChange={processId => setCancellationRoutes(current => ({ ...current, [order.id]: { type: "EXISTING", processId } }))}
-                  options={destinationIps.map(target => ({ value: target.id, label: `${target.ipNumber} · ${target.recordStatus ?? ""}` }))} /></label>}
+                  options={destinationIps.map(target => ({ value: target.id,
+                    label: `${target.ipNumber} · ${(t.record as Record<string, string>)[target.recordStatus ?? ""] ?? target.recordStatus ?? ""}` }))} /></label>}
                 {route.type === "NEW" && <label>{t.newIpRef}<input required maxLength={80} value={route.ipNumber}
                   onChange={event => setCancellationRoutes(current => ({ ...current, [order.id]: { type: "NEW", ipNumber: event.target.value } }))} /></label>}
               </div>;

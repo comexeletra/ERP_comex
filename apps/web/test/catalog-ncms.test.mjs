@@ -5,16 +5,21 @@ import { createNcmCatalogUrl, createNcmPayload, readNcmRefreshStart,
   updateNcmPayload } from "../lib/catalog-ncms.ts";
 import { describeNcmAttributeCondition, describeNcmCreationAct, describeNcmDomainOption,
   describeNcmFillType } from "../lib/catalog-ncm-attributes.ts";
+import { en } from "../lib/i18n/en.ts";
+import { ptBR } from "../lib/i18n/pt-BR.ts";
+import { zhCN } from "../lib/i18n/zh-CN.ts";
 
 const catalogPage = readFileSync(new URL("../app/catalog/values/page.tsx", import.meta.url), "utf8");
 
 test("manual NCM refresh accepts the asynchronous API contract and explains a non-JSON gateway error", async () => {
-  assert.equal(await readNcmRefreshStart(Response.json({ status: "started" }, { status: 202 })), "started");
-  assert.equal(await readNcmRefreshStart(Response.json({ status: "running" }, { status: 202 })), "running");
-  await assert.rejects(readNcmRefreshStart(new Response("Bad Gateway", { status: 502 })),
+  assert.equal(await readNcmRefreshStart(Response.json({ status: "started" }, { status: 202 }), ptBR), "started");
+  assert.equal(await readNcmRefreshStart(Response.json({ status: "running" }, { status: 202 }), ptBR), "running");
+  await assert.rejects(readNcmRefreshStart(new Response("Bad Gateway", { status: 502 }), ptBR),
     /atualização não pôde ser iniciada \(HTTP 502\)/u);
-  await assert.rejects(readNcmRefreshStart(Response.json({ detail: "Siscomex indisponível" }, { status: 503 })),
+  await assert.rejects(readNcmRefreshStart(Response.json({ detail: "Siscomex indisponível" }, { status: 503 }), ptBR),
     /Siscomex indisponível/u);
+  await assert.rejects(readNcmRefreshStart(new Response("Bad Gateway", { status: 502 }), en),
+    /update could not be started \(HTTP 502\)/u);
 });
 
 test("NCM values load from the global catalog without importer filters", () => {
@@ -43,12 +48,18 @@ test("NCM create and edit payloads use global catalog fields without importer", 
 });
 
 test("NCM catalog labels render Portuguese accents correctly", () => {
-  assert.match(catalogPage, /Próxima sincronização programada/iu);
-  assert.match(catalogPage, /último catálogo Siscomex sincronizado/iu);
-  assert.match(catalogPage, /Atualizar NCMs já cadastrados/iu);
-  assert.match(catalogPage, /Pesquise pela descrição ou pelo código/iu);
+  const t = ptBR.entityValues;
+  assert.match(t.nextSync("10/23/2026 12:00"), /Próxima sincronização programada/iu);
+  assert.match(t.ncmSearchHelp, /último catálogo Siscomex sincronizado/iu);
+  assert.match(t.refreshNcms, /Atualizar NCMs já cadastrados/iu);
+  assert.match(t.officialHelp, /Pesquise pela descrição ou pelo código/iu);
+  assert.match(catalogPage, /t\.nextSync\(/u);
+  assert.match(catalogPage, /\{t\.ncmSearchHelp\}/u);
+  assert.match(catalogPage, /t\.refreshNcms\}/u);
+  assert.match(catalogPage, /\{t\.officialHelp\}/u);
   assert.match(catalogPage, /\/api\/v1\/ncms\/sync-status/u);
   assert.doesNotMatch(catalogPage, /[ÃÂ�]/u);
+  assert.doesNotMatch(JSON.stringify(Object.values(t).filter(value => typeof value === "string")), /[ÃÂ�]/u);
 });
 
 test("NCM attribute conditions use the controlling field name and clarify option codes", () => {
@@ -58,20 +69,25 @@ test("NCM attribute conditions use the controlling field name and clarify option
       { code: "99", description: "Outros" }, { code: "97", description: "Não informado" }] };
   assert.equal(describeNcmAttributeCondition(
     "'ATT_14545' igual '83' OU 'ATT_14545' igual '84' OU 'ATT_14545' igual '90'",
-    controlling,
+    ptBR, controlling,
   ), "Obrigatório quando “Categoria do produto” for Produto para diagnóstico (83), Material hospitalar (84) ou Outro dispositivo (90).");
   assert.equal(describeNcmAttributeCondition(
-    "'ATT_14545' Diferente '99' E 'ATT_14545' Diferente '97'", controlling,
+    "'ATT_14545' Diferente '99' E 'ATT_14545' Diferente '97'", ptBR, controlling,
   ), "Obrigatório quando “Categoria do produto” não for Outros (99) nem Não informado (97).");
   assert.equal(describeNcmAttributeCondition(
     "ATT_14547 igual true",
-    { code: "ATT_14547", displayName: "É produto estéril?" },
+    ptBR, { code: "ATT_14547", displayName: "É produto estéril?" },
   ), "Obrigatório quando “É produto estéril?” for Sim.");
-  assert.match(describeNcmAttributeCondition("regra (complexa)"), /regra específica do Siscomex/u);
+  assert.match(describeNcmAttributeCondition("regra (complexa)", ptBR), /regra específica do Siscomex/u);
   assert.equal(describeNcmDomainOption({ code: "82", description: "Dispositivo médico" }), "Dispositivo médico (82)");
-  assert.equal(describeNcmFillType("LISTA_ESTATICA"), "Escolha uma opção da lista oficial");
-  assert.equal(describeNcmCreationAct({ tipoOrgaoAtoIni: "Resolução", numeroAtoIni: "42", anoAtoIni: "2022" }),
+  assert.equal(describeNcmFillType("LISTA_ESTATICA", ptBR), "Escolha uma opção da lista oficial");
+  assert.equal(describeNcmCreationAct({ tipoOrgaoAtoIni: "Resolução", numeroAtoIni: "42", anoAtoIni: "2022" }, ptBR),
     "Ato legal de criação: Resolução · nº 42/2022");
+  assert.equal(describeNcmAttributeCondition(
+    "'ATT_14545' igual '83' OU 'ATT_14545' igual '84'", en, controlling,
+  ), "Required when “Categoria do produto” is Produto para diagnóstico (83) or Material hospitalar (84).");
+  assert.equal(describeNcmAttributeCondition("ATT_14547 igual true", zhCN,
+    { code: "ATT_14547", displayName: "É produto estéril?" }), "当 “É produto estéril?” 为 是 时必填。");
   assert.match(catalogPage, /NcmAttributeOptions options=\{attribute\.domain\}/u);
   assert.match(catalogPage, /attribute\.subattributes/u);
   assert.match(catalogPage, /NcmCreationAct act=\{ncm\.creationAct\}/u);

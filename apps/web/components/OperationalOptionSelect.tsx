@@ -19,8 +19,10 @@ export async function loadOperationalCatalog(): Promise<OperationalCatalog> {
 
 export function OperationalOptionSelect({ entity, value, values, onChange, required = false }:
   { entity: string; value: string; values: OperationalOption[]; onChange: (value: string) => void; required?: boolean }) {
+  const { m } = useI18n();
   const options = values.filter(option => option.entity === entity);
-  return <SearchableSelect required={required} value={value} onChange={onChange} ariaLabel={entity}
+  return <SearchableSelect required={required} value={value} onChange={onChange}
+    ariaLabel={(m.entityValues.entities as Record<string, string>)[entity] ?? entity}
     options={options.map(option => ({ value: option.value,
       label: entity === "importer" ? option.shortName || option.value : option.value }))} />;
 }

@@ -1,3 +1,17 @@
+import type { Messages } from "./i18n/pt-BR";
+
+// The language provider registers the current dictionary here, since lib modules do not import it.
+let apiMessages: (() => Messages) | null = null;
+
+export function setApiMessages(source: () => Messages): void {
+  apiMessages = source;
+}
+
+function apiText(): Messages["api"] {
+  if (!apiMessages) throw new Error("setApiMessages must run before the first API call.");
+  return apiMessages().api;
+}
+
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const method = (init.method ?? "GET").toUpperCase();
   const headers = new Headers(init.headers);
@@ -5,13 +19,13 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   if (emptyPost) headers.set("content-type", "application/json");
   if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
     const csrf = await fetch("/auth/csrf", { credentials: "same-origin", cache: "no-store" });
-    if (!csrf.ok) throw new Error("Sua sessão expirou. Entre novamente para continuar.");
+    if (!csrf.ok) throw new Error(apiText().sessionExpired);
     const payload = await csrf.json() as { token: string };
     headers.set("X-CSRF-TOKEN", payload.token);
   }
 
   if (/^https?:\/\//i.test(path)) {
-    throw new Error("A API deve usar a mesma origem da aplicação.");
+    throw new Error(apiText().sameOrigin);
   }
 
   return fetch(path, {
@@ -52,9 +66,9 @@ export async function readApiJson<T>(response: Response): Promise<T> {
     body = raw ? JSON.parse(raw) as T & { detail?: string } : undefined;
   } catch {
     const excerpt = raw.trim().slice(0, 240);
-    throw new Error(`A API respondeu HTTP ${response.status} sem JSON${excerpt ? `: ${excerpt}` : "."}`);
+    throw new Error(apiText().noJson(response.status, excerpt));
   }
-  if (!response.ok) throw new Error(body?.detail ?? `Falha na API (HTTP ${response.status}).`);
-  if (body === undefined) throw new Error(`A API respondeu HTTP ${response.status} sem conteúdo.`);
+  if (!response.ok) throw new Error(body?.detail ?? apiText().failed(response.status));
+  if (body === undefined) throw new Error(apiText().empty(response.status));
   return body as T;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useI18n } from "../../../components/I18nProvider";
 import { apiFetch } from "../../../lib/api";
 
 type Treatment = {
@@ -23,6 +24,8 @@ function todayInBrasilia(): string {
 }
 
 export function NcmTaxTreatments({ id, code }: { id: string; code: string }) {
+  const { m } = useI18n();
+  const t = m.taxTreatments;
   const [date, setDate] = useState(todayInBrasilia);
   const [country, setCountry] = useState("");
   const [uf, setUf] = useState("");
@@ -40,49 +43,46 @@ export function NcmTaxTreatments({ id, code }: { id: string; code: string }) {
         destinationUf: uf.toUpperCase(), destinationCity: city });
       const response = await apiFetch(`/api/v1/ncms/${id}/tax-treatments?${query}`, { cache: "no-store" });
       const body = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(body?.detail || `Consulta tributária indisponível (HTTP ${response.status}).`);
+      if (!response.ok) throw new Error(body?.detail || t.unavailable(response.status));
       setResult(body as Result);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Não foi possível consultar os tratamentos tributários.");
+      setError(cause instanceof Error ? cause.message : t.failed);
     } finally { setLoading(false); }
   }
   return <details className="ncm-tax">
-    <summary>Consultar tratamentos tributários da NCM {code}</summary>
-    <p className="muted">Informe os dados da importação para ver fundamentos que podem se aplicar.
-      Esta consulta não calcula impostos nem confirma benefícios fiscais.</p>
+    <summary>{t.summary(code)}</summary>
+    <p className="muted">{t.help}</p>
     <form className="ncm-tax-form" onSubmit={event => void consult(event)}>
-      <label>Data do fato gerador<input type="date" required value={date}
+      <label>{t.date}<input type="date" required value={date}
         onChange={event => setDate(event.target.value)} /></label>
-      <label>País de origem — código Siscomex<input inputMode="numeric" pattern="[0-9]{1,3}"
+      <label>{t.country}<input inputMode="numeric" pattern="[0-9]{1,3}"
         maxLength={3} required value={country} onChange={event => setCountry(event.target.value)}
-        placeholder="Ex.: 023" /></label>
-      <label>UF de destino<input maxLength={2} pattern="[A-Za-z]{2}" required value={uf}
-        onChange={event => setUf(event.target.value)} placeholder="Ex.: SP" /></label>
-      <label>Município de destino — código IBGE<input inputMode="numeric" pattern="[0-9]{7}"
+        placeholder={t.countryPlaceholder} /></label>
+      <label>{t.uf}<input maxLength={2} pattern="[A-Za-z]{2}" required value={uf}
+        onChange={event => setUf(event.target.value)} placeholder={t.ufPlaceholder} /></label>
+      <label>{t.city}<input inputMode="numeric" pattern="[0-9]{7}"
         maxLength={7} required value={city} onChange={event => setCity(event.target.value)}
-        placeholder="7 dígitos" /></label>
-      <button className="button secondary" disabled={loading}>{loading ? "Consultando..." : "Consultar tratamentos"}</button>
+        placeholder={t.cityPlaceholder} /></label>
+      <button className="button secondary" disabled={loading}>{loading ? t.consulting : t.consult}</button>
     </form>
     {error && <p className="form-error" role="alert">{error}</p>}
     {result && <div className="ncm-tax-result" role="status">
-      {result.stale && <p><strong>Dados armazenados:</strong> a atualização da fonte oficial não pôde ser confirmada.</p>}
-      <p><strong>Consulta parcial.</strong> {result.limitation}</p>
-      <p className="muted">Data consultada: {result.referenceDate}. Fonte: <a href={result.source}
-        target="_blank" rel="noreferrer">Portal Único Siscomex — TTCE</a>.
-        {result.fetchedAt ? ` Arquivo obtido em ${new Date(result.fetchedAt).toLocaleString("pt-BR")}.` : ""}</p>
+      {result.stale && <p><strong>{t.storedBefore}</strong>{t.storedAfter}</p>}
+      <p><strong>{t.partial}</strong> {result.limitation}</p>
+      <p className="muted">{t.referenceDate(result.referenceDate)}<a href={result.source}
+        target="_blank" rel="noreferrer">{t.sourceLink}</a>.
+        {result.fetchedAt ? t.fetchedAt(new Date(result.fetchedAt).toLocaleString("pt-BR")) : ""}</p>
       {result.treatments.length ? <ul className="ncm-tax-list">{result.treatments.map((item, index) =>
         <li key={`${item.tax.code}-${item.legalBasis.code}-${index}`}>
           <strong>{item.tax.name}</strong>
-          <p>Regime: {item.regime.name}. Fundamento: {item.legalBasis.name}.
-            {item.legalBasis.type?.toLowerCase() === "opcional" ? " Exige escolha e comprovação do enquadramento." : ""}</p>
-          {item.attributes.length > 0 && <details><summary>Dados adicionais exigidos ({item.attributes.length})</summary>
+          <p>{t.regime(item.regime.name, item.legalBasis.name)}
+            {item.legalBasis.type?.toLowerCase() === "opcional" ? t.optional : ""}</p>
+          {item.attributes.length > 0 && <details><summary>{t.extraData(item.attributes.length)}</summary>
             <ul>{item.attributes.map(attribute => <li key={attribute.code}>{attribute.name}
               {attribute.fillType ? ` — ${attribute.fillType}` : ""}</li>)}</ul>
           </details>}
-          <details><summary>Referência técnica</summary><p>Tributo {item.tax.code}; regime {item.regime.code};
-            fundamento {item.legalBasis.code}.</p></details>
-        </li>)}</ul> : <p>O arquivo consultado não listou fundamentos com atributos adicionais ou opcionais
-          para esses parâmetros. Isso não significa ausência de impostos.</p>}
+          <details><summary>{t.technical}</summary><p>{t.technicalCodes(item.tax.code, item.regime.code, item.legalBasis.code)}</p></details>
+        </li>)}</ul> : <p>{t.none}</p>}
     </div>}
   </details>;
 }

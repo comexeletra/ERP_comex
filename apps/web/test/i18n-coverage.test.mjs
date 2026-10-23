@@ -4,12 +4,6 @@ import test from "node:test";
 
 const root = new URL("../", import.meta.url);
 
-// Screens still being translated. Remove each file from this list when it moves to the dictionaries.
-const pending = new Set([
-  "app/catalog/values/NcmTaxTreatments.tsx",
-  "app/catalog/values/page.tsx",
-]);
-
 async function tsxFiles(directory) {
   const entries = await readdir(new URL(directory, root), { withFileTypes: true });
   const nested = await Promise.all(entries.map(entry => entry.isDirectory()
@@ -30,12 +24,14 @@ function stripComments(code) {
 /** Finds user-facing text written directly in a component instead of coming from the dictionaries. */
 export function findHardcodedTexts(code) {
   const lines = code.split(/\r?\n/u).filter(line => !line.includes("i18n-ignore"));
-  const body = stripComments(lines.join("\n"));
+  // Code samples such as <code>values</code> name JSON properties, not interface text.
+  const body = stripComments(lines.join("\n")).replace(/<code>[^<]*<\/code>/gu, "<code></code>");
   const found = [];
   for (const match of body.matchAll(/>([^<>{}=;&|()]*[A-Za-zÀ-ÿ]{3,}[^<>{}=;&|()]*)<(\/?)/gu)) {
     const text = match[1].trim();
     // `,\n  key:` comes from JSX values in object literals; a single word before `<x` is a TS generic.
-    if (text.startsWith(",") || brandNames.has(text) || (/^\w+$/u.test(text) && !match[2])) continue;
+    // A leading ":" or "?" is the rest of a conditional expression between two JSX elements.
+    if (/^[,:?]/u.test(text) || brandNames.has(text) || (/^\w+$/u.test(text) && !match[2])) continue;
     if (/[a-zà-ÿ]{2}/u.test(text)) found.push(text);
   }
   for (const match of body.matchAll(/\b(?:aria-label|placeholder|title|alt|label)="([^"]*)"/gu)) {
@@ -58,6 +54,8 @@ test("the scanner flags loose Portuguese text and accepts dictionary lookups", (
   assert.deepEqual(findHardcodedTexts("const icons = { a: <><path /></>,\n  ship: <><path /></> };"), []);
   assert.deepEqual(findHardcodedTexts('status === "AGUARDANDO PRODUÇÃO"'), []);
   assert.deepEqual(findHardcodedTexts('roles.includes("Importação")'), []);
+  assert.deepEqual(findHardcodedTexts("{loading ? <p>{t.loading}</p> : items.length ? <ul /> : null}"), []);
+  assert.deepEqual(findHardcodedTexts("<p>{t.before}<code>values</code>{t.after}</p>"), []);
   assert.deepEqual(findHardcodedTexts('const api = "Senha atual inválida."; // i18n-ignore: API contract'), []);
 });
 
@@ -65,7 +63,6 @@ test("every screen takes its texts from the dictionaries", async () => {
   const files = [...await tsxFiles("app/"), ...await tsxFiles("components/")];
   const offenders = [];
   for (const file of files) {
-    if (pending.has(file)) continue;
     const texts = findHardcodedTexts(await readFile(new URL(file, root), "utf8"));
     if (texts.length) offenders.push(`${file}: ${texts.slice(0, 5).join(" | ")}`);
   }

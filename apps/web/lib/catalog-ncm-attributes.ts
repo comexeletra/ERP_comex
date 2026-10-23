@@ -1,3 +1,5 @@
+import type { Messages } from "./i18n/pt-BR";
+
 export type NcmDomainOption = { code: string; description: string };
 export type NcmAttributeReference = {
   code: string;
@@ -10,50 +12,42 @@ export type NcmCreationAct = {
   anoAtoIni: string | null;
 };
 
-function joinPortuguese(items: string[], conjunction = "ou"): string {
+/** Joins "A, B or C"; `conjunction` carries its own spacing because Chinese uses none. */
+function joinList(items: string[], conjunction: string, m: Messages): string {
   if (items.length < 2) return items[0] ?? "";
-  if (items.length === 2) return `${items[0]} ${conjunction} ${items[1]}`;
-  return `${items.slice(0, -1).join(", ")} ${conjunction} ${items.at(-1)}`;
+  return `${items.slice(0, -1).join(m.ncm.listSeparator)}${conjunction}${items.at(-1)}`;
 }
 
 export function describeNcmDomainOption(option: NcmDomainOption): string {
   return option.description === option.code ? option.code : `${option.description} (${option.code})`;
 }
 
-export function describeNcmCreationAct(act: NcmCreationAct | null | undefined): string | null {
+export function describeNcmCreationAct(act: NcmCreationAct | null | undefined, m: Messages): string | null {
   if (!act) return null;
   const parts = [act.tipoOrgaoAtoIni,
-    act.numeroAtoIni ? `nº ${act.numeroAtoIni}${act.anoAtoIni ? `/${act.anoAtoIni}` : ""}` : null,
-    !act.numeroAtoIni && act.anoAtoIni ? `ano ${act.anoAtoIni}` : null].filter(Boolean);
-  return parts.length ? `Ato legal de criação: ${parts.join(" · ")}` : null;
+    act.numeroAtoIni ? m.ncm.actNumber(`${act.numeroAtoIni}${act.anoAtoIni ? `/${act.anoAtoIni}` : ""}`) : null,
+    !act.numeroAtoIni && act.anoAtoIni ? m.ncm.actYear(act.anoAtoIni) : null].filter(Boolean);
+  return parts.length ? m.ncm.creationAct(parts.join(" · ")) : null;
 }
 
-export function describeNcmFillType(fillType: string | null): string | null {
-  switch (fillType?.toUpperCase()) {
-    case "LISTA_ESTATICA": return "Escolha uma opção da lista oficial";
-    case "COMPOSTO": return "Preencha as informações que compõem este campo";
-    case "BOOLEANO": return "Responda Sim ou Não";
-    case "TEXTO": return "Informe a resposta em texto";
-    case "NUMERO_INTEIRO": return "Informe um número inteiro";
-    case "NUMERO_REAL": return "Informe um número";
-    case "DATA": return "Informe uma data";
-    default: return null;
-  }
+export function describeNcmFillType(fillType: string | null, m: Messages): string | null {
+  return (m.ncm.fillTypes as Record<string, string>)[fillType?.toUpperCase() ?? ""] ?? null;
 }
 
-function describeValue(value: string, attribute: NcmAttributeReference): string {
-  if (/^true$/iu.test(value)) return "Sim";
-  if (/^false$/iu.test(value)) return "Não";
+function describeValue(value: string, attribute: NcmAttributeReference, m: Messages): string {
+  if (/^true$/iu.test(value)) return m.ncm.yes;
+  if (/^false$/iu.test(value)) return m.ncm.no;
   const option = attribute.domain?.find(item => item.code === value);
-  return option ? describeNcmDomainOption(option) : `opção ${value}`;
+  return option ? describeNcmDomainOption(option) : m.ncm.option(value);
 }
 
 export function describeNcmAttributeCondition(
   condition: string | null,
+  m: Messages,
   controllingAttribute?: NcmAttributeReference,
   attributesByCode: ReadonlyMap<string, NcmAttributeReference> = new Map(),
 ): string {
-  if (!condition) return "Obrigatório quando uma condição definida pelo Siscomex for atendida.";
+  if (!condition) return m.ncm.genericCondition;
 
   const parts = condition.trim().split(/\s+(E|OU)\s+/iu);
   const connectors = parts.filter((_, index) => index % 2 === 1).map(value => value.toUpperCase());
@@ -64,7 +58,7 @@ export function describeNcmAttributeCondition(
       value: (match[3] ?? match[4] ?? match[5] ?? "").trim() };
   });
   if (clauses.some(clause => !clause || !clause.value) || new Set(connectors).size > 1) {
-    return "Obrigatório conforme uma regra específica do Siscomex. Consulte a referência técnica.";
+    return m.ncm.specificRule;
   }
 
   const rules = clauses as Array<{ code: string; operator: string; value: string }>;
@@ -73,13 +67,13 @@ export function describeNcmAttributeCondition(
   const attribute = attributesByCode.get(rules[0].code)
     ?? (controllingAttribute?.code === rules[0].code ? controllingAttribute : undefined);
   if (sameCode && sameOperator && attribute) {
-    const values = rules.map(rule => describeValue(rule.value, attribute));
+    const values = rules.map(rule => describeValue(rule.value, attribute, m));
     const name = `“${attribute.displayName}”`;
     if (rules[0].operator === "equal" && (rules.length === 1 || connectors[0] === "OU")) {
-      return `Obrigatório quando ${name} for ${joinPortuguese(values)}.`;
+      return m.ncm.requiredWhenIs(name, joinList(values, m.ncm.or, m));
     }
     if (rules[0].operator === "different" && (rules.length === 1 || connectors[0] === "E")) {
-      return `Obrigatório quando ${name} não for ${joinPortuguese(values, "nem")}.`;
+      return m.ncm.requiredWhenIsNot(name, joinList(values, m.ncm.nor, m));
     }
   }
 
@@ -87,10 +81,12 @@ export function describeNcmAttributeCondition(
     const reference = attributesByCode.get(rule.code)
       ?? (controllingAttribute?.code === rule.code ? controllingAttribute : undefined);
     if (!reference) return null;
-    return `“${reference.displayName}” ${rule.operator === "equal" ? "for" : "não for"} ${describeValue(rule.value, reference)}`;
+    const name = `“${reference.displayName}”`;
+    const value = describeValue(rule.value, reference, m);
+    return rule.operator === "equal" ? m.ncm.clauseIs(name, value) : m.ncm.clauseIsNot(name, value);
   });
   if (rendered.some(value => value === null)) {
-    return "Obrigatório conforme uma regra específica do Siscomex. Consulte a referência técnica.";
+    return m.ncm.specificRule;
   }
-  return `Obrigatório quando ${joinPortuguese(rendered as string[], connectors[0] === "E" ? "e" : "ou")}.`;
+  return m.ncm.requiredWhen(joinList(rendered as string[], connectors[0] === "E" ? m.ncm.and : m.ncm.or, m));
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
+import { setApiMessages } from "../lib/api";
 import { en } from "../lib/i18n/en";
 import { defaultLocale, Locale, localeStorageKey, readStoredLocale, storeLocale } from "../lib/i18n/locales";
 import { Messages, ptBR } from "../lib/i18n/pt-BR";
@@ -40,6 +41,7 @@ const currentLocale = () => chosenLocale ?? readStoredLocale(window.localStorage
 const serverLocale = () => defaultLocale;
 /** Current dictionary for code outside React components, such as loaders and validators. */
 export const getMessages = () => typeof window === "undefined" ? ptBR : dictionaries[currentLocale()];
+setApiMessages(getMessages);
 
 export default function I18nProvider({ children }: { children: ReactNode }) {
   const locale = useSyncExternalStore(subscribe, currentLocale, serverLocale);

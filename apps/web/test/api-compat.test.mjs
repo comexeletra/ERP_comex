@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { hasIpLifecycleSupport, hasPoLifecycleSupport, isMissingApiRoute } from "../lib/api.ts";
+import { hasIpLifecycleSupport, hasPoLifecycleSupport, isMissingApiRoute, readApiJson, setApiMessages } from "../lib/api.ts";
 import { deletedPurchaseOrderActions, purchaseOrderLifecycleActions, purchaseOrderNumberBlockMessage } from "../lib/po-lifecycle.ts";
 import { en } from "../lib/i18n/en.ts";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
@@ -79,4 +79,11 @@ test("offers restore and replace for a deleted PO only to lifecycle managers", (
   assert.deepEqual(deletedPurchaseOrderActions(false, true), { restore: false, replace: false, needsManager: true });
   assert.match(purchaseOrderNumberBlockMessage({ sameImporterDuplicate: false, sameImporterDeleted: true }, "030201", ptBR),
     /Restaure-a como estava ou com os dados da planilha/u);
+});
+
+test("API error messages follow the registered dictionary", async () => {
+  setApiMessages(() => en);
+  await assert.rejects(readApiJson(new Response("oops", { status: 502 })), /The API answered HTTP 502 without JSON: oops/u);
+  setApiMessages(() => ptBR);
+  await assert.rejects(readApiJson(new Response("", { status: 500 })), /Falha na API \(HTTP 500\)\./u);
 });
