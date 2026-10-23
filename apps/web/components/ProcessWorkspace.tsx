@@ -11,6 +11,10 @@ import { formatNumber } from "../lib/format-number";
 import { SearchableSelect } from "./SearchableSelect";
 import ProcessPostShipmentPanel from "./ProcessPostShipmentPanel";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
+import { useI18n } from "./I18nProvider";
+
+// Exact API error text when the importer cannot be changed; the API answers in Portuguese.
+const importerChangeRejected = "Revise o IP."; // i18n-ignore: API contract
 
 type Cost = { id: string; type: string; currency: string; amount: string; status: string; sourceSheetName: string; sourceRowNumber: number; sourceColumn: string };
 type Order = { id: string; number: string; importer: string; linkSource: string };
@@ -46,6 +50,8 @@ function formatQuantityUnits(units: bigint) {
 }
 
 export default function ProcessWorkspace({ id, returnPath }: { id: string; returnPath: string }) {
+  const { m, messages } = useI18n();
+  const t = m.processWorkspace;
   const [process, setProcess] = useState<Process>();
   const [lines, setLines] = useState<LinePage>();
   const [expandedLineId, setExpandedLineId] = useState<string>();
@@ -84,7 +90,7 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
   const [notice, setNotice] = useState("");
   async function readSavedProcess(): Promise<Process> {
     const response = await apiFetch(`/api/v1/processes/${id}`, { cache: "no-store" });
-    if (!response.ok) throw new Error("O IP foi alterado, mas não foi possível conferir os dados salvos.");
+    if (!response.ok) throw new Error(t.savedNotRead);
     return response.json() as Promise<Process>;
   }
   async function readPurchaseOrderState(poId: string) {
@@ -105,12 +111,10 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
         && !["CANCELLED", "CANCELED"].includes(String(item.sourceStatus ?? "").toUpperCase()));
       setPoItems(available);
       setSelectedPoItemId(available[0]?.id ?? "");
-      setPoSearchMessage(available.length
-        ? `${available.length} item(ns) com saldo disponível nesta PO.`
-        : "Esta PO não tem itens com saldo disponível para distribuir a este IP.");
+      setPoSearchMessage(available.length ? t.itemsAvailable(available.length) : t.noItemsAvailable);
     } catch (cause) {
       if (searchRequestId === undefined || searchRequestId === poSearchRequest.current) {
-        setSaveError(cause instanceof Error ? cause.message : "Não foi possível carregar os itens e saldos da PO.");
+        setSaveError(cause instanceof Error ? cause.message : t.poItemsFailed);
       }
     } finally {
       if (searchRequestId === undefined || searchRequestId === poSearchRequest.current) setSearchingPos(false);
@@ -138,12 +142,10 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
         if (!matches.some(order => order.id === selectedPoId)) {
           setSelectedPoId(""); setSelectedPoItemId(""); setPoItems([]);
         }
-        setPoSearchMessage(matches.length === 0
-          ? `Nenhuma PO encontrada para a importadora ${process.importer}. Confira o número e o importador.`
-          : "");
+        setPoSearchMessage(matches.length === 0 ? t.noPoFound(process.importer) : "");
       }
     } catch (cause) {
-      if (requestId === poSearchRequest.current) setSaveError(cause instanceof Error ? cause.message : "Não foi possível buscar POs.");
+      if (requestId === poSearchRequest.current) setSaveError(cause instanceof Error ? cause.message : t.poSearchFailed);
     } finally { if (requestId === poSearchRequest.current) setSearchingPos(false); }
   }
   async function distributeItemToProcess(event: FormEvent<HTMLFormElement>) {
@@ -154,10 +156,10 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
       const selectedItem = poItems.find(item => item.id === selectedPoItemId);
       const remaining = selectedItem ? quantityUnits(selectedItem.remainingQuantity) : null;
       if (quantity === null || quantity <= 0n || remaining === null || quantity > remaining) {
-        throw new Error("Informe uma quantidade válida, maior que zero e dentro do saldo disponível da PO.");
+        throw new Error(t.invalidQuantity);
       }
       if (!shippedChangeReady(Boolean(process.shipped), shippedChange)) {
-        throw new Error("Confirme a distribuição para o IP já embarcado e informe a justificativa.");
+        throw new Error(t.confirmShipped);
       }
       const response = await apiFetch(`/api/v1/purchase-orders/${selectedPoId}/allocations`, { method: "POST",
         headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
@@ -167,17 +169,17 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
       const [savedProcess, savedPo] = await Promise.all([readSavedProcess(), readPurchaseOrderState(selectedPoId)]);
       if (!savedProcess.purchaseOrders.some(order => order.id === selectedPoId)
         || !savedPo.allocations.some(allocation => allocation.itemId === selectedPoItemId && allocation.processId === id)) {
-        throw new Error("A API confirmou a distribuição, mas a releitura não encontrou o vínculo e a quantidade no IP.");
+        throw new Error(t.allocationNotReread);
       }
       setProcess(savedProcess); setPoItems(savedPo.items.filter(item => (quantityUnits(item.remainingQuantity) ?? 0n) > 0n
         && !savedPo.allocations.some(allocation => allocation.itemId === item.id && allocation.processId === id)
         && !["CANCELLED", "CANCELED"].includes(String(item.sourceStatus ?? "").toUpperCase())));
       setAllocationQuantity(""); setShippedChange(emptyShippedChange);
       setSelectedPoItemId("");
-      setPoSearchMessage("Quantidade distribuída. O saldo atualizado da PO foi carregado; selecione outro item se necessário.");
-      setNotice("Item e quantidade distribuídos para este IP.");
+      setPoSearchMessage(t.distributedSearch);
+      setNotice(t.distributedNotice);
     } catch (cause) {
-      setSaveError(cause instanceof Error ? cause.message : "Não foi possível distribuir a quantidade para este IP.");
+      setSaveError(cause instanceof Error ? cause.message : t.distributeFailed);
     } finally { setLinkingPo(false); }
   }
   const selectedPoItem = poItems.find(item => item.id === selectedPoItemId);
@@ -201,10 +203,11 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
       apiFetch(`/api/v1/processes/${id}/items?page=${page}&pageSize=50`, { signal: controller.signal }),
       apiFetch("/auth/me", { signal: controller.signal }),
     ]).then(async ([detail, items, identity]) => {
-      if (detail.status === 401 || items.status === 401 || identity.status === 401) throw new Error("Sua sessão expirou. Entre novamente.");
-      if (detail.status === 403 || items.status === 403) throw new Error("Seu acesso não permite consultar este IP.");
-      if (detail.status === 404 || items.status === 404) throw new Error("IP não encontrado ou fora do seu escopo.");
-      if (!detail.ok || !items.ok || !identity.ok) throw new Error("Não foi possível carregar o IP.");
+      const text = messages();
+      if (detail.status === 401 || items.status === 401 || identity.status === 401) throw new Error(text.common.sessionExpired);
+      if (detail.status === 403 || items.status === 403) throw new Error(text.processWorkspace.forbidden);
+      if (detail.status === 404 || items.status === 404) throw new Error(text.processWorkspace.notFound);
+      if (!detail.ok || !items.ok || !identity.ok) throw new Error(text.processWorkspace.loadFailed);
       const [processValue, lineValue, user] = await Promise.all([detail.json() as Promise<Process>, items.json() as Promise<LinePage>, identity.json() as Promise<{ roles: string[] }>]);
       const destinationQuery = new URLSearchParams({ importer: processValue.importer, page: "1", pageSize: "200" });
       const destinationResponse = await apiFetch(`/api/v1/processes?${destinationQuery}`, { signal: controller.signal });
@@ -214,7 +217,7 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
         : [];
       if (!controller.signal.aborted) {
         setCompatibilityWarning(processValue.lifecycleStatus === "OPEN" || processValue.lifecycleStatus === "CLOSED"
-          ? "" : "A API do IP está desatualizada. O ciclo e as ações de edição ficarão indisponíveis até sua atualização.");
+          ? "" : messages().processWorkspace.outdatedApi);
         setProcess(processValue); setLines(lineValue); setRoles(user.roles);
         setDestinationIps(destinations.filter(value => value.id !== processValue.id && value.importer === processValue.importer
           && value.lifecycleStatus !== "CLOSED" && value.recordStatus !== "CANCELLED"));
@@ -225,10 +228,10 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
         setPriorityDraft(processValue.priority ?? "");
         setNotesDraft(processValue.notes);
       }
-    }).catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Erro inesperado."); })
+    }).catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : messages().common.unexpectedError); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [id, page, retry]);
+  }, [id, messages, page, retry]);
 
   async function saveProcess(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!process) return;
@@ -242,25 +245,25 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
           notes: notesDraft, reason: automaticAuditReason }) });
       const body = await response.json() as { detail?: string };
       if (!response.ok) {
-        if (importerChanged && response.status === 400 && body.detail === "Revise o IP.") {
-          throw new Error("A API deste ambiente ainda não oferece alteração de importadora. Os dados não foram salvos; solicite a atualização da API de homologação.");
+        if (importerChanged && response.status === 400 && body.detail === importerChangeRejected) {
+          throw new Error(t.importerChangeUnsupported);
         }
-        throw new Error(body.detail || "Não foi possível atualizar o IP.");
+        throw new Error(body.detail || t.updateFailed);
       }
       const saved = await readSavedProcess();
       if (saved.ipNumber !== ipNumberDraft || saved.importer !== importerDraft
         || saved.logisticsStatus !== (logisticsStatusDraft || null) || saved.priority !== (priorityDraft || null)
         || saved.notes !== notesDraft) {
-        throw new Error("A API confirmou a alteração, mas os dados do IP não apareceram na releitura.");
+        throw new Error(t.updateNotReread);
       }
-      setNotice("IP atualizado."); setRetry(value => value + 1);
-    } catch (cause) { setSaveError(cause instanceof Error ? cause.message : "Erro inesperado."); }
+      setNotice(t.updated); setRetry(value => value + 1);
+    } catch (cause) { setSaveError(cause instanceof Error ? cause.message : m.common.unexpectedError); }
     finally { setSaving(false); }
   }
   async function cancelProcess(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!process) return;
     const reason = lifecycleReason.trim();
-    if (reason.length < 3) { setSaveError("Informe um motivo com pelo menos 3 caracteres."); return; }
+    if (reason.length < 3) { setSaveError(t.reasonRequired); return; }
     setCancelling(true); setSaveError(undefined); setNotice("");
     try {
       const purchaseOrders = process.purchaseOrders.map(order => {
@@ -269,30 +272,29 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
         if (destination.type === "NEW") return { purchaseOrderId: order.id, destinationType: "NEW" as const, ipNumber: destination.ipNumber.trim() };
         return { purchaseOrderId: order.id, destinationType: "IDLE" as const };
       });
-      if (purchaseOrders.some(item => item.destinationType === "NEW" && !item.ipNumber)) throw new Error("Informe o IP REF para cada novo destino.");
-      if (purchaseOrders.some(item => item.destinationType === "EXISTING" && !item.processId)) throw new Error("Selecione um IP para cada PO encaminhada.");
+      if (purchaseOrders.some(item => item.destinationType === "NEW" && !item.ipNumber)) throw new Error(t.newIpRefRequired);
+      if (purchaseOrders.some(item => item.destinationType === "EXISTING" && !item.processId)) throw new Error(t.existingIpRequired);
       const response = await apiFetch("/api/v1/processes/" + id + "/cancel", { method: "POST",
         headers: { "content-type": "application/json", "X-Record-Version": process.version },
         body: JSON.stringify({ reason, purchaseOrders }) });
       const result = await readApiJson<{ status: string; createdDraftIps: number; releasedAllocations: number }>(response);
-      if ((await readSavedProcess()).recordStatus !== "CANCELLED") throw new Error("O IP nao aparece como cancelado na releitura.");
+      if ((await readSavedProcess()).recordStatus !== "CANCELLED") throw new Error(t.notCancelled);
       const routeSummary = purchaseOrders.map(route => {
         const order = process.purchaseOrders.find(item => item.id === route.purchaseOrderId);
-        const destination = route.destinationType === "IDLE" ? "sem vinculo"
-          : route.destinationType === "EXISTING" ? destinationIps.find(item => item.id === route.processId)?.ipNumber ?? "IP existente"
+        const destination = route.destinationType === "IDLE" ? t.noLink
+          : route.destinationType === "EXISTING" ? destinationIps.find(item => item.id === route.processId)?.ipNumber ?? t.existingIp
             : route.ipNumber;
-        return "PO " + (order?.number ?? route.purchaseOrderId) + " -> " + destination;
+        return t.route(order?.number ?? route.purchaseOrderId, destination);
       }).join("; ");
-      setNotice("IP cancelado. " + result.releasedAllocations + " distribuicao(oes) liberada(s); "
-        + result.createdDraftIps + " novo(s) IP(s) aguardando invoice. " + routeSummary);
+      setNotice(t.cancelled(result.releasedAllocations, result.createdDraftIps, routeSummary));
       setRetry(value => value + 1);
-    } catch (cause) { setSaveError(cause instanceof Error ? cause.message : "Nao foi possivel cancelar o IP."); }
+    } catch (cause) { setSaveError(cause instanceof Error ? cause.message : t.cancelFailed); }
     finally { setCancelling(false); }
   }
   async function changeLifecycleAction(action: Exclude<ProcessLifecycleAction, "cancel">) {
     if (!process) return;
     const reason = lifecycleReason.trim();
-    if (reason.length < 3) { setSaveError("Informe um motivo com pelo menos 3 caracteres."); return; }
+    if (reason.length < 3) { setSaveError(t.reasonRequired); return; }
     const pathSuffix = action === "delete" ? "" : "/" + action;
     const route = "/api/v1/processes/" + id + pathSuffix;
     const method = action === "delete" ? "DELETE" : "POST";
@@ -305,12 +307,12 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
       if (!response.ok) {
         if ((action === "delete" || action === "reactivate" || action === "restore")
           && isMissingApiRoute(response.status, body, route)) {
-          const message = "Ciclo do IP indisponível nesta versão da API.";
+          const message = t.lifecycleUnavailable;
           setCompatibilityWarning(message);
           setSaveError(undefined);
           return;
         }
-        throw new Error(body?.detail || "Não foi possível alterar o ciclo do IP.");
+        throw new Error(body?.detail || t.lifecycleFailed);
       }
       const saved = await readSavedProcess();
       const valid = action === "close" ? saved.lifecycleStatus === "CLOSED"
@@ -318,16 +320,12 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
           : action === "delete" ? saved.recordStatus === "DELETED"
             : action === "reactivate" ? saved.recordStatus === "ACTIVE" && saved.lifecycleStatus === "OPEN"
               && saved.logisticsStatus === null : saved.recordStatus !== "DELETED";
-      if (!valid) throw new Error("A API confirmou a ação, mas o estado salvo do IP não corresponde ao resultado esperado.");
+      if (!valid) throw new Error(t.lifecycleNotReread);
       setCompatibilityWarning("");
-      setNotice(action === "close" ? "IP encerrado."
-        : action === "reopen" ? "IP reaberto."
-          : action === "delete" ? "IP excluído da lista ativa. Dados e histórico seguem disponíveis para consulta."
-            : action === "reactivate" ? "IP reativado. Recarregue a invoice ou distribua novamente com o saldo atual."
-              : "IP restaurado ao estado anterior.");
+      setNotice(t.lifecycleDone[action]);
       setRetry(value => value + 1);
     } catch (cause) {
-      setSaveError(cause instanceof Error ? cause.message : "Erro inesperado.");
+      setSaveError(cause instanceof Error ? cause.message : m.common.unexpectedError);
     } finally { setLifecycleBusy(null); }
   }
   const canWrite = roles.some(role => ["Master", "Administrador", "Importação"].includes(role));
@@ -336,29 +334,30 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
     canWrite, canManageLifecycle);
   const deleteDisabled = Boolean(process && (process.operationalAllocations.length > 0
     || (process.processDocumentCount ?? 0) > 0 || process.purchaseOrders.length > 0));
-  const lifecycleActionLabels: Record<ProcessLifecycleAction, string> = {
-    close: "Encerrar IP", reopen: "Reabrir IP", delete: "Excluir IP",
-    reactivate: "Reativar IP", restore: "Restaurar IP", cancel: "Cancelar IP e encaminhar POs",
-  };
-  return <main className="shell"><Link className="back" href={returnPath}>← Lista de IPs</Link>
-    {loading && <p role="status">Carregando IP…</p>}
-    {error && <div className="notice error" role="alert"><p>{error}</p><button className="button" onClick={() => setRetry(value => value + 1)}>Tentar novamente</button></div>}
+  const lifecycleActionLabels: Record<ProcessLifecycleAction, string> = t.actions;
+  const recordLabel = process?.recordStatus === "DELETED" || process?.recordStatus === "CANCELLED"
+    || process?.recordStatus === "DRAFT" ? t.record[process.recordStatus] : t.record.ACTIVE;
+  const cycleLabel = process?.lifecycleStatus === "CLOSED" || process?.lifecycleStatus === "OPEN"
+    ? t.cycle[process.lifecycleStatus] : t.cycle.UNAVAILABLE;
+  return <main className="shell"><Link className="back" href={returnPath}>{t.back}</Link>
+    {loading && <p role="status">{t.loading}</p>}
+    {error && <div className="notice error" role="alert"><p>{error}</p><button className="button" onClick={() => setRetry(value => value + 1)}>{m.common.retry}</button></div>}
     {!loading && !error && process && lines && <>
-      <header className="page-header"><p className="eyebrow">IP · {process.importer} · Fornecedor: {process.supplierName ? `${process.supplierText} · ${process.supplierName}` : process.supplierText ?? "não informado"}</p><h1>{process.ipNumber}</h1><p>Status logístico: {process.logisticsStatus ?? "não informado"}. Ciclo do IP: {process.lifecycleStatus === "CLOSED" ? "encerrado" : process.lifecycleStatus === "OPEN" ? "aberto" : "indisponível"}. Qualidade: {process.qualityStatus}. Origem: {process.sourceKind}.</p></header>
+      <header className="page-header"><p className="eyebrow">{t.eyebrow(process.importer, process.supplierName ? `${process.supplierText} · ${process.supplierName}` : process.supplierText ?? t.notInformed)}</p><h1>{process.ipNumber}</h1><p>{t.summary(process.logisticsStatus ?? t.notInformed, process.lifecycleStatus === "CLOSED" ? t.cycleClosed : process.lifecycleStatus === "OPEN" ? t.cycleOpen : t.cycleUnavailable, process.qualityStatus, process.sourceKind)}</p></header>
       {compatibilityWarning && <p className="notice" role="status">{compatibilityWarning}</p>}
-      {process.recordStatus === "DRAFT" && <p className="notice" role="status">IP criado durante o cancelamento. As POs ficam sem saldo reservado ate a invoice ser carregada.</p>}
-      {process.recordStatus === "CANCELLED" && <p className="notice" role="status">IP cancelado. As distribuicoes foram liberadas e as POs encaminhadas conforme a decisao registrada.</p>}
-      {process.invoiceSupplierDivergence && <p className="notice" role="status">O Exporter da invoice difere do fornecedor de uma ou mais POs. Os valores originais foram preservados na invoice e nas POs.</p>}
-      <section className="metric-grid"><Metric label="POs vinculadas" value={process.purchaseOrders.length} /><Metric label="Linhas históricas" value={lines.totalCount} /><Metric label="Custos históricos" value={process.historicalCosts.length} /></section>
-      <section className="card"><h2>Ciclo do IP</h2>
-        <p>Situação: {process.recordStatus === "DELETED" ? "Excluído" : process.recordStatus === "CANCELLED" ? "Cancelado" : process.recordStatus === "DRAFT" ? "Rascunho" : "Ativo"} · {process.lifecycleStatus === "CLOSED" ? "Encerrado" : process.lifecycleStatus === "OPEN" ? "Aberto" : "Indisponível"}.</p>
-        {process.recordStatus === "DELETED" && <p className="notice" role="status">Este IP foi excluído da lista ativa; dados e histórico continuam disponíveis para consulta.</p>}
-        {process.lifecycleStatus === "CLOSED" && <p className="notice">IP encerrado em {process.closedAt ? new Date(process.closedAt).toLocaleString("pt-BR") : "data indisponível"}.</p>}
+      {process.recordStatus === "DRAFT" && <p className="notice" role="status">{t.draftNotice}</p>}
+      {process.recordStatus === "CANCELLED" && <p className="notice" role="status">{t.cancelledNotice}</p>}
+      {process.invoiceSupplierDivergence && <p className="notice" role="status">{t.exporterNotice}</p>}
+      <section className="metric-grid"><Metric label={t.linkedPos} value={process.purchaseOrders.length} /><Metric label={t.historicalLines} value={lines.totalCount} /><Metric label={t.historicalCosts} value={process.historicalCosts.length} /></section>
+      <section className="card"><h2>{t.cycleTitle}</h2>
+        <p>{t.situation(recordLabel, cycleLabel)}</p>
+        {process.recordStatus === "DELETED" && <p className="notice" role="status">{t.deletedNotice}</p>}
+        {process.lifecycleStatus === "CLOSED" && <p className="notice">{t.closedOn(process.closedAt ? new Date(process.closedAt).toLocaleString("pt-BR") : t.dateUnavailable)}</p>}
         {((process.recordStatus === "CANCELLED" && !canManageLifecycle) || (process.recordStatus === "DELETED" && !canManageLifecycle))
-          && <p className="notice" role="status">Peça a um Master ou Administrador para reativar ou restaurar este IP.</p>}
+          && <p className="notice" role="status">{t.askManager}</p>}
         {notice && <p className="notice success" role="status">{notice}</p>}
         {saveError && <p className="notice error" role="alert">{saveError}</p>}
-        <label>Motivo da ação<textarea required minLength={3} maxLength={1000} value={lifecycleReason}
+        <label>{t.actionReason}<textarea required minLength={3} maxLength={1000} value={lifecycleReason}
           onChange={event => setLifecycleReason(event.target.value)} /></label>
         <div className="process-action-buttons">
           {lifecycleActions.filter(action => action !== "cancel").map(action =>
@@ -371,79 +370,79 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
           {lifecycleActions.includes("cancel") && <details className="process-action">
           <summary className="process-action-trigger">{lifecycleActionLabels.cancel}</summary>
           <form className="stack-form" onSubmit={cancelProcess}>
-            <p>Escolha para cada PO se ela fica sem vinculo, segue para um IP existente ou aguarda invoice em um novo IP. O encaminhamento nao reserva quantidades; a invoice informara a distribuicao.</p>
-            {process.purchaseOrders.length === 0 && <p>Este IP nao tem POs vinculadas.</p>}
+            <p>{t.cancelHelp}</p>
+            {process.purchaseOrders.length === 0 && <p>{t.noPos}</p>}
             {process.purchaseOrders.map(order => {
               const route = cancellationRoutes[order.id] ?? { type: "IDLE" as const };
               const quantities = process.operationalAllocations.filter(allocation => allocation.poId === order.id)
                 .map(allocation => allocation.productCode + ": " + formatNumber(allocation.quantity) + " " + allocation.unit);
               return <div className="operational-fields" key={order.id}>
                 <strong>PO {order.number}</strong>
-                <small>{quantities.length ? "Quantidades alocadas: " + quantities.join("; ") : "Nenhuma quantidade ativa alocada."}</small>
-                <label>Destino<SearchableSelect ariaLabel="Destino" placeholder="" value={route.type}
+                <small>{quantities.length ? t.allocatedQuantities(quantities.join("; ")) : t.noActiveQuantities}</small>
+                <label>{t.destination}<SearchableSelect ariaLabel={t.destination} placeholder="" value={route.type}
                   onChange={type => setCancellationRoutes(current => ({
                     ...current, [order.id]: type === "EXISTING" ? { type: "EXISTING", processId: "" }
                       : type === "NEW" ? { type: "NEW", ipNumber: "" } : { type: "IDLE" },
-                  }))} options={[{ value: "IDLE", label: "Deixar sem vínculo" }, { value: "EXISTING", label: "IP existente" },
-                    { value: "NEW", label: "Criar IP em rascunho" }]} /></label>
-                {route.type === "EXISTING" && <label>IP de destino<SearchableSelect ariaLabel="IP de destino" required value={route.processId}
+                  }))} options={[{ value: "IDLE", label: t.keepUnlinked }, { value: "EXISTING", label: t.existingIp },
+                    { value: "NEW", label: t.createDraft }]} /></label>
+                {route.type === "EXISTING" && <label>{t.destinationIp}<SearchableSelect ariaLabel={t.destinationIp} required value={route.processId}
                   onChange={processId => setCancellationRoutes(current => ({ ...current, [order.id]: { type: "EXISTING", processId } }))}
                   options={destinationIps.map(target => ({ value: target.id, label: `${target.ipNumber} · ${target.recordStatus ?? ""}` }))} /></label>}
-                {route.type === "NEW" && <label>Novo IP REF<input required maxLength={80} value={route.ipNumber}
+                {route.type === "NEW" && <label>{t.newIpRef}<input required maxLength={80} value={route.ipNumber}
                   onChange={event => setCancellationRoutes(current => ({ ...current, [order.id]: { type: "NEW", ipNumber: event.target.value } }))} /></label>}
               </div>;
             })}
             <button className="button" disabled={cancelling || lifecycleBusy !== null || lifecycleReason.trim().length < 3}>
-              {cancelling ? "Cancelando..." : "Cancelar IP e encaminhar POs"}
+              {cancelling ? t.cancelling : t.actions.cancel}
             </button>
           </form>
         </details>}
         </div>
         {lifecycleActions.includes("delete") && deleteDisabled && <p className="notice" role="status">
-          Exclua distribuições ativas, documentos ativos e encaminhe ou desvincule as POs antes de excluir este IP.
+          {t.deleteBlocked}
         </p>}
         {lifecycleActions.includes("delete") && lifecycleReason.trim().length < 3
-          && <p className="muted">Informe o motivo com pelo menos 3 caracteres para habilitar as ações.</p>}
+          && <p className="muted">{t.reasonHint}</p>}
       </section>
-      <section className="card"><h2>Dados operacionais do IP</h2>
-        <p>Prioridade: {process.priority ?? "não informada"}. Observações: {process.notes || "—"}.</p>
+      <section className="card"><h2>{t.operationalTitle}</h2>
+        <p>{t.priorityNotes(process.priority ?? t.priorityNotInformed, process.notes || "—")}</p>
         {canWrite && process.recordStatus !== "DELETED" && process.lifecycleStatus === "OPEN"
           && (process.sourceKind === "CHINA_INVOICE" || process.recordStatus === "DRAFT")
           && <p><Link className="button secondary" href={`/processes/new?reviewInvoice=${encodeURIComponent(id)}`}>
-            {process.recordStatus === "DRAFT" ? "Carregar invoice" : "Revisar invoice"}</Link></p>}
+            {process.recordStatus === "DRAFT" ? t.loadInvoice : t.reviewInvoice}</Link></p>}
         {canWrite && process.lifecycleStatus === "OPEN" && process.recordStatus === "ACTIVE" && <>
-          <details className="process-action"><summary className="process-action-trigger">Editar IP</summary><form className="stack-form" onSubmit={saveProcess}>
-          <label>Importadora<SearchableSelect ariaLabel="Importadora" required disabled={process.sourceKind !== "MANUAL" || process.purchaseOrders.length > 0
+          <details className="process-action"><summary className="process-action-trigger">{t.edit}</summary><form className="stack-form" onSubmit={saveProcess}>
+          <label>{m.poPanel.importer}<SearchableSelect ariaLabel={m.poPanel.importer} required disabled={process.sourceKind !== "MANUAL" || process.purchaseOrders.length > 0
             || process.operationalAllocations.length > 0 || process.historicalCosts.length > 0
             || (process.processDocumentCount ?? 0) > 0 || lines.totalCount > 0} value={importerDraft} onChange={setImporterDraft}
             options={importers.map(option => ({ value: option.code, label: option.code }))} /></label>
-          <label>Número do IP<input required maxLength={80} disabled={process.sourceKind !== "MANUAL"}
+          <label>{m.poPanel.ipNumber}<input required maxLength={80} disabled={process.sourceKind !== "MANUAL"}
             value={ipNumberDraft} onChange={event => setIpNumberDraft(event.target.value)} /></label>
-          <label>Status logístico<OperationalOptionSelect entity="logistics_status" value={logisticsStatusDraft}
+          <label>{m.poPanel.logisticsStatus}<OperationalOptionSelect entity="logistics_status" value={logisticsStatusDraft}
             values={operationalOptions} onChange={setLogisticsStatusDraft} /></label>
-          <label>Prioridade<OperationalOptionSelect entity="priority" value={priorityDraft}
+          <label>{m.poPanel.priority}<OperationalOptionSelect entity="priority" value={priorityDraft}
             values={operationalOptions} onChange={setPriorityDraft} /></label>
-          <label>Observações<textarea maxLength={4000} value={notesDraft} onChange={event => setNotesDraft(event.target.value)} /></label>
-          <button className="button" disabled={saving}>{saving ? "Salvando…" : "Salvar IP"}</button>
+          <label>{m.poPanel.notes}<textarea maxLength={4000} value={notesDraft} onChange={event => setNotesDraft(event.target.value)} /></label>
+          <button className="button" disabled={saving}>{saving ? m.newRecord.saving : m.newRecord.saveIp}</button>
           </form></details>
         </>}
       </section>
-      <section className="card"><h2>POs vinculadas</h2><p className="muted">Vínculos históricos e operacionais. O IP pode atender várias POs, e uma PO pode aparecer em vários IPs.</p>
-        {process.purchaseOrders.length === 0 && <p>Nenhuma PO vinculada. Linhas sem PO podem aparecer nas observações.</p>}
+      <section className="card"><h2>{t.linkedTitle}</h2><p className="muted">{t.linkedHelp}</p>
+        {process.purchaseOrders.length === 0 && <p>{t.noLinked}</p>}
         {process.purchaseOrders.map(order => <p key={order.id}><Link className="text-link" href={`/purchase-orders/${order.id}`}>PO {order.number} →</Link> · {order.importer} · {order.linkSource}</p>)}
         {canWrite && process.lifecycleStatus === "OPEN" && process.recordStatus === "ACTIVE" && <div className="operational-allocation">
           <div className="allocation-heading">
-            <div><h3>Distribuir item de uma PO</h3>
-              <p>Escolha o item, confira o saldo e defina quanto ficará neste IP. A PO será vinculada ao confirmar.</p>
+            <div><h3>{t.distributeTitle}</h3>
+              <p>{t.distributeHelp}</p>
             </div>
           </div>
-            {searchingPos && <p className="allocation-feedback" role="status">Buscando PO e carregando saldo...</p>}
+            {searchingPos && <p className="allocation-feedback" role="status">{t.searchingPo}</p>}
           {poSearchMessage && <p className="allocation-feedback" role="status">{poSearchMessage}</p>}
 
-          <div className="allocation-step-title"><span>1</span><div><h4>Encontre a PO</h4><p>Pesquise pelo número e selecione uma PO da importadora {process.importer}.</p></div></div>
+          <div className="allocation-step-title"><span>1</span><div><h4>{t.step1}</h4><p>{t.step1Help(process.importer)}</p></div></div>
           <form className="allocation-po-search" onSubmit={searchPurchaseOrders}>
             <div className="allocation-search-row">
-              <label>Buscar por número<input value={poQuery} autoComplete="off" placeholder="Ex.: 030201"
+              <label>{t.searchByNumber}<input value={poQuery} autoComplete="off" placeholder={t.numberPlaceholder}
                 onChange={event => {
                   const value = event.target.value;
                   const form = event.currentTarget.form;
@@ -455,11 +454,11 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
                   if (value.trim()) poSearchTimer.current = window.setTimeout(() => form?.requestSubmit(), 250);
                 }} /></label>
               <button hidden className="button secondary" type="submit" disabled={searchingPos || !poQuery.trim()}>
-                {searchingPos ? "Buscando…" : "Buscar PO"}
+                {searchingPos ? t.searching : t.searchPo}
               </button>
             </div>
             {poOptions.length > 0 && <div className="allocation-po-choices">
-              <h5>Selecione a PO</h5>
+              <h5>{t.selectPo}</h5>
               <ul>{poOptions.map(order => <li key={order.id}>
                 <button type="button" aria-pressed={selectedPoId === order.id}
                   className={selectedPoId === order.id ? "is-selected" : ""}
@@ -469,41 +468,41 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
           </form>
 
           {selectedPoId && <form className="allocation-distribution" onSubmit={distributeItemToProcess}>
-            <div className="allocation-step-title"><span>2</span><div><h4>Escolha o item e a quantidade</h4>
-              <p>Somente itens com saldo disponível aparecem nesta lista.</p></div></div>
-            <label>Item da PO<SearchableSelect ariaLabel="Item da PO" required value={selectedPoItemId}
+            <div className="allocation-step-title"><span>2</span><div><h4>{t.step2}</h4>
+              <p>{t.step2Help}</p></div></div>
+            <label>{t.poItem}<SearchableSelect ariaLabel={t.poItem} required value={selectedPoItemId}
               disabled={searchingPos || poItems.length === 0}
-              placeholder={poItems.length ? "Selecione um item" : "Nenhum item com saldo disponível"}
+              placeholder={poItems.length ? t.selectItem : t.noItems}
               onChange={value => { setSelectedPoItemId(value); setAllocationQuantity(""); }}
               options={poItems.map(item => ({ value: item.id,
-                label: `${item.productCode} · linha ${item.lineNumber} · saldo ${formatQuantityUnits(quantityUnits(item.remainingQuantity) ?? 0n)}${item.unit ? ` ${item.unit}` : ""}`,
+                label: t.itemOption(item.productCode, item.lineNumber, `${formatQuantityUnits(quantityUnits(item.remainingQuantity) ?? 0n)}${item.unit ? ` ${item.unit}` : ""}`),
                 searchText: item.description }))} /></label>
             {selectedPoItem && <>
               <div className="allocation-balance" aria-live="polite">
-                <div><span>Saldo disponível na PO</span><strong>{formatQuantityUnits(remainingUnits ?? 0n)}{selectedPoItem.unit ? ` ${selectedPoItem.unit}` : ""}</strong></div>
+                <div><span>{t.available}</span><strong>{formatQuantityUnits(remainingUnits ?? 0n)}{selectedPoItem.unit ? ` ${selectedPoItem.unit}` : ""}</strong></div>
                 <p>{remainingAfterAllocation !== null
-                  ? <>Após distribuir, restarão <strong>{remainingAfterAllocation}{selectedPoItem.unit ? ` ${selectedPoItem.unit}` : ""}</strong> neste item.</>
-                  : "Informe a quantidade para ver o saldo restante."}</p>
+                  ? <>{t.remainingBefore}<strong>{remainingAfterAllocation}{selectedPoItem.unit ? ` ${selectedPoItem.unit}` : ""}</strong>{t.remainingAfter}</>
+                  : t.enterQuantity}</p>
               </div>
               <div className="allocation-submit-row">
-                <label>Quantidade para este IP<input required inputMode="decimal" value={allocationQuantity}
-                  onChange={event => setAllocationQuantity(event.target.value)} placeholder="Ex.: 40" /></label>
+                <label>{t.quantityForIp}<input required inputMode="decimal" value={allocationQuantity}
+                  onChange={event => setAllocationQuantity(event.target.value)} placeholder={m.poPanel.quantityPlaceholder} /></label>
                 <button className="button" disabled={!selectedPoItemId || !allocationQuantity || searchingPos || linkingPo
                   || allocationUnits === null || allocationUnits <= 0n || remainingUnits === null || allocationUnits > remainingUnits}>
-                  {linkingPo ? "Distribuindo…" : "Confirmar distribuição"}
+                  {linkingPo ? t.distributing : t.confirmDistribution}
                 </button>
               </div>
               {selectedPoItem && allocationUnits !== null && remainingUnits !== null && allocationUnits > remainingUnits
-                && <p className="notice error" role="alert">A quantidade informada excede o saldo disponível.</p>}
+                && <p className="notice error" role="alert">{t.exceeds}</p>}
               {process.shipped && <ShippedChangeConfirmation value={shippedChange} onChange={setShippedChange} />}
             </>}
           </form>}
         </div>}
       </section>
-      <section className="card"><h2>Quantidades distribuídas para este IP</h2>
-        <p className="muted">Cada linha mostra o que foi alocado a este IP e o saldo restante do item na PO, já considerando todos os IPs.</p>
-        {process.operationalAllocations.length === 0 ? <p>Nenhuma quantidade distribuída operacionalmente.</p> :
-          <div className="table-scroll"><table><thead><tr><th>PO</th><th>Produto</th><th>Quantidade neste IP</th><th>Saldo restante na PO</th></tr></thead><tbody>
+      <section className="card"><h2>{t.allocatedTitle}</h2>
+        <p className="muted">{t.allocatedHelp}</p>
+        {process.operationalAllocations.length === 0 ? <p>{m.poPanel.noAllocations}</p> :
+          <div className="table-scroll"><table><thead><tr><th>PO</th><th>{m.poPanel.product}</th><th>{m.poPanel.quantityInIp}</th><th>{m.poPanel.remaining}</th></tr></thead><tbody>
             {process.operationalAllocations.map(item => <tr key={item.id}>
               <td><Link className="text-link" href={`/purchase-orders/${item.poId}`}>{item.poNumber}</Link></td>
               <td>{item.productCode}</td><td>{formatNumber(item.quantity)} {item.unit}</td>
@@ -512,16 +511,16 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
           </tbody></table></div>}
       </section>
       <ProcessPostShipmentPanel id={id} />
-      <details className="card historical-disclosure"><summary>Dados de origem e linhas históricas ({lines.totalCount})</summary>
-        {lines.items.length === 0 && <p>Nenhuma linha nesta página.</p>}
-        {lines.items.length > 0 && <div className="table-scroll"><table><thead><tr><th>Origem</th><th>PO</th><th>Produto de origem</th><th>Quantidade de origem</th><th>Status de origem</th><th>Células</th></tr></thead><tbody>
-          {lines.items.map(line => <Fragment key={line.id}><tr><td>{line.sourceSheetName} · {line.sourceRowNumber}</td><td>{line.purchaseOrderId ? <Link className="text-link" href={`/purchase-orders/${line.purchaseOrderId}`}>{line.poNumber}</Link> : "Sem PO"}</td><td>{line.productCode ?? "—"}<br />{line.productDescription}</td><td>{formatNumber(line.quantityFromSource)}</td><td>{line.legacyStatus ?? "—"}</td><td><button type="button" className="source-expand-button" aria-label={`${expandedLineId === line.id ? "Ocultar" : "Ver"} campos da linha ${line.sourceRowNumber} da aba ${line.sourceSheetName}`} aria-expanded={expandedLineId === line.id} onClick={() => setExpandedLineId(current => current === line.id ? undefined : line.id)}>{expandedLineId === line.id ? "Ocultar campos" : "Ver campos"}</button></td></tr>
-            {expandedLineId === line.id && <tr className="source-detail-row"><td colSpan={6}><section className="source-detail-panel"><div className="source-detail-heading"><strong>Campos preservados da origem</strong><span>Aba {line.sourceSheetName} · linha {line.sourceRowNumber}</span></div><dl className="source-field-grid">{Object.entries(line.sourceValues ?? {}).map(([column, value]) => <div className="source-field" key={column}><dt>{line.sourceColumnHeaders?.[column] || "Campo sem cabeçalho"}<small>{column}{line.sourceRowNumber}</small></dt><dd>{value == null ? "—" : String(value)}</dd></div>)}</dl></section></td></tr>}</Fragment>)}
+      <details className="card historical-disclosure"><summary>{t.sourceTitle(lines.totalCount)}</summary>
+        {lines.items.length === 0 && <p>{t.noLines}</p>}
+        {lines.items.length > 0 && <div className="table-scroll"><table><thead><tr><th>{t.source}</th><th>PO</th><th>{t.sourceProduct}</th><th>{t.sourceQuantity}</th><th>{t.sourceStatus}</th><th>{t.cells}</th></tr></thead><tbody>
+          {lines.items.map(line => <Fragment key={line.id}><tr><td>{line.sourceSheetName} · {line.sourceRowNumber}</td><td>{line.purchaseOrderId ? <Link className="text-link" href={`/purchase-orders/${line.purchaseOrderId}`}>{line.poNumber}</Link> : t.noPo}</td><td>{line.productCode ?? "—"}<br />{line.productDescription}</td><td>{formatNumber(line.quantityFromSource)}</td><td>{line.legacyStatus ?? "—"}</td><td><button type="button" className="source-expand-button" aria-label={t.toggleFields(expandedLineId !== line.id, line.sourceRowNumber, line.sourceSheetName)} aria-expanded={expandedLineId === line.id} onClick={() => setExpandedLineId(current => current === line.id ? undefined : line.id)}>{expandedLineId === line.id ? t.hideFields : t.showFields}</button></td></tr>
+            {expandedLineId === line.id && <tr className="source-detail-row"><td colSpan={6}><section className="source-detail-panel"><div className="source-detail-heading"><strong>{t.preservedFields}</strong><span>{t.sheetRow(line.sourceSheetName, line.sourceRowNumber)}</span></div><dl className="source-field-grid">{Object.entries(line.sourceValues ?? {}).map(([column, value]) => <div className="source-field" key={column}><dt>{line.sourceColumnHeaders?.[column] || t.noHeader}<small>{column}{line.sourceRowNumber}</small></dt><dd>{value == null ? "—" : String(value)}</dd></div>)}</dl></section></td></tr>}</Fragment>)}
         </tbody></table></div>}
-        {lines.totalCount > lines.pageSize && <nav className="pagination"><button className="button secondary" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Anterior</button><span>Página {page} de {Math.ceil(lines.totalCount / lines.pageSize)}</span><button className="button" disabled={page * lines.pageSize >= lines.totalCount} onClick={() => setPage(value => value + 1)}>Próxima</button></nav>}
-      </details><details className="card historical-disclosure"><summary>Custos históricos ({process.historicalCosts.length})</summary>
-        {process.historicalCosts.length === 0 && <p>Nenhum custo histórico registrado.</p>}
-        {process.historicalCosts.length > 0 && <div className="table-scroll"><table><thead><tr><th>Tipo</th><th>Valor</th><th>Status</th><th>Origem</th></tr></thead><tbody>{process.historicalCosts.map(cost => <tr key={cost.id}><td>{cost.type}</td><td>{formatNumber(cost.amount)} {cost.currency}</td><td>{cost.status}</td><td>{cost.sourceSheetName} · {cost.sourceColumn}{cost.sourceRowNumber}</td></tr>)}</tbody></table></div>}
+        {lines.totalCount > lines.pageSize && <nav className="pagination"><button className="button secondary" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>{m.common.previous}</button><span>{m.common.pageOf(page, Math.ceil(lines.totalCount / lines.pageSize))}</span><button className="button" disabled={page * lines.pageSize >= lines.totalCount} onClick={() => setPage(value => value + 1)}>{m.common.next}</button></nav>}
+      </details><details className="card historical-disclosure"><summary>{t.costsTitle(process.historicalCosts.length)}</summary>
+        {process.historicalCosts.length === 0 && <p>{t.noCosts}</p>}
+        {process.historicalCosts.length > 0 && <div className="table-scroll"><table><thead><tr><th>{t.type}</th><th>{t.amount}</th><th>{t.status}</th><th>{t.source}</th></tr></thead><tbody>{process.historicalCosts.map(cost => <tr key={cost.id}><td>{cost.type}</td><td>{formatNumber(cost.amount)} {cost.currency}</td><td>{cost.status}</td><td>{cost.sourceSheetName} · {cost.sourceColumn}{cost.sourceRowNumber}</td></tr>)}</tbody></table></div>}
       </details>
     </>}
   </main>;

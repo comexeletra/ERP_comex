@@ -11,7 +11,6 @@ const pending = new Set([
   "app/catalog/page.tsx",
   "app/catalog/values/NcmTaxTreatments.tsx",
   "app/catalog/values/page.tsx",
-  "app/page.tsx",
   "app/pcm/page.tsx",
   "app/quality/page.tsx",
   "app/requests/page.tsx",
@@ -19,9 +18,6 @@ const pending = new Set([
   "app/source-audit/page.tsx",
   "components/E2eFlowDemo.tsx",
   "components/LegacyQueue.tsx",
-  "components/ProcessDirectory.tsx",
-  "components/ProcessWorkspace.tsx",
-  "components/ProductLinesView.tsx",
   "components/ReportsView.tsx",
 ]);
 

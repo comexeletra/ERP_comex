@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
+import { getMessages, useI18n } from "../components/I18nProvider";
 import { apiFetch } from "../lib/api";
 import { formatCount } from "../lib/format-count";
 import { portfolioFilterQuery, purchaseOrderListQuery, purchaseOrderLifecycleFilters,
@@ -30,6 +31,8 @@ function queryFor(filters: Filters, page: number, size = pageSize) {
 }
 
 export default function PortfolioPage() {
+  const { m } = useI18n();
+  const t = m.portfolio;
   const [draft, setDraft] = useState<Filters>(emptyFilters);
   const [applied, setApplied] = useState<Filters>(emptyFilters);
   const [page, setPage] = useState(1);
@@ -84,14 +87,15 @@ export default function PortfolioPage() {
     setResult(undefined);
     apiFetch(`/api/v1/purchase-orders?${queryFor(applied, page)}`, { signal: controller.signal })
       .then(async response => {
-        if (response.status === 401) throw new Error("Sua sessão expirou. Entre novamente.");
-        if (response.status === 403) throw new Error("Seu acesso não permite consultar esta carteira.");
-        if (!response.ok) throw new Error("Não foi possível carregar a carteira de POs.");
+        const text = getMessages();
+        if (response.status === 401) throw new Error(text.common.sessionExpired);
+        if (response.status === 403) throw new Error(text.portfolio.forbidden);
+        if (!response.ok) throw new Error(text.portfolio.loadFailed);
         return await response.json() as PurchaseOrderPage;
       })
       .then(data => { if (!controller.signal.aborted) setResult(data); })
       .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Erro inesperado.");
+        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : getMessages().common.unexpectedError);
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
@@ -103,7 +107,7 @@ export default function PortfolioPage() {
     const query = portfolioFilterQuery(applied).toString();
     apiFetch(`/api/v1/purchase-orders/summary?${query}`, { signal: controller.signal })
       .then(async response => {
-        if (!response.ok) throw new Error("Não foi possível carregar os indicadores da carteira.");
+        if (!response.ok) throw new Error(getMessages().portfolio.summaryFailed);
         return await response.json() as PortfolioSummary;
       })
       .then(data => {
@@ -114,7 +118,7 @@ export default function PortfolioPage() {
       })
       .catch(() => {
         if (!controller.signal.aborted) {
-          setSummaryFailure({ query, message: "Indicadores indisponíveis no momento." });
+          setSummaryFailure({ query, message: getMessages().portfolio.summaryUnavailable });
         }
       });
     return () => controller.abort();
@@ -133,7 +137,7 @@ export default function PortfolioPage() {
 
   async function downloadExcel() {
     if (exporting || !result?.totalCount) return;
-    setExporting(true); setExportError(""); setExportStatus("Enviando exportação para a fila…");
+    setExporting(true); setExportError(""); setExportStatus(m.productLines.exportQueued);
     try {
       const created = await apiFetch("/api/v1/exports/purchase-orders", {
         method: "POST", headers: { "content-type": "application/json" },
@@ -144,7 +148,7 @@ export default function PortfolioPage() {
       });
       if (!created.ok) {
         const body = await created.json().catch(() => null) as { error?: string } | null;
-        throw new Error(body?.error ?? "Não foi possível iniciar a exportação.");
+        throw new Error(body?.error ?? m.productLines.exportStartFailed);
       }
       const { id } = await created.json() as { id: string };
       setRecentExports(current => [{ id, status: "queued", errorCode: null,
@@ -153,23 +157,21 @@ export default function PortfolioPage() {
       while (!complete) {
         await new Promise(resolve => window.setTimeout(resolve, 1500));
         const statusResponse = await apiFetch(`/api/v1/exports/${id}`);
-        if (!statusResponse.ok) throw new Error("Não foi possível consultar o andamento da exportação.");
+        if (!statusResponse.ok) throw new Error(m.productLines.exportStatusFailed);
         const status = await statusResponse.json() as { status: string; errorCode?: string | null };
         setRecentExports(current => current.map(job => job.id === id
           ? { ...job, status: status.status, errorCode: status.errorCode ?? null,
             downloadPath: status.status === "completed" ? `/api/v1/exports/${id}/download` : null }
           : job));
         if (status.status === "failed") {
-          throw new Error(status.errorCode === "EXPORT_TOO_LARGE"
-            ? "A exportação suporta até 5.000 POs. Refine os filtros e tente novamente."
-            : "A exportação falhou. Tente novamente mais tarde.");
+          throw new Error(status.errorCode === "EXPORT_TOO_LARGE" ? t.exportTooLarge : m.productLines.exportFailed);
         }
         if (status.status === "completed") complete = true;
-        else setExportStatus(status.status === "running" ? "Gerando arquivo Excel em segundo plano…" : "Aguardando processamento…");
+        else setExportStatus(status.status === "running" ? m.productLines.exportRunning : m.productLines.exportWaiting);
       }
-      setExportStatus("Baixando arquivo…");
+      setExportStatus(m.productLines.downloading);
       const file = await apiFetch(`/api/v1/exports/${id}/download`);
-      if (!file.ok) throw new Error("O arquivo expirou ou não está mais disponível. Gere uma nova exportação.");
+      if (!file.ok) throw new Error(m.productLines.fileExpired);
       const blob = await file.blob();
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
@@ -183,7 +185,7 @@ export default function PortfolioPage() {
         if (response.ok) setRecentExports((await response.json() as { items: ExportJob[] }).items);
       }).catch(() => undefined);
     } catch (cause) {
-      setExportError(cause instanceof Error ? cause.message : "Erro inesperado na exportação.");
+      setExportError(cause instanceof Error ? cause.message : m.productLines.exportError);
     } finally { setExporting(false); setExportStatus(""); }
   }
 
@@ -192,86 +194,83 @@ export default function PortfolioPage() {
   const byImporter = Array.isArray(summary?.byImporter) ? summary.byImporter : [];
   return <main className="shell">
     <header className="page-header portfolio-header">
-      <p className="eyebrow">ERP Comex</p><h1>Carteira de POs TOTVS</h1>
-      <p>Pré embarque: cadastre a PO e distribua as quantidades aos IPs. O pós embarque é preenchido uma vez por IP e aparece nas linhas vinculadas.</p>
+      <p className="eyebrow">ERP Comex</p><h1>{t.title}</h1>
+      <p>{t.intro}</p>
       {roles.some(role => ["Master", "Administrador", "Importação", "Compras"].includes(role)) &&
-        <p><Link className="button" href="/purchase-orders/new">Cadastrar PO</Link></p>}
-      <p><Link className="text-link" href="/reports/pre">Indicadores de POs</Link> · <Link className="text-link" href="/quality">Revisar qualidade</Link></p>
+        <p><Link className="button" href="/purchase-orders/new">{t.create}</Link></p>}
+      <p><Link className="text-link" href="/reports/pre">{t.reports}</Link> · <Link className="text-link" href="/quality">{t.quality}</Link></p>
     </header>
     <section className="card">
       <form className="portfolio-filter" onSubmit={filter}>
-        <label>Número da PO<input value={draft.number} onChange={event => setDraft(value => ({ ...value, number: event.target.value }))} placeholder="18751" /></label>
-        <label>Importador<input value={draft.importer} onChange={event => setDraft(value => ({ ...value, importer: event.target.value }))} placeholder="Parte do nome" /></label>
-        <label>Produto<input value={draft.product} onChange={event => setDraft(value => ({ ...value, product: event.target.value }))} placeholder="Código ou descrição" /></label>
-        <label>IP vinculado<input value={draft.ipNumber} onChange={event => setDraft(value => ({ ...value, ipNumber: event.target.value }))} placeholder="Número do IP" /></label>
-        <label>Status do ciclo<select value={draft.lifecycle} onChange={event => setDraft(value => ({
+        <label>{m.productLines.poNumber}<input value={draft.number} onChange={event => setDraft(value => ({ ...value, number: event.target.value }))} placeholder="18751" /></label>
+        <label>{m.processDirectory.importer}<input value={draft.importer} onChange={event => setDraft(value => ({ ...value, importer: event.target.value }))} placeholder={t.importerPlaceholder} /></label>
+        <label>{m.followup.product}<input value={draft.product} onChange={event => setDraft(value => ({ ...value, product: event.target.value }))} placeholder={m.productLines.productPlaceholder} /></label>
+        <label>{t.linkedIp}<input value={draft.ipNumber} onChange={event => setDraft(value => ({ ...value, ipNumber: event.target.value }))} placeholder={t.ipPlaceholder} /></label>
+        <label>{t.cycle}<select value={draft.lifecycle} onChange={event => setDraft(value => ({
           ...value, lifecycle: event.target.value as PurchaseOrderLifecycleFilter,
         }))}>
-          <option value="">Padrão (oculta excluídas)</option>
-          <option value="active">Ativas</option>
-          <option value="cancelled">Canceladas</option>
-          <option value="closed">Encerradas</option>
-          <option value="deleted">Excluídas</option>
-          <option value="all">Todas (incluindo excluídas)</option>
+          <option value="">{t.cycleDefault}</option>
+          <option value="active">{t.cycleActive}</option>
+          <option value="cancelled">{t.cycleCancelled}</option>
+          <option value="closed">{t.cycleClosed}</option>
+          <option value="deleted">{t.cycleDeleted}</option>
+          <option value="all">{t.cycleAll}</option>
         </select></label>
-        <button className="button" type="submit">Aplicar filtros</button>
-        <button className="button secondary" type="button" onClick={() => { setDraft(emptyFilters); navigate(emptyFilters, 1); }}>Limpar</button>
+        <button className="button" type="submit">{m.productLines.apply}</button>
+        <button className="button secondary" type="button" onClick={() => { setDraft(emptyFilters); navigate(emptyFilters, 1); }}>{m.processDirectory.clear}</button>
       </form>
-      <p className="muted">Busque pelo código ou pela descrição do item. Consulte as quantidades e os saldos dentro de cada PO.</p>
+      <p className="muted">{t.filterHelp}</p>
     </section>
-    <section aria-label="Visão da carteira" aria-live="polite">
+    <section aria-label={t.overview} aria-live="polite">
       <div className="metric-grid">
-        <div className="metric"><span>POs no recorte</span><strong>{summaryLoading ? "…" : formatCount(summary?.purchaseOrders)}</strong></div>
-        <div className="metric"><span>IPs das POs encontradas</span><strong>{summaryLoading ? "…" : formatCount(summary?.linkedProcesses)}</strong></div>
-        <div className="metric"><span>Itens nas POs</span><strong>{summaryLoading ? "…" : formatCount(summary?.items)}</strong></div>
-        <div className="metric"><span>Itens sem IP</span><strong>{summaryLoading ? "…" : formatCount(summary?.itemsWithoutIp)}</strong></div>
+        <div className="metric"><span>{t.posInScope}</span><strong>{summaryLoading ? "…" : formatCount(summary?.purchaseOrders)}</strong></div>
+        <div className="metric"><span>{t.ipsOfPos}</span><strong>{summaryLoading ? "…" : formatCount(summary?.linkedProcesses)}</strong></div>
+        <div className="metric"><span>{t.itemsInPos}</span><strong>{summaryLoading ? "…" : formatCount(summary?.items)}</strong></div>
+        <div className="metric"><span>{t.itemsWithoutIp}</span><strong>{summaryLoading ? "…" : formatCount(summary?.itemsWithoutIp)}</strong></div>
       </div>
-      {summary && <p className="muted">Itens e quantidades registrados para as POs deste recorte.</p>}
+      {summary && <p className="muted">{t.summaryHelp}</p>}
       {summaryError && <p className="notice error" role="alert">{summaryError}</p>}
       {byImporter.length > 1 && <div className="card">
-        <h2>POs por importador</h2>
-        <div className="table-scroll"><table><thead><tr><th>Importador</th><th>POs</th></tr></thead>
+        <h2>{t.byImporter}</h2>
+        <div className="table-scroll"><table><thead><tr><th>{m.processDirectory.importer}</th><th>POs</th></tr></thead>
           <tbody>{byImporter.map(item => <tr key={item.importer}><td>{item.importer}</td>
             <td>{formatCount(item.purchaseOrders)}</td></tr>)}</tbody></table></div>
       </div>}
     </section>
     <section className="card" aria-live="polite">
-      {loading && <p role="status">Carregando carteira…</p>}
-      {error && <div className="notice error" role="alert"><p>{error}</p><button className="button" onClick={() => setRetry(value => value + 1)}>Tentar novamente</button></div>}
+      {loading && <p role="status">{t.loading}</p>}
+      {error && <div className="notice error" role="alert"><p>{error}</p><button className="button" onClick={() => setRetry(value => value + 1)}>{m.common.retry}</button></div>}
       {!loading && !error && result && <>
-        <p>{result.totalCount} POs encontradas{result.totalCount > 0 && ` · página ${page} de ${totalPages}`}</p>
+        <p>{t.found(result.totalCount)}{result.totalCount > 0 && m.processDirectory.pageSuffix(page, totalPages)}</p>
         {result.totalCount > 0 && <p><button className="button secondary" type="button" disabled={exporting}
-          onClick={() => void downloadExcel()}>{exporting ? "Processando exportação…" : "Exportar carteira filtrada (Excel)"}</button></p>}
+          onClick={() => void downloadExcel()}>{exporting ? m.productLines.exporting : t.export}</button></p>}
         {exportStatus && <p className="muted" role="status">{exportStatus}</p>}
-        {recentExports.length > 0 && <details className="historical-disclosure"><summary>Exportações recentes</summary>
+        {recentExports.length > 0 && <details className="historical-disclosure"><summary>{t.recentExports}</summary>
           <ul>{recentExports.slice(0, 5).map(job => <li key={job.id}>
-            {new Date(job.createdAt).toLocaleString("pt-BR")} · {job.jobType === "purchase-order-lines-xlsx" ? "por produto · " : ""}{job.status === "queued" ? "na fila"
-              : job.status === "running" ? "em processamento" : job.status === "completed" ? "concluída"
-                : job.status === "failed" ? "falhou" : job.status}
-            {job.downloadPath && <> · <a className="text-link" href={job.downloadPath}>Baixar Excel</a></>}
-            {job.status === "failed" && job.errorCode === "EXPORT_TOO_LARGE" && " · limite de 5.000 POs"}
+            {new Date(job.createdAt).toLocaleString("pt-BR")} · {job.jobType === "purchase-order-lines-xlsx" ? t.byProduct : ""}
+            {(t.jobStatus as Record<string, string>)[job.status] ?? job.status}
+            {job.downloadPath && <> · <a className="text-link" href={job.downloadPath}>{t.downloadExcel}</a></>}
+            {job.status === "failed" && job.errorCode === "EXPORT_TOO_LARGE" && t.jobTooLarge}
           </li>)}</ul>
         </details>}
-        <p className="muted">A planilha Excel contém campos e contagens da carteira visíveis no seu escopo; não inclui saldo nem valores monetários.</p>
+        <p className="muted">{t.exportHelp}</p>
         {exportError && <p className="notice error" role="alert">{exportError}</p>}
-        {result.items.length === 0 && result.totalCount > 0 ? <p>Esta página está fora do intervalo. <button className="button" onClick={() => navigate(applied, 1)}>Ir para a primeira página</button></p> : null}
-        {result.totalCount === 0 ? <p>Nenhuma PO encontrada. Revise os filtros ou limpe a busca.</p> : null}
+        {result.items.length === 0 && result.totalCount > 0 ? <p>{m.productLines.outOfRange}<button className="button" onClick={() => navigate(applied, 1)}>{m.productLines.firstPage}</button></p> : null}
+        {result.totalCount === 0 ? <p>{t.none}</p> : null}
         {result.items.length > 0 && <div className="table-scroll"><table>
-          <thead><tr><th>PO TOTVS</th><th>Importador</th><th>Status</th><th>Itens</th><th>IPs</th><th>Itens sem IP</th><th>Pendências</th><th>Ação</th></tr></thead>
+          <thead><tr><th>{t.totvsPo}</th><th>{m.processDirectory.importer}</th><th>{m.calc.status}</th><th>{t.items}</th><th>IPs</th><th>{t.itemsWithoutIp}</th><th>{t.pending}</th><th>{m.poPanel.action}</th></tr></thead>
           <tbody>{result.items.map(order => <tr key={order.id}>
             <td><strong>{order.number}</strong></td><td>{order.importer}</td>
-            <td>{order.lifecycleStatus === "CLOSED" ? "Encerrada"
-              : order.lifecycleStatus === "CANCELLED" ? "Cancelada"
-                : order.lifecycleStatus === "DELETED" ? "Excluída" : "Ativa"}</td>
+            <td>{t.status[order.lifecycleStatus] ?? t.status.ACTIVE}</td>
             <td>{order.operationalItemCount}</td><td>{order.linkedProcessCount}</td>
             <td>{order.itemsWithoutIp}</td><td>{order.unresolvedIssueCount}</td>
-            <td><Link className="button" href={`/purchase-orders/${order.id}?return=${encodeURIComponent(returnPath)}`}>Abrir PO {order.number}</Link></td>
+            <td><Link className="button" href={`/purchase-orders/${order.id}?return=${encodeURIComponent(returnPath)}`}>{t.open(order.number)}</Link></td>
           </tr>)}</tbody>
         </table></div>}
-        {totalPages > 1 && <nav className="pagination" aria-label="Páginas da carteira">
-          <button className="button secondary" disabled={page <= 1} onClick={() => navigate(applied, page - 1)}>Anterior</button>
-          <span>Página {page} de {totalPages}</span>
-          <button className="button" disabled={page >= totalPages} onClick={() => navigate(applied, page + 1)}>Próxima</button>
+        {totalPages > 1 && <nav className="pagination" aria-label={t.pages}>
+          <button className="button secondary" disabled={page <= 1} onClick={() => navigate(applied, page - 1)}>{m.common.previous}</button>
+          <span>{m.common.pageOf(page, totalPages)}</span>
+          <button className="button" disabled={page >= totalPages} onClick={() => navigate(applied, page + 1)}>{m.common.next}</button>
         </nav>}
       </>}
     </section>

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, readApiJson } from "../lib/api";
 import { formatNumber } from "../lib/format-number";
+import { statusLabel } from "../lib/i18n/labels";
+import { getMessages, useI18n } from "./I18nProvider";
 import { emptyProductLineFilters, parseProductLineFilters, productLineFilterBody, productLineQuery,
   productLineStatuses, type ProductLineFilters } from "../lib/purchase-order-lines";
 
@@ -25,6 +27,8 @@ function show(value: Value | string[]): string {
 
 /** Every PO product line with the shipment data of its IP: the system view of the Pré Embarque sheet. */
 export default function ProductLinesView({ initialQuery }: { initialQuery: string }) {
+  const { m } = useI18n();
+  const t = m.productLines;
   const [initial] = useState(() => {
     const query = new URLSearchParams(initialQuery);
     const requestedPage = Number(query.get("page"));
@@ -46,7 +50,7 @@ export default function ProductLinesView({ initialQuery }: { initialQuery: strin
       .then(result => readApiJson<LinesPage>(result))
       .then(data => { if (!controller.signal.aborted) setResponse({ query, data }); })
       .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setResponse({ query, error: reason instanceof Error ? reason.message : "Erro inesperado." });
+        if (!controller.signal.aborted) setResponse({ query, error: reason instanceof Error ? reason.message : getMessages().common.unexpectedError });
       });
     return () => controller.abort();
   }, [query]);
@@ -66,7 +70,7 @@ export default function ProductLinesView({ initialQuery }: { initialQuery: strin
 
   async function downloadExcel() {
     if (exporting || !result?.totalCount) return;
-    setExporting(true); setExportError(""); setExportStatus("Enviando exportação para a fila…");
+    setExporting(true); setExportError(""); setExportStatus(t.exportQueued);
     try {
       const created = await apiFetch("/api/v1/exports/purchase-order-lines", {
         method: "POST", headers: { "content-type": "application/json" },
@@ -74,26 +78,24 @@ export default function ProductLinesView({ initialQuery }: { initialQuery: strin
       });
       if (!created.ok) {
         const body = await created.json().catch(() => null) as { error?: string } | null;
-        throw new Error(body?.error ?? "Não foi possível iniciar a exportação.");
+        throw new Error(body?.error ?? t.exportStartFailed);
       }
       const { id } = await created.json() as { id: string };
       let complete = false;
       while (!complete) {
         await new Promise(resolve => window.setTimeout(resolve, 1500));
         const statusResponse = await apiFetch(`/api/v1/exports/${id}`);
-        if (!statusResponse.ok) throw new Error("Não foi possível consultar o andamento da exportação.");
+        if (!statusResponse.ok) throw new Error(t.exportStatusFailed);
         const status = await statusResponse.json() as { status: string; errorCode?: string | null };
         if (status.status === "failed") {
-          throw new Error(status.errorCode === "EXPORT_TOO_LARGE"
-            ? "A exportação suporta até 5.000 linhas. Refine os filtros e tente novamente."
-            : "A exportação falhou. Tente novamente mais tarde.");
+          throw new Error(status.errorCode === "EXPORT_TOO_LARGE" ? t.exportTooLarge : t.exportFailed);
         }
         if (status.status === "completed") complete = true;
-        else setExportStatus(status.status === "running" ? "Gerando arquivo Excel em segundo plano…" : "Aguardando processamento…");
+        else setExportStatus(status.status === "running" ? t.exportRunning : t.exportWaiting);
       }
-      setExportStatus("Baixando arquivo…");
+      setExportStatus(t.downloading);
       const file = await apiFetch(`/api/v1/exports/${id}/download`);
-      if (!file.ok) throw new Error("O arquivo expirou ou não está mais disponível. Gere uma nova exportação.");
+      if (!file.ok) throw new Error(t.fileExpired);
       const url = URL.createObjectURL(await file.blob());
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -103,69 +105,68 @@ export default function ProductLinesView({ initialQuery }: { initialQuery: strin
       anchor.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (cause) {
-      setExportError(cause instanceof Error ? cause.message : "Erro inesperado na exportação.");
+      setExportError(cause instanceof Error ? cause.message : t.exportError);
     } finally { setExporting(false); setExportStatus(""); }
   }
 
   const totalPages = result ? Math.ceil(result.totalCount / pageSize) : 0;
   return <main className="shell">
     <header className="page-header portfolio-header">
-      <p className="eyebrow">ERP Comex</p><h1>Carteira por produto</h1>
-      <p>Cada linha é a parcela de um produto da PO dentro de um IP. As datas de pós embarque vêm do IP e são as
-        mesmas para todos os produtos dele; o saldo ainda sem IP aparece como “A distribuir”.</p>
+      <p className="eyebrow">ERP Comex</p><h1>{t.title}</h1>
+      <p>{t.intro}</p>
     </header>
     <section className="card">
       <form className="portfolio-filter" onSubmit={filter}>
-        <label>Número da PO<input value={draft.purchaseOrder} onChange={event => setDraft({ ...draft, purchaseOrder: event.target.value })} /></label>
-        <label>Importador<input value={draft.importer} onChange={event => setDraft({ ...draft, importer: event.target.value })} /></label>
-        <label>Produto<input value={draft.product} onChange={event => setDraft({ ...draft, product: event.target.value })} placeholder="Código ou descrição" /></label>
+        <label>{t.poNumber}<input value={draft.purchaseOrder} onChange={event => setDraft({ ...draft, purchaseOrder: event.target.value })} /></label>
+        <label>{m.processDirectory.importer}<input value={draft.importer} onChange={event => setDraft({ ...draft, importer: event.target.value })} /></label>
+        <label>{m.followup.product}<input value={draft.product} onChange={event => setDraft({ ...draft, product: event.target.value })} placeholder={t.productPlaceholder} /></label>
         <label>IP<input value={draft.ipNumber} onChange={event => setDraft({ ...draft, ipNumber: event.target.value })} /></label>
-        <label>Status<select value={draft.status} onChange={event => setDraft({ ...draft, status: event.target.value as ProductLineFilters["status"] })}>
-          <option value="">Todos</option>
-          {productLineStatuses.map(status => <option key={status} value={status}>{status}</option>)}
+        <label>{m.calc.status}<select value={draft.status} onChange={event => setDraft({ ...draft, status: event.target.value as ProductLineFilters["status"] })}>
+          <option value="">{m.processDirectory.all}</option>
+          {productLineStatuses.map(status => <option key={status} value={status}>{statusLabel(m, status)}</option>)}
         </select></label>
-        <label>ETA a partir de<input type="date" value={draft.etaFrom} onChange={event => setDraft({ ...draft, etaFrom: event.target.value })} /></label>
-        <label>ETA até<input type="date" value={draft.etaTo} onChange={event => setDraft({ ...draft, etaTo: event.target.value })} /></label>
-        <label>Situação<select value={draft.situation} onChange={event => setDraft({ ...draft, situation: event.target.value as ProductLineFilters["situation"] })}>
-          <option value="open">Em aberto (sem entregues e cancelados)</option>
-          <option value="all">Todas</option>
+        <label>{t.etaFrom}<input type="date" value={draft.etaFrom} onChange={event => setDraft({ ...draft, etaFrom: event.target.value })} /></label>
+        <label>{t.etaTo}<input type="date" value={draft.etaTo} onChange={event => setDraft({ ...draft, etaTo: event.target.value })} /></label>
+        <label>{t.situation}<select value={draft.situation} onChange={event => setDraft({ ...draft, situation: event.target.value as ProductLineFilters["situation"] })}>
+          <option value="open">{t.open}</option>
+          <option value="all">{t.all}</option>
         </select></label>
-        <button className="button" type="submit">Aplicar filtros</button>
-        <button className="button secondary" type="button" onClick={() => { setDraft(emptyProductLineFilters); navigate(emptyProductLineFilters, 1); }}>Limpar</button>
+        <button className="button" type="submit">{t.apply}</button>
+        <button className="button secondary" type="button" onClick={() => { setDraft(emptyProductLineFilters); navigate(emptyProductLineFilters, 1); }}>{m.processDirectory.clear}</button>
       </form>
     </section>
     <section className="card" aria-live="polite">
-      {loading && <p role="status">Carregando linhas…</p>}
+      {loading && <p role="status">{t.loading}</p>}
       {error && <p className="notice error" role="alert">{error}</p>}
       {!loading && !error && result && <>
-        <p>{result.totalCount} linhas encontradas{result.totalCount > 0 && ` · página ${page} de ${totalPages}`}</p>
+        <p>{t.found(result.totalCount)}{result.totalCount > 0 && m.processDirectory.pageSuffix(page, totalPages)}</p>
         {result.totalCount > 0 && <p><button className="button secondary" type="button" disabled={exporting}
-          onClick={() => void downloadExcel()}>{exporting ? "Processando exportação…" : "Exportar linhas filtradas (Excel)"}</button></p>}
+          onClick={() => void downloadExcel()}>{exporting ? t.exporting : t.export}</button></p>}
         {exportStatus && <p className="muted" role="status">{exportStatus}</p>}
         {exportError && <p className="notice error" role="alert">{exportError}</p>}
-        {result.lines.length === 0 && result.totalCount > 0 && <p>Esta página está fora do intervalo. <button className="button" onClick={() => navigate(applied, 1)}>Ir para a primeira página</button></p>}
-        {result.totalCount === 0 && <p>Nenhuma linha encontrada. Revise os filtros.</p>}
+        {result.lines.length === 0 && result.totalCount > 0 && <p>{t.outOfRange}<button className="button" onClick={() => navigate(applied, 1)}>{t.firstPage}</button></p>}
+        {result.totalCount === 0 && <p>{t.none}</p>}
         {result.lines.length > 0 && <div className="table-scroll"><table><thead><tr>
-          <th>PO</th><th>Produto</th><th>Quantidade</th><th>IP</th><th>Status</th><th>ETD</th><th>Departure</th>
-          <th>BL date</th><th>ETA</th><th>Chegada</th><th>ETE</th><th>Entrega</th><th>Saída da fábrica</th><th>Invoice</th>
+          <th>PO</th><th>{m.followup.product}</th><th>{m.followup.quantity}</th><th>IP</th><th>{m.calc.status}</th><th>ETD</th><th>{m.followup.departure}</th>
+          <th>{m.fields.blDate}</th><th>ETA</th><th>{m.followup.arrival}</th><th>ETE</th><th>{m.followup.delivery}</th><th>{m.followup.factoryShip}</th><th>{m.postShipment.invoice}</th>
         </tr></thead><tbody>{result.lines.map(line => <tr key={`${line.lineKind}-${line.lineId}`}>
           <td><Link className="text-link" href={`/purchase-orders/${line.purchaseOrder.id}`}>{line.purchaseOrder.number}</Link>
             <small>{line.purchaseOrder.importer}</small></td>
           <td><strong>{line.item.productCode}</strong><small>{line.item.description}</small></td>
           <td>{formatNumber(line.quantity)} {line.item.unit ?? ""}</td>
           <td>{line.process ? <Link className="text-link" href={`/processes/${line.process.id}`}>{line.process.ipNumber}</Link>
-            : <span className="po-ip-pending">Sem IP</span>}</td>
-          <td>{line.calculated.status}</td>
+            : <span className="po-ip-pending">{m.followup.noIp}</span>}</td>
+          <td>{statusLabel(m, line.calculated.status)}</td>
           <td>{show(line.process?.etd)}</td><td>{show(line.process?.actualPortDepartureDate)}</td>
           <td>{show(line.process?.blDate)}</td><td>{show(line.calculated.eta)}</td>
           <td>{show(line.process?.arrivalDate)}</td><td>{show(line.calculated.ete)}</td>
           <td>{show(line.process?.deliveryDate)}</td><td>{show(line.factoryShipDate)}</td>
           <td>{show(line.calculated.invoiceNumbers)}</td>
         </tr>)}</tbody></table></div>}
-        {totalPages > 1 && <nav className="pagination" aria-label="Páginas da carteira por produto">
-          <button className="button secondary" disabled={page <= 1} onClick={() => navigate(applied, page - 1)}>Anterior</button>
-          <span>Página {page} de {totalPages}</span>
-          <button className="button" disabled={page >= totalPages} onClick={() => navigate(applied, page + 1)}>Próxima</button>
+        {totalPages > 1 && <nav className="pagination" aria-label={t.pages}>
+          <button className="button secondary" disabled={page <= 1} onClick={() => navigate(applied, page - 1)}>{m.common.previous}</button>
+          <span>{m.common.pageOf(page, totalPages)}</span>
+          <button className="button" disabled={page >= totalPages} onClick={() => navigate(applied, page + 1)}>{m.common.next}</button>
         </nav>}
       </>}
     </section>
