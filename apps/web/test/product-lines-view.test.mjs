@@ -32,6 +32,13 @@ test("the product lines show the importer in its own column and truncate long na
   }
 });
 
+test("the product lines filter keeps its buttons on their own row below the fields", async () => {
+  const styles = await readFile(new URL("../app/styles/features/operations.css", import.meta.url), "utf8");
+  assert.match(view, /<form className="portfolio-filter product-lines-filter"/u);
+  assert.match(view, /<div className="button-row product-lines-filter-actions"><button className="button" type="submit">\{t\.apply\}<\/button>/u);
+  assert.match(styles, /\.product-lines-filter-actions \{[^}]*grid-column: 1 \/ -1;/u);
+});
+
 test("the sidebar opens the product lines without also highlighting the PO portfolio", () => {
   assert.match(sidebar, /href: "\/purchase-orders\/lines"/u);
   assert.match(sidebar, /exclude: \["\/purchase-orders\/lines"\]/u);

@@ -114,7 +114,7 @@ export default function ProductLinesView({ initialQuery }: { initialQuery: strin
   return <main className="shell">
     <PageHeader className="portfolio-header" eyebrow={m.sidebar.groups.operation} title={t.title}><p>{t.intro}</p></PageHeader>
     <section className="card">
-      <form className="portfolio-filter" onSubmit={filter}>
+      <form className="portfolio-filter product-lines-filter" onSubmit={filter}>
         <label>{t.poNumber}<input value={draft.purchaseOrder} onChange={event => setDraft({ ...draft, purchaseOrder: event.target.value })} /></label>
         <label>{m.processDirectory.importer}<input value={draft.importer} onChange={event => setDraft({ ...draft, importer: event.target.value })} /></label>
         <label>{m.followup.product}<input value={draft.product} onChange={event => setDraft({ ...draft, product: event.target.value })} placeholder={t.productPlaceholder} /></label>
@@ -129,8 +129,8 @@ export default function ProductLinesView({ initialQuery }: { initialQuery: strin
           <option value="open">{t.open}</option>
           <option value="all">{t.all}</option>
         </select></label>
-        <button className="button" type="submit">{t.apply}</button>
-        <button className="button secondary" type="button" onClick={() => { setDraft(emptyProductLineFilters); navigate(emptyProductLineFilters, 1); }}>{m.processDirectory.clear}</button>
+        <div className="button-row product-lines-filter-actions"><button className="button" type="submit">{t.apply}</button>
+          <button className="button secondary" type="button" onClick={() => { setDraft(emptyProductLineFilters); navigate(emptyProductLineFilters, 1); }}>{m.processDirectory.clear}</button></div>
       </form>
     </section>
     <section className="card" aria-live="polite">
