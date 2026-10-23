@@ -6,6 +6,7 @@ import { apiFetch } from "../../lib/api";
 import { automaticAuditReason } from "../../lib/audit";
 import { formatUsDate, formatUsDateTime, parseUsDate } from "../../lib/date-format";
 import type { ProductPriceReference } from "../../lib/product-price-reference";
+import { getMessages, useI18n } from "../../components/I18nProvider";
 import { SearchableSelect } from "../../components/SearchableSelect";
 
 type Resource = "products" | "ncms";
@@ -20,18 +21,22 @@ type AuditEvent = { id: string; operation: string; fieldName: string | null; old
   newValue: unknown; actor: string; occurredAt: string; reason: string | null };
 type AuditPage = { page: number; pageSize: number; totalCount: number; items: AuditEvent[] };
 type Page<T> = { page: number; totalCount: number; items: T[] };
-const labels: Record<Resource, string> = { products: "Produtos", ncms: "NCM" };
+const resources: Resource[] = ["products", "ncms"];
 
 async function responseJson<T>(response: Response): Promise<T> {
-  if (response.status === 401) throw new Error("Sua sessão expirou. Entre novamente.");
-  if (response.status === 403) throw new Error("Seu perfil não permite esta operação.");
-  if (response.status === 404) throw new Error("O registro não está disponível no seu escopo.");
-  if (response.status === 409) throw new Error("Conflito de código ou versão. Recarregue e confira o cadastro.");
-  if (!response.ok) throw new Error("Não foi possível concluir a operação. Confira os campos e tente novamente.");
+  const t = getMessages();
+  if (response.status === 401) throw new Error(t.common.sessionExpired);
+  if (response.status === 403) throw new Error(t.catalog.forbidden);
+  if (response.status === 404) throw new Error(t.catalog.notFound);
+  if (response.status === 409) throw new Error(t.catalog.conflict);
+  if (!response.ok) throw new Error(t.catalog.failed);
   return await response.json() as T;
 }
 
 export default function CatalogPage() {
+  const { m } = useI18n();
+  const t = m.catalog;
+  const labels = t.resources;
   const [resource, setResource] = useState<Resource>("products");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -71,7 +76,7 @@ export default function CatalogPage() {
       apiFetch("/api/v1/" + resource + "?" + query, { signal: controller.signal }).then(responseJson<Page<Entry>>),
       apiFetch("/api/v1/" + resource + "/candidates?" + query, { signal: controller.signal }).then(responseJson<Page<Candidate>>),
     ]).then(([entries, source]) => { if (!controller.signal.aborted) { setRegistered(entries); setCandidates(source); } })
-      .catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Erro ao carregar cadastros."); })
+      .catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : getMessages().catalog.loadFailed); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [resource, search, page, refresh]);
@@ -79,7 +84,7 @@ export default function CatalogPage() {
   function chooseResource(next: Resource) { historyRequest.current += 1; priceHistoryRequest.current += 1; setHistoryLoading(false); setPriceHistoryLoading(false); setResource(next); setPage(1); setDraft({ code: "", name: "", evidence: "", validFrom: "" }); setEditing(undefined); setHistoryEntry(undefined); setHistory(undefined); setPriceHistoryEntry(undefined); setPriceHistory(undefined); }
   function chooseCandidate(candidate: Candidate) {
     setDraft({ code: candidate.rawCode, name: "",
-      evidence: `Origem ${candidate.sampleSheetName}, linha ${candidate.sampleRowNumber}; documento de confirmação: `,
+      evidence: t.candidateEvidence(candidate.sampleSheetName, candidate.sampleRowNumber),
       validFrom: "" });
     document.getElementById("catalog-create")?.scrollIntoView({ behavior: "smooth" });
   }
@@ -87,7 +92,7 @@ export default function CatalogPage() {
     event.preventDefault(); setSaving(true); setError(undefined); setMessage(undefined);
     const validFrom = resource === "ncms" ? parseUsDate(draft.validFrom) : null;
     if (resource === "ncms" && !validFrom) {
-      setError("Informe uma data válida no formato MM/DD/YYYY."); setSaving(false); return;
+      setError(t.invalidDate); setSaving(false); return;
     }
     try {
       const response = await apiFetch(`/api/v1/${resource}`, { method: "POST",
@@ -96,9 +101,9 @@ export default function CatalogPage() {
           : { code: draft.code, name: draft.name, evidence: draft.evidence, reason: automaticAuditReason, validFrom }) });
       await responseJson<Entry>(response);
       setDraft({ code: "", name: "", evidence: "", validFrom: "" });
-      setMessage("Cadastro registrado.");
+      setMessage(t.registered);
       setPage(1); setRefresh(value => value + 1);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Erro ao salvar."); }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : t.saveFailed); }
     finally { setSaving(false); }
   }
   function startEdit(entry: Entry) {
@@ -112,8 +117,8 @@ export default function CatalogPage() {
         headers: { "Content-Type": "application/json", "X-Record-Version": editing.version },
         body: JSON.stringify({ ...editDraft, reason: automaticAuditReason }) });
       await responseJson<Entry>(response);
-      setEditing(undefined); setMessage("Cadastro atualizado com auditoria."); setRefresh(value => value + 1);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Erro ao atualizar."); }
+      setEditing(undefined); setMessage(t.updated); setRefresh(value => value + 1);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : t.updateFailed); }
     finally { setSaving(false); }
   }
   async function loadHistory(entry: Entry, nextPage = 1) {
@@ -127,7 +132,7 @@ export default function CatalogPage() {
     } catch (reason) {
       if (historyRequest.current === requestId) {
         setHistory(undefined);
-        setHistoryError(reason instanceof Error ? reason.message : "Erro ao carregar histórico.");
+        setHistoryError(reason instanceof Error ? reason.message : t.historyFailed);
       }
     } finally { if (historyRequest.current === requestId) setHistoryLoading(false); }
   }
@@ -143,7 +148,7 @@ export default function CatalogPage() {
     } catch (reason) {
       if (priceHistoryRequest.current === requestId) {
         setPriceHistory(undefined);
-        setPriceHistoryError(reason instanceof Error ? reason.message : "Erro ao carregar histórico de preços.");
+        setPriceHistoryError(reason instanceof Error ? reason.message : t.priceHistoryFailed);
       }
     } finally { if (priceHistoryRequest.current === requestId) setPriceHistoryLoading(false); }
   }
@@ -153,105 +158,105 @@ export default function CatalogPage() {
   const canRegisterPo = roles.some(role => ["Master", "Administrador", "Importação", "Compras"].includes(role));
   const canRegisterIp = roles.some(role => ["Master", "Administrador", "Importação"].includes(role));
   return <main className="shell">
-    <header className="page-header"><p className="eyebrow">ERP Comex</p><h1>Cadastros</h1>
-      <div className="catalog-links"><Link className="text-link" href="/">← Carteira de POs</Link></div></header>
+    <header className="page-header"><p className="eyebrow">ERP Comex</p><h1>{t.title}</h1>
+      <div className="catalog-links"><Link className="text-link" href="/">{m.common.backToPortfolio}</Link></div></header>
     <section className="card" aria-labelledby="registration-options-title">
-      <h2 id="registration-options-title">Novo cadastro</h2>
-      <nav className="catalog-links" aria-label="Tipos de cadastro">
-        <Link className="button secondary" href={canWrite ? "#catalog-create" : "#catalog-controls"}>Produtos e NCM</Link>
-        <Link className="button secondary" href="/catalog/values">Valores das entidades</Link>
-        {canRegisterPo && <Link className="button secondary" href="/purchase-orders/new">Cadastrar PO do TOTVS</Link>}
-        {canRegisterIp && <Link className="button secondary" href="/processes/new?from=catalog">Cadastrar IP</Link>}
+      <h2 id="registration-options-title">{t.newEntry}</h2>
+      <nav className="catalog-links" aria-label={t.entryTypes}>
+        <Link className="button secondary" href={canWrite ? "#catalog-create" : "#catalog-controls"}>{t.productsAndNcm}</Link>
+        <Link className="button secondary" href="/catalog/values">{t.entityValues}</Link>
+        {canRegisterPo && <Link className="button secondary" href="/purchase-orders/new">{t.registerPo}</Link>}
+        {canRegisterIp && <Link className="button secondary" href="/processes/new?from=catalog">{t.registerIp}</Link>}
       </nav>
     </section>
     <section className="card catalog-controls" id="catalog-controls">
-      <div role="group" aria-label="Tipo de cadastro">{(Object.keys(labels) as Resource[]).map(key =>
+      <div role="group" aria-label={t.entryType}>{resources.map(key =>
         <button type="button" key={key} className={`button ${resource === key ? "" : "secondary"}`} onClick={() => chooseResource(key)}>{labels[key]}</button>)}</div>
-      <label>Pesquisar código ou nome<input value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} /></label>
+      <label>{t.search}<input value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} /></label>
     </section>
-    {error && <div className="notice error" role="alert">{error} <button className="button" type="button" onClick={() => setRefresh(value => value + 1)}>Tentar novamente</button></div>}
+    {error && <div className="notice error" role="alert">{error} <button className="button" type="button" onClick={() => setRefresh(value => value + 1)}>{m.common.retry}</button></div>}
     {message && <p className="notice" role="status">{message}</p>}
-    {loading && <p role="status">Carregando cadastros…</p>}
+    {loading && <p role="status">{t.loading}</p>}
     {!loading && !error && <>
-      <section className="card"><h2>{labels[resource]} cadastrados</h2>
-        <p className="muted">{registered?.totalCount ?? 0} registros</p>
-        {registered?.items.length === 0 && <p>Nenhum cadastro encontrado.</p>}
-        {!!registered?.items.length && <div className="table-scroll"><table className="catalog-entry-table"><thead><tr><th>Código</th><th>Nome</th>{resource === "products" && <th>Preço de referência</th>}<th>Situação</th><th>Vigência</th><th>Versão</th><th>Ação</th></tr></thead><tbody>
+      <section className="card"><h2>{t.registeredTitle(labels[resource])}</h2>
+        <p className="muted">{t.records(registered?.totalCount ?? 0)}</p>
+        {registered?.items.length === 0 && <p>{t.none}</p>}
+        {!!registered?.items.length && <div className="table-scroll"><table className="catalog-entry-table"><thead><tr><th>{t.code}</th><th>{t.name}</th>{resource === "products" && <th>{t.referencePrice}</th>}<th>{t.status}</th><th>{t.validity}</th><th>{t.version}</th><th>{m.poPanel.action}</th></tr></thead><tbody>
           {registered.items.map(entry => <tr key={entry.id}><td>{entry.code}</td><td className="catalog-entry-name">{entry.name}</td>
             {resource === "products" && <td>{entry.referencePrices?.length
               ? entry.referencePrices.map(reference => `${formatNumber(reference.unitPrice)} ${reference.currency}`).join(" · ")
-              : <span className="muted">Sem referência</span>}</td>}
-            <td>{entry.status === "ACTIVE" ? "Ativo" : "Inativo"}</td>
-            <td>{formatUsDate(entry.validFrom) || "—"}{entry.validTo ? ` a ${formatUsDate(entry.validTo)}` : ""}</td><td>{entry.version}</td>
-            <td><button className="button secondary" type="button" aria-label={`Ver histórico de ${labels[resource].toLowerCase()} ${entry.code}`} disabled={historyLoading} onClick={() => void loadHistory(entry)}>Histórico</button>
-              {resource === "products" && <button className="button secondary" type="button" aria-label={`Ver histórico de preços do produto ${entry.code}`} disabled={priceHistoryLoading} onClick={() => void loadPriceHistory(entry)}>Preços</button>}
-              {canWrite && <button className="button secondary" type="button" aria-label={`Editar ${labels[resource].toLowerCase()} ${entry.code}`} onClick={() => startEdit(entry)}>Editar</button>}</td></tr>)}
+              : <span className="muted">{t.noReference}</span>}</td>}
+            <td>{entry.status === "ACTIVE" ? t.active : t.inactive}</td>
+            <td>{formatUsDate(entry.validFrom) || "—"}{entry.validTo ? t.validTo(formatUsDate(entry.validTo)) : ""}</td><td>{entry.version}</td>
+            <td><button className="button secondary" type="button" aria-label={t.historyAria(labels[resource].toLowerCase(), entry.code)} disabled={historyLoading} onClick={() => void loadHistory(entry)}>{t.history}</button>
+              {resource === "products" && <button className="button secondary" type="button" aria-label={t.pricesAria(entry.code)} disabled={priceHistoryLoading} onClick={() => void loadPriceHistory(entry)}>{t.prices}</button>}
+              {canWrite && <button className="button secondary" type="button" aria-label={t.editAria(labels[resource].toLowerCase(), entry.code)} onClick={() => startEdit(entry)}>{t.edit}</button>}</td></tr>)}
         </tbody></table></div>}
       </section>
-      {priceHistoryEntry && <section className="card request-history" aria-label={`Histórico de preços do produto ${priceHistoryEntry.code}`}>
-        <div className="quality-heading"><h2>Preços: {priceHistoryEntry.code} · {priceHistoryEntry.name}</h2>
-          <button className="button secondary" type="button" onClick={() => { priceHistoryRequest.current += 1; setPriceHistoryLoading(false); setPriceHistoryEntry(undefined); setPriceHistory(undefined); }}>Fechar</button></div>
+      {priceHistoryEntry && <section className="card request-history" aria-label={t.priceHistoryAria(priceHistoryEntry.code)}>
+        <div className="quality-heading"><h2>{t.pricesTitle(priceHistoryEntry.code, priceHistoryEntry.name)}</h2>
+          <button className="button secondary" type="button" onClick={() => { priceHistoryRequest.current += 1; setPriceHistoryLoading(false); setPriceHistoryEntry(undefined); setPriceHistory(undefined); }}>{t.close}</button></div>
         {priceHistoryError && <p className="notice error" role="alert">{priceHistoryError}</p>}
-        {priceHistoryLoading && <p role="status">Carregando histórico de preços…</p>}
+        {priceHistoryLoading && <p role="status">{t.priceHistoryLoading}</p>}
         {!priceHistoryLoading && priceHistory && <>
-          {priceHistory.items.length === 0 && <p className="muted">Ainda não há observações de preço para este produto.</p>}
-          {!!priceHistory.items.length && <div className="table-scroll"><table><thead><tr><th>Preço unitário</th><th>Moeda</th><th>PO</th><th>Data</th><th>Ator</th></tr></thead><tbody>
+          {priceHistory.items.length === 0 && <p className="muted">{t.noPrices}</p>}
+          {!!priceHistory.items.length && <div className="table-scroll"><table><thead><tr><th>{t.unitPrice}</th><th>{t.currency}</th><th>PO</th><th>{t.date}</th><th>{t.actor}</th></tr></thead><tbody>
             {priceHistory.items.map(item => <tr key={item.id}><td>{formatNumber(item.unitPrice)}</td><td>{item.currency}</td>
-              <td>{item.purchaseOrderNumber}</td><td>{formatUsDateTime(item.observedAt)}</td><td>{item.actor ?? "Sistema"}</td></tr>)}
+              <td>{item.purchaseOrderNumber}</td><td>{formatUsDateTime(item.observedAt)}</td><td>{item.actor ?? t.system}</td></tr>)}
           </tbody></table></div>}
-          {priceHistory.totalCount > priceHistory.pageSize && <nav className="pagination" aria-label="Páginas do histórico de preços">
-            <button className="button secondary" disabled={priceHistory.page <= 1} onClick={() => void loadPriceHistory(priceHistoryEntry, priceHistory.page - 1)}>Anterior</button>
-            <span>Página {priceHistory.page} de {Math.ceil(priceHistory.totalCount / priceHistory.pageSize)}</span>
-            <button className="button" disabled={priceHistory.page * priceHistory.pageSize >= priceHistory.totalCount} onClick={() => void loadPriceHistory(priceHistoryEntry, priceHistory.page + 1)}>Próxima</button>
+          {priceHistory.totalCount > priceHistory.pageSize && <nav className="pagination" aria-label={t.priceHistoryPages}>
+            <button className="button secondary" disabled={priceHistory.page <= 1} onClick={() => void loadPriceHistory(priceHistoryEntry, priceHistory.page - 1)}>{m.common.previous}</button>
+            <span>{m.common.pageOf(priceHistory.page, Math.ceil(priceHistory.totalCount / priceHistory.pageSize))}</span>
+            <button className="button" disabled={priceHistory.page * priceHistory.pageSize >= priceHistory.totalCount} onClick={() => void loadPriceHistory(priceHistoryEntry, priceHistory.page + 1)}>{m.common.next}</button>
           </nav>}
         </>}
       </section>}
-      {historyEntry && <section className="card request-history" aria-label={`Histórico do cadastro ${historyEntry.code}`}>
-        <div className="quality-heading"><h2>Histórico: {historyEntry.code} · {historyEntry.name}</h2>
-          <button className="button secondary" type="button" onClick={() => { historyRequest.current += 1; setHistoryLoading(false); setHistoryEntry(undefined); setHistory(undefined); }}>Fechar</button></div>
+      {historyEntry && <section className="card request-history" aria-label={t.historyEntryAria(historyEntry.code)}>
+        <div className="quality-heading"><h2>{t.historyTitle(historyEntry.code, historyEntry.name)}</h2>
+          <button className="button secondary" type="button" onClick={() => { historyRequest.current += 1; setHistoryLoading(false); setHistoryEntry(undefined); setHistory(undefined); }}>{t.close}</button></div>
         {historyError && <p className="notice error" role="alert">{historyError}</p>}
-        {historyLoading && <p role="status">Carregando histórico…</p>}
+        {historyLoading && <p role="status">{t.historyLoading}</p>}
         {!historyLoading && history && <>
-          {history.items.length === 0 && <p className="muted">Nenhuma alteração auditada para este cadastro.</p>}
+          {history.items.length === 0 && <p className="muted">{t.noHistory}</p>}
           <ol className="request-history-list">{history.items.map(event => <li key={event.id}>
             <strong>{event.fieldName ?? event.operation}</strong>
             <span className="muted">{event.actor} · {formatUsDateTime(event.occurredAt)}</span>
-            <p>Antes: {formatAuditValue(event.oldValue)} · Depois: {formatAuditValue(event.newValue)}</p>
+            <p>{t.beforeAfter(formatAuditValue(event.oldValue), formatAuditValue(event.newValue))}</p>
           </li>)}</ol>
-          {history.totalCount > history.pageSize && <nav className="pagination" aria-label="Páginas do histórico">
-            <button className="button secondary" disabled={history.page <= 1} onClick={() => void loadHistory(historyEntry, history.page - 1)}>Anterior</button>
-            <span>Página {history.page} de {Math.ceil(history.totalCount / history.pageSize)}</span>
-            <button className="button" disabled={history.page * history.pageSize >= history.totalCount} onClick={() => void loadHistory(historyEntry, history.page + 1)}>Próxima</button>
+          {history.totalCount > history.pageSize && <nav className="pagination" aria-label={t.historyPages}>
+            <button className="button secondary" disabled={history.page <= 1} onClick={() => void loadHistory(historyEntry, history.page - 1)}>{m.common.previous}</button>
+            <span>{m.common.pageOf(history.page, Math.ceil(history.totalCount / history.pageSize))}</span>
+            <button className="button" disabled={history.page * history.pageSize >= history.totalCount} onClick={() => void loadHistory(historyEntry, history.page + 1)}>{m.common.next}</button>
           </nav>}
         </>}
       </section>}
-      <details className="card catalog-candidates"><summary>Candidatos de origem <span>{candidates?.totalCount ?? 0}</span></summary><p className="muted">{candidates?.totalCount ?? 0} valores encontrados</p>
-        {candidates?.items.length === 0 && <p>Nenhum candidato encontrado.</p>}
-        {!!candidates?.items.length && <div className="table-scroll"><table><thead><tr><th>Valor literal</th><th>Observações</th><th>Origem</th><th>Ação</th></tr></thead><tbody>
-          {candidates.items.map((value, index) => <tr key={`${value.rawCode}-${index}`}><td>{value.rawCode}</td><td>{value.observationCount}</td><td>{value.sampleSheetName}, linha {value.sampleRowNumber}</td>
-            <td>{value.eligibleFormat ? canWrite && <button className="button secondary" type="button" onClick={() => chooseCandidate(value)}>Preparar revisão</button> : "Formato inválido; revisar origem"}</td></tr>)}
+      <details className="card catalog-candidates"><summary>{t.candidates} <span>{candidates?.totalCount ?? 0}</span></summary><p className="muted">{t.candidatesFound(candidates?.totalCount ?? 0)}</p>
+        {candidates?.items.length === 0 && <p>{t.noCandidates}</p>}
+        {!!candidates?.items.length && <div className="table-scroll"><table><thead><tr><th>{t.literalValue}</th><th>{t.observations}</th><th>{t.source}</th><th>{m.poPanel.action}</th></tr></thead><tbody>
+          {candidates.items.map((value, index) => <tr key={`${value.rawCode}-${index}`}><td>{value.rawCode}</td><td>{value.observationCount}</td><td>{t.sourceRow(value.sampleSheetName, value.sampleRowNumber)}</td>
+            <td>{value.eligibleFormat ? canWrite && <button className="button secondary" type="button" onClick={() => chooseCandidate(value)}>{t.prepareReview}</button> : t.invalidFormat}</td></tr>)}
         </tbody></table></div>}
       </details>
-      <nav className="pagination" aria-label="Páginas dos cadastros"><button className="button secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>Anterior</button><span>Página {page}</span><button className="button" disabled={Math.max(registered?.totalCount ?? 0, candidates?.totalCount ?? 0) <= page * 25} onClick={() => setPage(page + 1)}>Próxima</button></nav>
+      <nav className="pagination" aria-label={t.pages}><button className="button secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>{m.common.previous}</button><span>{t.page(page)}</span><button className="button" disabled={Math.max(registered?.totalCount ?? 0, candidates?.totalCount ?? 0) <= page * 25} onClick={() => setPage(page + 1)}>{m.common.next}</button></nav>
     </>}
-    {canWrite && <section className="card" id="catalog-create"><h2>Registrar {labels[resource].toLowerCase()}</h2>
-      <p className="muted">Informe os dados do novo cadastro.</p>
+    {canWrite && <section className="card" id="catalog-create"><h2>{t.register(labels[resource].toLowerCase())}</h2>
+      <p className="muted">{t.registerHelp}</p>
       <form className="stack-form" onSubmit={event => void create(event)}>
-        <label>{resource === "products" ? "C\u00f3digo do produto" : "C\u00f3digo NCM"}<input required maxLength={resource === "products" ? 120 : 8} pattern={resource === "ncms" ? "[0-9]{8}" : undefined} value={draft.code} onChange={event => setDraft(value => ({ ...value, code: event.target.value }))} /></label>
-        <label>{resource === "products" ? "Descri\u00e7\u00e3o do produto" : "Descri\u00e7\u00e3o NCM"}<input required maxLength={2000} value={draft.name} onChange={event => setDraft(value => ({ ...value, name: event.target.value }))} /></label>
-        {resource === "ncms" && <label>Início da vigência (MM/DD/YYYY)<input required type="text" inputMode="numeric" maxLength={10} pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}" placeholder="MM/DD/YYYY" value={draft.validFrom} onChange={event => setDraft(value => ({ ...value, validFrom: event.target.value }))} /></label>}
-        {resource === "ncms" && <label>Evid\u00eancia da revis\u00e3o<textarea required minLength={8} maxLength={2000} value={draft.evidence} onChange={event => setDraft(value => ({ ...value, evidence: event.target.value }))} placeholder="Documento, n\u00famero, data e onde conferir" /></label>}
-        <button className="button" disabled={saving} type="submit">{saving ? "Salvando…" : "Registrar cadastro"}</button>
+        <label>{resource === "products" ? t.productCode : t.ncmCode}<input required maxLength={resource === "products" ? 120 : 8} pattern={resource === "ncms" ? "[0-9]{8}" : undefined} value={draft.code} onChange={event => setDraft(value => ({ ...value, code: event.target.value }))} /></label>
+        <label>{resource === "products" ? t.productDescription : t.ncmDescription}<input required maxLength={2000} value={draft.name} onChange={event => setDraft(value => ({ ...value, name: event.target.value }))} /></label>
+        {resource === "ncms" && <label>{t.validFrom}<input required type="text" inputMode="numeric" maxLength={10} pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}" placeholder="MM/DD/YYYY" value={draft.validFrom} onChange={event => setDraft(value => ({ ...value, validFrom: event.target.value }))} /></label>}
+        {resource === "ncms" && <label>{t.reviewEvidence}<textarea required minLength={8} maxLength={2000} value={draft.evidence} onChange={event => setDraft(value => ({ ...value, evidence: event.target.value }))} placeholder={t.evidencePlaceholder} /></label>}
+        <button className="button" disabled={saving} type="submit">{saving ? t.saving : t.registerEntry}</button>
       </form>
     </section>}
-    {editing && <section className="card"><h2>Editar {editing.code}</h2><p className="muted">Versão {editing.version}. Inativação preserva o histórico e o código original.</p>
+    {editing && <section className="card"><h2>{t.editTitle(editing.code)}</h2><p className="muted">{t.editHelp(editing.version)}</p>
       <form className="stack-form" onSubmit={event => void saveEdit(event)}>
-        <label>Nome<input required maxLength={2000} value={editDraft.name} onChange={event => setEditDraft(value => ({ ...value, name: event.target.value }))} /></label>
-        <label>Situação<SearchableSelect ariaLabel="Situação" placeholder="" value={editDraft.status}
+        <label>{t.name}<input required maxLength={2000} value={editDraft.name} onChange={event => setEditDraft(value => ({ ...value, name: event.target.value }))} /></label>
+        <label>{t.status}<SearchableSelect ariaLabel={t.status} placeholder="" value={editDraft.status}
           onChange={status => setEditDraft(value => ({ ...value, status }))}
-          options={[{ value: "ACTIVE", label: "Ativo" }, { value: "INACTIVE", label: "Inativo" }]} /></label>
-        {resource === "ncms" && <label>Evid\u00eancia<textarea required minLength={8} value={editDraft.evidence} onChange={event => setEditDraft(value => ({ ...value, evidence: event.target.value }))} /></label>}
-        <div><button className="button" disabled={saving} type="submit">Salvar alteração</button><button className="button secondary" type="button" onClick={() => setEditing(undefined)}>Cancelar</button></div>
+          options={[{ value: "ACTIVE", label: t.active }, { value: "INACTIVE", label: t.inactive }]} /></label>
+        {resource === "ncms" && <label>{t.evidence}<textarea required minLength={8} value={editDraft.evidence} onChange={event => setEditDraft(value => ({ ...value, evidence: event.target.value }))} /></label>}
+        <div><button className="button" disabled={saving} type="submit">{t.saveChange}</button><button className="button secondary" type="button" onClick={() => setEditing(undefined)}>{t.cancel}</button></div>
       </form></section>}
   </main>;
 }

@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { buildE2eFlow, DEFAULT_E2E_FLOW_CONFIG, formatDayOffset, railCenter } from "../lib/e2e-flow.ts";
+import { en } from "../lib/i18n/en.ts";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
+import { zhCN } from "../lib/i18n/zh-CN.ts";
 
 const component = await readFile(new URL("../components/E2eFlowDemo.tsx", import.meta.url), "utf8");
 const page = await readFile(new URL("../app/end-to-end/page.tsx", import.meta.url), "utf8");
@@ -16,7 +18,7 @@ test("formats day offsets relative to the need date", () => {
 });
 
 test("default scenario (não MTS, marítimo) fits the horizon with slack", () => {
-  const flow = buildE2eFlow(DEFAULT_E2E_FLOW_CONFIG, { mts: false, air: false });
+  const flow = buildE2eFlow(DEFAULT_E2E_FLOW_CONFIG, { mts: false, air: false }, ptBR);
   assert.equal(flow.total, 110);
   assert.equal(flow.slack, 10);
   assert.equal(flow.months, 4);
@@ -35,7 +37,7 @@ test("default scenario (não MTS, marítimo) fits the horizon with slack", () =>
 });
 
 test("MTS by sea exceeds the horizon and marks the delay on the ruler", () => {
-  const flow = buildE2eFlow(DEFAULT_E2E_FLOW_CONFIG, { mts: true, air: false });
+  const flow = buildE2eFlow(DEFAULT_E2E_FLOW_CONFIG, { mts: true, air: false }, ptBR);
   assert.equal(flow.total, 125);
   assert.equal(flow.slack, -5);
   assert.equal(flow.slackPct, 0);
@@ -50,7 +52,7 @@ test("MTS by sea exceeds the horizon and marks the delay on the ruler", () => {
 });
 
 test("air freight switches the transport phase and milestone labels", () => {
-  const flow = buildE2eFlow(DEFAULT_E2E_FLOW_CONFIG, { mts: true, air: true });
+  const flow = buildE2eFlow(DEFAULT_E2E_FLOW_CONFIG, { mts: true, air: true }, ptBR);
   assert.equal(flow.total, 80);
   assert.equal(flow.slack, 40);
   assert.equal(flow.phases[4].icon, "plane");
@@ -60,7 +62,7 @@ test("air freight switches the transport phase and milestone labels", () => {
 });
 
 test("config overrides change the computed deadlines", () => {
-  const flow = buildE2eFlow({ ...DEFAULT_E2E_FLOW_CONFIG, horizonte: 90, sc: 5 }, { mts: false, air: true });
+  const flow = buildE2eFlow({ ...DEFAULT_E2E_FLOW_CONFIG, horizonte: 90, sc: 5 }, { mts: false, air: true }, ptBR);
   assert.equal(flow.total, 5 + 7 + 30 + 10 + 10);
   assert.equal(flow.slack, 28);
   assert.equal(flow.months, 3);
@@ -78,9 +80,17 @@ test("end-to-end demo page is routed, listed in the sidebar and follows the app 
   assert.match(sidebar, /\{ label: "endToEnd", href: "\/end-to-end", icon: "flow" \}/u);
   assert.equal(ptBR.sidebar.items.endToEnd, "End-to-end");
   assert.match(component, /<main className="shell e2e-flow"/u);
-  assert.match(component, /<header className="page-header"><p className="eyebrow">/u);
-  assert.match(component, /Demonstração/u);
+  assert.match(component, /<header className="page-header"><p className="eyebrow">\{t\.eyebrow\}<\/p>/u);
+  assert.match(ptBR.e2e.eyebrow, /Demonstração/u);
   assert.doesNotMatch(component, /next\/font|fonts\.googleapis/u);
   assert.match(styles, /\.e2e-flow\s*\{/u);
   assert.match(styles, /:root\[data-theme="dark"\] \.e2e-flow\s*\{/u);
+});
+
+test("the flow labels follow the chosen language", () => {
+  const flow = buildE2eFlow(DEFAULT_E2E_FLOW_CONFIG, { mts: false, air: true }, en);
+  assert.equal(flow.phases[4].name, "Air freight");
+  assert.equal(flow.milestones[5].label, "Arrival at the airport");
+  assert.equal(flow.ticks.at(-1).label, "D-0 · need date");
+  assert.equal(buildE2eFlow(DEFAULT_E2E_FLOW_CONFIG, { mts: true, air: false }, zhCN).phases[3].owner, "HQ · MTS");
 });

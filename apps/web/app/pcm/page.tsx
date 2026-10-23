@@ -5,7 +5,9 @@ import { apiFetch, readApiJson } from "../../lib/api";
 import { automaticAuditReason } from "../../lib/audit";
 import { PurchaseRequestChoice } from "../../components/PurchaseRequestSelect";
 import { CatalogChoice, loadCatalogChoices, loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "../../components/OperationalOptionSelect";
+import { getMessages, useI18n } from "../../components/I18nProvider";
 import { SearchableSelect } from "../../components/SearchableSelect";
+import type { Messages } from "../../lib/i18n/pt-BR";
 
 type Importer = { code: string };
 type PurchaseRequestHistory = {
@@ -18,16 +20,13 @@ type PurchaseRequestHistory = {
   reason: string;
 };
 
-const historyFields = [
-  ["supplierText", "Fornecedor"],
-  ["importer", "Importadora"], ["scNumber", "Número da SC"], ["scDate", "Data da SC"],
-  ["requester", "Solicitante"], ["commercialPlanReceivedDate", "Recebimento do plano comercial"],
-  ["approvalDate", "Data de aprovação"],
-] as const;
+const historyFields = ["supplierText", "importer", "scNumber", "scDate", "requester", "commercialPlanReceivedDate",
+  "approvalDate"] as const;
 
-function historyChanges(event: PurchaseRequestHistory) {
-  if (!event.oldValue) return ["SC cadastrada."];
-  return historyFields.flatMap(([key, label]) => {
+function historyChanges(event: PurchaseRequestHistory, m: Messages) {
+  if (!event.oldValue) return [m.pcm.registeredEvent];
+  return historyFields.flatMap(key => {
+    const label = m.pcm.historyFields[key];
     const before = event.oldValue?.[key] ?? "—";
     const after = event.newValue?.[key] ?? "—";
     return JSON.stringify(before) === JSON.stringify(after) ? [] : [`${label}: ${String(before)} → ${String(after)}`];
@@ -40,6 +39,8 @@ function formatHistoryActor(actor: string) {
 }
 
 export default function PcmPage() {
+  const { m } = useI18n();
+  const t = m.pcm;
   const [roles, setRoles] = useState<string[]>([]);
   const [importers, setImporters] = useState<Importer[]>([]);
   const [importer, setImporter] = useState("");
@@ -82,7 +83,7 @@ export default function PcmPage() {
       setImporters(result.items);
       setOptions(optionValues);
     }).catch(cause => {
-      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Não foi possível carregar os dados do PCM.");
+      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : getMessages().pcm.loadFailed);
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, []);
@@ -94,7 +95,7 @@ export default function PcmPage() {
     apiFetch(`/api/v1/purchase-requests${query}`, { signal: controller.signal, cache: "no-store" })
       .then(response => readApiJson<{ items: PurchaseRequestChoice[] }>(response))
       .then(result => { if (!controller.signal.aborted) setItems(result.items); })
-      .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Não foi possível consultar as SCs."); })
+      .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : getMessages().pcm.listFailed); })
       .finally(() => { if (!controller.signal.aborted) setPurchaseRequestsLoading(false); });
     return () => controller.abort();
   }, [importerFilter]);
@@ -105,7 +106,7 @@ export default function PcmPage() {
     if (importer) loadCatalogChoices("suppliers", importer).then(values => {
       if (!controller.signal.aborted) setSuppliers(values);
     }).catch(cause => {
-      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Não foi possível carregar os fornecedores.");
+      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : getMessages().pcm.suppliersFailed);
     });
     return () => controller.abort();
   }, [importer]);
@@ -138,11 +139,9 @@ export default function PcmPage() {
       const list = await readApiJson<{ items: PurchaseRequestChoice[] }>(
         await apiFetch(`/api/v1/purchase-requests${queryString ? `?${queryString}` : ""}`, { cache: "no-store" }));
       setItems(list.items);
-      setNotice(editingId
-        ? `SC ${saved.scNumber} atualizada. Os campos compartilhados ainda ligados aos valores anteriores também foram atualizados nas POs.`
-        : `SC ${saved.scNumber} cadastrada. Ela já pode ser vinculada às POs desta importadora.`);
+      setNotice(editingId ? t.updated(saved.scNumber) : t.created(saved.scNumber));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Não foi possível salvar a SC.");
+      setError(cause instanceof Error ? cause.message : t.saveFailed);
     } finally { setSaving(false); }
   }
 
@@ -150,7 +149,7 @@ export default function PcmPage() {
     setEditingId(item.id); setEditingVersion(item.version); setImporter(item.importer);
     setScNumber(item.scNumber); setSupplierText(item.supplierText ?? ""); setScDate(item.scDate ?? ""); setRequester(item.requester);
     setCommercialPlanReceivedDate(item.commercialPlanReceivedDate ?? ""); setApprovalDate(item.approvalDate ?? "");
-    setEditReason(""); setError(""); setNotice(`Editando a SC ${item.scNumber}.`);
+    setEditReason(""); setError(""); setNotice(t.editing(item.scNumber));
   }
 
   function cancelEditing() {
@@ -167,7 +166,7 @@ export default function PcmPage() {
         await apiFetch(`/api/v1/purchase-requests/${item.id}/history`, { cache: "no-store" }));
       setHistoryItems(result.items);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Não foi possível consultar o histórico da SC.");
+      setError(cause instanceof Error ? cause.message : t.historyFailed);
     } finally { setHistoryLoading(false); }
   }
 
@@ -190,7 +189,7 @@ export default function PcmPage() {
         await apiFetch(`/api/v1/purchase-requests${queryString ? `?${queryString}` : ""}`, { cache: "no-store" }));
       setItems(list.items);
       setDeletingItem(null); setDeleteReason("");
-      setNotice(`SC ${deleted.scNumber} excluída. A exclusão e os vínculos removidos estão no histórico de auditoria.`);
+      setNotice(t.deleted(deleted.scNumber));
       setHistoryId(deleted.id); setHistoryLoading(true);
       try {
         const history = await readApiJson<{ items: PurchaseRequestHistory[] }>(
@@ -202,91 +201,91 @@ export default function PcmPage() {
         setHistoryLoading(false);
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Não foi possível excluir a SC.");
+      setError(cause instanceof Error ? cause.message : t.deleteFailed);
     } finally { setSaving(false); }
   }
 
   return <main className="shell">
     <header className="page-header">
-      <p className="eyebrow">PCM · Planejamento e Controle de Materiais</p>
-      <h1>Solicitações de Compra</h1>
-      <p>Cadastre a SC e os dados do plano comercial. Ao selecionar essa SC em uma PO, os dados serão exibidos em todas as POs vinculadas.</p>
+      <p className="eyebrow">{t.eyebrow}</p>
+      <h1>{t.title}</h1>
+      <p>{t.intro}</p>
     </header>
-    {loading && <p role="status">Carregando o PCM…</p>}
+    {loading && <p role="status">{t.loading}</p>}
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice" role="status">{notice}</p>}
-    {!loading && !canManage && <p className="notice">Seu perfil pode consultar SCs, mas não pode cadastrá-las. Solicite o perfil PCM a um Master.</p>}
+    {!loading && !canManage && <p className="notice">{t.readOnly}</p>}
     {!loading && canManage && <section className="card">
-      <h2>{editingId ? "Editar SC" : "Cadastrar SC"}</h2>
+      <h2>{editingId ? t.edit : t.create}</h2>
       <form className="stack-form" onSubmit={save}>
         <div className="operational-fields">
-          <label>Importadora<SearchableSelect ariaLabel="Importadora" required value={importer} onChange={setImporter}
+          <label>{t.historyFields.importer}<SearchableSelect ariaLabel={t.historyFields.importer} required value={importer} onChange={setImporter}
             options={importers.map(item => ({ value: item.code, label: item.code }))} /></label>
-          <label>Número da SC<input required maxLength={80} value={scNumber} onChange={event => setScNumber(event.target.value)} /></label>
-          <label>Fornecedor<SearchableSelect ariaLabel="Fornecedor" required value={supplierText} onChange={setSupplierText}
+          <label>{t.historyFields.scNumber}<input required maxLength={80} value={scNumber} onChange={event => setScNumber(event.target.value)} /></label>
+          <label>{t.historyFields.supplierText}<SearchableSelect ariaLabel={t.historyFields.supplierText} required value={supplierText} onChange={setSupplierText}
             options={suppliers.map(item => ({ value: item.code, label: `${item.code} · ${item.name}` }))} /></label>
-          <label>Data da SC<input type="date" value={scDate} onChange={event => setScDate(event.target.value)} /></label>
-          <label>Data de recebimento do plano comercial<input type="date" value={commercialPlanReceivedDate}
+          <label>{t.historyFields.scDate}<input type="date" value={scDate} onChange={event => setScDate(event.target.value)} /></label>
+          <label>{m.fields.commercialPlanReceivedDate}<input type="date" value={commercialPlanReceivedDate}
             onChange={event => setCommercialPlanReceivedDate(event.target.value)} /></label>
-          <label>Solicitante<OperationalOptionSelect required entity="requester" value={requester} values={options}
+          <label>{t.historyFields.requester}<OperationalOptionSelect required entity="requester" value={requester} values={options}
             onChange={setRequester} /></label>
-          <label>Data de aprovação<input type="date" value={approvalDate} onChange={event => setApprovalDate(event.target.value)} /></label>
+          <label>{t.approvalDate}<input type="date" value={approvalDate} onChange={event => setApprovalDate(event.target.value)} /></label>
         </div>
-        {editingId && <label>Motivo da alteração<textarea required minLength={3} maxLength={1000} value={editReason}
+        {editingId && <label>{t.changeReason}<textarea required minLength={3} maxLength={1000} value={editReason}
           onChange={event => setEditReason(event.target.value)} /></label>}
         <div className="button-row">
-          <button className="button" disabled={saving || !importer || (Boolean(editingId) && editReason.trim().length < 3)}>{saving ? "Salvando SC…" : editingId ? "Salvar alterações" : "Cadastrar SC"}</button>
-          {editingId && <button className="button secondary" type="button" disabled={saving} onClick={cancelEditing}>Cancelar edição</button>}
+          <button className="button" disabled={saving || !importer || (Boolean(editingId) && editReason.trim().length < 3)}>{saving ? t.saving : editingId ? t.saveChanges : t.create}</button>
+          {editingId && <button className="button secondary" type="button" disabled={saving} onClick={cancelEditing}>{t.cancelEdit}</button>}
         </div>
       </form>
     </section>}
     {!loading && <section className="card">
-      <h2>SCs cadastradas</h2>
-      <label className="sc-list-filter">Importadora<SearchableSelect ariaLabel="Filtrar por importadora" disabled={Boolean(editingId)}
+      <h2>{t.listTitle}</h2>
+      <label className="sc-list-filter">{t.historyFields.importer}<SearchableSelect ariaLabel={t.filterAria} disabled={Boolean(editingId)}
         value={importerFilter} onChange={setImporterFilter} options={importers.map(item => ({ value: item.code, label: item.code }))} /></label>
-      {purchaseRequestsLoading ? <p role="status">Carregando SCs…</p> : items.length === 0 ? <p>
-        {importerFilter ? "Nenhuma SC cadastrada para esta importadora." : "Nenhuma SC cadastrada."}
+      {purchaseRequestsLoading ? <p role="status">{t.loadingList}</p> : items.length === 0 ? <p>
+        {importerFilter ? t.noneForImporter : t.none}
       </p> :
         <div className="table-scroll"><table><thead><tr>
-          <th>Número da SC</th><th>Fornecedor</th><th>Data da SC</th><th>Solicitante</th><th>Plano comercial recebido</th><th>Aprovação</th><th>POs vinculadas</th><th>Ação</th>
+          <th>{t.historyFields.scNumber}</th><th>{t.historyFields.supplierText}</th><th>{t.historyFields.scDate}</th><th>{t.historyFields.requester}</th><th>{t.planReceived}</th><th>{t.approval}</th><th>{t.linkedPos}</th><th>{m.poPanel.action}</th>
         </tr></thead><tbody>{items.map(item => <tr key={item.id}>
           <td>{item.scNumber}</td><td>{item.supplierName ? `${item.supplierText} · ${item.supplierName}` : item.supplierText}</td><td>{item.scDate ?? "—"}</td><td>{item.requester}</td><td>{item.commercialPlanReceivedDate ?? "—"}</td>
-          <td>{item.approvalDate ?? "Pendente"}</td><td>{item.purchaseOrderCount ?? 0}</td>
+          <td>{item.approvalDate ?? t.pending}</td><td>{item.purchaseOrderCount ?? 0}</td>
           <td><div className="sc-action-buttons">
-            {canManage && <button className="button secondary" type="button" onClick={() => startEditing(item)}>Editar</button>}
+            {canManage && <button className="button secondary" type="button" onClick={() => startEditing(item)}>{t.editButton}</button>}
             <button className="button secondary" type="button" onClick={() => void toggleHistory(item)}>
-              {historyId === item.id ? "Ocultar histórico" : "Histórico"}
+              {historyId === item.id ? t.hideHistory : t.history}
             </button>
             {canManage && <button className="button secondary" type="button" disabled={saving}
               onClick={() => { setDeletingItem(item); setDeleteReason(""); setError(""); }}>
-              Excluir
+              {t.delete}
             </button>}
           </div></td>
         </tr>)}</tbody></table></div>}
       {deletingItem && <form className="notice" role="dialog" aria-modal="true" aria-labelledby="delete-sc-title"
         onSubmit={deletePurchaseRequest}>
-        <h3 id="delete-sc-title">Excluir SC {deletingItem.scNumber}</h3>
-        <p>A exclusão é definitiva. POs ainda não excluídas impedem a operação; POs excluídas serão desvinculadas.</p>
-        <label>Motivo da exclusão<textarea required minLength={3} maxLength={1000} value={deleteReason}
+        <h3 id="delete-sc-title">{t.deleteTitle(deletingItem.scNumber)}</h3>
+        <p>{t.deleteHelp}</p>
+        <label>{t.deleteReason}<textarea required minLength={3} maxLength={1000} value={deleteReason}
           onChange={event => setDeleteReason(event.target.value)} /></label>
         <div className="button-row">
           <button className="button" disabled={saving || deleteReason.trim().length < 3}>
-            {saving ? "Excluindo SC…" : "Confirmar exclusão"}
+            {saving ? t.deleting : t.confirmDelete}
           </button>
           <button className="button secondary" type="button" disabled={saving}
-            onClick={() => { setDeletingItem(null); setDeleteReason(""); }}>Cancelar</button>
+            onClick={() => { setDeletingItem(null); setDeleteReason(""); }}>{t.cancel}</button>
         </div>
       </form>}
-      {historyId && <section className="sc-history" aria-label="Histórico da SC">
-        <h3>Histórico de alterações</h3>
-        {historyLoading && <p role="status">Carregando histórico…</p>}
-        {!historyLoading && historyItems.length === 0 && <p>Nenhum evento encontrado para esta SC.</p>}
+      {historyId && <section className="sc-history" aria-label={t.historyAria}>
+        <h3>{t.historyTitle}</h3>
+        {historyLoading && <p role="status">{t.historyLoading}</p>}
+        {!historyLoading && historyItems.length === 0 && <p>{t.noEvents}</p>}
         {!historyLoading && historyItems.map(event => <article className="sc-history-event" key={event.id}>
-          <p><strong>{event.operation === "CREATE" ? "Cadastro" : event.operation === "DELETE" ? "Exclusão" : "Alteração"}</strong> · {new Date(event.occurredAt).toLocaleString("pt-BR")}</p>
-          <ul>{historyChanges(event).map(change => <li key={change}>{change}</li>)}</ul>
+          <p><strong>{event.operation === "CREATE" ? t.creationEvent : event.operation === "DELETE" ? t.deletedEvent : t.changedEvent}</strong> · {new Date(event.occurredAt).toLocaleString("pt-BR")}</p>
+          <ul>{historyChanges(event, m).map(change => <li key={change}>{change}</li>)}</ul>
           <dl className="sc-history-meta">
-            <div><dt>Responsável</dt><dd>{formatHistoryActor(event.actor)}</dd></div>
-            <div><dt>Motivo</dt><dd>{event.reason}</dd></div>
+            <div><dt>{m.postShipment.responsible}</dt><dd>{formatHistoryActor(event.actor)}</dd></div>
+            <div><dt>{m.postShipment.reason}</dt><dd>{event.reason}</dd></div>
           </dl>
         </article>)}
       </section>}

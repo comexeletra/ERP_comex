@@ -6,9 +6,14 @@ import { createPortal } from "react-dom";
 import { apiFetch } from "../../lib/api";
 import { formatUsDate } from "../../lib/date-format";
 import { formatCount } from "../../lib/format-count";
+import { getMessages, useI18n } from "../../components/I18nProvider";
 import { SearchableSelect } from "../../components/SearchableSelect";
+import type { Messages } from "../../lib/i18n/pt-BR";
 
-type Sheet = "all" | "Pré Embarque" | "Pós Embarque";
+// Sheet names of the historical spreadsheet, exchanged with the API as filter values.
+const preSheet = "Pré Embarque"; // i18n-ignore: data value
+const postSheet = "Pós Embarque"; // i18n-ignore: data value
+type Sheet = "all" | typeof preSheet | typeof postSheet;
 type Gap = "all" | "without-ip" | "without-po" | "quality" | "any";
 type Direction = "asc" | "desc";
 type ColumnFilter = { text?: string; values?: string[]; exclude?: boolean };
@@ -35,37 +40,22 @@ type GridDrag = { pointerId: number; startX: number; scrollLeft: number };
 
 const emptyFilters = { importer: "", search: "", gap: "all" as Gap };
 const dateColumnsBySheet: Record<Exclude<Sheet, "all">, Set<string>> = {
-  "Pré Embarque": new Set(["J", "O", "P", "Q", "AC", "AI", "AJ", "AN", "AO", "AQ", "AW", "AX"]),
-  "Pós Embarque": new Set(["Q", "S", "U", "AC", "AD", "AG", "AL", "AM", "AN"]),
+  [preSheet]: new Set(["J", "O", "P", "Q", "AC", "AI", "AJ", "AN", "AO", "AQ", "AW", "AX"]),
+  [postSheet]: new Set(["Q", "S", "U", "AC", "AD", "AG", "AL", "AM", "AN"]),
 };
-const sheetOptions: Array<{ value: Sheet; label: string }> = [
-  { value: "all", label: "Todas as linhas" },
-  { value: "Pré Embarque", label: "Pré Embarque" },
-  { value: "Pós Embarque", label: "Pós Embarque" },
-];
-const gapOptions: Array<{ value: Gap; label: string }> = [
-  { value: "all", label: "Todos os registros" },
-  { value: "any", label: "Qualquer sinalizador" },
-  { value: "without-ip", label: "Sem IP válido na origem" },
-  { value: "without-po", label: "Sem PO na origem" },
-  { value: "quality", label: "Erros e inconsistências" },
-];
+const sheetValues: Sheet[] = ["all", preSheet, postSheet];
+const gapValues: Gap[] = ["all", "any", "without-ip", "without-po", "quality"];
 
-const issueLabels: Record<string, string> = {
-  EXCEL_CELL_ERROR: "Erro de fórmula",
-  INVALID_NUMERIC: "Número inválido",
-  INVALID_CURRENCY: "Moeda inválida",
-  INVALID_DATE: "Data inválida",
-  INVALID_STATUS: "Status inválido",
-  INVALID_COST: "Custo inválido",
-  MISSING_PO: "PO ausente",
-};
+function sheetLabel(sheet: Sheet, m: Messages) {
+  return sheet === "all" ? m.sourceAudit.allRows : sheet === preSheet ? m.reports.pre : m.reports.post;
+}
 
-function describeIssue(issue: NonNullable<SourceRow["auditFlags"]["dataIssues"]>[number]): string {
-  const label = issueLabels[issue.code] ?? issue.code.replaceAll("_", " ").toLocaleLowerCase("pt-BR");
-  const field = issue.fieldName ? ` · coluna ${issue.fieldName}` : "";
+function describeIssue(issue: NonNullable<SourceRow["auditFlags"]["dataIssues"]>[number], m: Messages): string {
+  const t = m.sourceAudit;
+  const label = (t.issues as Record<string, string>)[issue.code] ?? issue.code.replaceAll("_", " ").toLocaleLowerCase();
+  const field = issue.fieldName ? t.issueColumn(issue.fieldName) : "";
   const evidenceValue = issue.evidence.value ?? issue.evidence.amount;
-  const value = evidenceValue == null ? "" : ` · valor: ${display(evidenceValue)}`;
+  const value = evidenceValue == null ? "" : t.issueValue(display(evidenceValue));
   return `${label}${field}${value}`;
 }
 
@@ -102,9 +92,9 @@ function readLocation() {
   const requestedPage = Number(params.get("page"));
   return {
     page: Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1,
-    sheet: (sheetOptions.some(option => option.value === requestedSheet) ? requestedSheet : "Pré Embarque") as Sheet,
+    sheet: (sheetValues.some(value => value === requestedSheet) ? requestedSheet : preSheet) as Sheet,
     filters: { importer: params.get("importer") ?? "", search: params.get("search") ?? "",
-      gap: (gapOptions.some(option => option.value === requestedGap) ? requestedGap : "all") as Gap },
+      gap: (gapValues.some(value => value === requestedGap) ? requestedGap : "all") as Gap },
     columnFilters: readColumnFilters(params.get("filters")),
     sort: sortColumn && (sortDirection === "asc" || sortDirection === "desc")
       ? { column: sortColumn, direction: sortDirection } as SortState : null,
@@ -151,8 +141,10 @@ function selectedOption(filter: ColumnFilter | undefined, value: string): boolea
 }
 
 export default function SourceAuditPage() {
+  const { m } = useI18n();
+  const t = m.sourceAudit;
   const [page, setPage] = useState(1);
-  const [sheet, setSheet] = useState<Sheet>("Pré Embarque");
+  const [sheet, setSheet] = useState<Sheet>(preSheet);
   const [draft, setDraft] = useState<GridFilters>(emptyFilters);
   const [applied, setApplied] = useState<GridFilters>(emptyFilters);
   const [draftColumnFilters, setDraftColumnFilters] = useState<ColumnFilters>({});
@@ -197,13 +189,14 @@ export default function SourceAuditPage() {
     setLoading(true); setError(undefined); setResult(undefined);
     apiFetch(`/api/v1/source-rows?${query}`, { signal: controller.signal })
       .then(async response => {
-        if (response.status === 401) throw new Error("Sua sessão expirou. Entre novamente.");
-        if (response.status === 403) throw new Error("Seu acesso não permite consultar estas linhas de origem.");
-        if (!response.ok) throw new Error("Não foi possível carregar a tabela de auditoria.");
+        const text = getMessages();
+        if (response.status === 401) throw new Error(text.common.sessionExpired);
+        if (response.status === 403) throw new Error(text.sourceAudit.forbidden);
+        if (!response.ok) throw new Error(text.sourceAudit.loadFailed);
         return await response.json() as AuditResult;
       })
       .then(data => { if (!controller.signal.aborted) setResult(data); })
-      .catch((reason: unknown) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Erro inesperado."); })
+      .catch((reason: unknown) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : getMessages().common.unexpectedError); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [sheet, applied, appliedColumnFilters, sort, page, ready, retry]);
@@ -216,12 +209,12 @@ export default function SourceAuditPage() {
       const query = makeValueQuery(sheet, applied, appliedColumnFilters, activeColumn, valueSearch);
       apiFetch(`/api/v1/source-rows/column-values?${query}`, { signal: controller.signal })
         .then(async response => {
-          if (response.status === 401) throw new Error("Sua sessão expirou. Entre novamente.");
-          if (!response.ok) throw new Error("Não foi possível carregar os valores desta coluna.");
+          if (response.status === 401) throw new Error(getMessages().common.sessionExpired);
+          if (!response.ok) throw new Error(getMessages().sourceAudit.valuesFailed);
           return await response.json() as ValueOptionsResult;
         })
         .then(data => { if (!controller.signal.aborted) setValueOptions(data); })
-        .catch((reason: unknown) => { if (!controller.signal.aborted) setOptionsError(reason instanceof Error ? reason.message : "Erro inesperado."); })
+        .catch((reason: unknown) => { if (!controller.signal.aborted) setOptionsError(reason instanceof Error ? reason.message : getMessages().common.unexpectedError); })
         .finally(() => { if (!controller.signal.aborted) setLoadingOptions(false); });
     }, 200);
     return () => { window.clearTimeout(timeout); controller.abort(); };
@@ -266,14 +259,14 @@ export default function SourceAuditPage() {
   }
   function moveSheetTab(index: number, event: React.KeyboardEvent<HTMLButtonElement>) {
     let nextIndex: number;
-    if (event.key === "ArrowRight") nextIndex = (index + 1) % sheetOptions.length;
-    else if (event.key === "ArrowLeft") nextIndex = (index - 1 + sheetOptions.length) % sheetOptions.length;
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % sheetValues.length;
+    else if (event.key === "ArrowLeft") nextIndex = (index - 1 + sheetValues.length) % sheetValues.length;
     else if (event.key === "Home") nextIndex = 0;
-    else if (event.key === "End") nextIndex = sheetOptions.length - 1;
+    else if (event.key === "End") nextIndex = sheetValues.length - 1;
     else return;
     event.preventDefault();
     sheetTabRefs.current[nextIndex]?.focus();
-    changeSheet(sheetOptions[nextIndex].value);
+    changeSheet(sheetValues[nextIndex]);
   }
   function clearFilters() {
     setPage(1);
@@ -382,161 +375,161 @@ export default function SourceAuditPage() {
 
   return <main className="shell source-audit-shell">
     <header className="page-header">
-      <p className="eyebrow">ERP Comex · Auditoria de origem</p>
-      <h1>Tabela completa para auditoria</h1>
-      <p>Espaços externos, tabulações e quebras de linha são normalizados para auditoria, sem alterar os dados originais.</p>
-      <p>Variações de grafia na descrição do produto (coluna U) não são consideradas erro; use o código do produto (coluna T) para identificar o item.</p>
-      <p>Consulte os registros da planilha de origem. Os valores históricos são preservados como foram informados; os indicadores mostram o que está preenchido na origem. Somente células com erro de cálculo são sinalizadas como erro.</p>
-      <Link className="text-link" href="/">← Carteira de POs</Link>
+      <p className="eyebrow">{t.eyebrow}</p>
+      <h1>{t.title}</h1>
+      <p>{t.introSpaces}</p>
+      <p>{t.introSpelling}</p>
+      <p>{t.introValues}</p>
+      <Link className="text-link" href="/">{m.common.backToPortfolio}</Link>
     </header>
 
-    <section className="source-audit-tabs" role="tablist" aria-label="Planilha de origem">
-      {sheetOptions.map((option, index) => <button key={option.value} ref={element => { sheetTabRefs.current[index] = element; }}
+    <section className="source-audit-tabs" role="tablist" aria-label={t.sheetTabs}>
+      {sheetValues.map((value, index) => <button key={value} ref={element => { sheetTabRefs.current[index] = element; }}
         id={`source-sheet-tab-${index}`} role="tab" aria-controls="source-audit-panel"
-        aria-selected={sheet === option.value} tabIndex={sheet === option.value ? 0 : -1}
-        className={sheet === option.value ? "source-tab active" : "source-tab"}
-        onClick={() => changeSheet(option.value)} onKeyDown={event => moveSheetTab(index, event)}>
-        {option.label}
+        aria-selected={sheet === value} tabIndex={sheet === value ? 0 : -1}
+        className={sheet === value ? "source-tab active" : "source-tab"}
+        onClick={() => changeSheet(value)} onKeyDown={event => moveSheetTab(index, event)}>
+        {sheetLabel(value, m)}
       </button>)}
     </section>
 
     <div id="source-audit-panel" role="tabpanel"
-      aria-labelledby={`source-sheet-tab-${Math.max(0, sheetOptions.findIndex(option => option.value === sheet))}`} tabIndex={0}>
+      aria-labelledby={`source-sheet-tab-${Math.max(0, sheetValues.indexOf(sheet))}`} tabIndex={0}>
     <section className="card source-audit-controls">
       <form className="source-audit-filter" onSubmit={applyFilters}>
-        <label>Importador<SearchableSelect ariaLabel="Importador" placeholder="Todos no meu escopo" value={draft.importer}
+        <label>{m.processDirectory.importer}<SearchableSelect ariaLabel={m.processDirectory.importer} placeholder={t.allInScope} value={draft.importer}
           onChange={importer => setDraft(value => ({ ...value, importer }))}
           options={importers.map(importer => ({ value: importer.code, label: importer.code }))} /></label>
-        <label>Busca geral<input value={draft.search} onChange={event => setDraft(value => ({ ...value, search: event.target.value }))} placeholder="Texto em qualquer coluna" /></label>
-        <label>Sinais de auditoria<SearchableSelect ariaLabel="Sinais de auditoria" placeholder="" value={draft.gap}
+        <label>{t.search}<input value={draft.search} onChange={event => setDraft(value => ({ ...value, search: event.target.value }))} placeholder={t.searchPlaceholder} /></label>
+        <label>{t.signals}<SearchableSelect ariaLabel={t.signals} placeholder="" value={draft.gap}
           onChange={gap => setDraft(value => ({ ...value, gap: gap as Gap }))}
-          options={gapOptions.map(option => ({ value: option.value, label: option.label }))} /></label>
-        <button className="button" type="submit">Aplicar filtros</button>
-        <button className="button secondary" type="button" onClick={clearFilters}>Limpar</button>
+          options={gapValues.map(value => ({ value, label: t.gaps[value] }))} /></label>
+        <button className="button" type="submit">{m.productLines.apply}</button>
+        <button className="button secondary" type="button" onClick={clearFilters}>{m.processDirectory.clear}</button>
       </form>
-      <p className="muted source-filter-hint">Clique no filtro de cada cabeçalho para escolher valores ou ordenar. O campo de texto filtra por trecho; {activeFilterCount} filtro(s) de coluna aplicado(s).</p>
+      <p className="muted source-filter-hint">{t.filterHint(activeFilterCount)}</p>
     </section>
 
     <section className="metric-grid source-audit-metrics" aria-live="polite">
-      <div className="metric"><span>Linhas no recorte</span><strong>{loading ? "…" : formatCount(result?.totalCount)}</strong></div>
-      <div className="metric"><span>Sem PO informado na origem</span><strong>{loading ? "…" : formatCount(result?.summary?.withoutPurchaseOrder)}</strong></div>
-      <div className="metric"><span>Sem IP válido na origem</span><strong>{loading ? "…" : formatCount(result?.summary?.withoutValidIp)}</strong></div>
-      <div className="metric"><span>Células com erro de cálculo</span><strong>{loading ? "…" : formatCount(result?.summary?.cellErrors)}</strong></div>
-      <div className="metric"><span>Linhas com inconsistências identificadas</span><strong>{loading ? "…" : formatCount(result?.summary?.dataIssues)}</strong></div>
-      <div className="metric"><span>Linhas com sinalizador</span><strong>{loading ? "…" : formatCount(result?.summary?.anyGap)}</strong></div>
+      <div className="metric"><span>{t.rowsInScope}</span><strong>{loading ? "…" : formatCount(result?.totalCount)}</strong></div>
+      <div className="metric"><span>{t.withoutPo}</span><strong>{loading ? "…" : formatCount(result?.summary?.withoutPurchaseOrder)}</strong></div>
+      <div className="metric"><span>{t.withoutIp}</span><strong>{loading ? "…" : formatCount(result?.summary?.withoutValidIp)}</strong></div>
+      <div className="metric"><span>{t.cellErrors}</span><strong>{loading ? "…" : formatCount(result?.summary?.cellErrors)}</strong></div>
+      <div className="metric"><span>{t.dataIssues}</span><strong>{loading ? "…" : formatCount(result?.summary?.dataIssues)}</strong></div>
+      <div className="metric"><span>{t.flagged}</span><strong>{loading ? "…" : formatCount(result?.summary?.anyGap)}</strong></div>
     </section>
 
     <section className="card source-audit-grid-card" aria-live="polite">
-      {loading && <p role="status">Carregando linhas da planilha…</p>}
-      {error && <div className="notice error" role="alert"><p>{error}</p><button className="button" onClick={() => setRetry(value => value + 1)}>Tentar novamente</button></div>}
+      {loading && <p role="status">{t.loading}</p>}
+      {error && <div className="notice error" role="alert"><p>{error}</p><button className="button" onClick={() => setRetry(value => value + 1)}>{m.common.retry}</button></div>}
       {!loading && !error && result && <>
         <div className="source-grid-toolbar">
-          <p>Exibindo <strong>{formatCount(result.items.length ? (result.page - 1) * result.pageSize + 1 : 0)}-{formatCount((result.page - 1) * result.pageSize + result.items.length)}</strong> de <strong>{formatCount(result.totalCount)}</strong> linhas{result.rowsBeforeGapFilter !== result.totalCount ? ` · ${formatCount(result.rowsBeforeGapFilter)} antes dos sinais de auditoria` : ""}</p>
+          <p>{t.showingBefore}<strong>{formatCount(result.items.length ? (result.page - 1) * result.pageSize + 1 : 0)}-{formatCount((result.page - 1) * result.pageSize + result.items.length)}</strong>{t.showingOf}<strong>{formatCount(result.totalCount)}</strong>{t.showingAfter}{result.rowsBeforeGapFilter !== result.totalCount ? t.beforeSignals(formatCount(result.rowsBeforeGapFilter)) : ""}</p>
         </div>
-        {result.items.length === 0 ? <p>Nenhuma linha corresponde aos filtros atuais.</p> :
+        {result.items.length === 0 ? <p>{t.none}</p> :
           <div className={draggingGrid ? "source-grid-scroll is-dragging" : "source-grid-scroll"}
-            role="region" aria-label="Tabela completa da planilha. Arraste horizontalmente com o mouse para percorrer as colunas."
+            role="region" aria-label={t.gridAria}
             tabIndex={0} onPointerDown={startGridDrag} onPointerMove={moveGridDrag}
             onPointerUp={stopGridDrag} onPointerCancel={stopGridDrag}>
             <table className="source-grid">
               <thead>
                 <tr className="source-grid-head">
-                  <th className="source-pin source-pin-1" scope="col">Linha</th>
-                  <th className="source-pin source-pin-2" scope="col">Planilha</th>
-                  <th className="source-pin source-pin-3" scope="col">Sinais da origem</th>
-                  {columns.map(column => <th key={column} scope="col" title={`Coluna Excel ${column}: ${result.columnHeaders[column] ?? ""}`}>
-                    <span className="source-excel-col">{column}</span>{result.columnHeaders[column] || "(sem cabeçalho)"}
-                    {sort?.column === column && <span className="source-sort-indicator" aria-label={sort.direction === "asc" ? "Ordem crescente" : "Ordem decrescente"}>{sort.direction === "asc" ? " ▲" : " ▼"}</span>}
+                  <th className="source-pin source-pin-1" scope="col">{t.row}</th>
+                  <th className="source-pin source-pin-2" scope="col">{t.sheet}</th>
+                  <th className="source-pin source-pin-3" scope="col">{t.sourceSignals}</th>
+                  {columns.map(column => <th key={column} scope="col" title={t.excelColumn(column, result.columnHeaders[column] ?? "")}>
+                    <span className="source-excel-col">{column}</span>{result.columnHeaders[column] || t.noHeader}
+                    {sort?.column === column && <span className="source-sort-indicator" aria-label={sort.direction === "asc" ? t.ascending : t.descending}>{sort.direction === "asc" ? " ▲" : " ▼"}</span>}
                   </th>)}
                 </tr>
                 <tr className="source-grid-filters">
-                  <th className="source-pin source-pin-1"><span className="sr-only">Sem filtro para linha</span></th>
-                  <th className="source-pin source-pin-2"><span className="sr-only">Sem filtro para planilha</span></th>
-                  <th className="source-pin source-pin-3"><span className="sr-only">Sem filtro para sinais da origem</span></th>
+                  <th className="source-pin source-pin-1"><span className="sr-only">{t.noRowFilter}</span></th>
+                  <th className="source-pin source-pin-2"><span className="sr-only">{t.noSheetFilter}</span></th>
+                  <th className="source-pin source-pin-3"><span className="sr-only">{t.noSignalFilter}</span></th>
                   {columns.map(column => <th key={column}>
                     <button type="button" className={hasColumnFilter(appliedColumnFilters[column]) ? "source-filter-trigger active" : "source-filter-trigger"}
-                      aria-label={`Abrir filtro da coluna ${column} ${result.columnHeaders[column] ?? ""}`}
+                      aria-label={t.openFilter(column, result.columnHeaders[column] ?? "")}
                       aria-expanded={activeColumn === column} onClick={event => openColumnFilter(column, event)}>
-                      <span aria-hidden="true">▼</span> Filtro{hasColumnFilter(appliedColumnFilters[column]) ? " ·" : ""}
+                      <span aria-hidden="true">▼</span> {t.filter}{hasColumnFilter(appliedColumnFilters[column]) ? " ·" : ""}
                     </button>
                   </th>)}
                 </tr>
               </thead>
               <tbody>{result.items.map(row => <tr key={row.id} className={row.auditFlags.anyGap ? "source-row-has-gap" : ""}>
-                <td className="source-pin source-pin-1 source-row-number" title={`Lote ${row.batchId} · linha ${row.sourceRowNumber}`}>{row.sourceRowNumber}</td>
-                <td className="source-pin source-pin-2">{row.sourceSheetName}</td>
+                <td className="source-pin source-pin-1 source-row-number" title={t.batchRow(row.batchId, row.sourceRowNumber)}>{row.sourceRowNumber}</td>
+                <td className="source-pin source-pin-2">{sheetValues.includes(row.sourceSheetName as Sheet) ? sheetLabel(row.sourceSheetName as Sheet, m) : row.sourceSheetName}</td>
                 <td className="source-pin source-pin-3"><div className="source-gap-tags">
-                  {row.auditFlags.withoutPurchaseOrder && <span className="source-gap-tag">Sem PO na origem</span>}
-                  {row.auditFlags.withoutValidIp && <span className="source-gap-tag">Sem IP válido na origem</span>}
-                  {row.auditFlags.cellErrors > 0 && <span className="source-gap-tag">{row.auditFlags.cellErrors} erro(s) de cálculo</span>}
+                  {row.auditFlags.withoutPurchaseOrder && <span className="source-gap-tag">{t.withoutPoTag}</span>}
+                  {row.auditFlags.withoutValidIp && <span className="source-gap-tag">{t.withoutIp}</span>}
+                  {row.auditFlags.cellErrors > 0 && <span className="source-gap-tag">{t.calcErrors(row.auditFlags.cellErrors)}</span>}
                   {(row.auditFlags.dataIssues ?? []).map((issue, index) => <span key={`${issue.code}-${issue.fieldName}-${index}`}
                     className="source-gap-tag" title={`${result.columnHeaders[issue.fieldName ?? ""] ?? ""} · ${JSON.stringify(issue.evidence)}`}>
-                    {describeIssue(issue)}{result.columnHeaders[issue.fieldName ?? ""] ? ` (${result.columnHeaders[issue.fieldName ?? ""]})` : ""}
+                    {describeIssue(issue, m)}{result.columnHeaders[issue.fieldName ?? ""] ? ` (${result.columnHeaders[issue.fieldName ?? ""]})` : ""}
                   </span>)}
-                  {!row.auditFlags.anyGap && <span className="source-ok-tag">Sem sinalizador</span>}
+                  {!row.auditFlags.anyGap && <span className="source-ok-tag">{t.noFlag}</span>}
                 </div></td>
                 {columns.map(column => <td key={column} title={displayCell(row.sourceSheetName, column, row.sourceValues[column])}>{displayCell(row.sourceSheetName, column, row.sourceValues[column])}</td>)}
               </tr>)}</tbody>
             </table>
           </div>}
-        {Math.ceil(result.totalCount / result.pageSize) > 1 && <nav className="pagination" aria-label="Paginas da planilha">
+        {Math.ceil(result.totalCount / result.pageSize) > 1 && <nav className="pagination" aria-label={t.pages}>
           <button className="button secondary" type="button" disabled={result.page <= 1}
-            onClick={() => changePage(result.page - 1)}>Anterior</button>
-          <span>Pagina {result.page} de {Math.ceil(result.totalCount / result.pageSize)}</span>
+            onClick={() => changePage(result.page - 1)}>{m.common.previous}</button>
+          <span>{m.common.pageOf(result.page, Math.ceil(result.totalCount / result.pageSize))}</span>
           <button className="button" type="button" disabled={result.page >= Math.ceil(result.totalCount / result.pageSize)}
-            onClick={() => changePage(result.page + 1)}>Proxima</button>
+            onClick={() => changePage(result.page + 1)}>{m.common.next}</button>
         </nav>}
       </>}
     </section>
     </div>
 
     {activeColumn && filterPosition && typeof document !== "undefined" && createPortal(<>
-      <button className="source-filter-backdrop" aria-label="Fechar filtro" tabIndex={-1} onClick={() => closeColumnFilter()} />
+      <button className="source-filter-backdrop" aria-label={t.closeFilter} tabIndex={-1} onClick={() => closeColumnFilter()} />
       <section ref={filterPopoverRef} className="source-filter-popover" role="dialog" aria-modal="true"
-        aria-label={`Filtro da coluna ${activeColumn}`} onKeyDown={handleFilterDialogKeyDown} style={filterPosition}>
+        aria-label={t.columnFilter(activeColumn)} onKeyDown={handleFilterDialogKeyDown} style={filterPosition}>
         <div className="source-filter-title"><strong>{activeColumn} · {result?.columnHeaders[activeColumn]}</strong>
-          <button type="button" className="source-filter-close" onClick={() => closeColumnFilter()} aria-label="Fechar">×</button>
+          <button type="button" className="source-filter-close" onClick={() => closeColumnFilter()} aria-label={t.close}>×</button>
         </div>
-        <div className="source-sort-actions" role="group" aria-label="Ordenar valores">
+        <div className="source-sort-actions" role="group" aria-label={t.sortValues}>
           <button type="button" className={draftSort?.column === activeColumn && draftSort.direction === "asc" ? "selected" : ""}
             aria-pressed={draftSort?.column === activeColumn && draftSort.direction === "asc"}
-            onClick={() => setDraftSort({ column: activeColumn, direction: "asc" })}>↑ Ordem crescente</button>
+            onClick={() => setDraftSort({ column: activeColumn, direction: "asc" })}>{t.sortAscending}</button>
           <button type="button" className={draftSort?.column === activeColumn && draftSort.direction === "desc" ? "selected" : ""}
             aria-pressed={draftSort?.column === activeColumn && draftSort.direction === "desc"}
-            onClick={() => setDraftSort({ column: activeColumn, direction: "desc" })}>↓ Ordem decrescente</button>
+            onClick={() => setDraftSort({ column: activeColumn, direction: "desc" })}>{t.sortDescending}</button>
         </div>
-        <label className="source-filter-text-label">Filtrar por texto (contém)
+        <label className="source-filter-text-label">{t.textFilter}
           <input autoFocus value={activeColumnFilter?.text ?? ""}
             onChange={event => updateColumnFilter(activeColumn, current => ({ ...current, text: event.target.value }))}
-            placeholder="Digite um valor ou trecho" />
+            placeholder={t.textPlaceholder} />
         </label>
-        <label className="source-filter-text-label">Localizar valores na lista
-          <input value={valueSearch} onChange={event => setValueSearch(event.target.value)} placeholder="Pesquisar possibilidades…" />
+        <label className="source-filter-text-label">{t.findValues}
+          <input value={valueSearch} onChange={event => setValueSearch(event.target.value)} placeholder={t.findPlaceholder} />
         </label>
         <div className="source-value-actions">
-          <button type="button" onClick={() => updateColumnFilter(activeColumn, current => ({ text: current.text }))}>Selecionar todos</button>
-          <button type="button" onClick={() => updateColumnFilter(activeColumn, current => ({ ...current, values: [], exclude: false }))}>Desmarcar todos</button>
+          <button type="button" onClick={() => updateColumnFilter(activeColumn, current => ({ text: current.text }))}>{t.selectAll}</button>
+          <button type="button" onClick={() => updateColumnFilter(activeColumn, current => ({ ...current, values: [], exclude: false }))}>{t.unselectAll}</button>
         </div>
         <div className="source-value-list" aria-live="polite">
-          {loadingOptions && <p role="status">Carregando valores…</p>}
+          {loadingOptions && <p role="status">{t.loadingValues}</p>}
           {optionsError && <p className="source-option-error" role="alert">{optionsError}</p>}
-          {!loadingOptions && !optionsError && options.length === 0 && <p>Nenhum valor encontrado.</p>}
+          {!loadingOptions && !optionsError && options.length === 0 && <p>{t.noValues}</p>}
           {!loadingOptions && !optionsError && options.map(option => {
             const checked = selectedOption(activeColumnFilter, option.value);
             const canAdd = checked || (activeColumnFilter?.values?.length ?? 0) < 100;
             return <label key={option.value || "__blank__"} className="source-value-option">
               <input type="checkbox" checked={checked} disabled={!canAdd}
                 onChange={event => toggleOption(activeColumn, option.value, event.target.checked)} />
-              <span>{option.value === "" ? "(em branco)" : displayCell(result?.items[0]?.sourceSheetName ?? sheet, activeColumn, option.value)}</span>
+              <span>{option.value === "" ? t.blank : displayCell(result?.items[0]?.sourceSheetName ?? sheet, activeColumn, option.value)}</span>
               <small>{formatCount(option.rowCount)}</small>
             </label>;
           })}
-          {valueOptions?.hasMore && <p className="source-option-hint">Há mais valores. Pesquise acima para localizar outros.</p>}
-          {!loadingOptions && activeColumnFilter?.values?.length === 100 && <p className="source-option-hint">Limite de 100 valores por filtro. Use a busca textual para intervalos maiores.</p>}
+          {valueOptions?.hasMore && <p className="source-option-hint">{t.moreValues}</p>}
+          {!loadingOptions && activeColumnFilter?.values?.length === 100 && <p className="source-option-hint">{t.valueLimit}</p>}
         </div>
         <div className="source-filter-footer">
-          <button type="button" className="button secondary" onClick={() => clearColumnFilter(activeColumn)}>Limpar coluna</button>
-          <button type="button" className="button" onClick={applyColumnFilter}>Aplicar</button>
+          <button type="button" className="button secondary" onClick={() => clearColumnFilter(activeColumn)}>{t.clearColumn}</button>
+          <button type="button" className="button" onClick={applyColumnFilter}>{t.apply}</button>
         </div>
       </section>
     </>, document.body)}

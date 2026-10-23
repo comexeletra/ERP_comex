@@ -4,6 +4,8 @@ import { ReactNode, useEffect, useState } from "react";
 import {
   buildE2eFlow, DEFAULT_E2E_FLOW_CONFIG, E2E_PHASE_COUNT, E2eFlowConfig, E2eIconName, formatDayOffset, railCenter,
 } from "../lib/e2e-flow";
+import type { Messages } from "../lib/i18n/pt-BR";
+import { useI18n } from "./I18nProvider";
 
 type IconName = E2eIconName | "pause" | "play" | "prev" | "next";
 
@@ -33,11 +35,13 @@ function Arrow({ w = 34, h = 14 }: { w?: number; h?: number }) {
   </svg>;
 }
 
-function phaseStatus(k: number, current: number) {
-  return k === current ? "Em curso" : k < current ? "Concluída" : "Próxima";
+function phaseStatus(k: number, current: number, m: Messages) {
+  return k === current ? m.e2e.statusCurrent : k < current ? m.e2e.statusDone : m.e2e.statusNext;
 }
 
 export default function E2eFlowDemo({ config }: { config?: Partial<E2eFlowConfig> }) {
+  const { m } = useI18n();
+  const t = m.e2e;
   const cfg = { ...DEFAULT_E2E_FLOW_CONFIG, ...config };
   const [current, setCurrent] = useState(0);
   const [playing, setPlaying] = useState(cfg.autoplay);
@@ -52,63 +56,62 @@ export default function E2eFlowDemo({ config }: { config?: Partial<E2eFlowConfig
 
   function goTo(k: number) { setCurrent(k); setPlaying(false); }
 
-  const flow = buildE2eFlow(cfg, { mts, air });
+  const flow = buildE2eFlow(cfg, { mts, air }, m);
   const phase = flow.phases[current];
   const side = phase.side;
   const [sc, po, prod, tr, clr] = flow.durations;
 
   return <main className="shell e2e-flow" data-side={side}>
-    <header className="page-header"><p className="eyebrow">Supply chain Brasil ⇄ China · Demonstração</p>
-      <h1>Fluxo end-to-end</h1>
-      <p>Lead time do plano comercial até a chegada da matéria-prima na fábrica, com os prazos de referência de cada fase.
-        Esta tela é uma demonstração com prazos padrão e ainda não usa dados de POs e IPs.</p>
+    <header className="page-header"><p className="eyebrow">{t.eyebrow}</p>
+      <h1>{t.title}</h1>
+      <p>{t.intro}</p>
     </header>
 
-    <section className="e2e-toolbar" aria-label="Cenário e animação">
+    <section className="e2e-toolbar" aria-label={t.toolbar}>
       <div className="e2e-group">
-        <span className="e2e-label" id="e2e-product-label">Produto</span>
+        <span className="e2e-label" id="e2e-product-label">{t.product}</span>
         <div className="e2e-segmented" role="group" aria-labelledby="e2e-product-label">
-          <button type="button" aria-pressed={!mts} onClick={() => setMts(false)}>Não MTS · {cfg.prodNaoMts} d</button>
-          <button type="button" aria-pressed={mts} onClick={() => setMts(true)}>MTS · {cfg.prodMts} d</button>
+          <button type="button" aria-pressed={!mts} onClick={() => setMts(false)}>{t.notMtsOption(cfg.prodNaoMts)}</button>
+          <button type="button" aria-pressed={mts} onClick={() => setMts(true)}>{t.mtsOption(cfg.prodMts)}</button>
         </div>
       </div>
       <div className="e2e-group">
-        <span className="e2e-label" id="e2e-modal-label">Modal</span>
+        <span className="e2e-label" id="e2e-modal-label">{t.modal}</span>
         <div className="e2e-segmented" role="group" aria-labelledby="e2e-modal-label">
-          <button type="button" aria-pressed={!air} onClick={() => setAir(false)}>Marítimo · {cfg.maritimo} d</button>
-          <button type="button" aria-pressed={air} onClick={() => setAir(true)}>Aéreo · {cfg.aereo} d</button>
+          <button type="button" aria-pressed={!air} onClick={() => setAir(false)}>{t.seaOption(cfg.maritimo)}</button>
+          <button type="button" aria-pressed={air} onClick={() => setAir(true)}>{t.airOption(cfg.aereo)}</button>
         </div>
       </div>
       <div className="e2e-controls">
-        <span className="e2e-counter" aria-live="polite">Fase <b>{current + 1}</b> de {E2E_PHASE_COUNT}</span>
-        <button type="button" className="e2e-icon-button" aria-label="Fase anterior"
+        <span className="e2e-counter" aria-live="polite">{t.phaseBefore}<b>{current + 1}</b>{t.phaseAfter(E2E_PHASE_COUNT)}</span>
+        <button type="button" className="e2e-icon-button" aria-label={t.previousPhase}
           onClick={() => goTo((current + E2E_PHASE_COUNT - 1) % E2E_PHASE_COUNT)}><Icon name="prev" size={18} /></button>
-        <button type="button" className="button e2e-play" aria-label={playing ? "Pausar animação" : "Iniciar animação"}
+        <button type="button" className="button e2e-play" aria-label={playing ? t.pauseAnimation : t.startAnimation}
           onClick={() => setPlaying(value => !value)}>
-          <Icon name={playing ? "pause" : "play"} size={16} /><span>{playing ? "Pausar" : "Animar"}</span>
+          <Icon name={playing ? "pause" : "play"} size={16} /><span>{playing ? t.pause : t.animate}</span>
         </button>
-        <button type="button" className="e2e-icon-button" aria-label="Próxima fase"
+        <button type="button" className="e2e-icon-button" aria-label={t.nextPhase}
           onClick={() => goTo((current + 1) % E2E_PHASE_COUNT)}><Icon name="next" size={18} /></button>
       </div>
     </section>
 
     <div className="e2e-kpis">
-      <div className="e2e-kpi"><span>Lead time total</span><strong>{flow.total} dias</strong></div>
+      <div className="e2e-kpi"><span>{t.leadTime}</span><strong>{t.days(flow.total)}</strong></div>
       <div className={`e2e-kpi ${flow.slack >= 0 ? "is-ok" : "is-late"}`}>
-        <span>Folga até D-0</span>
-        <strong>{flow.slack > 0 ? `+${flow.slack} dias` : flow.slack === 0 ? "0 dia · no limite" : `${-flow.slack} dias de atraso`}</strong>
+        <span>{t.slackTitle}</span>
+        <strong>{flow.slack > 0 ? t.slackPositive(flow.slack) : flow.slack === 0 ? t.slackZero : t.late(-flow.slack)}</strong>
       </div>
-      <div className="e2e-kpi"><span>Horizonte de abastecimento</span><strong>{cfg.horizonte} dias</strong></div>
+      <div className="e2e-kpi"><span>{t.horizon}</span><strong>{t.days(cfg.horizonte)}</strong></div>
     </div>
 
     <div className="e2e-grid6 e2e-directions">
       <div className={`e2e-direction side-br${side === "br" ? " is-on" : ""}`}>
-        <strong>Brasil <Arrow /> China</strong>
-        <span className="e2e-label">T0 – T2 · Informação e compra · {sc + po} dias</span>
+        <strong>{t.brazil} <Arrow /> {t.china}</strong>
+        <span className="e2e-label">{t.infoFlow(sc + po)}</span>
       </div>
       <div className={`e2e-direction side-cn${side === "cn" ? " is-on" : ""}`}>
-        <strong>China <Arrow /> Brasil</strong>
-        <span className="e2e-label">T3 – T5 · Fluxo físico da carga · {prod + tr + clr} dias</span>
+        <strong>{t.china} <Arrow /> {t.brazil}</strong>
+        <span className="e2e-label">{t.cargoFlow(prod + tr + clr)}</span>
       </div>
     </div>
 
@@ -132,21 +135,21 @@ export default function E2eFlowDemo({ config }: { config?: Partial<E2eFlowConfig
         className={`e2e-phase side-${item.side}${k === current ? " is-current" : ""}${k < current ? " is-done" : ""}`}>
         <span className="e2e-phase-bar" />
         <span className="e2e-phase-top"><span className="e2e-phase-code">{item.code}</span>
-          <span className="e2e-label">{phaseStatus(k, current)}</span></span>
+          <span className="e2e-label">{phaseStatus(k, current, m)}</span></span>
         <span className="e2e-phase-head"><span className="e2e-phase-icon"><Icon name={item.icon} /></span>
           <strong>{item.name}</strong></span>
         <span className="e2e-phase-route">
-          <span><span className="e2e-label">De</span><span>{item.from}</span></span>
-          <span><span className="e2e-label">Até</span><span>{item.to}</span></span>
+          <span><span className="e2e-label">{t.from}</span><span>{item.from}</span></span>
+          <span><span className="e2e-label">{t.to}</span><span>{item.to}</span></span>
         </span>
         <span className="e2e-phase-foot"><span className="e2e-label">{item.owner}</span><b>{item.lt}</b></span>
       </button>)}
     </div>
 
-    <section className="card e2e-ruler" aria-label="Horizonte de abastecimento">
+    <section className="card e2e-ruler" aria-label={t.horizon}>
       <div className="e2e-panel-heading">
-        <h2>Horizonte de abastecimento · {flow.months} meses</h2>
-        <span className="muted">D-{cfg.horizonte} plano comercial entregue → D-0 data de necessidade na fábrica</span>
+        <h2>{t.horizonTitle(flow.months)}</h2>
+        <span className="muted">{t.horizonHelp(cfg.horizonte)}</span>
       </div>
       <div className="e2e-bars">
         {flow.segments.map(segment => {
@@ -166,30 +169,30 @@ export default function E2eFlowDemo({ config }: { config?: Partial<E2eFlowConfig
     </section>
 
     <div className="e2e-bottom">
-      <section className="card e2e-detail" aria-label="Fase ativa">
+      <section className="card e2e-detail" aria-label={t.activePhase}>
         <div className="e2e-detail-side">
-          <span className="e2e-label">Fase ativa</span>
-          <span className={`e2e-pill side-${side}`}>{side === "br" ? "Brasil → China" : "China → Brasil"}</span>
+          <span className="e2e-label">{t.activePhase}</span>
+          <span className={`e2e-pill side-${side}`}>{side === "br" ? t.brToCn : t.cnToBr}</span>
           <span className="e2e-detail-code">{phase.code}</span>
-          <span className="e2e-label">Prazo</span>
+          <span className="e2e-label">{t.deadline}</span>
           <strong className="e2e-detail-lt">{phase.lt}</strong>
         </div>
         <div className="e2e-detail-main">
           <div className="e2e-panel-heading"><h2>{phase.title}</h2><span className="e2e-window">{phase.win}</span></div>
           <div className="e2e-from-to">
-            <div><span className="e2e-label">Início</span><strong>{phase.dFrom}</strong></div>
+            <div><span className="e2e-label">{t.begin}</span><strong>{phase.dFrom}</strong></div>
             <Arrow w={28} h={16} />
-            <div className="is-end"><span className="e2e-label">Fim</span><strong>{phase.dTo}</strong></div>
+            <div className="is-end"><span className="e2e-label">{t.end}</span><strong>{phase.dTo}</strong></div>
           </div>
-          <div><span className="e2e-label">Responsável · regra</span><p className="e2e-rule">{phase.rule}</p></div>
-          <ul className="e2e-docs" aria-label="Documentos">{phase.docs.map(doc => <li key={doc}>{doc}</li>)}</ul>
+          <div><span className="e2e-label">{t.ownerRule}</span><p className="e2e-rule">{phase.rule}</p></div>
+          <ul className="e2e-docs" aria-label={t.documents}>{phase.docs.map(doc => <li key={doc}>{doc}</li>)}</ul>
         </div>
       </section>
 
-      <section className="card e2e-milestones" aria-label="Marcos e datas-limite">
+      <section className="card e2e-milestones" aria-label={t.milestonesTitle}>
         <div className="e2e-panel-heading">
-          <h2>Marcos e datas-limite</h2>
-          <span className="e2e-label">{mts ? "MTS" : "Não MTS"} · {air ? "Aéreo" : "Marítimo"}</span>
+          <h2>{t.milestonesTitle}</h2>
+          <span className="e2e-label">{mts ? t.mts : t.notMts} · {air ? t.air : t.sea}</span>
         </div>
         <ul>
           {flow.milestones.map((milestone, k) => {
