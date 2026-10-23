@@ -19,7 +19,7 @@ type PortfolioSummary = { purchaseOrders: number; linkedProcesses: number; items
   byImporter: Array<{ importer: string; purchaseOrders: number }> };
 type PortfolioSummaryState = { query: string; value: PortfolioSummary };
 type PortfolioSummaryFailure = { query: string; message: string };
-type ExportJob = { id: string; status: string; errorCode: string | null; createdAt: string;
+type ExportJob = { id: string; jobType?: string; status: string; errorCode: string | null; createdAt: string;
   expiresAt: string | null; downloadPath: string | null };
 
 const emptyFilters: Filters = { number: "", importer: "", product: "", ipNumber: "", lifecycle: "" };
@@ -245,7 +245,7 @@ export default function PortfolioPage() {
         {exportStatus && <p className="muted" role="status">{exportStatus}</p>}
         {recentExports.length > 0 && <details className="historical-disclosure"><summary>Exportações recentes</summary>
           <ul>{recentExports.slice(0, 5).map(job => <li key={job.id}>
-            {new Date(job.createdAt).toLocaleString("pt-BR")} · {job.status === "queued" ? "na fila"
+            {new Date(job.createdAt).toLocaleString("pt-BR")} · {job.jobType === "purchase-order-lines-xlsx" ? "por produto · " : ""}{job.status === "queued" ? "na fila"
               : job.status === "running" ? "em processamento" : job.status === "completed" ? "concluída"
                 : job.status === "failed" ? "falhou" : job.status}
             {job.downloadPath && <> · <a className="text-link" href={job.downloadPath}>Baixar Excel</a></>}

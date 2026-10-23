@@ -34,7 +34,7 @@ function fixed8(value: unknown): bigint | null {
   const match = /^(\d+)(?:\.(\d{1,8}))?$/.exec(String(value));
   return match ? BigInt(match[1]) * 100_000_000n + BigInt((match[2] ?? "").padEnd(8, "0")) : null;
 }
-function moneyProduct(quantity: unknown, price: unknown): string | null {
+export function moneyProduct(quantity: unknown, price: unknown): string | null {
   const q = fixed8(quantity); const p = fixed8(price);
   if (q === null || p === null) return null;
   const value = (q * p + 50_000_000n) / 100_000_000n;

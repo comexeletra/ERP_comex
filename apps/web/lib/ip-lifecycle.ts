@@ -2,16 +2,19 @@ export type ProcessRecordStatus = "DRAFT" | "ACTIVE" | "CANCELLED" | "DELETED";
 export type ProcessLifecycleStatus = "OPEN" | "CLOSED";
 export type ProcessLifecycleAction = "close" | "cancel" | "delete" | "reopen" | "reactivate" | "restore";
 export type ProcessDirectoryRecordStatus = "" | "active" | "draft" | "cancelled" | "deleted" | "all";
+/** Statuses the API calculates for an IP from its dates. */
+export const processCalculatedStatuses = ["AGUARDANDO PRODUÇÃO", "AGUARDANDO EMBARQUE", "AGUARDANDO CHEGADA",
+  "DESEMBARAÇO", "ENTREGUE", "CANCELADO"] as const;
 export type ProcessDirectoryFilters = {
   ipNumber: string;
   importer: string;
-  logisticsStatus: string;
+  status: "" | typeof processCalculatedStatuses[number];
   qualityStatus: string;
   recordStatus: ProcessDirectoryRecordStatus;
 };
 
 export const emptyProcessDirectoryFilters: ProcessDirectoryFilters = {
-  ipNumber: "", importer: "", logisticsStatus: "", qualityStatus: "", recordStatus: "",
+  ipNumber: "", importer: "", status: "", qualityStatus: "", recordStatus: "",
 };
 
 const processDirectoryRecordStatuses = new Set<ProcessDirectoryRecordStatus>([
@@ -20,10 +23,12 @@ const processDirectoryRecordStatuses = new Set<ProcessDirectoryRecordStatus>([
 
 export function parseProcessDirectoryFilters(params: URLSearchParams): ProcessDirectoryFilters {
   const selectedStatus = params.get("recordStatus") ?? "";
+  const calculatedStatus = params.get("status") ?? "";
   return {
     ipNumber: params.get("ipNumber") ?? "",
     importer: params.get("importer") ?? "",
-    logisticsStatus: params.get("logisticsStatus") ?? "",
+    status: (processCalculatedStatuses as readonly string[]).includes(calculatedStatus)
+      ? calculatedStatus as ProcessDirectoryFilters["status"] : "",
     qualityStatus: params.get("qualityStatus") ?? "",
     recordStatus: processDirectoryRecordStatuses.has(selectedStatus as ProcessDirectoryRecordStatus)
       ? selectedStatus as ProcessDirectoryRecordStatus : "",

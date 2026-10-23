@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
+import { shipmentStatusSql } from "./shipment-lines.js";
 
 const preColumns = excelColumns("B", "BB");
 const postColumns = excelColumns("B", "AS");
@@ -149,8 +150,8 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
            SELECT process.* FROM imports.import_process AS process
            WHERE process.importer = ANY($1::text[])
          ), status_counts AS (
-           SELECT coalesce(nullif(btrim(logistics_status), ''), 'Sem status') AS status, count(*)::int AS status_count
-           FROM scoped_process GROUP BY 1
+           SELECT ${shipmentStatusSql("process", null)} AS status, count(*)::int AS status_count
+           FROM scoped_process AS process GROUP BY 1
          )
          SELECT count(*)::int AS total_records,
            count(*) FILTER (WHERE source_kind = 'HISTORICAL_EXCEL')::int AS historical_records,

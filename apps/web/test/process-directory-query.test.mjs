@@ -16,3 +16,11 @@ test("process directory restores supported URL states and ignores invalid lifecy
   assert.equal(parseProcessDirectoryFilters(new URLSearchParams("recordStatus=unknown")).recordStatus, "");
   assert.equal(processDirectoryQuery(emptyProcessDirectoryFilters, 1).has("recordStatus"), false);
 });
+
+test("process directory filters by the status calculated from the IP dates", () => {
+  const query = processDirectoryQuery({ ...emptyProcessDirectoryFilters, status: "AGUARDANDO CHEGADA" }, 1);
+  assert.equal(query.get("status"), "AGUARDANDO CHEGADA");
+  assert.equal(query.has("logisticsStatus"), false);
+  assert.equal(parseProcessDirectoryFilters(new URLSearchParams("status=ENTREGUE")).status, "ENTREGUE");
+  assert.equal(parseProcessDirectoryFilters(new URLSearchParams("status=WAITING%20SHIPMENT")).status, "");
+});

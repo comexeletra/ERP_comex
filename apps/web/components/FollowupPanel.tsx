@@ -8,6 +8,7 @@ import { formatNumber } from "../lib/format-number";
 import { IpCalculatedSummary as IpSummary, ipPostShipmentFields, newProcessDocumentKinds, productLineIpFields,
   withDateWarnings } from "../lib/ip-post-shipment-fields";
 import IpCalculatedSummary from "./IpCalculatedSummary";
+import { itemShipmentSummary } from "../lib/purchase-order-lines";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 import { purchaseOrderItemFields } from "./PurchaseOrderItemFields";
 import { calculatedTotal } from "./PurchaseOrderCalculatedFields";
@@ -208,6 +209,26 @@ export default function FollowupPanel({ id }: { id: string }) {
     {notice && <p className="notice success" role="status">{notice}</p>}
     {compatibilityWarning && <p className="notice" role="status">{compatibilityWarning}</p>}
     {!loading && data && <>
+      {data.items.length > 0 && <>
+        <h3>Resumo por item</h3>
+        <p className="muted">Onde está a quantidade pedida de cada item: por status do IP, o que falta distribuir e a próxima ETA.</p>
+        <div className="table-scroll"><table><thead><tr>
+          <th>Produto</th><th>Qtd. pedida</th><th>A distribuir</th><th>Por status</th><th>Próxima ETA</th>
+        </tr></thead><tbody>{data.items.map(item => {
+          const summary = itemShipmentSummary(item.orderedQuantity,
+            /^(CANCELLED|CANCELED)$/i.test(String(item.sourceStatus ?? "")),
+            data.shipments.filter(shipment => shipment.itemId === item.id).map(shipment => ({
+              quantity: shipment.allocationQuantity, status: String(shipment.calculated.status ?? ""),
+              eta: typeof shipment.calculated.eta === "string" ? shipment.calculated.eta : null })));
+          return <tr key={item.id}>
+            <td><strong>{item.productCode}</strong><small>{value(item.description)}</small></td>
+            <td>{formatNumber(item.orderedQuantity)} {value(item.unit) === "—" ? "" : value(item.unit)}</td>
+            <td>{formatNumber(summary.toDistribute)}</td>
+            <td>{summary.byStatus.length ? summary.byStatus.map(entry => `${entry.status}: ${formatNumber(entry.quantity)}`).join(" · ") : "—"}</td>
+            <td>{value(summary.nextEta)}</td>
+          </tr>;
+        })}</tbody></table></div>
+      </>}
       <h3>Linhas da PO por IP</h3>
       <p className="muted">Cada distribuição gera uma linha. Os campos da PO vêm do pedido; os de pós embarque vêm do IP e aparecem em todas as linhas vinculadas a ele.</p>
       {data.items.length === 0 ? <p>Cadastre um item na PO para iniciar o acompanhamento.</p> :

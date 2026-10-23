@@ -6,12 +6,14 @@ import type { ReactNode } from "react";
 
 type IconName = "orders" | "ship" | "reports" | "sheet" | "requests" | "catalog"
   | "sc" | "noIp" | "noPo" | "quality" | "users" | "events" | "collapse" | "password" | "logout" | "sun" | "moon";
-type SidebarItem = { label: string; href: string; icon: IconName; match?: string[]; exact?: boolean };
+type SidebarItem = { label: string; href: string; icon: IconName; match?: string[]; exclude?: string[]; exact?: boolean };
 type SidebarGroup = { label: string; items: SidebarItem[] };
 
 const groups: SidebarGroup[] = [
   { label: "Operação", items: [
-    { label: "Pré embarque · POs", href: "/", icon: "orders", match: ["/purchase-orders"] },
+    { label: "Pré embarque · POs", href: "/", icon: "orders", match: ["/purchase-orders"],
+      exclude: ["/purchase-orders/lines"] },
+    { label: "Carteira por produto", href: "/purchase-orders/lines", icon: "sheet" },
     { label: "Pós embarque · IPs", href: "/processes", icon: "ship" },
   ] },
   { label: "Gestão", items: [
@@ -55,6 +57,7 @@ function SidebarIcon({ name }: { name: IconName }) {
 }
 
 function isItemActive(pathname: string, item: SidebarItem) {
+  if (item.exclude?.some(path => pathname === path || pathname.startsWith(`${path}/`))) return false;
   if (item.match?.some(path => pathname === path || pathname.startsWith(`${path}/`))) return true;
   if (item.exact) return pathname === item.href;
   return pathname === item.href || (item.href !== "/" && pathname.startsWith(`${item.href}/`));

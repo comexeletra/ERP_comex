@@ -19,6 +19,7 @@ import { registerOperationalRoutes } from "./operations.js";
 import { registerFollowupRoutes } from "./followup.js";
 import { registerPurchaseRequestRoutes } from "./purchase-requests.js";
 import { registerExportJobRoutes } from "./export-jobs.js";
+import { registerShipmentLineRoutes } from "./shipment-lines.js";
 import { apiErrorDetails } from "./api-error-details.js";
 
 const gatewayToken = process.env.GATEWAY_TOKEN;
@@ -100,6 +101,7 @@ await registerOperationalRoutes(app, pool);
 await registerFollowupRoutes(app, pool);
 await registerPurchaseRequestRoutes(app, pool);
 await registerExportJobRoutes(app, pool);
+await registerShipmentLineRoutes(app, pool);
 
 app.get("/health/live", async () => ({ status: "ok" }));
 

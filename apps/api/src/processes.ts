@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import { z } from "zod";
 import { importerScopePredicate, permissionConfig } from "./authorization.js";
 import { sourceColumnHeadersFor } from "./source-audit.js";
+import { processStatuses, shipmentStatusSql } from "./shipment-lines.js";
 
 const paging = {
   page: z.coerce.number().int().min(1).default(1),
@@ -13,6 +14,7 @@ const processQuery = z.object({
   ipNumber: z.string().trim().max(80).optional(),
   importer: z.string().trim().max(120).optional(),
   logisticsStatus: z.string().trim().max(40).optional(),
+  status: z.enum(processStatuses).optional(),
   qualityStatus: z.string().trim().max(32).optional(),
   recordStatus: z.enum(["active", "draft", "cancelled", "deleted", "all"]).optional(),
 }).strict();
@@ -43,7 +45,8 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
   app.get("/api/v1/processes", { config: permissionConfig("processes.read") }, async (request, reply) => {
     const parsed = processQuery.safeParse(request.query);
     if (!parsed.success) return problem(reply, 400, "Revise os filtros e a paginação.");
-    const { page, pageSize, ipNumber, importer, logisticsStatus, qualityStatus, recordStatus } = parsed.data;
+    const { page, pageSize, ipNumber, importer, logisticsStatus, status, qualityStatus, recordStatus } = parsed.data;
+    const calculatedStatus = shipmentStatusSql("process", null);
     const scope = importerScopePredicate("process.importer", 1, request.authorizationContext?.importerScopes ?? []);
     const result = await pool.query<{ total_count: number; items: Record<string, unknown>[] }>(
       `WITH filtered AS MATERIALIZED (
@@ -52,6 +55,7 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
            process.logistics_status, process.lifecycle_status, process.record_status, process.quality_status,
            process.version,
            (process.bl_date IS NOT NULL OR process.actual_port_departure_date IS NOT NULL) AS shipped,
+           ${calculatedStatus} AS calculated_status,
            (SELECT count(*)::int FROM procurement.process_purchase_order AS link
             JOIN procurement.purchase_order AS po ON po.id = link.purchase_order_id
             WHERE link.process_id = process.id AND po.importer = ANY($1::text[])) AS purchase_order_count,
@@ -71,6 +75,7 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
            AND ($5::text IS NULL OR process.quality_status = $5)
            AND (($6::text IS NULL AND process.record_status <> 'DELETED')
              OR $6::text = 'all' OR lower(process.record_status) = $6)
+           AND ($9::text IS NULL OR (${calculatedStatus}) = $9)
        ), page AS (
          SELECT * FROM filtered ORDER BY ip_number, id LIMIT $7 OFFSET $8
        )
@@ -78,7 +83,8 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
          coalesce(jsonb_agg(jsonb_build_object(
            'id', page.id, 'ipNumber', page.ip_number, 'importer', page.importer,
            'supplierEntryId', page.supplier_entry_id, 'supplierText', page.supplier_text, 'supplierName', page.supplier_name,
-           'logisticsStatus', page.logistics_status, 'lifecycleStatus', page.lifecycle_status,
+           'logisticsStatus', page.logistics_status, 'calculatedStatus', page.calculated_status,
+           'lifecycleStatus', page.lifecycle_status,
            'recordStatus', page.record_status,
            'version', page.version::text,
            'shipped', page.shipped,
@@ -90,7 +96,7 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
          ) ORDER BY page.ip_number, page.id) FILTER (WHERE page.id IS NOT NULL), '[]'::jsonb) AS items
        FROM page`,
       [scope.values[0], ipNumber || null, importer || null, logisticsStatus || null, qualityStatus || null,
-        recordStatus ?? null, pageSize, (page - 1) * pageSize],
+        recordStatus ?? null, pageSize, (page - 1) * pageSize, status ?? null],
     );
     return { page, pageSize, totalCount: Number(result.rows[0]?.total_count ?? 0), items: result.rows[0]?.items ?? [] };
   });

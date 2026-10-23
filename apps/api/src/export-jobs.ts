@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
+import { shipmentLineQuery } from "./shipment-lines.js";
 
 const filtersSchema = z.object({
   number: z.string().trim().max(80).optional(),
@@ -11,6 +12,9 @@ const filtersSchema = z.object({
   ipNumber: z.string().trim().max(80).optional(),
 }).strict();
 const jobIdSchema = z.string().uuid();
+const exportFileNames: Record<string, string> = {
+  "purchase-order-xlsx": "carteira-pos.xlsx", "purchase-order-lines-xlsx": "carteira-por-produto.xlsx",
+};
 
 function canAccessExport(
   left: readonly string[], right: readonly string[], requestedAsMaster: boolean, currentRoles: readonly string[],
@@ -25,12 +29,12 @@ export async function registerExportJobRoutes(app: FastifyInstance, pool: Pool):
     config: permissionConfig("purchase-orders.read"),
   }, async (request, reply) => {
     const result = await pool.query<{
-      id: string; status: string; importer_scopes: string[]; error_code: string | null;
+      id: string; job_type: string; status: string; importer_scopes: string[]; error_code: string | null;
       requested_as_master: boolean; created_at: Date; expires_at: Date | null;
     }>(
-      `SELECT id, status, importer_scopes, requested_as_master, error_code, created_at, expires_at
+      `SELECT id, job_type, status, importer_scopes, requested_as_master, error_code, created_at, expires_at
        FROM jobs.export_job
-       WHERE requested_by = $1 AND job_type = 'purchase-order-xlsx'
+       WHERE requested_by = $1 AND job_type IN ('purchase-order-xlsx', 'purchase-order-lines-xlsx')
        ORDER BY created_at DESC LIMIT 20`,
       [request.authContext!.userId],
     );
@@ -40,6 +44,7 @@ export async function registerExportJobRoutes(app: FastifyInstance, pool: Pool):
     return { items: result.rows.filter(job => canAccessExport(job.importer_scopes, currentScopes,
       job.requested_as_master, authorization?.roles ?? [])).map(job => ({
       id: job.id,
+      jobType: job.job_type,
       status: job.status,
       errorCode: job.status === "failed" ? job.error_code : null,
       createdAt: job.created_at,
@@ -49,10 +54,13 @@ export async function registerExportJobRoutes(app: FastifyInstance, pool: Pool):
     })) };
   });
 
-  app.post("/api/v1/exports/purchase-orders", {
+  for (const [path, jobType, schema] of [
+    ["/api/v1/exports/purchase-orders", "purchase-order-xlsx", filtersSchema],
+    ["/api/v1/exports/purchase-order-lines", "purchase-order-lines-xlsx", shipmentLineQuery.strict()],
+  ] as const) app.post(path, {
     config: permissionConfig("purchase-orders.read"),
   }, async (request, reply) => {
-    const parsed = filtersSchema.safeParse(request.body);
+    const parsed = schema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "Filtros inválidos para a exportação." });
     }
@@ -86,7 +94,7 @@ export async function registerExportJobRoutes(app: FastifyInstance, pool: Pool):
       await client.query(
         `INSERT INTO jobs.export_job
            (id, job_type, requested_by, importer_scopes, requested_as_master, parameters)
-         VALUES ($1, 'purchase-order-xlsx', $2, $3::text[], $4, $5::jsonb)`,
+         VALUES ($1, '${jobType}', $2, $3::text[], $4, $5::jsonb)`,
         [id, userId, importerScopes, authorization?.roles.includes("Master") ?? false,
           JSON.stringify(parsed.data)],
       );
@@ -137,11 +145,11 @@ export async function registerExportJobRoutes(app: FastifyInstance, pool: Pool):
   }, async (request, reply) => {
     const parsedId = jobIdSchema.safeParse(request.params.id);
     if (!parsedId.success) return reply.code(404).send({ error: "Exportação não encontrada." });
-    const result = await pool.query<{ importer_scopes: string[]; requested_as_master: boolean;
+    const result = await pool.query<{ job_type: string; importer_scopes: string[]; requested_as_master: boolean;
       result_binary: Buffer | null }>(
-      `SELECT importer_scopes, requested_as_master, result_binary
+      `SELECT job_type, importer_scopes, requested_as_master, result_binary
        FROM jobs.export_job
-       WHERE id = $1 AND requested_by = $2 AND job_type = 'purchase-order-xlsx'
+       WHERE id = $1 AND requested_by = $2 AND job_type IN ('purchase-order-xlsx', 'purchase-order-lines-xlsx')
          AND status = 'completed' AND expires_at > now()`,
       [parsedId.data, request.authContext!.userId],
     );
@@ -155,7 +163,7 @@ export async function registerExportJobRoutes(app: FastifyInstance, pool: Pool):
 
     reply.header("cache-control", "no-store");
     reply.header("content-type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    reply.header("content-disposition", 'attachment; filename="carteira-pos.xlsx"');
+    reply.header("content-disposition", `attachment; filename="${exportFileNames[job.job_type] ?? "carteira-pos.xlsx"}"`);
     return reply.send(job.result_binary);
   });
 }

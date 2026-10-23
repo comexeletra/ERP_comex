@@ -1,5 +1,7 @@
 import type { Pool } from "pg";
 import ExcelJS from "exceljs";
+import { moneyProduct } from "./followup-calculations.js";
+import type { ShipmentLine } from "./shipment-lines.js";
 
 export type PurchaseOrderExportFilters = {
   number?: string;
@@ -125,5 +127,62 @@ export async function purchaseOrderExportXlsx(rows: readonly PurchaseOrderExport
   sheet.getRow(1).font = { bold: true };
   sheet.autoFilter = { from: "A1", to: "H1" };
   for (const row of rows) sheet.addRow(row);
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+type Cell = string | number | null;
+const text = (value: unknown): string | null => typeof value === "string" && value.trim() ? value : null;
+const decimal = (value: unknown): number | null => {
+  const parsed = typeof value === "string" || typeof value === "number" ? Number(value) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+// Columns B:AZ of the Pré Embarque sheet, in order, so the export can replace it;
+// new data the sheet never had comes after them. IP costs are not repeated per line.
+const lineColumns: [string, (line: ShipmentLine) => Cell][] = [
+  ["Necessity", line => text(line.item.necessityDate)], ["Priority", line => text(line.item.priority)],
+  ["Alert", line => text(line.calculated.alert)], ["Status", line => text(line.calculated.status)],
+  ["Importer", line => text(line.purchaseOrder.importer)],
+  ["Demand", line => text(line.item.demand)], ["Requester", line => text(line.item.requester)],
+  ["SC Totvs", line => text(line.item.scNumber)], ["SC Appr. Date", line => text(line.item.scApprovalDate)],
+  ["Finalidade", line => text(line.item.purpose)], ["Cost Center", line => text(line.item.costCenter)],
+  ["Draft PO", line => text(line.item.draftPo)],
+  ["PO Totvs", line => text(line.purchaseOrder.number)],
+  ["PO Date", line => text(line.purchaseOrder.orderDate)],
+  ["PO Appr. Date", line => text(line.item.poApprovalDate)], ["PO Sent Date", line => text(line.item.poSentDate)],
+  ["Supplier", line => text(line.purchaseOrder.supplierText)],
+  ["Category", line => text(line.item.category)], ["Product Code", line => text(line.item.productCode)],
+  ["Product Description", line => text(line.item.description)], ["NCM", line => text(line.item.ncm)],
+  ["Qty", line => decimal(line.quantity)], ["Unit Price", line => decimal(line.item.unitPrice)],
+  ["Total Price", line => decimal(moneyProduct(line.quantity, line.item.unitPrice))],
+  ["Currency", line => text(line.item.currencyCode)], ["Remarks", line => text(line.item.remarks)],
+  ["IP Number", line => text(line.process?.ipNumber)], ["IP Date Totvs", line => text(line.process?.ipTotvsDate)],
+  ["Mode", line => text(line.process?.transportMode)], ["Incoterm", line => text(line.process?.incoterm)],
+  ["Broker", line => text(line.process?.broker)], ["POL", line => text(line.process?.portLoading)],
+  ["POD", line => text(line.process?.portDischarge)], ["ETD", line => text(line.process?.etd)],
+  ["ETA", line => text(line.calculated.eta)], ["Transit Time", line => decimal(line.calculated.transitDays)],
+  ["Invoice", line => Array.isArray(line.calculated.invoiceNumbers) && line.calculated.invoiceNumbers.length
+    ? line.calculated.invoiceNumbers.join(", ") : null],
+  ["BL Number", line => text(line.process?.blNumber)], ["BL Date", line => text(line.process?.blDate)],
+  ["Arrival", line => text(line.process?.arrivalDate)], ["Duimp", line => text(line.process?.duimpNumber)],
+  ["Duimp Date", line => text(line.process?.duimpDate)], ["Channel", line => text(line.process?.customsChannel)],
+  ["Clearance", line => text(line.process?.clearanceDate)], ["ETE", line => text(line.calculated.ete)],
+  ["NF Request", line => text(line.process?.nfRequestDate)], ["NF", line => text(line.calculated.nfNumber)],
+  ["NF Issue Date", line => text(line.calculated.nfIssueDate)], ["Delivery Date", line => text(line.process?.deliveryDate)],
+  ["LT Total", line => decimal(line.calculated.leadTimeDays)], ["Rupture Risk", line => text(line.calculated.ruptureRisk)],
+  ["Departure", line => text(line.process?.actualPortDepartureDate)],
+  ["Factory Ship Date", line => text(line.factoryShipDate)],
+  ["Line Type", line => line.lineKind === "BALANCE" ? "Saldo sem IP" : "Distribuição no IP"],
+];
+
+export async function purchaseOrderLinesXlsx(lines: readonly ShipmentLine[]): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "ERP Comex";
+  workbook.created = new Date();
+  const sheet = workbook.addWorksheet("Carteira por produto", { views: [{ state: "frozen", ySplit: 1 }] });
+  sheet.columns = lineColumns.map(([header]) => ({ header, key: header, width: Math.max(12, header.length + 4) }));
+  sheet.getRow(1).font = { bold: true };
+  sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: lineColumns.length } };
+  for (const line of lines) sheet.addRow(lineColumns.map(([, value]) => value(line)));
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

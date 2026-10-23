@@ -3,11 +3,10 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
-import { emptyProcessDirectoryFilters, parseProcessDirectoryFilters, processDirectoryQuery,
+import { emptyProcessDirectoryFilters, parseProcessDirectoryFilters, processCalculatedStatuses, processDirectoryQuery,
   type ProcessDirectoryFilters, type ProcessDirectoryRecordStatus } from "../lib/ip-lifecycle";
-import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 
-type Process = { id: string; ipNumber: string; importer: string; logisticsStatus: string | null; lifecycleStatus?: "OPEN" | "CLOSED"; recordStatus?: "DRAFT" | "ACTIVE" | "CANCELLED" | "DELETED"; qualityStatus: string; purchaseOrderCount: number; historicalLineCount: number; operationalAllocationCount: number; historicalCostCount: number };
+type Process = { id: string; ipNumber: string; importer: string; logisticsStatus: string | null; calculatedStatus?: string; lifecycleStatus?: "OPEN" | "CLOSED"; recordStatus?: "DRAFT" | "ACTIVE" | "CANCELLED" | "DELETED"; qualityStatus: string; purchaseOrderCount: number; historicalLineCount: number; operationalAllocationCount: number; historicalCostCount: number };
 type Page = { page: number; pageSize: number; totalCount: number; items: Process[] };
 const empty = emptyProcessDirectoryFilters;
 type Filters = ProcessDirectoryFilters;
@@ -23,13 +22,11 @@ export default function ProcessDirectory() {
   const [compatibilityWarning, setCompatibilityWarning] = useState("");
   const [retry, setRetry] = useState(0);
   const [roles, setRoles] = useState<string[]>([]);
-  const [options, setOptions] = useState<OperationalOption[]>([]);
 
   useEffect(() => {
     apiFetch("/auth/me").then(async response => {
       if (response.ok) setRoles((await response.json() as { roles: string[] }).roles);
     }).catch(() => undefined);
-    loadOperationalOptions().then(setOptions).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -84,7 +81,10 @@ export default function ProcessDirectory() {
     <section className="card"><form className="portfolio-filter" onSubmit={apply}>
       <label>IP<input value={draft.ipNumber} onChange={event => setDraft({ ...draft, ipNumber: event.target.value })} placeholder="NH-017/2025" /></label>
       <label>Importador<input value={draft.importer} onChange={event => setDraft({ ...draft, importer: event.target.value })} /></label>
-      <label>Status logístico<OperationalOptionSelect entity="logistics_status" value={draft.logisticsStatus} values={options} onChange={logisticsStatus => setDraft({ ...draft, logisticsStatus })} /></label>
+      <label>Status<select value={draft.status} onChange={event => setDraft({ ...draft, status: event.target.value as ProcessDirectoryFilters["status"] })}>
+        <option value="">Todos</option>
+        {processCalculatedStatuses.map(status => <option key={status} value={status}>{status}</option>)}
+      </select></label>
       <label>Qualidade<input value={draft.qualityStatus} onChange={event => setDraft({ ...draft, qualityStatus: event.target.value })} /></label>
       <label>Situação do IP<select value={draft.recordStatus} onChange={event => setDraft({ ...draft, recordStatus: event.target.value as ProcessDirectoryRecordStatus })}>
         <option value="">Ativos, rascunhos e cancelados</option>
@@ -100,8 +100,8 @@ export default function ProcessDirectory() {
       {compatibilityWarning && <p className="notice" role="status">{compatibilityWarning}</p>}
       {!loading && !error && data && <><p>{data.totalCount} IPs encontrados{pages > 0 && ` · página ${page} de ${pages}`}</p>
         {data.items.length === 0 && <p>{data.totalCount ? "Página fora do intervalo." : "Nenhum IP encontrado."}</p>}
-        {data.items.length > 0 && <div className="table-scroll"><table><thead><tr><th>IP</th><th>Registro</th><th>Importador</th><th>Status logístico</th><th>Ciclo do IP</th><th>Qualidade</th><th>POs</th><th>Distribuições</th><th>Linhas de origem</th><th>Custos históricos</th><th></th></tr></thead><tbody>
-          {data.items.map(item => <tr key={item.id}><td>{item.ipNumber}</td><td>{item.recordStatus === "DRAFT" ? "Rascunho" : item.recordStatus === "CANCELLED" ? "Cancelado" : item.recordStatus === "DELETED" ? "Excluído" : "Ativo"}</td><td>{item.importer}</td><td>{item.logisticsStatus ?? "Não informado"}</td><td>{item.lifecycleStatus === "CLOSED" ? "Encerrado" : item.lifecycleStatus === "OPEN" ? "Aberto" : "Indisponível"}</td><td>{item.qualityStatus}</td><td>{item.purchaseOrderCount}</td><td>{item.operationalAllocationCount}</td><td>{item.historicalLineCount}</td><td>{item.historicalCostCount}</td><td><Link className="button" aria-label={`Abrir IP ${item.ipNumber}`} href={`/processes/${item.id}?return=${encodeURIComponent(returnPath)}`}>Abrir IP</Link></td></tr>)}
+        {data.items.length > 0 && <div className="table-scroll"><table><thead><tr><th>IP</th><th>Registro</th><th>Importador</th><th>Status</th><th>Ciclo do IP</th><th>Qualidade</th><th>POs</th><th>Distribuições</th><th>Linhas de origem</th><th>Custos históricos</th><th></th></tr></thead><tbody>
+          {data.items.map(item => <tr key={item.id}><td>{item.ipNumber}</td><td>{item.recordStatus === "DRAFT" ? "Rascunho" : item.recordStatus === "CANCELLED" ? "Cancelado" : item.recordStatus === "DELETED" ? "Excluído" : "Ativo"}</td><td>{item.importer}</td><td>{item.calculatedStatus ?? item.logisticsStatus ?? "Não informado"}</td><td>{item.lifecycleStatus === "CLOSED" ? "Encerrado" : item.lifecycleStatus === "OPEN" ? "Aberto" : "Indisponível"}</td><td>{item.qualityStatus}</td><td>{item.purchaseOrderCount}</td><td>{item.operationalAllocationCount}</td><td>{item.historicalLineCount}</td><td>{item.historicalCostCount}</td><td><Link className="button" aria-label={`Abrir IP ${item.ipNumber}`} href={`/processes/${item.id}?return=${encodeURIComponent(returnPath)}`}>Abrir IP</Link></td></tr>)}
         </tbody></table></div>}
         {pages > 1 && <nav className="pagination"><button className="button secondary" disabled={page <= 1} onClick={() => navigate(filters, page - 1)}>Anterior</button><span>Página {page} de {pages}</span><button className="button" disabled={page >= pages} onClick={() => navigate(filters, page + 1)}>Próxima</button></nav>}
       </>}

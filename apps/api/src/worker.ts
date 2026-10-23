@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
-import { queryPurchaseOrderExport, purchaseOrderExportXlsx, type PurchaseOrderExportFilters } from "./purchase-order-exports.js";
+import { queryPurchaseOrderExport, purchaseOrderExportXlsx, purchaseOrderLinesXlsx,
+  type PurchaseOrderExportFilters } from "./purchase-order-exports.js";
+import { queryShipmentLines, shipmentLineQuery } from "./shipment-lines.js";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL não configurada para o worker.");
@@ -24,7 +26,7 @@ type ExportJob = {
   id: string;
   job_type: string;
   importer_scopes: string[];
-  parameters: PurchaseOrderExportFilters;
+  parameters: PurchaseOrderExportFilters | Record<string, unknown>;
   attempt_count: number;
 };
 
@@ -104,10 +106,19 @@ async function failJob(job: ExportJob, error: unknown): Promise<void> {
 
 async function processJob(job: ExportJob): Promise<void> {
   try {
+    if (job.job_type === "purchase-order-lines-xlsx") {
+      const filters = shipmentLineQuery.safeParse(job.parameters);
+      if (!filters.success) throw new PermanentJobError("INVALID_EXPORT_FILTERS");
+      const result = await queryShipmentLines(pool, job.importer_scopes, filters.data, 5001, 0);
+      if (result.totalCount > 5000) throw new PermanentJobError("EXPORT_TOO_LARGE");
+      await completeJob(job, await purchaseOrderLinesXlsx(result.lines));
+      console.info(JSON.stringify({ event: "export_job_completed", jobId: job.id, rowCount: result.lines.length }));
+      return;
+    }
     if (job.job_type !== "purchase-order-xlsx" && job.job_type !== "purchase-order-csv") {
       throw new PermanentJobError("UNSUPPORTED_JOB_TYPE");
     }
-    const result = await queryPurchaseOrderExport(pool, job.importer_scopes, job.parameters);
+    const result = await queryPurchaseOrderExport(pool, job.importer_scopes, job.parameters as PurchaseOrderExportFilters);
     if (result.totalCount > 5000) throw new PermanentJobError("EXPORT_TOO_LARGE");
     await completeJob(job, await purchaseOrderExportXlsx(result.rows));
     console.info(JSON.stringify({ event: "export_job_completed", jobId: job.id, rowCount: result.rows.length }));
