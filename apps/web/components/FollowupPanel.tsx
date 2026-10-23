@@ -193,7 +193,7 @@ export default function FollowupPanel({ id }: { id: string }) {
     {loading && <p role="status">{t.loading}</p>}
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
-    {compatibilityWarning && <p className="notice" role="status">{compatibilityWarning}</p>}
+    {compatibilityWarning && <p className="notice warning" role="status">{compatibilityWarning}</p>}
     {!loading && data && <>
       {data.items.length > 0 && <>
         <h3>{t.itemSummary}</h3>

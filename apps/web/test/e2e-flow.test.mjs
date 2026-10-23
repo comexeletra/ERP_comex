@@ -9,7 +9,8 @@ import { zhCN } from "../lib/i18n/zh-CN.ts";
 const component = await readFile(new URL("../components/E2eFlowDemo.tsx", import.meta.url), "utf8");
 const page = await readFile(new URL("../app/end-to-end/page.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("../components/AppSidebar.tsx", import.meta.url), "utf8");
-const styles = await readFile(new URL("../app/styles.css", import.meta.url), "utf8");
+const styles = await readFile(new URL("../app/styles/features/e2e.css", import.meta.url), "utf8");
+const tokens = await readFile(new URL("../app/styles/tokens.css", import.meta.url), "utf8");
 
 test("formats day offsets relative to the need date", () => {
   assert.equal(formatDayOffset(120), "D-120");
@@ -80,11 +81,14 @@ test("end-to-end demo page is routed, listed in the sidebar and follows the app 
   assert.match(sidebar, /\{ label: "endToEnd", href: "\/end-to-end", icon: "flow" \}/u);
   assert.equal(ptBR.sidebar.items.endToEnd, "End-to-end");
   assert.match(component, /<main className="shell e2e-flow"/u);
-  assert.match(component, /<header className="page-header"><p className="eyebrow">\{t\.eyebrow\}<\/p>/u);
+  assert.match(component, /<PageHeader eyebrow=\{t\.eyebrow\} title=\{t\.title\}>/u);
   assert.match(ptBR.e2e.eyebrow, /Demonstração/u);
   assert.doesNotMatch(component, /next\/font|fonts\.googleapis/u);
   assert.match(styles, /\.e2e-flow\s*\{/u);
-  assert.match(styles, /:root\[data-theme="dark"\] \.e2e-flow\s*\{/u);
+  // Colors come only from the global tokens, so the dark theme applies without extra rules.
+  assert.doesNotMatch(styles, /#[0-9a-f]{3,8}\b/iu);
+  assert.match(styles, /--e2e-br: var\(--brand-green\)/u);
+  assert.match(tokens, /:root\[data-theme="dark"\]\s*\{/u);
 });
 
 test("the flow labels follow the chosen language", () => {

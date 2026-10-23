@@ -6,6 +6,7 @@ import { apiFetch, readApiJson } from "../lib/api";
 import { formatNumber } from "../lib/format-number";
 import { statusLabel } from "../lib/i18n/labels";
 import { getMessages, useI18n } from "./I18nProvider";
+import PageHeader from "./PageHeader";
 import { emptyProductLineFilters, parseProductLineFilters, productLineFilterBody, productLineQuery,
   productLineStatuses, type ProductLineFilters } from "../lib/purchase-order-lines";
 
@@ -111,10 +112,7 @@ export default function ProductLinesView({ initialQuery }: { initialQuery: strin
 
   const totalPages = result ? Math.ceil(result.totalCount / pageSize) : 0;
   return <main className="shell">
-    <header className="page-header portfolio-header">
-      <p className="eyebrow">ERP Comex</p><h1>{t.title}</h1>
-      <p>{t.intro}</p>
-    </header>
+    <PageHeader className="portfolio-header" eyebrow={m.sidebar.groups.operation} title={t.title}><p>{t.intro}</p></PageHeader>
     <section className="card">
       <form className="portfolio-filter" onSubmit={filter}>
         <label>{t.poNumber}<input value={draft.purchaseOrder} onChange={event => setDraft({ ...draft, purchaseOrder: event.target.value })} /></label>

@@ -5,7 +5,9 @@ import { apiFetch, readApiJson } from "../../lib/api";
 import { automaticAuditReason } from "../../lib/audit";
 import { PurchaseRequestChoice } from "../../components/PurchaseRequestSelect";
 import { CatalogChoice, loadCatalogChoices, loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "../../components/OperationalOptionSelect";
+import ConfirmDialog from "../../components/ConfirmDialog";
 import { getMessages, useI18n } from "../../components/I18nProvider";
+import PageHeader from "../../components/PageHeader";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import type { Messages } from "../../lib/i18n/pt-BR";
 
@@ -170,8 +172,7 @@ export default function PcmPage() {
     } finally { setHistoryLoading(false); }
   }
 
-  async function deletePurchaseRequest(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function deletePurchaseRequest() {
     if (!deletingItem || deleteReason.trim().length < 3) return;
     setSaving(true); setError(""); setNotice("");
     try {
@@ -206,11 +207,7 @@ export default function PcmPage() {
   }
 
   return <main className="shell">
-    <header className="page-header">
-      <p className="eyebrow">{t.eyebrow}</p>
-      <h1>{t.title}</h1>
-      <p>{t.intro}</p>
-    </header>
+    <PageHeader eyebrow={t.eyebrow} title={t.title}><p>{t.intro}</p></PageHeader>
     {loading && <p role="status">{t.loading}</p>}
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice" role="status">{notice}</p>}
@@ -262,20 +259,14 @@ export default function PcmPage() {
             </button>}
           </div></td>
         </tr>)}</tbody></table></div>}
-      {deletingItem && <form className="notice" role="dialog" aria-modal="true" aria-labelledby="delete-sc-title"
-        onSubmit={deletePurchaseRequest}>
-        <h3 id="delete-sc-title">{t.deleteTitle(deletingItem.scNumber)}</h3>
+      <ConfirmDialog open={deletingItem !== null} title={deletingItem ? t.deleteTitle(deletingItem.scNumber) : ""} danger busy={saving}
+        confirmLabel={saving ? t.deleting : t.confirmDelete} cancelLabel={t.cancel} confirmDisabled={deleteReason.trim().length < 3}
+        onConfirm={() => void deletePurchaseRequest()} onCancel={() => { setDeletingItem(null); setDeleteReason(""); }}>
         <p>{t.deleteHelp}</p>
+        {error && <p className="notice error" role="alert">{error}</p>}
         <label>{t.deleteReason}<textarea required minLength={3} maxLength={1000} value={deleteReason}
           onChange={event => setDeleteReason(event.target.value)} /></label>
-        <div className="button-row">
-          <button className="button" disabled={saving || deleteReason.trim().length < 3}>
-            {saving ? t.deleting : t.confirmDelete}
-          </button>
-          <button className="button secondary" type="button" disabled={saving}
-            onClick={() => { setDeletingItem(null); setDeleteReason(""); }}>{t.cancel}</button>
-        </div>
-      </form>}
+      </ConfirmDialog>
       {historyId && <section className="sc-history" aria-label={t.historyAria}>
         <h3>{t.historyTitle}</h3>
         {historyLoading && <p role="status">{t.historyLoading}</p>}

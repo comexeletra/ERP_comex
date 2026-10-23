@@ -7,6 +7,7 @@ import { automaticAuditReason } from "../../lib/audit";
 import { formatUsDate, formatUsDateTime, parseUsDate } from "../../lib/date-format";
 import type { ProductPriceReference } from "../../lib/product-price-reference";
 import { getMessages, useI18n } from "../../components/I18nProvider";
+import PageHeader from "../../components/PageHeader";
 import { SearchableSelect } from "../../components/SearchableSelect";
 
 type Resource = "products" | "ncms";
@@ -158,8 +159,7 @@ export default function CatalogPage() {
   const canRegisterPo = roles.some(role => ["Master", "Administrador", "Importação", "Compras"].includes(role));
   const canRegisterIp = roles.some(role => ["Master", "Administrador", "Importação"].includes(role));
   return <main className="shell">
-    <header className="page-header"><p className="eyebrow">ERP Comex</p><h1>{t.title}</h1>
-      <div className="catalog-links"><Link className="text-link" href="/">{m.common.backToPortfolio}</Link></div></header>
+    <PageHeader eyebrow={m.sidebar.groups.management} title={t.title} />
     <section className="card" aria-labelledby="registration-options-title">
       <h2 id="registration-options-title">{t.newEntry}</h2>
       <nav className="catalog-links" aria-label={t.entryTypes}>

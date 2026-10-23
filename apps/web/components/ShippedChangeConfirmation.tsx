@@ -10,7 +10,7 @@ export default function ShippedChangeConfirmation({ value, onChange }: {
   const t = useI18n().m.shippedChange;
   return <fieldset className="operational-help">
     <legend>{t.title}</legend>
-    <p className="notice">{t.notice}</p>
+    <p className="notice warning">{t.notice}</p>
     <label><input type="checkbox" checked={value.confirmed}
       onChange={event => onChange({ ...value, confirmed: event.target.checked })} /> {t.confirm}</label>
     <label>{t.reason}<textarea required minLength={3} maxLength={1000} value={value.reason}

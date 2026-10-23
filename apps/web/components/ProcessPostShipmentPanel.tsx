@@ -197,7 +197,7 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
     {loading && <p role="status">{t.loading}</p>}
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
-    {compatibilityWarning && <p className="notice" role="status">{compatibilityWarning}</p>}
+    {compatibilityWarning && <p className="notice warning" role="status">{compatibilityWarning}</p>}
     {!loading && legacyProcess && <>
       <h3>{t.posTitle}</h3>
       {legacyProcess.purchaseOrders.length === 0 ? <p>{t.noPos}</p> :
@@ -210,14 +210,14 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
         </tbody></table></div>}
     </>}
     {!loading && data && <>
-      {data.process.invoiceSupplierDivergence && <p className="notice" role="status">{t.exporterDivergence}</p>}
+      {data.process.invoiceSupplierDivergence && <p className="notice warning" role="status">{t.exporterDivergence}</p>}
       <h3>{t.posTitle}</h3>
       {data.purchaseOrders.length === 0 ? <p>{t.noPos}</p> :
         <ul>{data.purchaseOrders.map(po => <li key={po.id}><Link className="text-link" href={`/purchase-orders/${po.id}`}>PO {po.number}</Link> · {po.importer}</li>)}</ul>}
-      {(data.openSourceConflicts ?? 0) > 0 && <p className="notice" role="status">
+      {(data.openSourceConflicts ?? 0) > 0 && <p className="notice warning" role="status">
         {t.sourceConflictsBefore(data.openSourceConflicts ?? 0)}<Link className="text-link" href="/quality">{t.sourceConflictsLink}</Link>
         {t.sourceConflictsAfter}</p>}
-      {(data.dateWarnings?.length ?? 0) > 0 && <p className="notice" role="status">
+      {(data.dateWarnings?.length ?? 0) > 0 && <p className="notice warning" role="status">
         {t.checkDates(data.dateWarnings!.join("; "))}</p>}
       <h3>{t.calculatedTitle}</h3>
       <p className="muted">{t.calculatedHelp}</p>

@@ -7,6 +7,7 @@ import { formatNumber } from "../lib/format-number";
 import OperationalPoPanel from "./OperationalPoPanel";
 import FollowupPanel from "./FollowupPanel";
 import { useI18n } from "./I18nProvider";
+import PageHeader from "./PageHeader";
 
 type Process = {
   id: string;
@@ -74,14 +75,11 @@ export default function PurchaseOrderWorkspace({ id, returnPath }: { id: string;
 
   return (
     <main className="shell">
-      <Link href={returnPath} className="back">{m.common.backToPortfolio}</Link>
-      <header className="page-header">
-        <p className="eyebrow">PO TOTVS · {data.importer}</p>
-        <h1>{data.number}</h1>
+      <PageHeader back={{ href: returnPath, label: m.common.backToPortfolio }} eyebrow={`PO TOTVS · ${data.importer}`} title={data.number}>
         <p>{t.status(m.poStatus[data.lifecycleStatus] ?? m.poStatus.ACTIVE)}</p>
         <p>{t.counts(data.itemCount, data.processes.length)}</p>
         <p>{t.flowHelp}</p>
-      </header>
+      </PageHeader>
 
       <nav className="po-workflow-nav" aria-label={t.steps}>
         <a href="#po-record">{t.step1}</a>

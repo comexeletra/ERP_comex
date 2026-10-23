@@ -1,0 +1,200 @@
+/*
+ * Design tokens. This is the only stylesheet allowed to contain literal colors
+ * (test/layout-consistency.test.mjs). Every other file uses these variables, so the
+ * dark theme only has to redefine them here.
+ *
+ * Brand colors were sampled from public/logo-eletra.png:
+ *   stripes #02A0D1 / #01BCE7 / #48CDF4, "eletra" #9FC916, "energy solutions" #B2D440.
+ * The logo colors are too light for text on white, so text and buttons use darker
+ * shades with the same hue that meet WCAG AA (4.5:1).
+ */
+:root {
+  color-scheme: light;
+
+  /* Brand (logo) */
+  --brand-blue: #02a0d1;
+  --brand-blue-mid: #01bce7;
+  --brand-blue-light: #48cdf4;
+  --brand-green: #9fc916;
+  --brand-green-light: #b2d440;
+
+  /* Interactive blue, same hue as the darkest logo stripe */
+  --color-primary: #037599;
+  --color-primary-hover: #13637c;
+  --color-primary-strong: #10556a;
+  --color-primary-tint: #c6e8f4;
+  --color-primary-soft: #e6f5fa;
+  --color-primary-subtle: #f2fafd;
+  --color-primary-border: #a9dcec;
+  --color-on-primary: #ffffff;
+  --color-link: #037599;
+
+  /* Accent green, same hue as the logo lettering */
+  --color-accent: #9fc916;
+  --color-accent-text: #516218;
+  --color-accent-tint: #e1efbe;
+  --color-accent-soft: #f3f8e4;
+  --color-accent-border: #cfe39a;
+  --color-on-accent: #1f2a05;
+
+  /* Neutrals */
+  --color-page: #f4f7fa;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f6f9fb;
+  --color-surface-sunken: #edf2f5;
+  --color-field-bg: #ffffff;
+  --color-field-readonly: #f1f5f7;
+  --color-border: #dce5eb;
+  --color-border-strong: #b9c8d1;
+  --color-border-hover: #8fa7b3;
+  --color-divider: #e8eef2;
+  --color-text-strong: #0f2a3a;
+  --color-text: #213b49;
+  --color-text-secondary: #3d5664;
+  --color-text-muted: #556b78;
+  --color-text-subtle: #61757f;
+  --color-placeholder: #7d8f99;
+
+  /* Feedback */
+  --color-success-bg: #f1f7e1;
+  --color-success-text: #485a12;
+  --color-success-border: #cbe08f;
+  --color-warning-bg: #fff6dc;
+  --color-warning-text: #7a5600;
+  --color-warning-border: #f1d792;
+  --color-danger: #b42318;
+  --color-danger-hover: #912018;
+  --color-danger-bg: #fff1f0;
+  --color-danger-text: #9e1b1b;
+  --color-danger-border: #f3c9c6;
+  --color-info-bg: #e9f6fb;
+  --color-info-text: #0d5872;
+  --color-info-border: #b5e0ef;
+
+  /* Navigation */
+  --sidebar-bg: #0b2a37;
+  --sidebar-hover: #12394a;
+  --sidebar-border: #24495a;
+  --sidebar-text: #d7e7ee;
+  --sidebar-text-strong: #ffffff;
+  --sidebar-muted: #93b0bc;
+  --sidebar-icon: #a7c4cf;
+  --sidebar-active: #037599;
+  --sidebar-indicator: #9fc916;
+  --sidebar-mark-bg: #ffffff;
+  --sidebar-danger-text: #ffd0c8;
+  --sidebar-danger-icon: #ffb2a5;
+  --sidebar-danger-hover: #59352f;
+
+  /* Focus and overlays */
+  --focus-ring: #02a0d1;
+  --focus-ring-soft: #02a0d133;
+  --color-overlay: #0b2a3780;
+
+  /* Shadows */
+  --shadow-xs: 0 1px 3px #0f2a3a0f;
+  --shadow-sm: 0 3px 14px #0f2a3a0d;
+  --shadow-md: 0 6px 18px #0f2a3a17;
+  --shadow-lg: 0 16px 44px #0f2a3a2e;
+  --shadow-xl: 0 24px 70px #0f2a3a1f;
+
+  /* Typography */
+  --font-sans: Arial, "Helvetica Neue", Helvetica, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --fs-2xs: .68rem;
+  --fs-xs: .75rem;
+  --fs-sm: .82rem;
+  --fs-md: .88rem;
+  --fs-base: 1rem;
+  --fs-lg: 1.2rem;
+  --fs-xl: 1.55rem;
+  --fs-2xl: clamp(1.8rem, 2.6vw, 2.2rem);
+  --fs-metric: clamp(1.6rem, 2vw, 2.05rem);
+  --fs-display: clamp(3rem, 6vw, 4.5rem);
+
+  /* Shape and layering */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+  --z-raised: 1;
+  --z-sticky: 5;
+  --z-sticky-corner: 8;
+  --z-sidebar: 30;
+  --z-menu: 1000;
+  --z-popover: 1100;
+
+  /* Content widths */
+  --width-reading: 880px;
+  --width-form: 960px;
+  --width-narrow: 640px;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-primary: #037599;
+  --color-primary-hover: #13637c;
+  --color-primary-strong: #8fdcf5;
+  --color-primary-tint: #1f4a5a;
+  --color-primary-soft: #153645;
+  --color-primary-subtle: #12303d;
+  --color-primary-border: #2d6479;
+  --color-on-primary: #ffffff;
+  --color-link: #7fd6f2;
+
+  --color-accent: #9fc916;
+  --color-accent-text: #c6e48a;
+  --color-accent-tint: #34481f;
+  --color-accent-soft: #232f19;
+  --color-accent-border: #56702a;
+  --color-on-accent: #1f2a05;
+
+  --color-page: #101a21;
+  --color-surface: #1b2a34;
+  --color-surface-muted: #213340;
+  --color-surface-sunken: #263b48;
+  --color-field-bg: #121f27;
+  --color-field-readonly: #1a2730;
+  --color-border: #3f5562;
+  --color-border-strong: #546c79;
+  --color-border-hover: #7590a0;
+  --color-divider: #344650;
+  --color-text-strong: #f0f5f7;
+  --color-text: #e2ebf0;
+  --color-text-secondary: #ccd9e0;
+  --color-text-muted: #b6c6cf;
+  --color-text-subtle: #a2b4be;
+  --color-placeholder: #93a6b0;
+
+  --color-success-bg: #233219;
+  --color-success-text: #c6e48a;
+  --color-success-border: #4e6427;
+  --color-warning-bg: #3d3220;
+  --color-warning-text: #ffe19a;
+  --color-warning-border: #6e5a2c;
+  --color-danger: #b42318;
+  --color-danger-hover: #912018;
+  --color-danger-bg: #432a2e;
+  --color-danger-text: #ffc5c5;
+  --color-danger-border: #74464c;
+  --color-info-bg: #15394a;
+  --color-info-text: #a8e2f6;
+  --color-info-border: #2f6479;
+
+  --sidebar-bg: #0a222d;
+  --sidebar-hover: #12394a;
+  --sidebar-border: #24495a;
+
+  --focus-ring: #48cdf4;
+  --focus-ring-soft: #48cdf440;
+  --color-overlay: #000000a6;
+
+  --shadow-xs: 0 1px 3px #00000040;
+  --shadow-sm: 0 3px 14px #00000033;
+  --shadow-md: 0 6px 18px #00000059;
+  --shadow-lg: 0 16px 44px #00000099;
+  --shadow-xl: 0 24px 70px #00000080;
+}

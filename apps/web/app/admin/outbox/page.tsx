@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import PageHeader from "../../../components/PageHeader";
 import { apiFetch } from "../../../lib/api";
 import { getMessages, useI18n } from "../../../components/I18nProvider";
 import { formatUsDateTime } from "../../../lib/date-format";
@@ -53,26 +54,19 @@ export default function OutboxPage() {
   }, [isMaster, revision]);
 
   if (isMaster === null) return <main className="shell">
-    <p className={accessError ? "notice error" : "notice"} role={accessError ? "alert" : "status"}>
+    <p className={accessError ? "notice error" : "muted"} role={accessError ? "alert" : "status"}>
       {accessError || m.admin.checkingAccess}
     </p>
     {accessError && <Link className="text-link" href="/">{m.admin.backToPortfolio}</Link>}
   </main>;
 
   if (!isMaster) return <main className="shell">
-    <header className="page-header"><p className="eyebrow">{m.admin.eyebrow}</p><h1>{t.title}</h1>
-      <Link className="text-link" href="/">{m.admin.backToPortfolio}</Link>
-    </header>
-    <p className="notice">{m.admin.masterOnly}</p>
+    <PageHeader eyebrow={m.admin.eyebrow} title={t.title} />
+    <p className="notice warning">{m.admin.masterOnly}</p>
   </main>;
 
   return <main className="shell">
-    <header className="page-header">
-      <p className="eyebrow">{m.admin.eyebrow}</p>
-      <h1>{t.title}</h1>
-      <p>{t.intro}</p>
-      <Link className="text-link" href="/admin/users">{t.manageAccess}</Link>
-    </header>
+    <PageHeader eyebrow={m.admin.eyebrow} title={t.title}><p>{t.intro}</p></PageHeader>
     <section className="card" aria-live="polite">
       <button className="button secondary" type="button" disabled={loading}
         onClick={() => { setLoading(true); setRevision(value => value + 1); }}>{t.refresh}</button>

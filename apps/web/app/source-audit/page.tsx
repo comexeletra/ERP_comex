@@ -1,12 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { FormEvent, PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { apiFetch } from "../../lib/api";
 import { formatUsDate } from "../../lib/date-format";
 import { formatCount } from "../../lib/format-count";
 import { getMessages, useI18n } from "../../components/I18nProvider";
+import PageHeader from "../../components/PageHeader";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import type { Messages } from "../../lib/i18n/pt-BR";
 
@@ -373,21 +373,18 @@ export default function SourceAuditPage() {
   const activeColumnFilter = activeColumn ? draftColumnFilters[activeColumn] : undefined;
   const options = valueOptions?.items ?? [];
 
-  return <main className="shell source-audit-shell">
-    <header className="page-header">
-      <p className="eyebrow">{t.eyebrow}</p>
-      <h1>{t.title}</h1>
+  return <main className="shell shell-wide">
+    <PageHeader eyebrow={t.eyebrow} title={t.title}>
       <p>{t.introSpaces}</p>
       <p>{t.introSpelling}</p>
       <p>{t.introValues}</p>
-      <Link className="text-link" href="/">{m.common.backToPortfolio}</Link>
-    </header>
+    </PageHeader>
 
-    <section className="source-audit-tabs" role="tablist" aria-label={t.sheetTabs}>
+    <section className="tabs" role="tablist" aria-label={t.sheetTabs}>
       {sheetValues.map((value, index) => <button key={value} ref={element => { sheetTabRefs.current[index] = element; }}
         id={`source-sheet-tab-${index}`} role="tab" aria-controls="source-audit-panel"
         aria-selected={sheet === value} tabIndex={sheet === value ? 0 : -1}
-        className={sheet === value ? "source-tab active" : "source-tab"}
+        className={sheet === value ? "tab active" : "tab"}
         onClick={() => changeSheet(value)} onKeyDown={event => moveSheetTab(index, event)}>
         {sheetLabel(value, m)}
       </button>)}
@@ -410,7 +407,7 @@ export default function SourceAuditPage() {
       <p className="muted source-filter-hint">{t.filterHint(activeFilterCount)}</p>
     </section>
 
-    <section className="metric-grid source-audit-metrics" aria-live="polite">
+    <section className="metric-grid" aria-live="polite">
       <div className="metric"><span>{t.rowsInScope}</span><strong>{loading ? "…" : formatCount(result?.totalCount)}</strong></div>
       <div className="metric"><span>{t.withoutPo}</span><strong>{loading ? "…" : formatCount(result?.summary?.withoutPurchaseOrder)}</strong></div>
       <div className="metric"><span>{t.withoutIp}</span><strong>{loading ? "…" : formatCount(result?.summary?.withoutValidIp)}</strong></div>
@@ -459,14 +456,14 @@ export default function SourceAuditPage() {
                 <td className="source-pin source-pin-1 source-row-number" title={t.batchRow(row.batchId, row.sourceRowNumber)}>{row.sourceRowNumber}</td>
                 <td className="source-pin source-pin-2">{sheetValues.includes(row.sourceSheetName as Sheet) ? sheetLabel(row.sourceSheetName as Sheet, m) : row.sourceSheetName}</td>
                 <td className="source-pin source-pin-3"><div className="source-gap-tags">
-                  {row.auditFlags.withoutPurchaseOrder && <span className="source-gap-tag">{t.withoutPoTag}</span>}
-                  {row.auditFlags.withoutValidIp && <span className="source-gap-tag">{t.withoutIp}</span>}
-                  {row.auditFlags.cellErrors > 0 && <span className="source-gap-tag">{t.calcErrors(row.auditFlags.cellErrors)}</span>}
+                  {row.auditFlags.withoutPurchaseOrder && <span className="badge badge-sm badge-warning">{t.withoutPoTag}</span>}
+                  {row.auditFlags.withoutValidIp && <span className="badge badge-sm badge-warning">{t.withoutIp}</span>}
+                  {row.auditFlags.cellErrors > 0 && <span className="badge badge-sm badge-warning">{t.calcErrors(row.auditFlags.cellErrors)}</span>}
                   {(row.auditFlags.dataIssues ?? []).map((issue, index) => <span key={`${issue.code}-${issue.fieldName}-${index}`}
-                    className="source-gap-tag" title={`${result.columnHeaders[issue.fieldName ?? ""] ?? ""} · ${JSON.stringify(issue.evidence)}`}>
+                    className="badge badge-sm badge-warning" title={`${result.columnHeaders[issue.fieldName ?? ""] ?? ""} · ${JSON.stringify(issue.evidence)}`}>
                     {describeIssue(issue, m)}{result.columnHeaders[issue.fieldName ?? ""] ? ` (${result.columnHeaders[issue.fieldName ?? ""]})` : ""}
                   </span>)}
-                  {!row.auditFlags.anyGap && <span className="source-ok-tag">{t.noFlag}</span>}
+                  {!row.auditFlags.anyGap && <span className="badge badge-sm badge-success">{t.noFlag}</span>}
                 </div></td>
                 {columns.map(column => <td key={column} title={displayCell(row.sourceSheetName, column, row.sourceValues[column])}>{displayCell(row.sourceSheetName, column, row.sourceValues[column])}</td>)}
               </tr>)}</tbody>

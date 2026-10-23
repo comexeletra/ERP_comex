@@ -4,7 +4,7 @@ import test from "node:test";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
 
 const component = await readFile(new URL("../components/NewOperationalRecord.tsx", import.meta.url), "utf8");
-const styles = await readFile(new URL("../app/styles.css", import.meta.url), "utf8");
+const styles = await readFile(new URL("../app/styles/features/operations.css", import.meta.url), "utf8");
 const processWorkspace = await readFile(new URL("../components/ProcessWorkspace.tsx", import.meta.url), "utf8");
 const newProcessPage = await readFile(new URL("../app/processes/new/page.tsx", import.meta.url), "utf8");
 

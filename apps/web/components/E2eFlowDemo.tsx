@@ -6,6 +6,7 @@ import {
 } from "../lib/e2e-flow";
 import type { Messages } from "../lib/i18n/pt-BR";
 import { useI18n } from "./I18nProvider";
+import PageHeader from "./PageHeader";
 
 type IconName = E2eIconName | "pause" | "play" | "prev" | "next";
 
@@ -62,10 +63,7 @@ export default function E2eFlowDemo({ config }: { config?: Partial<E2eFlowConfig
   const [sc, po, prod, tr, clr] = flow.durations;
 
   return <main className="shell e2e-flow" data-side={side}>
-    <header className="page-header"><p className="eyebrow">{t.eyebrow}</p>
-      <h1>{t.title}</h1>
-      <p>{t.intro}</p>
-    </header>
+    <PageHeader eyebrow={t.eyebrow} title={t.title}><p>{t.intro}</p></PageHeader>
 
     <section className="e2e-toolbar" aria-label={t.toolbar}>
       <div className="e2e-group">
@@ -172,7 +170,7 @@ export default function E2eFlowDemo({ config }: { config?: Partial<E2eFlowConfig
       <section className="card e2e-detail" aria-label={t.activePhase}>
         <div className="e2e-detail-side">
           <span className="e2e-label">{t.activePhase}</span>
-          <span className={`e2e-pill side-${side}`}>{side === "br" ? t.brToCn : t.cnToBr}</span>
+          <span className={`badge e2e-pill side-${side}`}>{side === "br" ? t.brToCn : t.cnToBr}</span>
           <span className="e2e-detail-code">{phase.code}</span>
           <span className="e2e-label">{t.deadline}</span>
           <strong className="e2e-detail-lt">{phase.lt}</strong>

@@ -1,15 +1,17 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { productName } from "../lib/brand";
 import { roleLabel } from "../lib/i18n/labels";
 import type { Messages } from "../lib/i18n/pt-BR";
 import { useI18n } from "./I18nProvider";
 import LanguageSwitcher from "./LanguageSwitcher";
 
 type IconName = "orders" | "ship" | "flow" | "reports" | "sheet" | "requests" | "catalog"
-  | "sc" | "noIp" | "noPo" | "quality" | "users" | "events" | "collapse" | "password" | "logout" | "sun" | "moon";
+  | "sc" | "noIp" | "noPo" | "quality" | "audit" | "users" | "events" | "collapse" | "password" | "logout" | "sun" | "moon";
 type SidebarItem = {
   label: keyof Messages["sidebar"]["items"]; href: string; icon: IconName; match?: string[]; exclude?: string[]; exact?: boolean;
 };
@@ -26,6 +28,13 @@ const groups: SidebarGroup[] = [
   { label: "management", items: [
     { label: "requests", href: "/requests", icon: "requests" },
     { label: "catalog", href: "/catalog", icon: "catalog", exact: true },
+  ] },
+  { label: "analysis", items: [
+    { label: "indicators", href: "/reports/pre", icon: "reports", match: ["/reports"] },
+    { label: "dataQuality", href: "/quality", icon: "quality" },
+    { label: "sourceAudit", href: "/source-audit", icon: "audit" },
+    { label: "linesWithoutIp", href: "/pending-import-items", icon: "noIp" },
+    { label: "linesWithoutPo", href: "/unassigned-po-items", icon: "noPo" },
   ] },
 ];
 
@@ -50,6 +59,7 @@ const icons: Record<IconName, ReactNode> = {
   noIp: <><path d="M8 12a4 4 0 0 1 4-4h3" /><path d="M16 12a4 4 0 0 1-4 4H9" /><path d="m4 4 16 16" /></>,
   noPo: <><path d="M5 3h10l4 4v14H5z" /><path d="M14 3v5h5M8 13h8M8 17h5" /><path d="m16 12 4 4m0-4-4 4" /></>,
   quality: <><path d="M12 3 20 6v5c0 5-3.4 8.3-8 10-4.6-1.7-8-5-8-10V6z" /><path d="m8.5 12 2.2 2.2 4.8-4.8" /></>,
+  audit: <><path d="M5 3h9l4 4v6" /><path d="M14 3v4h4M5 3v18h7" /><circle cx="16.5" cy="16.5" r="3.5" /><path d="m19 19 2.5 2.5" /></>,
   users: <><circle cx="9" cy="8" r="3" /><path d="M3 20v-1a6 6 0 0 1 12 0v1zM16 5a3 3 0 0 1 0 6m2 3a5 5 0 0 1 3 5v1h-3" /></>,
   events: <><path d="M4 19V5m0 14h16" /><path d="m7 14 3-4 3 2 5-6" /><circle cx="18" cy="6" r="2" /></>,
   collapse: <><path d="m14 6-6 6 6 6" /></>,
@@ -90,8 +100,8 @@ export default function AppSidebar({ collapsed, isMaster, displayName, roles, im
 
   return <aside className={collapsed ? "app-sidebar is-collapsed" : "app-sidebar"}>
     <Link className="sidebar-brand" href="/" aria-label={t.homeLabel}>
-      <span className="sidebar-brand-mark">EC</span>
-      <span className="sidebar-brand-copy">ERP Comex<small>{t.brandSubtitle}</small></span>
+      <Image className="sidebar-brand-mark" src="/brand-mark.png" alt="" width={40} height={40} priority />
+      <span className="sidebar-brand-copy">{productName}<small>{t.brandSubtitle}</small></span>
     </Link>
     <button className="sidebar-toggle" type="button" onClick={onToggle}
       aria-label={collapsed ? t.expandAria : t.collapseAria}
@@ -128,7 +138,7 @@ export default function AppSidebar({ collapsed, isMaster, displayName, roles, im
       <Link className="sidebar-account-action" href="/change-password" title={collapsed ? t.changePassword : undefined}>
         <SidebarIcon name="password" /><span>{t.changePassword}</span>
       </Link>
-      <button className="sidebar-account-action" type="button" onClick={onLogout}
+      <button className="sidebar-account-action is-danger" type="button" onClick={onLogout}
         title={collapsed ? t.logout : undefined}>
         <SidebarIcon name="logout" /><span>{t.logout}</span>
       </button>

@@ -85,27 +85,27 @@ export function CatalogProductSelect({ value, fallbackName, products, onChange, 
     };
   }, [open]);
 
-  return <div className="catalog-product-picker" ref={pickerRef}>
+  return <div className="searchable-select" ref={pickerRef}>
     <input aria-haspopup="listbox" aria-expanded={open} aria-label={t.product} aria-required={required} autoComplete="off"
-      className="catalog-product-trigger" onClick={showMenu}
+      className="searchable-select-trigger" onClick={showMenu}
       onKeyDown={event => { if (event.key === "ArrowDown" || event.key === "Enter") { event.preventDefault(); showMenu(); }
         if (event.key === "Escape") setOpen(false); }} placeholder={t.placeholder} readOnly
       value={label} />
-    {open && createPortal(<div className="catalog-product-menu" ref={menuRef} style={{ top: position.top, left: position.left, width: position.width }}>
-      <input autoFocus aria-label={t.search} className="catalog-product-search" onChange={event => setQuery(event.target.value)}
+    {open && createPortal(<div className="searchable-select-menu" ref={menuRef} style={{ top: position.top, left: position.left, width: position.width }}>
+      <input autoFocus aria-label={t.search} className="searchable-select-search" onChange={event => setQuery(event.target.value)}
         onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); setOpen(false); } }}
         placeholder={t.searchPlaceholder} value={query} />
-      <div aria-label={t.products} className="catalog-product-options" role="listbox">
-        {!value && <button className="catalog-product-option" onClick={() => { onChange(null); setOpen(false); }} role="option" type="button">
+      <div aria-label={t.products} className="searchable-select-options" role="listbox">
+        {!value && <button className="searchable-select-option" onClick={() => { onChange(null); setOpen(false); }} role="option" type="button">
           {t.placeholder}
         </button>}
-        {value && !selected && <button className="catalog-product-option" onClick={() => { onChange({ code: value, name: label }); setOpen(false); }}
+        {value && !selected && <button className="searchable-select-option" onClick={() => { onChange({ code: value, name: label }); setOpen(false); }}
           role="option" type="button">{m.select.currentValue(label)}</button>}
-        {filtered.map(product => <button aria-selected={product.code === value} className="catalog-product-option" key={product.code}
+        {filtered.map(product => <button aria-selected={product.code === value} className="searchable-select-option" key={product.code}
           onClick={() => { onChange(product); setOpen(false); }} role="option" title={`${product.code} · ${product.name}`} type="button">
           {product.name}
         </button>)}
-        {filtered.length === 0 && <p className="catalog-product-empty">{t.empty}</p>}
+        {filtered.length === 0 && <p className="searchable-select-empty">{t.empty}</p>}
       </div>
     </div>, document.body)}
   </div>;

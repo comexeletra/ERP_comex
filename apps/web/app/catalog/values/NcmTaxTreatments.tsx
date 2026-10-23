@@ -65,7 +65,7 @@ export function NcmTaxTreatments({ id, code }: { id: string; code: string }) {
         placeholder={t.cityPlaceholder} /></label>
       <button className="button secondary" disabled={loading}>{loading ? t.consulting : t.consult}</button>
     </form>
-    {error && <p className="form-error" role="alert">{error}</p>}
+    {error && <p className="notice error" role="alert">{error}</p>}
     {result && <div className="ncm-tax-result" role="status">
       {result.stale && <p><strong>{t.storedBefore}</strong>{t.storedAfter}</p>}
       <p><strong>{t.partial}</strong> {result.limitation}</p>

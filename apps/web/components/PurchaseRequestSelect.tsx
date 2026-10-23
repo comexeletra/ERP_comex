@@ -33,7 +33,7 @@ export function PurchaseRequestSelect({ importer, value, choices, onChange, disa
   { importer: string; value: string; choices: PurchaseRequestChoice[]; onChange: (value: string) => void; disabled?: boolean }) {
   const { m } = useI18n();
   const t = m.purchaseRequestSelect;
-  return <div className="pcm-sc-selector">
+  return <div>
     <label>SC<SearchableSelect ariaLabel="SC" disabled={disabled} value={value} placeholder={t.none}
       searchPlaceholder={t.search} onChange={onChange}
       options={choices.map(choice => ({ value: choice.id, label: choice.scNumber,

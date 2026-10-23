@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useI18n } from "../../components/I18nProvider";
+import PageHeader from "../../components/PageHeader";
 import { apiFetch } from "../../lib/api";
 
 // Exact API error texts; the API answers in Portuguese.
@@ -49,9 +50,8 @@ export default function ChangePasswordPage() {
   }
 
   return <main className="shell auth-shell">
-    <section className="card auth-card">
-      <p className="eyebrow">ERP Comex</p><h1>{t.title}</h1>
-      <p className="muted">{t.instructions}</p>
+    <PageHeader eyebrow={m.sidebar.account} title={t.title}><p>{t.instructions}</p></PageHeader>
+    <section className="card">
       <form className="stack-form" onSubmit={(event) => void change(event)}>
         <label>{t.current}<input type="password" autoComplete="current-password" required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label>
         <label>{t.next}<input type="password" autoComplete="new-password" minLength={15} required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label>

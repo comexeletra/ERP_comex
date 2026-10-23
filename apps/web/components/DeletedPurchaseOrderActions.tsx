@@ -79,7 +79,7 @@ export default function DeletedPurchaseOrderActions({ purchaseOrder, canManageLi
   const purchaseRequestNotice = purchaseRequest && "newPurchaseRequest" in purchaseRequest
     ? t.newScNotice(purchaseRequest.newPurchaseRequest.scNumber, purchaseRequest.newPurchaseRequest.requester)
     : purchaseRequest ? t.selectedScNotice : null;
-  return <div className="notice">
+  return <div className="notice warning">
     <p><Link className="text-link" href={purchaseOrderHref}>{t.open}</Link></p>
     {actions.needsManager && <p>{t.needsManager}</p>}
     {(actions.restore || actions.replace) && <div className="button-row">

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 import { automaticAuditReason } from "../../../lib/audit";
@@ -9,6 +8,8 @@ import { createNcmCatalogUrl, createNcmPayload, readNcmRefreshStart, updateNcmPa
 import { parseProductCatalogJson, type ProductCatalogImport } from "../../../lib/catalog-products-json";
 import { filterImporterCatalog, sortImporterCatalog } from "../../../lib/catalog-importers";
 import { createSupplierCatalogUrl } from "../../../lib/catalog-suppliers";
+import { useConfirmDialog } from "../../../components/ConfirmDialog";
+import PageHeader from "../../../components/PageHeader";
 import { getMessages, useI18n } from "../../../components/I18nProvider";
 import { SearchableSelect } from "../../../components/SearchableSelect";
 import type { Messages } from "../../../lib/i18n/pt-BR";
@@ -156,6 +157,7 @@ function NcmMandatoryAttributes({ attributes }: { attributes: OfficialNcmAttribu
 
 export default function OperationalValuesPage() {
   const { m } = useI18n();
+  const { confirm, dialog } = useConfirmDialog();
   const t = m.entityValues;
   const [options, setOptions] = useState<Option[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -614,7 +616,8 @@ export default function OperationalValuesPage() {
 
   async function deleteOption(option: Option) {
     const label = `${(entity === "group" || entity === "importer") && option.code ? `${option.code} · ` : ""}${option.value}`;
-    if (!window.confirm(t.confirmDelete(label, (t.entities as Record<string, string>)[entity] ?? t.entityFallback))) return;
+    if (!(await confirm({ title: m.dialog.deleteTitle, message: t.confirmDelete(label, (t.entities as Record<string, string>)[entity] ?? t.entityFallback),
+      confirmLabel: m.dialog.delete, danger: true }))) return;
     setBusy(true); setError(""); setNotice("");
     try {
       const response = await apiFetch(`/api/v1/operational-values/${option.id}`, {
@@ -698,9 +701,9 @@ export default function OperationalValuesPage() {
     ? sortImporterCatalog(filterImporterCatalog(entityOptions, importerSearch))
     : entityOptions.sort((a, b) => a.value.localeCompare(b.value));
   if (entity === "product") return <main className="shell">
-    <header className="page-header"><p className="eyebrow">ERP Comex</p><h1>{t.title}</h1>
+    <PageHeader back={{ href: "/catalog", label: t.allEntries }} eyebrow={m.sidebar.groups.management} title={t.title}>
       <p>{t.intro}</p>
-      <Link className="text-link" href="/catalog">{t.allEntries}</Link></header>
+    </PageHeader>
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
     <section className="card entity-values-card">
@@ -728,7 +731,7 @@ export default function OperationalValuesPage() {
           </form> : <>
             <div className="product-catalog-description"><strong className="product-catalog-code">{product.code}</strong>
               <span>{product.name}</span></div>
-            <div className="product-catalog-actions"><span className={`product-catalog-status ${product.status === "ACTIVE" ? "active" : "inactive"}`}>
+            <div className="product-catalog-actions"><span className={product.status === "ACTIVE" ? "badge badge-success" : "badge badge-warning"}>
               {product.status === "ACTIVE" ? m.catalog.active : m.catalog.inactive}
             </span>
               {canWrite && <button className="button secondary entity-value-action" type="button" disabled={busy}
@@ -764,9 +767,9 @@ export default function OperationalValuesPage() {
     </section>
   </main>;
   if (entity === "ncm") return <main className="shell">
-    <header className="page-header"><p className="eyebrow">ERP Comex</p><h1>{t.title}</h1>
+    <PageHeader back={{ href: "/catalog", label: t.allEntries }} eyebrow={m.sidebar.groups.management} title={t.title}>
       <p>{t.intro}</p>
-      <Link className="text-link" href="/catalog">{t.allEntries}</Link></header>
+    </PageHeader>
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
     <section className="card entity-values-card">
@@ -819,7 +822,7 @@ export default function OperationalValuesPage() {
               <NcmValidityDates validFrom={ncm.validFrom} validTo={ncm.validTo} />
               <NcmCreationAct act={ncm.creationAct} />
             </div>
-            <div className="product-catalog-actions"><span className={`product-catalog-status ${ncm.status === "ACTIVE" ? "active" : "inactive"}`}>
+            <div className="product-catalog-actions"><span className={ncm.status === "ACTIVE" ? "badge badge-success" : "badge badge-warning"}>
               {ncm.status === "ACTIVE" ? m.catalog.active : m.catalog.inactive}
             </span>
               {canWriteNcm && <button className="button secondary entity-value-action" type="button" disabled={busy}
@@ -864,7 +867,7 @@ export default function OperationalValuesPage() {
               </div>
               <div className="product-catalog-actions">
                 {item.alreadyRegistered
-                  ? <span className="product-catalog-status active">{t.alreadyRegistered}</span>
+                  ? <span className="badge badge-success">{t.alreadyRegistered}</span>
                   : canWriteNcm && <button className="button entity-value-action" type="button" disabled={busy}
                     onClick={() => item.validFrom ? void addOfficialNcm(item.code) : prepareOfficialNcm(item)}>
                     {item.validFrom ? t.addToEntity : t.useOfficial}</button>}
@@ -898,9 +901,9 @@ export default function OperationalValuesPage() {
     </section>
   </main>;
   if (entity === "supplier") return <main className="shell">
-    <header className="page-header"><p className="eyebrow">ERP Comex</p><h1>{t.title}</h1>
+    <PageHeader back={{ href: "/catalog", label: t.allEntries }} eyebrow={m.sidebar.groups.management} title={t.title}>
       <p>{t.intro}</p>
-      <Link className="text-link" href="/catalog">{t.allEntries}</Link></header>
+    </PageHeader>
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
     <section className="card entity-values-card">
@@ -932,7 +935,7 @@ export default function OperationalValuesPage() {
             </div>
           </form> : <>
             <div className="supplier-catalog-details"><strong>{supplier.code}</strong><span>{supplier.name}</span>
-              <span className={`product-catalog-status ${supplier.status === "ACTIVE" ? "active" : "inactive"}`}>
+              <span className={supplier.status === "ACTIVE" ? "badge badge-success" : "badge badge-warning"}>
                 {supplier.status === "ACTIVE" ? m.catalog.active : m.catalog.inactive}
               </span>
             </div>
@@ -956,9 +959,9 @@ export default function OperationalValuesPage() {
     </section>
   </main>;
   return <main className="shell">
-    <header className="page-header"><p className="eyebrow">ERP Comex</p><h1>{t.title}</h1>
+    <PageHeader back={{ href: "/catalog", label: t.allEntries }} eyebrow={m.sidebar.groups.management} title={t.title}>
       <p>{t.intro}</p>
-      <Link className="text-link" href="/catalog">{t.allEntries}</Link></header>
+    </PageHeader>
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
     <section className="card entity-values-card">
@@ -1040,5 +1043,6 @@ export default function OperationalValuesPage() {
       {jsonFileName && <p className="muted" role="status">{t.valuesReady(jsonFileName, jsonValues.length)}</p>}
       <details><summary>{t.jsonExample}</summary><pre>{t.valuesJsonExample}</pre></details>
     </section>}
+    {dialog}
   </main>;
 }

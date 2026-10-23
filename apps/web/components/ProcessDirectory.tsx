@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { statusLabel } from "../lib/i18n/labels";
 import { useI18n } from "./I18nProvider";
+import PageHeader from "./PageHeader";
 import { emptyProcessDirectoryFilters, parseProcessDirectoryFilters, processCalculatedStatuses, processDirectoryQuery,
   type ProcessDirectoryFilters, type ProcessDirectoryRecordStatus } from "../lib/ip-lifecycle";
 
@@ -76,12 +77,11 @@ export default function ProcessDirectory() {
   const pages = data ? Math.ceil(data.totalCount / 50) : 0;
   const returnPath = `/processes?${query(filters, page)}`;
   return <main className="shell">
-    <Link className="back" href="/">{m.common.backToPortfolio}</Link>
-    <header className="page-header"><p className="eyebrow">{t.eyebrow}</p><h1>{t.title}</h1><p>{t.intro}</p>
-      {roles.some(role => ["Master", "Administrador", "Importação"].includes(role)) &&
-        <p><Link className="button" href="/processes/new">{t.create}</Link></p>}
-      <Link className="text-link" href="/reports/post">{t.reports}</Link> · <Link className="text-link" href="/pending-import-items">{t.linesWithoutIp}</Link> · <Link className="text-link" href="/unassigned-po-items">{t.linesWithoutPo}</Link>
-    </header>
+    <PageHeader eyebrow={t.eyebrow} title={t.title}
+      actions={roles.some(role => ["Master", "Administrador", "Importação"].includes(role))
+        && <Link className="button" href="/processes/new">{t.create}</Link>}>
+      <p>{t.intro}</p>
+    </PageHeader>
     <section className="card"><form className="portfolio-filter" onSubmit={apply}>
       <label>IP<input value={draft.ipNumber} onChange={event => setDraft({ ...draft, ipNumber: event.target.value })} placeholder="NH-017/2025" /></label>
       <label>{t.importer}<input value={draft.importer} onChange={event => setDraft({ ...draft, importer: event.target.value })} /></label>
@@ -101,7 +101,7 @@ export default function ProcessDirectory() {
     <section className="card" aria-live="polite">
       {loading && <p role="status">{t.loading}</p>}
       {error && <div className="notice error" role="alert"><p>{error}</p><button className="button" onClick={() => setRetry(value => value + 1)}>{m.common.retry}</button></div>}
-      {compatibilityWarning && <p className="notice" role="status">{compatibilityWarning}</p>}
+      {compatibilityWarning && <p className="notice warning" role="status">{compatibilityWarning}</p>}
       {!loading && !error && data && <><p>{t.found(data.totalCount)}{pages > 0 && t.pageSuffix(page, pages)}</p>
         {data.items.length === 0 && <p>{data.totalCount ? t.outOfRange : t.none}</p>}
         {data.items.length > 0 && <div className="table-scroll"><table><thead><tr><th>IP</th><th>{t.record}</th><th>{t.importer}</th><th>{m.calc.status}</th><th>{t.cycle}</th><th>{t.quality}</th><th>POs</th><th>{t.allocations}</th><th>{t.sourceLines}</th><th>{t.historicalCosts}</th><th></th></tr></thead><tbody>

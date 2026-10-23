@@ -1,11 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api";
 import { formatUsDateTime } from "../../lib/date-format";
 import { canResolveQuality } from "../../lib/quality-permissions";
 import { getMessages, useI18n } from "../../components/I18nProvider";
+import PageHeader from "../../components/PageHeader";
 import { SearchableSelect } from "../../components/SearchableSelect";
 
 type Review = { id: string; outcome: string; reviewer: string; notes: string; evidence: Record<string, unknown>; proposedPurchaseOrder?: string; proposedIpNumber?: string; recordedAt: string };
@@ -73,16 +73,15 @@ export default function QualityPage() {
   }
 
   return <main className="shell">
-    <Link href="/" className="back">{m.common.backToPortfolio}</Link>
-    <header className="page-header"><p className="eyebrow">{t.eyebrow}</p><h1>{t.title}</h1><p>{t.intro}</p></header>
+    <PageHeader eyebrow={t.eyebrow} title={t.title}><p>{t.intro}</p></PageHeader>
     {error && <p className="notice error">{error}</p>}
     {roles && !canResolveQuality(roles) && <p className="notice">{t.readOnly}</p>}
-    <section className="metric-grid quality-metrics" aria-label={t.summary}><Metric label={t.open} value={data?.openCount ?? "…"} /><Metric label={t.resolved} value={data?.resolvedCount ?? "…"} /><Metric label={t.inFilter} value={data?.totalCount ?? "…"} /></section>
+    <section className="metric-grid" aria-label={t.summary}><Metric label={t.open} value={data?.openCount ?? "…"} /><Metric label={t.resolved} value={data?.resolvedCount ?? "…"} /><Metric label={t.inFilter} value={data?.totalCount ?? "…"} /></section>
     <section className="card"><form className="quality-filter" onSubmit={applyFilter}><label>{t.status}<SearchableSelect ariaLabel={t.status} placeholder="" value={status} onChange={setStatus}
       options={[{ value: "open", label: t.statusOpen }, { value: "resolved", label: t.statusResolved }, { value: "all", label: t.statusAll }]} /></label><label>{t.code}<input value={code} onChange={event => setCode(event.target.value)} placeholder="EXCEL_ERROR" /></label><button className="button" type="submit">{t.filter}</button></form></section>
-    {!data && !error && <p>{t.loading}</p>}
+    {!data && !error && <p role="status">{t.loading}</p>}
     {data?.items.length === 0 && <section className="card"><p>{t.none}</p></section>}
-    {data?.items.map(item => <details className="card quality-item" key={item.id}><summary className="quality-summary"><span><small>{t.row(item.sheetName ?? t.sourceUnavailable, String(item.sourceRowNumber ?? "--"))}</small><strong>{item.code}</strong></span><span className={`quality-status ${item.status}`}>{item.status}</span></summary><div className="quality-item-content">      <p>{t.severity}<strong>{item.severity}</strong></p>{item.fieldName && <p className="muted">{t.sourceField}<strong>{item.fieldName}</strong></p>}
+    {data?.items.map(item => <details className="card quality-item" key={item.id}><summary className="quality-summary"><span><small>{t.row(item.sheetName ?? t.sourceUnavailable, String(item.sourceRowNumber ?? "--"))}</small><strong>{item.code}</strong></span><span className={item.status === "RESOLVED" ? "badge badge-success" : "badge badge-warning"}>{item.status}</span></summary><div className="quality-item-content">      <p>{t.severity}<strong>{item.severity}</strong></p>{item.fieldName && <p className="muted">{t.sourceField}<strong>{item.fieldName}</strong></p>}
       <details className="source-disclosure"><summary>{t.originalEvidence}</summary><dl className="source-field-grid">{Object.entries(item.evidence).map(([name, value]) => <div className="source-field" key={name}><dt>{name}</dt><dd>{formatFieldValue(value)}</dd></div>)}</dl></details>
       <details className="source-disclosure"><summary>{t.preservedValues}</summary><dl className="source-field-grid">{Object.entries(item.sourceValues).map(([name, value]) => <div className="source-field" key={name}><dt>{item.sourceColumnHeaders?.[name] || m.processWorkspace.noHeader}<small>{name}{item.sourceRowNumber}</small></dt><dd>{formatFieldValue(value)}</dd></div>)}</dl></details>
       {(() => {

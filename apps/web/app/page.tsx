@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { getMessages, useI18n } from "../components/I18nProvider";
+import PageHeader from "../components/PageHeader";
 import { apiFetch } from "../lib/api";
 import { formatCount } from "../lib/format-count";
 import { portfolioFilterQuery, purchaseOrderListQuery, purchaseOrderLifecycleFilters,
@@ -193,13 +194,11 @@ export default function PortfolioPage() {
   const returnPath = `/?${queryFor(applied, page)}`;
   const byImporter = Array.isArray(summary?.byImporter) ? summary.byImporter : [];
   return <main className="shell">
-    <header className="page-header portfolio-header">
-      <p className="eyebrow">ERP Comex</p><h1>{t.title}</h1>
+    <PageHeader className="portfolio-header" eyebrow={m.sidebar.groups.operation} title={t.title}
+      actions={roles.some(role => ["Master", "Administrador", "Importação", "Compras"].includes(role))
+        && <Link className="button" href="/purchase-orders/new">{t.create}</Link>}>
       <p>{t.intro}</p>
-      {roles.some(role => ["Master", "Administrador", "Importação", "Compras"].includes(role)) &&
-        <p><Link className="button" href="/purchase-orders/new">{t.create}</Link></p>}
-      <p><Link className="text-link" href="/reports/pre">{t.reports}</Link> · <Link className="text-link" href="/quality">{t.quality}</Link></p>
-    </header>
+    </PageHeader>
     <section className="card">
       <form className="portfolio-filter" onSubmit={filter}>
         <label>{m.productLines.poNumber}<input value={draft.number} onChange={event => setDraft(value => ({ ...value, number: event.target.value }))} placeholder="18751" /></label>

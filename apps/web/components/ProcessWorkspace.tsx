@@ -12,6 +12,7 @@ import { SearchableSelect } from "./SearchableSelect";
 import ProcessPostShipmentPanel from "./ProcessPostShipmentPanel";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 import { useI18n } from "./I18nProvider";
+import PageHeader from "./PageHeader";
 
 // Exact API error text when the importer cannot be changed; the API answers in Portuguese.
 const importerChangeRejected = "Revise o IP."; // i18n-ignore: API contract
@@ -339,19 +340,24 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
     || process?.recordStatus === "DRAFT" ? t.record[process.recordStatus] : t.record.ACTIVE;
   const cycleLabel = process?.lifecycleStatus === "CLOSED" || process?.lifecycleStatus === "OPEN"
     ? t.cycle[process.lifecycleStatus] : t.cycle.UNAVAILABLE;
-  return <main className="shell"><Link className="back" href={returnPath}>{t.back}</Link>
+  return <main className="shell">
+    {(loading || error || !process || !lines) && <Link className="back" href={returnPath}>{t.back}</Link>}
     {loading && <p role="status">{t.loading}</p>}
     {error && <div className="notice error" role="alert"><p>{error}</p><button className="button" onClick={() => setRetry(value => value + 1)}>{m.common.retry}</button></div>}
     {!loading && !error && process && lines && <>
-      <header className="page-header"><p className="eyebrow">{t.eyebrow(process.importer, process.supplierName ? `${process.supplierText} · ${process.supplierName}` : process.supplierText ?? t.notInformed)}</p><h1>{process.ipNumber}</h1><p>{t.summary(process.logisticsStatus ?? t.notInformed, process.lifecycleStatus === "CLOSED" ? t.cycleClosed : process.lifecycleStatus === "OPEN" ? t.cycleOpen : t.cycleUnavailable, process.qualityStatus, process.sourceKind)}</p></header>
-      {compatibilityWarning && <p className="notice" role="status">{compatibilityWarning}</p>}
+      <PageHeader back={{ href: returnPath, label: t.back }}
+        eyebrow={t.eyebrow(process.importer, process.supplierName ? `${process.supplierText} · ${process.supplierName}` : process.supplierText ?? t.notInformed)}
+        title={process.ipNumber}>
+        <p>{t.summary(process.logisticsStatus ?? t.notInformed, process.lifecycleStatus === "CLOSED" ? t.cycleClosed : process.lifecycleStatus === "OPEN" ? t.cycleOpen : t.cycleUnavailable, process.qualityStatus, process.sourceKind)}</p>
+      </PageHeader>
+      {compatibilityWarning && <p className="notice warning" role="status">{compatibilityWarning}</p>}
       {process.recordStatus === "DRAFT" && <p className="notice" role="status">{t.draftNotice}</p>}
-      {process.recordStatus === "CANCELLED" && <p className="notice" role="status">{t.cancelledNotice}</p>}
-      {process.invoiceSupplierDivergence && <p className="notice" role="status">{t.exporterNotice}</p>}
+      {process.recordStatus === "CANCELLED" && <p className="notice warning" role="status">{t.cancelledNotice}</p>}
+      {process.invoiceSupplierDivergence && <p className="notice warning" role="status">{t.exporterNotice}</p>}
       <section className="metric-grid"><Metric label={t.linkedPos} value={process.purchaseOrders.length} /><Metric label={t.historicalLines} value={lines.totalCount} /><Metric label={t.historicalCosts} value={process.historicalCosts.length} /></section>
       <section className="card"><h2>{t.cycleTitle}</h2>
         <p>{t.situation(recordLabel, cycleLabel)}</p>
-        {process.recordStatus === "DELETED" && <p className="notice" role="status">{t.deletedNotice}</p>}
+        {process.recordStatus === "DELETED" && <p className="notice warning" role="status">{t.deletedNotice}</p>}
         {process.lifecycleStatus === "CLOSED" && <p className="notice">{t.closedOn(process.closedAt ? new Date(process.closedAt).toLocaleString("pt-BR") : t.dateUnavailable)}</p>}
         {((process.recordStatus === "CANCELLED" && !canManageLifecycle) || (process.recordStatus === "DELETED" && !canManageLifecycle))
           && <p className="notice" role="status">{t.askManager}</p>}

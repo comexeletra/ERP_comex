@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { formatCount } from "../lib/format-count";
 import { getMessages, useI18n } from "./I18nProvider";
+import PageHeader from "./PageHeader";
 
 // Sheet names of the historical spreadsheet, used as filter values in the source audit.
 const preShipmentSheet = "Pré Embarque"; // i18n-ignore: data value
@@ -59,12 +60,11 @@ export default function ReportsView({ scope }: { scope: ReportScope }) {
   }, [retry, scope]);
 
   return <main className="shell">
-    <header className="page-header">
-      <p className="eyebrow">{t.eyebrow}</p>
-      <h1>{scope === "pre" ? t.pre : t.post}</h1>
-      <p>{t.intro}</p>
-      <Link className="text-link" href="/">{m.common.backToPortfolio}</Link>
-    </header>
+    <PageHeader eyebrow={t.eyebrow} title={scope === "pre" ? t.pre : t.post}><p>{t.intro}</p></PageHeader>
+    <nav className="tabs" aria-label={t.scopeTabs}>
+      <Link className={scope === "pre" ? "tab active" : "tab"} aria-current={scope === "pre" ? "page" : undefined} href="/reports/pre">{t.pre}</Link>
+      <Link className={scope === "post" ? "tab active" : "tab"} aria-current={scope === "post" ? "page" : undefined} href="/reports/post">{t.post}</Link>
+    </nav>
 
     {error && <div className="notice error" role="alert"><p>{error}</p>
       <button className="button" onClick={() => { setError(""); setRetry(value => value + 1); }}>{m.common.retry}</button></div>}
@@ -75,7 +75,7 @@ export default function ReportsView({ scope }: { scope: ReportScope }) {
         <div className="report-actions"><Link className="button secondary" href={`/source-audit?sheet=${encodeURIComponent(preShipmentSheet)}`}>{t.fullSheet}</Link>
           <Link className="button" href="/">{t.operationalPos}</Link></div>
       </div>
-      <div className="metric-grid report-metrics">
+      <div className="metric-grid">
         <Metric label={t.posInScope} value={summary?.preShipment?.totalRecords} />
         <Metric label={t.historicalPos} value={summary?.preShipment?.historicalRecords} />
         <Metric label={t.newPos} value={summary?.preShipment?.newRecords} />
@@ -93,7 +93,7 @@ export default function ReportsView({ scope }: { scope: ReportScope }) {
         <div className="report-actions"><Link className="button secondary" href={`/source-audit?sheet=${encodeURIComponent(postShipmentSheet)}`}>{t.fullSheet}</Link>
           <Link className="button" href="/processes">{t.operationalIps}</Link></div>
       </div>
-      <div className="metric-grid report-metrics">
+      <div className="metric-grid">
         <Metric label={t.ipsInScope} value={summary?.postShipment?.totalRecords} />
         <Metric label={t.historicalIps} value={summary?.postShipment?.historicalRecords} />
         <Metric label={t.newIps} value={summary?.postShipment?.newRecords} />

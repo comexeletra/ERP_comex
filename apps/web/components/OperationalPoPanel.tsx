@@ -18,6 +18,7 @@ import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
 import { formatUsDate, formatUsDateTime } from "../lib/date-format";
 import { formatNumber } from "../lib/format-number";
 import type { Messages } from "../lib/i18n/pt-BR";
+import { useConfirmDialog } from "./ConfirmDialog";
 import { getMessages, useI18n } from "./I18nProvider";
 import { estimatedProductTotal, productPriceReferenceForCurrency, type ProductPriceReference } from "../lib/product-price-reference";
 import { parseTotvsPoXlsx } from "../lib/totvs-po-xlsx";
@@ -150,6 +151,7 @@ async function verifySavedItem(poId: string, itemId: string,
 
 export default function OperationalPoPanel({ id, onChanged }: { id: string; onChanged?: () => void }) {
   const { m } = useI18n();
+  const { confirm, dialog } = useConfirmDialog();
   const t = m.poPanel;
   const [data, setData] = useState<OperationalPo>();
   const [roles, setRoles] = useState<string[]>([]);
@@ -302,7 +304,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   }
   async function changeLifecycle(action: "cancel" | "close" | "reopen" | "delete" | "reactivate" | "restore") {
     if (!data) return;
-    if (action === "delete" && !window.confirm(t.confirmDelete)) return;
+    if (action === "delete" && !(await confirm({ title: m.dialog.deleteTitle, message: t.confirmDelete, confirmLabel: m.dialog.delete, danger: true }))) return;
     const method = action === "delete" ? "DELETE" : "POST";
     const success = t.lifecycleDone[action];
     await save(async () => {
@@ -594,6 +596,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     purchaseOrderCommonItemFields.some(field =>
       new Set(data.items.map(item => operationalDraft(item)[field.key] ?? "")).size > 1));
   return <section id="po-record" className="card operational-panel" aria-label={t.ariaLabel}>
+    {dialog}
     <h2>{t.title}</h2>
     <p className="muted">{t.intro}</p>
     {loading && <p role="status">{t.loading}</p>}
@@ -606,13 +609,13 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         {data.lastRestore && <>{t.restoredAt(formatUsDateTime(data.lastRestore.at), purchaseOrderActorLabel(data.lastRestore.by))}
           {data.lastRestore.reason && <> — {data.lastRestore.reason}</>}</>}
       </p>}
-      {!lifecycleSupported && <p className="notice" role="status">{t.noLifecycle}</p>}
-      {lifecycleSupported && data.lifecycleStatus !== "ACTIVE" && <p className="notice" role="status">
+      {!lifecycleSupported && <p className="notice warning" role="status">{t.noLifecycle}</p>}
+      {lifecycleSupported && data.lifecycleStatus !== "ACTIVE" && <p className="notice warning" role="status">
         {data.lifecycleStatus === "CLOSED" ? t.closedNotice
           : data.lifecycleStatus === "CANCELLED" ? t.cancelledNotice : t.deletedNotice}
         {data.lifecycleReason && t.reasonInline(data.lifecycleReason)}
       </p>}
-      {lifecycleSupported && (lifecycleActions.length > 0 || data.lifecycleStatus === "DELETED") && <section className="card po-lifecycle-actions">
+      {lifecycleSupported && (lifecycleActions.length > 0 || data.lifecycleStatus === "DELETED") && <section className="card">
         <h3>{t.lifecycleTitle}</h3>
         {lifecycleActions.length > 0 && <label className="po-lifecycle-reason"><span>{t.actionReason}</span><textarea required minLength={3} maxLength={1000} value={lifecycleReason}
           onChange={event => setLifecycleReason(event.target.value)} /></label>}
@@ -632,7 +635,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         </div>}
         {data.allocations.length > 0 && <p className="muted">{t.allocationsBlock}</p>}
       </section>}
-      {canEditPo && data.sourceKind === "MANUAL_TOTVS_REFERENCE" && <section className="card po-reimport" aria-label={t.reimportTitle}>
+      {canEditPo && data.sourceKind === "MANUAL_TOTVS_REFERENCE" && <section className="card" aria-label={t.reimportTitle}>
         <h3>{t.reimportTitle}</h3>
         <p className="muted">{t.reimportHelp}</p>
         <label>{t.excelFile}<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -692,11 +695,11 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         </section>
       </details>}
       <h3>{t.itemsTitle}</h3>
-      {canEditPo && <section className="po-entry-section po-common-fields">
+      {canEditPo && <section className="po-entry-section">
         <h4>{t.sharedTitle}</h4>
         <p className="muted">{t.sharedHelp}</p>
         {data.purchaseRequestId && <p className="muted">{t.sharedWithSc(data.purchaseRequest?.scNumber ?? "")}</p>}
-        {commonValuesDiffer && <p className="notice">{t.valuesDiffer}</p>}
+        {commonValuesDiffer && <p className="notice warning">{t.valuesDiffer}</p>}
         <form className="stack-form" onSubmit={saveCommonFields}>
           <OperationalFieldsEditor fields={purchaseOrderCommonItemFields} values={commonOperationalDraft} options={options}
             readOnlyKeys={lockedSharedFieldKeys(data.purchaseRequestId)}
@@ -725,7 +728,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             <div className="po-item-heading">
               <span className="po-item-number">{t.itemNumber(item.lineNumber)}</span>
               <strong className="po-item-code">{item.productCode}</strong>
-              <span className={`po-item-status${canceled ? " is-canceled" : ""}`}>
+              <span className={canceled ? "badge badge-danger" : "badge badge-info"}>
                 {canceled ? t.cancelled : item.sourceStatus || t.active}
               </span>
             </div>
@@ -755,7 +758,6 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
                 {allocation.ipNumber} · {formatItemQuantity(allocation.quantity)}{item.unit ? ` ${item.unit}` : ""}
               </span>)}</div>
             </div>}
-            <span className="po-item-toggle" aria-hidden="true">⌄</span>
           </summary>
           {canEditPo && !canceled ? <form className="stack-form" data-item-id={item.id} onSubmit={saveItem}>
             <div className="operational-fields">
@@ -783,7 +785,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             <PurchaseOrderCalculatedFields quantity={draft.orderedQuantity} unitPrice={draft.unitPrice} currency={draft.currency} />
             <button className="button" disabled={saving || commonFieldsTouched.size > 0}>{t.saveItemFields}</button>
           </form> : <p>{formatItemQuantity(item.orderedQuantity)}{item.unit ? ` ${item.unit}` : ""} · {item.description}</p>}
-          {canEditPo && !canceled && <section className="po-item-removal" aria-label={t.removeItemAria(item.lineNumber)}>
+          {canEditPo && !canceled && <section aria-label={t.removeItemAria(item.lineNumber)}>
             {itemAllocations.length > 0
               ? <p className="muted">{t.cancelAllocationsFirst}</p>
               : <>

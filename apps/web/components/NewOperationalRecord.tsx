@@ -29,6 +29,7 @@ import { purchaseOrderNumberBlockMessage } from "../lib/po-lifecycle";
 import DeletedPurchaseOrderActions, { PurchaseOrderReplacePayload } from "./DeletedPurchaseOrderActions";
 import { classifyTotvsPurchaseRequest, totvsPurchaseRequestPayload } from "../lib/totvs-purchase-request";
 import { getMessages, useI18n } from "./I18nProvider";
+import PageHeader from "./PageHeader";
 import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
   invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping";
 
@@ -968,15 +969,13 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   }
 
   return <main className="shell">
-    <Link className="back" href={returnHref ?? (kind === "po" ? "/" : "/processes")}>{t.back}</Link>
-    <header className="page-header">
-      <p className="eyebrow">{t.eyebrow}</p>
-      <h1>{kind === "po" ? t.titlePo : t.titleIp}</h1>
+    <PageHeader back={{ href: returnHref ?? (kind === "po" ? "/" : "/processes"), label: t.back }} eyebrow={t.eyebrow}
+      title={kind === "po" ? t.titlePo : t.titleIp}>
       <p>{kind === "po" ? t.introPo : t.introIp}</p>
-    </header>
+    </PageHeader>
     {loading && <p role="status">{t.loading}</p>}
     {error && <p className="notice error" role="alert">{error}</p>}
-    {!loading && !allowed && <p className="notice">{kind === "po" ? t.notAllowedPo : t.notAllowedIp}</p>}
+    {!loading && !allowed && <p className="notice warning">{kind === "po" ? t.notAllowedPo : t.notAllowedIp}</p>}
     {!loading && allowed && <form className="stack-form" onSubmit={submit}>
       {kind === "po" ? <>
         <section className="card po-entry-section">
@@ -1018,7 +1017,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
               disabled={totvsParsing || saving || Boolean(createdPoId)} onChange={event => void selectTotvsProductFile(event)} /></label>
             {totvsParsing && <p role="status">{t.readingSheet}</p>}
             {totvsFileError && <p className="notice error" role="alert">{totvsFileError}</p>}
-            {draftStorageWarning && <p className="notice" role="status">{draftStorageWarning}</p>}
+            {draftStorageWarning && <p className="notice warning" role="status">{draftStorageWarning}</p>}
             {totvsRows.length > 0 && !totvsFileError && <>
               <div className="notice" role="status">
                 <p>{t.validProducts(totvsFileName, totvsRows.length)}</p>
@@ -1096,7 +1095,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                   onClick={() => applyTotvsProducts("append")}>{t.appendItems}</button>
               </div>
               {totvsApplied && <p className="muted" role="status">{t.appliedNotice}</p>}
-              {totvsApplied && !totvsImportReady && <p className="notice" role="status">{t.resolvePending}</p>}
+              {totvsApplied && !totvsImportReady && <p className="notice warning" role="status">{t.resolvePending}</p>}
             </>}
           </div>
           {catalogLoading && <p role="status">{t.loadingCatalog}</p>}
@@ -1160,7 +1159,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           {poPreflight && (!poPreflight.importerAcceptsNewPurchaseOrders || !poPreflight.supplierFound
             || poPreflight.missingProducts.length > 0 || poPreflight.missingUnits.length > 0 || poPreflight.missingCostCenters.length > 0)
             && <p className="notice error" role="alert">{t.preflightIssues}</p>}
-          {poPreflight && poPreflight.otherImporterDuplicates.length > 0 && <div className="notice">
+          {poPreflight && poPreflight.otherImporterDuplicates.length > 0 && <div className="notice warning">
             <p>{t.numberExists(number, poPreflight.otherImporterDuplicates.join(", "))}</p>
             <label><input type="checkbox" checked={confirmDuplicateNumber}
               onChange={event => setConfirmDuplicateNumber(event.target.checked)} />{t.confirmSameNumber}</label>
@@ -1183,7 +1182,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           {invoiceDraft && <>
             <p className="notice invoice-summary" role="status">{t.invoiceSummary(invoiceDraft.fileName, invoiceDraft.lines.length, invoiceMatches.length, formatNumber(invoiceDraft.totalQuantity), formatNumber(invoiceDraft.totalAmount))}</p>
               <p className="muted invoice-importer">{t.invoiceImporter(invoiceDraft.importerCnpj || t.notIdentified, importer || t.noMatch)}</p>
-            {invoiceDuplicate && <p className="notice" role="alert">
+            {invoiceDuplicate && <p className="notice warning" role="alert">
                {invoiceDuplicate.recordStatus === "DRAFT"
                  ? t.draftExists(invoiceDraft.ipNumber) : t.ipExists(invoiceDraft.ipNumber)}
             </p>}
@@ -1211,7 +1210,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                 onChange={event => setInvoiceDraft(current => current ? { ...current, totalAmount: event.target.value.replace(",", ".") } : current)} /></label>
             </div>
             <p className="muted">{t.destinationHelp}</p>
-            {invoiceDraft.warnings.map(warning => <p className="notice" key={warning}>{warning}</p>)}
+            {invoiceDraft.warnings.map(warning => <p className="notice warning" key={warning}>{warning}</p>)}
             {destinationIssues.length > 0 && <div className="notice error" role="alert">
               <p>{t.inactivePos(destinationIssues.filter(entry => entry.issue?.kind === "PO_NOT_ACTIVE").length)}</p>
               <p>{t.destinationsNeedAction(destinationIssues.length)}</p>

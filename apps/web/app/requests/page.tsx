@@ -6,6 +6,7 @@ import { apiFetch } from "../../lib/api";
 import { formatUsDateTime } from "../../lib/date-format";
 import { canWriteRequests } from "../../lib/request-permissions";
 import { getMessages, useI18n } from "../../components/I18nProvider";
+import PageHeader from "../../components/PageHeader";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "../../components/OperationalOptionSelect";
 
@@ -81,14 +82,10 @@ export default function RequestsPage() {
   }
 
   return <main className="shell">
-    <header className="page-header">
-      <p className="eyebrow">ERP Comex</p><h1>{t.title}</h1>
-      <p>{t.intro}</p>
-      <Link className="text-link" href="/">{m.common.backToPortfolio}</Link>
-    </header>
-    {canWriteRequests(roles) && <nav className="request-tabs" aria-label={t.tabs}>
-      <button type="button" className={view === "new" ? "active" : ""} aria-pressed={view === "new"} onClick={() => setView("new")}>{t.newTab}</button>
-      <button type="button" className={view === "list" ? "active" : ""} aria-pressed={view === "list"} onClick={() => setView("list")}>{t.listTab}</button>
+    <PageHeader eyebrow={m.sidebar.groups.management} title={t.title}><p>{t.intro}</p></PageHeader>
+    {canWriteRequests(roles) && <nav className="tabs" aria-label={t.tabs}>
+      <button type="button" className={view === "new" ? "tab active" : "tab"} aria-pressed={view === "new"} onClick={() => setView("new")}>{t.newTab}</button>
+      <button type="button" className={view === "list" ? "tab active" : "tab"} aria-pressed={view === "list"} onClick={() => setView("list")}>{t.listTab}</button>
     </nav>}
     {error && <div className="notice error" role="alert">{error} <button className="button secondary" type="button" onClick={() => setReload(value => value + 1)}>{m.common.retry}</button></div>}
     {notice && <p className="notice success" role="status">{notice}</p>}

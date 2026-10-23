@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, Fragment, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { useI18n } from "./I18nProvider";
+import PageHeader from "./PageHeader";
 
 type Item = { id: string; sourceSheetName: string; sourceRowNumber: number; sourceValues: Record<string, unknown>; sourceColumnHeaders: Record<string, string>; importer: string; sourcePoNumber: string | null; sourceIpNumber: string | null; purchaseOrderId: string | null; poNumber: string | null; processId: string | null; ipNumber: string | null; legacyStatus: string | null; reason: string; alsoWithoutPo: boolean; alsoWithoutIp: boolean };
 type Page = { page: number; pageSize: number; totalCount: number; items: Item[] };
@@ -56,11 +57,11 @@ export default function LegacyQueue({ kind }: { kind: "pending-import-items" | "
   }, [kind, filters, messages, page, ready, retry]);
   function apply(event: FormEvent<HTMLFormElement>) { event.preventDefault(); navigate(draft, 1); }
   const pages = data ? Math.ceil(data.totalCount / 50) : 0;
-  return <main className="shell"><Link className="back" href="/">{m.common.backToPortfolio}</Link>
-    <header className="page-header"><p className="eyebrow">{t.eyebrow}</p><h1>{withoutIp ? t.withoutIp : t.withoutPo}</h1>
+  return <main className="shell">
+    <PageHeader eyebrow={t.eyebrow} title={withoutIp ? t.withoutIp : t.withoutPo}
+      actions={<Link className="text-link" href={withoutIp ? "/unassigned-po-items" : "/pending-import-items"}>{withoutIp ? t.seeAlsoWithoutPo : t.seeAlsoWithoutIp}</Link>}>
       <p>{t.intro}</p>
-      <Link className="text-link" href={withoutIp ? "/unassigned-po-items" : "/pending-import-items"}>{withoutIp ? t.seeAlsoWithoutPo : t.seeAlsoWithoutIp}</Link>
-    </header>
+    </PageHeader>
     <section className="card"><form className="quality-filter" onSubmit={apply}>
       <label>{withoutIp ? t.sourcePo : t.sourceIp}<input value={draft.reference} onChange={event => setDraft({ ...draft, reference: event.target.value })} /></label>
       <label>{m.processDirectory.importer}<input value={draft.importer} onChange={event => setDraft({ ...draft, importer: event.target.value })} /></label>

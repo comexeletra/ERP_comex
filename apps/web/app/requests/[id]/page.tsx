@@ -1,12 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 import { formatUsDateTime } from "../../../lib/date-format";
 import { canWriteRequests } from "../../../lib/request-permissions";
 import { getMessages, useI18n } from "../../../components/I18nProvider";
+import PageHeader from "../../../components/PageHeader";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "../../../components/OperationalOptionSelect";
 
 type RequestDetail = { id: string; requestNumber: string; importer: string; sourceKind: string;
@@ -127,10 +127,7 @@ export default function RequestDetailPage() {
   }
 
   return <main className="shell">
-    <header className="page-header"><p className="eyebrow">{t.eyebrow}</p>
-      <h1>{request?.requestNumber ?? t.fallbackTitle}</h1>
-      <Link className="text-link" href="/requests">{t.back}</Link>
-    </header>
+    <PageHeader back={{ href: "/requests", label: t.back }} eyebrow={t.eyebrow} title={request?.requestNumber ?? t.fallbackTitle} />
     <section className="card" aria-live="polite">
       {loading && <p role="status">{t.loading}</p>}
       {error && <div className="notice error" role="alert">{error}</div>}

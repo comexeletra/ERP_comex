@@ -78,21 +78,25 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     window.localStorage.setItem("erp-comex-theme", nextTheme);
   }
 
+  const layoutClass = sidebarCollapsed ? "app-layout sidebar-collapsed" : "app-layout";
+  // Session checks keep the sidebar space, so the page does not jump when the menu appears.
+  const pendingFrame = (content: ReactNode) => <div className={layoutClass}>
+    <div className={sidebarCollapsed ? "app-sidebar is-collapsed" : "app-sidebar"} aria-hidden="true" />
+    <div className="app-main"><main className="shell">{content}</main></div>
+  </div>;
+
   if (pathname === "/login") return <>{children}</>;
-  if (loading) return <main className="shell"><p>{m.auth.checkingSession}</p></main>;
-  if (error) return <main className="shell"><p className="notice error">{error}</p><Link className="button" href="/login">{m.auth.signIn}</Link></main>;
-  if (!identity) return <main className="shell"><p role="status">{m.auth.redirecting}</p></main>;
+  if (loading) return pendingFrame(<p role="status">{m.auth.checkingSession}</p>);
+  if (error) return pendingFrame(<><p className="notice error" role="alert">{error}</p><Link className="button" href="/login">{m.auth.signIn}</Link></>);
+  if (!identity) return pendingFrame(<p role="status">{m.auth.redirecting}</p>);
   if (identity.mustChangePassword && pathname !== "/change-password") {
-    return <main className="shell"><p className="notice">{m.auth.mustChangePassword}</p><Link className="button" href="/change-password">{m.auth.changePassword}</Link></main>;
+    return pendingFrame(<><p className="notice warning">{m.auth.mustChangePassword}</p><Link className="button" href="/change-password">{m.auth.changePassword}</Link></>);
   }
 
-  return <div className={sidebarCollapsed ? "app-layout sidebar-collapsed" : "app-layout"}>
+  return <div className={layoutClass}>
     <AppSidebar collapsed={sidebarCollapsed} isMaster={identity.roles.includes("Master")}
       displayName={identity.user.displayName} roles={identity.roles} importerScopes={identity.importerScopes}
       theme={theme} onToggleTheme={toggleTheme} onToggle={toggleSidebar} onLogout={() => void logout()} />
-    <div className="app-main">
-
-    {children}
-    </div>
+    <div className="app-main">{children}</div>
   </div>;
 }
