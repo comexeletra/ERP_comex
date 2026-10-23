@@ -132,6 +132,14 @@ Se algo essencial não estiver claro, pergunte antes de supor.
 - Valores trocados com a API (status, papéis, nomes de abas da planilha, mensagens comparadas) continuam em português; só a exibição é traduzida. Marque literais desse tipo com `// i18n-ignore: <motivo>`.
 - `test/i18n-coverage.test.mjs` falha se surgir texto em português solto em `app/` ou `components/`. Mensagens geradas pela API e cabeçalhos das planilhas TOTVS/INV continuam em português.
 
+## Layout e identidade visual
+
+- O produto se chama **TMS - Supply Chain** (`lib/brand.ts`). As cores vêm da logo (`public/logo-eletra.png`): azul da faixa escura e verde das letras. Detalhes e paleta em `docs/PLANO_VARREDURA_LAYOUT.md`.
+- Cores literais só existem em `app/styles/tokens.css`; os demais arquivos usam `var(--…)`, e o tema escuro só redefine tokens. Fonte, raio e `z-index` usam as escalas `--fs-*`, `--radius-*` e `--z-*`. Breakpoints: 480, 760 e 1100 px. Sem `!important`, exceto para `prefers-reduced-motion`.
+- Cada componente tem uma única regra própria: estenda em `components.css` ou no arquivo da área em `app/styles/features/`, nunca redefina em outro bloco. Toda classe usada no JSX precisa de regra, e regra sem uso é removida.
+- Use os componentes padrão: `PageHeader` (link "voltar" só em telas de detalhe), `ConfirmDialog`/`useConfirmDialog` em vez de `window.confirm`, `.notice` com `warning`, `error` ou `success` (sem variante é informativo), `.badge` com `badge-success|warning|danger|info` e `.tabs`/`.tab`.
+- `test/layout-consistency.test.mjs` verifica essas regras e o contraste AA dos tokens nos dois temas.
+
 ## Acesso SSH da VPS de homologação
 
 - No notebook da empresa, use o alias SSH `erp-validation-vps` definido em `%USERPROFILE%\.ssh\Host erp-validation-vps.txt`. A chave privada dessa máquina fica em `.local-keys/rf06_ed25519`, relativa à raiz do repositório.
