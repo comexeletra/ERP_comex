@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
-type IconName = "orders" | "ship" | "reports" | "sheet" | "requests" | "catalog"
+type IconName = "orders" | "ship" | "flow" | "reports" | "sheet" | "requests" | "catalog"
   | "sc" | "noIp" | "noPo" | "quality" | "users" | "events" | "collapse" | "password" | "logout" | "sun" | "moon";
 type SidebarItem = { label: string; href: string; icon: IconName; match?: string[]; exclude?: string[]; exact?: boolean };
 type SidebarGroup = { label: string; items: SidebarItem[] };
@@ -15,6 +15,7 @@ const groups: SidebarGroup[] = [
       exclude: ["/purchase-orders/lines"] },
     { label: "Carteira por produto", href: "/purchase-orders/lines", icon: "sheet" },
     { label: "Pós embarque · IPs", href: "/processes", icon: "ship" },
+    { label: "End-to-end", href: "/end-to-end", icon: "flow" },
   ] },
   { label: "Gestão", items: [
     { label: "Solicitações", href: "/requests", icon: "requests" },
@@ -34,6 +35,7 @@ const pcmGroup: SidebarGroup = { label: "PCM", items: [
 const icons: Record<IconName, ReactNode> = {
   orders: <><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6M9 12h6M9 16h4" /></>,
   ship: <><path d="m3 17 2 2h14l2-2-3-2H6z" /><path d="M12 3v12m0-12 4 4m-4-4L8 7M5 15l2-3h10l2 3" /></>,
+  flow: <><circle cx="6" cy="18" r="2.5" /><circle cx="18" cy="6" r="2.5" /><path d="M8.5 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.5" /></>,
   reports: <><path d="M4 19V5m0 14h17" /><path d="m7 15 4-4 3 2 5-6" /><path d="M16 7h3v3" /></>,
   sheet: <><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M3 15h18M9 3v18M15 3v18" /></>,
   requests: <><path d="M4 4h16v13H8l-4 3z" /><path d="M8 9h8M8 13h5" /></>,
