@@ -1,5 +1,34 @@
 # API ERP na VPS Hostinger
 
+## BL nº e BL date no IP (M068) no HML (2026-10-23)
+
+O commit `c050193` move BL nº e BL date para o IP (um IP é um embarque): o formulário de Pós Embarque passa a ter
+os dois campos, todos os produtos do IP leem os mesmos valores e a API deixa de criar ou editar documentos BL
+(`BL_IS_IP_FIELD`), que ficam como histórico.
+
+Antes da migration, o HML `erp_po_totvs_hml` estava em M001–M067, com 3 IPs, 9.298 linhas de auditoria, 7.789
+mensagens outbox e nenhum documento BL. O backup custom pré-M068 foi validado com `pg_restore --list` (429 entradas):
+`/var/backups/import-erp/erp_po_totvs_hml_m068_20261023T000419Z.dump`, 466.384.082 bytes, SHA-256
+`a6224b371785ddfe0e4d87eaa3b864cc2faf49b0c2189f628acf21c40f105bab`. A M068 foi validada na cópia restaurada
+`erp_po_hml_m068_check_20261023T000639Z`, em transações revertidas: um BL ativo preencheu o IP (número aparado,
+data copiada, uma linha de auditoria `migration:M068`, documentos intactos, BL cancelado ignorado), dois BLs
+diferentes no mesmo IP bloquearam a migration, e BL nº em branco foi rejeitado. A aplicação completa na cópia
+levou o ledger a M068 sem alterar contagens; a cópia foi removida.
+
+M068 foi aplicada somente no HML, como `postgres` dentro do container, com checksum
+`e254213045a7af05748afda34b9e1adecc4954e0e9d3503a9499387ff9aabbf5`. O ledger passou a M001–M068; IPs, auditoria e
+outbox mantiveram 3, 9.298 e 7.789 registros.
+
+O release foi compilado na VPS como `/opt/import-erp/apps/api/hml-release-c050193` a partir de `git archive`
+(fontes em LF), reaproveitando o `node_modules` de `hml-release-0a7df01` (dependências inalteradas), e ativado pelo
+drop-in `zzzzzzzzzzzzzzzzz-release-c050193.conf`. O drop-in e o `ExecStart` anteriores estão em
+`/var/backups/import-erp/hml-post-shipment-bl-c050193-predeploy`. Para rollback somente do código, remova o drop-in
+novo, execute `systemctl daemon-reload` e reinicie `import-erp-hml-api` (volta a `hml-release-0a7df01`); a M068
+deve permanecer aplicada. `/health/live` responde 200 e `PATCH /api/v1/processes/:id/followup` e
+`POST /api/v1/processes/:id/documents` sem sessão respondem 401. O push de `homologacao` para `c050193` recebeu
+status Vercel `success`. Nenhuma produção foi alterada; a produção (`erp_po_totvs_test`) segue em M034 e só foi
+lida, com autorização do usuário, para contagens agregadas.
+
 ## Ciclo de vida do IP no HML (2026-10-22)
 
 O commit `0a7df01` publica as rotas de exclusão lógica, restauração e reativação de IP, com filtro de

@@ -3,7 +3,7 @@
 Every ERP database must receive the migrations required by the code deployed to
 it. As of 2026-10-21, `erp_po_totvs_test` and
 `erp_po_totvs_gatewayflow_20261010_test` are at M001–M034, while
-`erp_po_totvs_hml` is at M001–M066. HML contains business data and is no longer
+`erp_po_totvs_hml` is at M001–M068 (2026-10-23). HML contains business data and is no longer
 empty; the 2026-10-15 setup below records its initial state. See
 `deploy/hostinger/README.md` for M063 backup and validation evidence.
 
@@ -254,4 +254,4 @@ API/UI.
 
 `M067_import_process_lifecycle.sql` adds the IP `DELETED` state and its four soft-delete metadata fields. Its metadata constraint requires the full snapshot only while the IP is deleted; the status trigger allows only the specified draft, active, cancelled, delete, and restore transitions, and prevents deletion while active allocations, documents, or linked POs remain. Reactivation requires an open IP with no logistics status and no linked POs. Validate M067 on a restored copy and apply it only to HML after backup, before releasing the matching API.
 
-`M068_ip_bill_of_lading_fields.sql` adds `bl_number` and `bl_date` to the IP. An IP is one shipment, so the BL is typed on the IP beside ETD/ETA and every PO item allocated to it reads the same values. The migration refuses to run while any IP has more than one active BL with different numbers or dates; otherwise it copies the active BL number and date only into empty IP fields and records a `HISTORICAL_BACKFILL` audit row per IP. BL documents are not changed and remain as history; the API stops creating or editing BL documents. On 2026-10-22, the operational database had 190 active BLs, none sharing an IP. Validate M068 on a restored copy and apply it only to HML after backup, before releasing the matching API.
+`M068_ip_bill_of_lading_fields.sql` adds `bl_number` and `bl_date` to the IP. An IP is one shipment, so the BL is typed on the IP beside ETD/ETA and every PO item allocated to it reads the same values. The migration refuses to run while any IP has more than one active BL with different numbers or dates; otherwise it copies the active BL number and date only into empty IP fields and records a `HISTORICAL_BACKFILL` audit row per IP. BL documents are not changed and remain as history; the API stops creating or editing BL documents. On 2026-10-22, the operational database had 190 active BLs, none sharing an IP. On 2026-10-23, M068 passed restored-copy checks and was applied only to `erp_po_totvs_hml`; the ledger is M001–M068 and the SHA-256 is `e254213045a7af05748afda34b9e1adecc4954e0e9d3503a9499387ff9aabbf5`. Backup and release evidence is in `deploy/hostinger/README.md`. Production was not changed.
