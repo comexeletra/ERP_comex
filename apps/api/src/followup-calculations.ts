@@ -49,6 +49,42 @@ function stage(start: unknown, end: unknown, targetDays: unknown) {
   return { targetDays: target, actualDays, delayDays: actualDays === null || target === null ? null : actualDays - target };
 }
 
+function text(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+/** Status comes from the IP dates; an informed status only prevails when it cancels the shipment. */
+function shipmentStatus(process: Row, hasInvoice: boolean) {
+  const informedStatus = text(process.logisticsStatus);
+  if (informedStatus && /^(CANCELLED|CANCELED|CANCELADO)$/i.test(informedStatus)) {
+    return { status: "CANCELADO", statusSource: "informed", informedStatus, cancelled: true, delivered: false };
+  }
+  const delivered = Boolean(date(process.deliveryDate));
+  const status = delivered ? "ENTREGUE" : !hasInvoice ? "AGUARDANDO PRODUÇÃO" :
+    !date(process.blDate) ? "AGUARDANDO EMBARQUE" : !date(process.arrivalDate) ? "AGUARDANDO CHEGADA" : "DESEMBARAÇO";
+  return { status, statusSource: "calculated", informedStatus, cancelled: false, delivered };
+}
+function shipmentDates(process: Row) {
+  const mode = text(process.transportMode) ?? "";
+  const sea = /^(SEA|MARITIMO|MARÍTIMO)$/i.test(mode);
+  const etaConfirmed = date(process.etaConfirmed);
+  const eta = etaConfirmed ?? (mode ? addDays(process.etd, sea ? 55 : 10) : null);
+  const eteConfirmed = date(process.eteConfirmed);
+  const ete = eteConfirmed ?? addDays(eta, 10);
+  return {
+    eta, etaSource: eta === null ? null : etaConfirmed ? "confirmed" : "calculated",
+    ete, eteSource: ete === null ? null : eteConfirmed ? "confirmed" : "calculated",
+    transitDays: daysBetween(process.etd, eta),
+    storageDueDate: date(process.storageDueOverride) ?? (mode ? addDays(process.arrivalDate, sea ? 9 : 5) : null),
+  };
+}
+
+/** Status and projected dates of the IP itself, shared by every product line in it. */
+export function calculateProcess(process: Row, documents: Row[]) {
+  const hasInvoice = documents.some(doc => doc.status === "ACTIVE" && doc.kind === "INVOICE");
+  const { status, statusSource, informedStatus } = shipmentStatus(process, hasInvoice);
+  return { status, statusSource, informedStatus, ...shipmentDates(process) };
+}
+
 /** Spreadsheet rules expressed against the item and its one shipment (IP). */
 export function calculateFollowup(item: Row, process: Row, documents: Row[],
   today = new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date())) {
@@ -61,15 +97,13 @@ export function calculateFollowup(item: Row, process: Row, documents: Row[],
   const firstBillDate = date(process.blDate);
   const billNumber = typeof process.blNumber === "string" && process.blNumber.trim() ? process.blNumber.trim() : null;
   const firstNfDate = nfs.map(doc => date(doc.issueDate)).filter((v): v is string => Boolean(v)).sort()[0] ?? null;
-  const mode = typeof process.transportMode === "string" ? process.transportMode.trim() : "";
-  const sea = /^(SEA|MARITIMO|MARÍTIMO)$/i.test(mode);
-  const eta = date(process.etaConfirmed) ?? (mode ? addDays(process.etd, sea ? 55 : 10) : null);
-  const ete = date(process.eteConfirmed) ?? addDays(eta, 10);
-  const cancelled = /^(CANCELLED|CANCELED|CANCELADO)$/i.test(String(process.logisticsStatus ?? ""));
-  const delivered = Boolean(date(process.deliveryDate)) || /^(DELIVERED|ENTREGUE)$/i.test(String(process.logisticsStatus ?? "").trim());
-  const status = cancelled ? "CANCELADO" : delivered ? "ENTREGUE" : !invoices.length ? "AGUARDANDO PRODUÇÃO" :
-    !firstBillDate ? "AGUARDANDO EMBARQUE" : !date(process.arrivalDate) ? "AGUARDANDO CHEGADA" :
-      "DESEMBARAÇO";
+  const firstNf = [...nfs].sort((left, right) =>
+    (date(left.issueDate) ?? "9999-12-31").localeCompare(date(right.issueDate) ?? "9999-12-31"))[0];
+  const invoiceNumbers = [...new Set(invoices.map(doc => text(doc.number)).filter((v): v is string => Boolean(v)))].sort();
+  const dates = shipmentDates(process);
+  const { eta, ete } = dates;
+  const shipping = shipmentStatus(process, invoices.length > 0);
+  const { cancelled, delivered } = shipping;
   let alert = "—";
   if (!cancelled && !delivered) {
     if (!firstBillDate && (!date(process.etd) || daysBetween(process.etd, today)! >= 0)) alert = "Conferir data de embarque";
@@ -110,9 +144,9 @@ export function calculateFollowup(item: Row, process: Row, documents: Row[],
     ? String(invoicePrices[0]) : null;
   return {
     totalPrice: moneyProduct(item.orderedQuantity, item.unitPrice), currency: item.currencyCode ?? null,
-    eta, ete, transitDays: daysBetween(process.etd, eta),
-    storageDueDate: date(process.storageDueOverride) ?? (mode ? addDays(process.arrivalDate, sea ? 9 : 5) : null),
-    status: typeof process.logisticsStatus === "string" && process.logisticsStatus.trim() ? process.logisticsStatus.trim() : status,
+    eta, etaSource: dates.etaSource, ete, eteSource: dates.eteSource, transitDays: dates.transitDays,
+    storageDueDate: dates.storageDueDate,
+    status: shipping.status, statusSource: shipping.statusSource, informedStatus: shipping.informedStatus,
     alert, ruptureRisk: risk,
     leadTimeDays: daysBetween(item.poSentDate, process.deliveryDate),
     poApprovalDays: daysBetween(scApproval, item.poApprovalDate),
@@ -127,7 +161,7 @@ export function calculateFollowup(item: Row, process: Row, documents: Row[],
     portTargetDate: addDays(item.actualFactoryShipDate, numeric(item.targetPortDays)),
     arrivalTargetDate: addDays(process.actualPortDepartureDate ?? process.etd, numeric(item.targetTransitDays)),
     deliveryTargetDate: addDays(process.arrivalDate, numeric(item.targetCustomsDays)),
-    billDate: firstBillDate, billNumber, nfIssueDate: firstNfDate,
+    billDate: firstBillDate, billNumber, invoiceNumbers, nfNumber: text(firstNf?.number), nfIssueDate: firstNfDate,
     nfHomologationDate: nfs.map(doc => date(doc.homologationDate)).filter((v): v is string => Boolean(v)).sort()[0] ?? null,
     stages, totalTargetDays, totalActualDays,
     totalDelayDays: totalTargetDays === null || totalActualDays === null ? null : totalActualDays - totalTargetDays,

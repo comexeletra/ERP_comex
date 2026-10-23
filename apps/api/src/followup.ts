@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
-import { calculateFollowup, invoiceTotals } from "./followup-calculations.js";
+import { calculateFollowup, calculateProcess, invoiceTotals } from "./followup-calculations.js";
 import { actorAndScopes, assertPoActive, BusinessError, checkVersion, createPo as createPoSchema,
   itemFields as basicItemSchema, keyFrom, lockedPo, problem, validatePurchaseRequest,
   receipt, record, saveReceipt, transaction, versionFrom, validateNewPurchaseOrder,
@@ -461,8 +461,8 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
       const events = [...processEvents.rows, ...allocationEvents.rows].sort((left, right) =>
         new Date(right.occurredAt as string | Date).getTime() - new Date(left.occurredAt as string | Date).getTime());
       reply.header("ETag", `"${process.version}"`);
-      return { process, purchaseOrders: purchaseOrders.rows, allocations: allocationItems,
-        documents: docs, invoiceTotals: invoiceTotals(docs), events };
+      return { process, calculated: calculateProcess(process, docs), purchaseOrders: purchaseOrders.rows,
+        allocations: allocationItems, documents: docs, invoiceTotals: invoiceTotals(docs), events };
     });
 
   app.get<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/followup",
@@ -542,7 +542,7 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
       const processes = linked.rows.map(row => {
         const process = camel(row);
         const documents = docs.rows.filter(doc => doc.process_id === row.id).map(camel);
-        return { process, documents, invoiceTotals: invoiceTotals(documents) };
+        return { process, documents, invoiceTotals: invoiceTotals(documents), calculated: calculateProcess(process, documents) };
       });
       const shipments = links.rows.map(row => {
         const process = camel(row);

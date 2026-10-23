@@ -549,8 +549,14 @@ test("invoice approval creates an active IP and allocates the invoice quantity f
   assert.equal(response.json().allocations, 1);
   assert.equal(response.json().ipNumber, "IPH/TEST");
   assert.equal(response.json().revision, false);
-  assert.ok(queries.some(query => query.sql.includes("INSERT INTO imports.import_process")
-    && query.sql.includes("'WAITING SHIPMENT'") && query.sql.includes("'ACTIVE'")));
+  const processInsert = queries.find(query => query.sql.includes("INSERT INTO imports.import_process"));
+  assert.ok(processInsert.sql.includes("'ACTIVE'"));
+  // The status is calculated from the IP dates; the invoice no longer forces WAITING SHIPMENT.
+  assert.equal(processInsert.sql.includes("WAITING SHIPMENT"), false);
+  assert.equal(processInsert.sql.includes("logistics_status"), false);
+  const creation = queries.find(query => query.sql.includes("INSERT INTO audit.audit_log") && query.params[5] === "CREATE"
+    && query.params[1] === "IMPORT_PROCESS" && query.params[3] === "IMPORT_PROCESS");
+  assert.equal(JSON.parse(creation.params[7]).logisticsStatus, null);
   assert.ok(queries.some(query => query.sql.includes("INSERT INTO procurement.po_item_allocation")
     && query.params[3] === 5));
   assert.ok(queries.some(query => query.sql.includes("INSERT INTO imports.process_document")
@@ -600,6 +606,9 @@ test("invoice revision cancels the previous allocation and invoice before replac
   assert.equal(queries.some(query => query.sql.includes("UPDATE procurement.po_item_allocation SET status = 'CANCELLED'")), true);
   assert.equal(queries.some(query => query.sql.includes("INSERT INTO imports.import_process")), false);
   assert.equal(queries.filter(query => query.sql.includes("INSERT INTO procurement.po_item_allocation")).length, 1);
+  // A revision keeps whatever status was informed on the IP.
+  const processUpdate = queries.find(query => query.sql.includes("UPDATE imports.import_process SET record_status = 'ACTIVE'"));
+  assert.equal(processUpdate.sql.includes("logistics_status"), false);
 });
 
 test("invoice revision asks to restore a deleted IP before reusing its number", async t => {

@@ -1308,7 +1308,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           }
           await client.query(
             `UPDATE imports.import_process SET record_status = 'ACTIVE', source_kind = 'CHINA_INVOICE',
-               logistics_status = 'WAITING SHIPMENT', priority = $2, notes = $3, supplier_text = $4,
+               priority = $2, notes = $3, supplier_text = $4,
                supplier_entry_id = $5, incoterm = $6, port_loading = $7, port_discharge = $8,
                invoice_supplier_divergence = $9, version = version + 1, updated_at = now() WHERE id = $1`,
             [processId, body.process.priority, body.process.notes, exporterText, processSupplierEntryId,
@@ -1317,7 +1317,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
               typeof body.invoice.metadata.destinationText === "string" ? body.invoice.metadata.destinationText : null,
               invoiceSupplierDivergence]);
           await record(client, "IMPORT_PROCESS", processId, "IMPORT_PROCESS", processId, "REVISION", previous,
-            { ...body.process, logisticsStatus: "WAITING SHIPMENT", recordStatus: "ACTIVE",
+            { ...body.process, logisticsStatus: previous.logistics_status ?? null, recordStatus: "ACTIVE",
               source: "CHINA_INVOICE", invoiceNumber: body.invoice.number,
               confirmedDuplicateInvoice: Boolean(duplicateIpNumbers.length && body.confirmDuplicateInvoice),
               invoiceImporterCnpj, confirmedImporterCnpjMismatch: confirmImporterCnpjMismatch,
@@ -1326,9 +1326,9 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           processId = randomUUID();
           await client.query(
             `INSERT INTO imports.import_process
-             (id,importer,ip_number,normalized_ip_number,logistics_status,priority,notes,source_kind,version,supplier_text,supplier_entry_id,
+             (id,importer,ip_number,normalized_ip_number,priority,notes,source_kind,version,supplier_text,supplier_entry_id,
               incoterm,port_loading,port_discharge,record_status,invoice_supplier_divergence)
-             VALUES ($1,$2,$3,upper(btrim($3)),'WAITING SHIPMENT',$4,$5,'CHINA_INVOICE',1,$6,$7,$8,$9,$10,'ACTIVE',$11)`,
+             VALUES ($1,$2,$3,upper(btrim($3)),$4,$5,'CHINA_INVOICE',1,$6,$7,$8,$9,$10,'ACTIVE',$11)`,
             [processId, body.process.importer, body.process.ipNumber, body.process.priority, body.process.notes,
               exporterText, processSupplierEntryId,
               typeof body.invoice.metadata.incoterm === "string" ? body.invoice.metadata.incoterm : null,
@@ -1337,7 +1337,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
               invoiceSupplierDivergence],
           );
           await record(client, "IMPORT_PROCESS", processId, "IMPORT_PROCESS", processId, "CREATE", null,
-            { ...body.process, logisticsStatus: "WAITING SHIPMENT", recordStatus: "ACTIVE",
+            { ...body.process, logisticsStatus: null, recordStatus: "ACTIVE",
               source: "CHINA_INVOICE", invoiceNumber: body.invoice.number,
               confirmedDuplicateInvoice: Boolean(duplicateIpNumbers.length && body.confirmDuplicateInvoice),
               invoiceImporterCnpj, confirmedImporterCnpjMismatch: confirmImporterCnpjMismatch,

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateFollowup, invoiceTotals } from "../dist/followup-calculations.js";
+import { calculateFollowup, calculateProcess, invoiceTotals } from "../dist/followup-calculations.js";
 
 test("calculates price exactly and keeps unknown dates empty", () => {
   const result = calculateFollowup({ id: "item", orderedQuantity: "3.00000000", unitPrice: "0.10000000",
@@ -128,4 +128,56 @@ test("does not assume a transit or storage rule without a transport mode", () =>
   const result = calculateFollowup({ id: "item" }, { etd: "2026-09-01", arrivalDate: "2026-10-01" }, [], "2026-10-04");
   assert.equal(result.eta, null);
   assert.equal(result.storageDueDate, null);
+});
+
+test("an informed logistics status no longer freezes the status calculated from the dates", () => {
+  const invoice = { kind: "INVOICE", status: "ACTIVE", purchaseOrderItemId: null, number: "INV-1" };
+  const result = calculateFollowup({ id: "item" }, { logisticsStatus: "WAITING SHIPMENT", transportMode: "SEA",
+    etd: "2026-09-01", blDate: "2026-09-02", arrivalDate: "2026-10-01" }, [invoice], "2026-10-04");
+  assert.equal(result.status, "DESEMBARAÇO");
+  assert.equal(result.statusSource, "calculated");
+  assert.equal(result.informedStatus, "WAITING SHIPMENT");
+
+  const informedDelivered = calculateFollowup({ id: "item" }, { logisticsStatus: "DELIVERED", transportMode: "SEA",
+    etd: "2026-08-01", blDate: "2026-08-02" }, [invoice], "2026-10-04");
+  assert.equal(informedDelivered.status, "AGUARDANDO CHEGADA");
+  assert.equal(informedDelivered.alert, "Conferir chegada da carga");
+});
+
+test("an informed cancellation still prevails over the dates", () => {
+  const result = calculateFollowup({ id: "item" }, { logisticsStatus: "CANCELLED", blDate: "2026-09-02" }, [], "2026-10-04");
+  assert.equal(result.status, "CANCELADO");
+  assert.equal(result.statusSource, "informed");
+  assert.equal(result.alert, "—");
+});
+
+test("product lines carry the invoice and NF numbers that apply to the item", () => {
+  const result = calculateFollowup({ id: "item-a" }, { blDate: "2026-09-02" }, [
+    { kind: "INVOICE", status: "ACTIVE", purchaseOrderItemId: "item-a", number: "INV-B" },
+    { kind: "INVOICE", status: "ACTIVE", purchaseOrderItemId: null, number: "INV-A" },
+    { kind: "INVOICE", status: "ACTIVE", purchaseOrderItemId: "item-a", number: "INV-B" },
+    { kind: "INVOICE", status: "ACTIVE", purchaseOrderItemId: "item-b", number: "INV-OTHER" },
+    { kind: "INVOICE", status: "CANCELLED", purchaseOrderItemId: null, number: "INV-OLD" },
+    { kind: "NF", status: "ACTIVE", purchaseOrderItemId: null, number: "NF-2", issueDate: "2026-10-05" },
+    { kind: "NF", status: "ACTIVE", purchaseOrderItemId: null, number: "NF-1", issueDate: "2026-10-03" },
+  ], "2026-10-04");
+  assert.deepEqual(result.invoiceNumbers, ["INV-A", "INV-B"]);
+  assert.equal(result.nfNumber, "NF-1");
+  assert.equal(result.nfIssueDate, "2026-10-03");
+});
+
+test("the IP summary shows its own status and calculated ETA/ETE beside the confirmed dates", () => {
+  const docs = [{ kind: "INVOICE", status: "ACTIVE", purchaseOrderItemId: "item-a", number: "INV-1" }];
+  const projected = calculateProcess({ transportMode: "SEA", etd: "2026-09-01", logisticsStatus: "WAITING SHIPMENT" }, docs);
+  assert.deepEqual(projected, { status: "AGUARDANDO EMBARQUE", statusSource: "calculated",
+    informedStatus: "WAITING SHIPMENT", eta: "2026-10-26", etaSource: "calculated", ete: "2026-11-05",
+    eteSource: "calculated", transitDays: 55, storageDueDate: null });
+  const confirmed = calculateProcess({ transportMode: "AIR", etd: "2026-09-01", etaConfirmed: "2026-09-03",
+    eteConfirmed: "2026-09-06", blDate: "2026-09-01", arrivalDate: "2026-09-03" }, []);
+  assert.equal(confirmed.status, "AGUARDANDO PRODUÇÃO");
+  assert.equal(confirmed.etaSource, "confirmed");
+  assert.equal(confirmed.eteSource, "confirmed");
+  assert.equal(confirmed.storageDueDate, "2026-09-08");
+  assert.equal(calculateProcess({}, []).eta, null);
+  assert.equal(calculateProcess({}, []).etaSource, null);
 });
