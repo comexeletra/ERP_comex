@@ -1,0 +1,28 @@
+[Unit]
+Description=ERP Comex Homologation export worker
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+User=import-erp
+Group=import-erp
+WorkingDirectory=/opt/import-erp/apps/api
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/import-erp/homologation-db.env
+ExecStartPre=/opt/node-v24/bin/node /opt/import-erp/apps/api/check-hml-database.mjs
+# A release drop-in must replace this command before the service is enabled.
+ExecStart=/usr/bin/false
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
