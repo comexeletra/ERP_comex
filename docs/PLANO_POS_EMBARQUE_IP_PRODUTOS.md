@@ -268,7 +268,99 @@ Ajustes em relação ao plano:
 
 Pendências:
 
-- **Worker de exportação no HML.** A VPS não tem worker apontando para o HML, então exportações enfileiradas no HML não são processadas. Criá-lo é mudança de configuração da VPS e depende de aprovação.
+- **Worker de exportação no HML.** A VPS não tem worker apontando para o HML, então exportações enfileiradas no HML não são processadas. Criá-lo é mudança de configuração da VPS e depende de aprovação. Especificação na [seção 11](#11-pendência--worker-de-exportação-no-hml).
 - **Validação visual.** O domínio estável do Preview exige login SSO da Vercel, e a validação visual não foi feita pelo agente.
 - **Promoção para produção.** Exige promover M035–M068 com cópia restaurada e backup, e um Pull Request de `homologacao` para `main` após a aprovação dos testes.
+
+## 11. Pendência — Worker de exportação no HML
+
+| Item | Valor |
+|---|---|
+| Data | 2026-10-23 |
+| Status | **Aguardando aprovação** (muda a configuração da VPS) |
+| Ambiente | VPS HML (`import-erp-hml-api`) + banco `erp_po_totvs_hml`; produção não é tocada |
+
+### 11.1 Diagnóstico (leitura em 2026-10-23, sem alterações)
+
+- **Serviços na VPS:** `import-erp-api`, `import-erp-export-worker` e `import-erp-hml-api`, todos ativos. Não existe worker para o HML.
+- **O worker existente é de produção:** `import-erp-export-worker` usa `EnvironmentFile=/etc/import-erp/api.env` e `ExecStart=.../apps/api/dist/worker.js` (build de produção, sem drop-ins). Está ativo desde 2026-10-19 20:38 e consome cerca de 40 MB.
+- **A API HML** usa `/etc/import-erp/homologation-db.env` e roda `hml-release-413fe6a/dist/server.js` pelo drop-in `zzzzzzzzzzzzzzzzzz-release-413fe6a.conf`. O release já contém `dist/worker.js` com os jobs `purchase-order-xlsx` e `purchase-order-lines-xlsx`.
+- **Banco HML:** `current_database() = erp_po_totvs_hml`, papel `import_erp_hml_app`, `DATABASE_URL` em loopback (a checagem de produção do worker passa). O papel tem `SELECT, INSERT, UPDATE, DELETE` em `jobs.export_job`, então nenhuma migration ou grant é necessário.
+- **Fila HML:** 1 job `purchase-order-xlsx` em `queued` desde 2026-10-23 11:55 UTC (08:55 de Brasília). É a evidência da pendência: o pedido entra na fila e nunca sai.
+- **Como o worker funciona** ([worker.ts](../apps/api/src/worker.ts)): processo único, lê só `DATABASE_URL`, reserva jobs com `FOR UPDATE SKIP LOCKED` e lease de 5 min, grava o `.xlsx` em `result_binary` (sem arquivos em disco) e apaga jobs expirados. Até 3 tentativas; mais de 5.000 linhas dá `EXPORT_TOO_LARGE`.
+- **Memória:** 2,1 GB disponíveis na VPS; um worker a mais (~40 MB) cabe com folga.
+
+### 11.2 Especificação
+
+**Objetivo.** Processar no HML as exportações enfileiradas pela API HML (POs e carteira por produto), com um worker isolado do de produção, para validar a exportação no Preview.
+
+**Requisitos**
+
+1. Novo serviço `import-erp-hml-export-worker`, com `EnvironmentFile=/etc/import-erp/homologation-db.env` e o mesmo endurecimento do worker de produção.
+2. Executa o `dist/worker.js` do **mesmo release HML** da API, por drop-in `release-<sha>.conf`, no padrão já usado em `import-erp-hml-api`.
+3. Recusa iniciar se `DATABASE_URL` não apontar para `/erp_po_totvs_hml`. A checagem fica no `ExecStartPre` e roda a cada start, inclusive nos reinícios automáticos.
+4. O script de habilitação exige root e o sha do release, confere `dist/worker.js` no release e o banco HML, instala a unit e o drop-in, roda `systemd-analyze verify`, `daemon-reload` e `enable --now`, e confirma `is-active` e o evento `export_worker_started` no journal.
+5. Cada release HML seguinte troca o drop-in da API **e** o do worker, e reinicia os dois. O checklist de deploy no README passa a incluir o worker.
+
+**Restrições**
+
+- Não alterar `import-erp-export-worker`, `api.env`, `homologation-db.env` nem variáveis da Vercel.
+- Não alterar código da API nem do worker: o binário é o mesmo de produção, só muda o ambiente.
+- Não criar migration nem mexer em grants.
+- Nunca usar a unit base apontando para `dist/worker.js` de produção sem drop-in: sem drop-in de release, o serviço não deve ser habilitado.
+
+**Critérios de aceite**
+
+1. `systemctl is-active import-erp-hml-export-worker` = `active`; o journal mostra `export_worker_started`.
+2. O worker de produção continua ativo, com o mesmo `ActiveEnterTimestamp` de antes (não foi reiniciado).
+3. O job parado desde 2026-10-23 11:55 UTC termina `completed` ou `failed` com `error_code` legível.
+4. Um job `purchase-order-xlsx` e um `purchase-order-lines-xlsx` criados no teste opt-in terminam `completed`, com `result_binary` iniciando pela assinatura ZIP (`PK`) do `.xlsx`.
+5. Iniciar o serviço com um `DATABASE_URL` que não seja do HML falha no `ExecStartPre` (coberto por teste automatizado, sem tocar a produção).
+6. A exportação baixa pelo Preview (validação do usuário, pois o domínio exige SSO).
+
+**Fora do escopo**
+
+- Mudar o worker de produção ou o build dele.
+- Distinguir o `application_name` dos dois workers no Postgres (hoje está fixo no código como `import-erp-export-worker`; mudar exige alteração de código).
+- Alertas e monitoramento da fila.
+
+### 11.3 Plano
+
+**Etapa 1 — Arquivos no repositório** (commit `feat(deploy): add HML export worker unit and enable script`)
+
+1. `deploy/hostinger/import-erp-hml-export-worker.service`: cópia de `import-erp-export-worker.service` com `Description=ERP Comex Homologation export worker`, `EnvironmentFile=/etc/import-erp/homologation-db.env` e `ExecStartPre` com a checagem do banco.
+2. `deploy/hostinger/check-hml-database.mjs`: lê `DATABASE_URL` e sai com código 1 e mensagem clara se o caminho não for `/erp_po_totvs_hml`. Evita o escape de `$` e `%` dentro da unit.
+3. `deploy/hostinger/enable-homologation-export-worker.sh`: requisito 4, no estilo de `enable-homologation-api.sh`.
+
+**Etapa 2 — Testes** (no mesmo commit da etapa 1, escritos antes dos arquivos)
+
+1. `apps/api/test/hml-export-worker-deploy.test.mjs`, adicionado ao script `test` do `package.json`:
+   - a unit usa `homologation-db.env` e não `api.env`, tem o `ExecStartPre` e o mesmo endurecimento do worker de produção;
+   - `check-hml-database.mjs` aceita `/erp_po_totvs_hml` e recusa o banco de produção, outro nome e URL ausente;
+   - o script exige o sha do release e recusa um banco que não seja HML.
+2. `apps/api/test/export-worker-hml.integration.mjs` (opt-in, `npm run test:export-worker:hml`): conecta com a role `import_erp_hml_app`, confere `current_database()`, cria os dois tipos de job para um usuário de `identity.erp_user` (o mesmo critério do teste de pós-embarque), aguarda até 60 s e confere `completed` e a assinatura `PK`. Apaga ao final os jobs que criou.
+3. Rodar `test`, lint, type-check e build com os comandos oficiais.
+
+**Etapa 3 — Instalação na VPS HML** (só após aprovação)
+
+1. Registrar antes: `ActiveEnterTimestamp` do worker de produção e as contagens da fila HML por `status`.
+2. Copiar os três arquivos para a VPS e executar `enable-homologation-export-worker.sh 413fe6a`.
+3. Conferir o critério 1 e o job parado (critério 3). Ele foi pedido por um usuário no HML, sobre dados do HML; processá-lo é o comportamento esperado.
+4. Rodar `npm run test:export-worker:hml` no release (critério 4).
+5. Conferir o critério 2.
+6. **Rollback:** `systemctl disable --now import-erp-hml-export-worker`, remover a unit e o drop-in, `daemon-reload`. Nada no banco precisa ser desfeito; jobs em andamento voltam para a fila quando o lease expira.
+
+**Etapa 4 — Publicação e registro**
+
+1. `git push production homologacao`; Preview `Ready` no domínio estável.
+2. Registrar em [deploy/hostinger/README.md](../deploy/hostinger/README.md) o serviço, o release, o resultado dos testes e o rollback, e retirar a pendência da linha 31. Atualizar o status desta seção.
+3. Commit `docs(hml): record HML export worker release and validation`.
+4. Pedir ao usuário a validação da exportação no Preview (critério 6).
+
+### 11.4 Riscos
+
+- **Release defasado entre API e worker:** se só a API for atualizada, um tipo de job novo cai em `UNSUPPORTED_JOB_TYPE`. Mitigação: requisito 5 e checklist no README.
+- **Os dois workers usam o mesmo `application_name`:** em `pg_stat_activity` eles se distinguem pelo `datname`. Tratar esse ponto fica fora do escopo.
+- **Um worker apontando para o banco errado:** a checagem do `ExecStartPre` (requisito 3) impede o HML de processar a fila de produção e vice-versa.
+- **Promoção para produção:** nada muda, porque o worker de produção já existe. Este serviço é só do HML.
 
