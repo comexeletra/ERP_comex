@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { productName } from "../lib/brand";
 import { roleLabel } from "../lib/i18n/labels";
 import type { Messages } from "../lib/i18n/pt-BR";
@@ -83,7 +83,7 @@ function isItemActive(pathname: string, item: SidebarItem) {
 
 export default function AppSidebar({ collapsed, isMaster, displayName, roles, importerScopes, theme, onToggleTheme, onToggle, onLogout }: {
   collapsed: boolean; isMaster: boolean; displayName: string | null; roles: string[];
-  importerScopes: string[]; theme: "light" | "dark"; onToggleTheme: () => void; onToggle: () => void; onLogout: () => void;
+  importerScopes: string[]; theme: "light" | "dark"; onToggleTheme: (event: MouseEvent<HTMLButtonElement>) => void; onToggle: () => void; onLogout: () => void;
 }) {
   const pathname = usePathname();
   const { locale, m } = useI18n();

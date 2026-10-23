@@ -8,6 +8,24 @@ a { color: var(--color-link); }
 
 :focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
 
+/* Theme switch: the new theme spreads from the button like a ripple on water.
+   AuthGate sets the center (--ripple-x/y) and the end radius; the wave width matches lib/theme-ripple.ts. */
+@property --ripple-radius { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@keyframes theme-ripple { to { --ripple-radius: var(--ripple-end); } }
+:root[data-theme-ripple]::view-transition-old(root) { animation: none; }
+:root[data-theme-ripple]::view-transition-new(root) {
+  animation: theme-ripple 1s cubic-bezier(.2, .65, .3, 1) both;
+  mask-image: radial-gradient(circle at var(--ripple-x) var(--ripple-y),
+    var(--ripple-mask-full) calc(var(--ripple-radius) - 72px),
+    var(--ripple-mask-ring) calc(var(--ripple-radius) - 60px),
+    transparent calc(var(--ripple-radius) - 48px),
+    var(--ripple-mask-ring) calc(var(--ripple-radius) - 34px),
+    transparent calc(var(--ripple-radius) - 22px),
+    var(--ripple-mask-trace) calc(var(--ripple-radius) - 10px),
+    transparent var(--ripple-radius));
+  mix-blend-mode: normal;
+}
+
 /* Form controls */
 input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea {
   background-color: var(--color-field-bg); border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm);

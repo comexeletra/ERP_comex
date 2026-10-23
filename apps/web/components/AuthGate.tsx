@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ReactNode, useEffect, useState } from "react";
+import { MouseEvent, ReactNode, useEffect, useState } from "react";
+import { flushSync } from "react-dom";
 import { apiFetch } from "../lib/api";
+import { rippleGeometry } from "../lib/theme-ripple";
 import AppSidebar from "./AppSidebar";
 import { useI18n } from "./I18nProvider";
 
@@ -71,11 +73,27 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     });
   }
 
-  function toggleTheme() {
+  function toggleTheme(event: MouseEvent<HTMLButtonElement>) {
     const nextTheme = theme === "dark" ? "light" : "dark";
-    setTheme(nextTheme);
-    document.documentElement.dataset.theme = nextTheme;
+    const root = document.documentElement;
+    const apply = () => {
+      flushSync(() => setTheme(nextTheme));
+      root.dataset.theme = nextTheme;
+    };
     window.localStorage.setItem("erp-comex-theme", nextTheme);
+    if (typeof document.startViewTransition !== "function" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      apply();
+      return;
+    }
+    const ripple = rippleGeometry(event, event.currentTarget.getBoundingClientRect(), { width: window.innerWidth, height: window.innerHeight });
+    root.style.setProperty("--ripple-x", `${ripple.x}px`);
+    root.style.setProperty("--ripple-y", `${ripple.y}px`);
+    root.style.setProperty("--ripple-end", `${ripple.radius}px`);
+    root.dataset.themeRipple = "";
+    document.startViewTransition(apply).finished.finally(() => {
+      delete root.dataset.themeRipple;
+      for (const name of ["--ripple-x", "--ripple-y", "--ripple-end"]) root.style.removeProperty(name);
+    });
   }
 
   const layoutClass = sidebarCollapsed ? "app-layout sidebar-collapsed" : "app-layout";

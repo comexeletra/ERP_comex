@@ -130,6 +130,11 @@
   --width-reading: 880px;
   --width-form: 960px;
   --width-narrow: 640px;
+
+  /* Theme ripple mask: only the alpha counts (opaque shows the new theme). */
+  --ripple-mask-full: #000000;
+  --ripple-mask-ring: #00000066;
+  --ripple-mask-trace: #00000026;
 }
 
 :root[data-theme="dark"] {
