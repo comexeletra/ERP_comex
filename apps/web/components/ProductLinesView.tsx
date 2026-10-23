@@ -144,13 +144,14 @@ export default function ProductLinesView({ initialQuery }: { initialQuery: strin
         {exportError && <p className="notice error" role="alert">{exportError}</p>}
         {result.lines.length === 0 && result.totalCount > 0 && <p>{t.outOfRange}<button className="button" onClick={() => navigate(applied, 1)}>{t.firstPage}</button></p>}
         {result.totalCount === 0 && <p>{t.none}</p>}
-        {result.lines.length > 0 && <div className="table-scroll"><table><thead><tr>
-          <th>PO</th><th>{m.followup.product}</th><th>{m.followup.quantity}</th><th>IP</th><th>{m.calc.status}</th><th>ETD</th><th>{m.followup.departure}</th>
+        {result.lines.length > 0 && <div className="table-scroll"><table className="product-lines-table"><thead><tr>
+          <th>PO</th><th>{m.followup.importer}</th><th>{m.followup.product}</th><th>{m.followup.quantity}</th><th>IP</th><th>{m.calc.status}</th><th>ETD</th><th>{m.followup.departure}</th>
           <th>{m.fields.blDate}</th><th>ETA</th><th>{m.followup.arrival}</th><th>ETE</th><th>{m.followup.delivery}</th><th>{m.followup.factoryShip}</th><th>{m.postShipment.invoice}</th>
         </tr></thead><tbody>{result.lines.map(line => <tr key={`${line.lineKind}-${line.lineId}`}>
-          <td><Link className="text-link" href={`/purchase-orders/${line.purchaseOrder.id}`}>{line.purchaseOrder.number}</Link>
-            <small>{line.purchaseOrder.importer}</small></td>
-          <td><strong>{line.item.productCode}</strong><small>{line.item.description}</small></td>
+          <td><Link className="text-link" href={`/purchase-orders/${line.purchaseOrder.id}`}>{line.purchaseOrder.number}</Link></td>
+          <td><span className="product-lines-importer" title={line.purchaseOrder.importer}>{line.purchaseOrder.importer}</span></td>
+          <td><strong>{line.item.productCode}</strong>
+            <small className="product-lines-description" title={line.item.description}>{line.item.description}</small></td>
           <td>{formatNumber(line.quantity)} {line.item.unit ?? ""}</td>
           <td>{line.process ? <Link className="text-link" href={`/processes/${line.process.id}`}>{line.process.ipNumber}</Link>
             : <span className="po-ip-pending">{m.followup.noIp}</span>}</td>

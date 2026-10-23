@@ -18,6 +18,20 @@ test("the product lines view reads the API lines and exports the filtered lines 
   }
 });
 
+test("the product lines show the importer in its own column and truncate long names with the full text on hover", async () => {
+  const styles = await readFile(new URL("../app/styles/features/operations.css", import.meta.url), "utf8");
+  assert.match(view, /<th>PO<\/th><th>\{m\.followup\.importer\}<\/th><th>\{m\.followup\.product\}<\/th>/u);
+  assert.equal(ptBR.followup.importer, "Importadora");
+  assert.match(view, /className="product-lines-importer" title=\{line\.purchaseOrder\.importer\}/u);
+  assert.match(view, /className="product-lines-description" title=\{line\.item\.description\}/u);
+  for (const name of ["product-lines-importer", "product-lines-description"]) {
+    const rule = styles.match(new RegExp(`\\.${name} \\{([^}]*)\\}`, "u"))?.[1] ?? "";
+    for (const declaration of ["display: block", "max-width:", "overflow: hidden", "text-overflow: ellipsis"]) {
+      assert.ok(rule.includes(declaration), `${name} needs ${declaration}`);
+    }
+  }
+});
+
 test("the sidebar opens the product lines without also highlighting the PO portfolio", () => {
   assert.match(sidebar, /href: "\/purchase-orders\/lines"/u);
   assert.match(sidebar, /exclude: \["\/purchase-orders\/lines"\]/u);

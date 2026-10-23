@@ -127,6 +127,13 @@
 .po-ip-line-detail-panel { min-width: 0; width: 100%; }
 .po-ip-line-detail-panel > h4:first-child { margin-top: 0; }
 
+/* Product lines */
+.product-lines-table th, .product-lines-table td { padding-inline: 20px; }
+.product-lines-importer { display: block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.product-lines-description {
+  color: var(--color-text-muted); display: block; font-size: var(--fs-sm); margin-top: 4px; max-width: 340px; overflow: hidden; text-overflow: ellipsis;
+}
+
 /* Event history */
 .operational-event-history { margin-top: 20px; }
 .operational-event-history > summary { border-bottom: 1px solid var(--color-divider); padding: 12px 0; }
