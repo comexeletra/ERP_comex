@@ -28,9 +28,26 @@ acompanhamento. Ao final, as 3 distribuições e a invoice foram canceladas e os
 `DELETED` (a auditoria é append-only); o HML terminou sem distribuições nem IPs ativos. O push de `homologacao`
 para `413fe6a` recebeu status Vercel `success`.
 
-Pendência: a VPS só tem o worker de exportação de produção (`import-erp-export-worker`, com `api.env`). Não há
-worker apontando para o HML, então exportações enfileiradas no HML (de POs ou por produto) não são processadas
-ali. Criar esse serviço é mudança de configuração da VPS e depende de aprovação. Nenhuma produção foi alterada.
+O worker isolado de homologação `import-erp-hml-export-worker` foi instalado pelos commits `05729d9` e `305b1c5`.
+Ele usa `/etc/import-erp/homologation-db.env`, valida em todo start que o banco é `erp_po_totvs_hml` e executa
+`hml-release-413fe6a/dist/worker.js` pelo drop-in `release-413fe6a.conf`. A unit base usa `/usr/bin/false`, portanto
+não inicia sem um drop-in de release; o instalador também recusa um SHA diferente do release efetivo da API HML.
+O serviço ficou `active` em 2026-10-23 às 09:17:45 de Brasília e o journal registrou `export_worker_started`.
+
+O job `purchase-order-xlsx` parado desde 2026-10-23 11:55 UTC terminou `completed` com uma linha. O teste opt-in
+`test:export-worker:hml` criou um job `purchase-order-xlsx` e outro `purchase-order-lines-xlsx`; ambos terminaram
+`completed` com binário iniciado por `PK`, e o teste apagou os dois registros ao final. A fila terminou sem jobs
+pendentes. O worker de produção permaneceu `active` com o mesmo `ActiveEnterTimestamp` de 2026-10-19 20:38:54
+de Brasília; `import-erp-export-worker`, `api.env`, as variáveis da Vercel e o banco de produção não foram alterados.
+
+Em cada release HML seguinte, ative primeiro o novo drop-in da API e depois execute
+`enable-homologation-export-worker.sh <sha>`. O script exige que a API já esteja no mesmo `hml-release-<sha>`,
+troca o drop-in do worker, reinicia somente o worker HML e confirma `is-active` e `export_worker_started`. Confira
+também o health da API, execute `test:export-worker:hml` e verifique que o worker de produção manteve seu
+`ActiveEnterTimestamp`. Para rollback do serviço HML, execute
+`systemctl disable --now import-erp-hml-export-worker`, remova a unit e o diretório
+`import-erp-hml-export-worker.service.d`, e execute
+`systemctl daemon-reload`. Nenhuma reversão de banco é necessária; um job interrompido volta à fila após o lease.
 
 ## BL nº e BL date no IP (M068) no HML (2026-10-23)
 

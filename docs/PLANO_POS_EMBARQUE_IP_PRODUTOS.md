@@ -260,6 +260,7 @@ Todas as fases foram implementadas na `homologacao` e publicadas no HML; a produ
 | 5/6 — Carteira e exportação | `2ca91b2` | `GET /api/v1/purchase-order-lines`, tela "Carteira por produto", exportação `purchase-order-lines-xlsx` na ordem B:AZ; lista de IPs e relatório pelo status calculado; resumo por item na PO. |
 | 7 — Histórico | `8d579fb` | Contagem de `IP_SOURCE_CONFLICT` aberto e avisos de datas gravadas fora de ordem ao abrir o IP. |
 | 8 — Homologação | `413fe6a` | Release HML `hml-release-413fe6a`; teste opt-in `test:post-shipment:hml` aprovado; Preview Vercel `success`. |
+| 8b — Worker de exportação HML | `05729d9`, `305b1c5` | Serviço isolado no banco HML e fixado ao release `413fe6a`; job represado processado; os dois tipos de XLSX aprovados no teste opt-in. |
 
 Ajustes em relação ao plano:
 
@@ -268,16 +269,15 @@ Ajustes em relação ao plano:
 
 Pendências:
 
-- **Worker de exportação no HML.** A VPS não tem worker apontando para o HML, então exportações enfileiradas no HML não são processadas. Criá-lo é mudança de configuração da VPS e depende de aprovação. Especificação na [seção 11](#11-pendência--worker-de-exportação-no-hml).
 - **Validação visual.** O domínio estável do Preview exige login SSO da Vercel, e a validação visual não foi feita pelo agente.
 - **Promoção para produção.** Exige promover M035–M068 com cópia restaurada e backup, e um Pull Request de `homologacao` para `main` após a aprovação dos testes.
 
-## 11. Pendência — Worker de exportação no HML
+## 11. Worker de exportação no HML
 
 | Item | Valor |
 |---|---|
 | Data | 2026-10-23 |
-| Status | **Aguardando aprovação** (muda a configuração da VPS) |
+| Status | **Implementado e validado no HML**; download pelo Preview aguarda validação do usuário com SSO |
 | Ambiente | VPS HML (`import-erp-hml-api`) + banco `erp_po_totvs_hml`; produção não é tocada |
 
 ### 11.1 Diagnóstico (leitura em 2026-10-23, sem alterações)
@@ -363,4 +363,15 @@ Pendências:
 - **Os dois workers usam o mesmo `application_name`:** em `pg_stat_activity` eles se distinguem pelo `datname`. Tratar esse ponto fica fora do escopo.
 - **Um worker apontando para o banco errado:** a checagem do `ExecStartPre` (requisito 3) impede o HML de processar a fila de produção e vice-versa.
 - **Promoção para produção:** nada muda, porque o worker de produção já existe. Este serviço é só do HML.
+
+### 11.5 Execução (2026-10-23)
+
+- Os commits `05729d9` e `305b1c5` adicionaram a unit, a proteção do banco, o instalador e os testes. A unit base usa `/usr/bin/false`; somente o drop-in de um release HML validado fornece o `ExecStart` do worker.
+- Antes da instalação, `import-erp-export-worker` estava `active` desde 2026-10-19 20:38:54 de Brasília; `import-erp-hml-api` estava `active` em `hml-release-413fe6a`; não existia worker HML. O banco confirmado foi `erp_po_totvs_hml`, com role `import_erp_hml_app`, e havia um job `purchase-order-xlsx` em `queued` desde 2026-10-23 11:55:41 UTC, sem tentativas.
+- `import-erp-hml-export-worker` foi instalado com `homologation-db.env` e o drop-in `release-413fe6a.conf`. O serviço ficou `active` em 2026-10-23 09:17:45 de Brasília; o journal mostrou `export_worker_started` e o job antigo terminou `completed` com uma linha.
+- A primeira execução do instalador ativou corretamente o serviço, mas a consulta final do journal rejeitou o timestamp ISO com fuso. O commit `305b1c5` passou a usar o formato local aceito pela versão de systemd da VPS; a repetição concluiu toda a checagem e reiniciou somente o worker HML.
+- `test:export-worker:hml` passou com a role `import_erp_hml_app`: um job de carteira de POs e um de carteira por produto terminaram `completed`, ambos com assinatura `PK`; os dois jobs sintéticos foram removidos. Ao final, não havia jobs `queued` nem `running`, apenas o job antigo em `completed`.
+- O worker de produção continuou `active` com o mesmo `ActiveEnterTimestamp` de antes. Não houve alteração em `import-erp-export-worker`, `api.env`, `homologation-db.env`, variáveis da Vercel, banco de produção, código da API, migrations ou grants.
+- Verificações locais: suíte completa e build da API aprovados; 107 testes web aprovados; lint web sem erros e com 40 avisos preexistentes; type-check e build web aprovados; `bash -n` aprovado no Linux da VPS.
+- Critério restante: baixar uma exportação pelo domínio estável do Preview, que exige login SSO do usuário.
 
