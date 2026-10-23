@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ipPostShipmentFields, newProcessDocumentKinds, productLineIpFields } from "../lib/ip-post-shipment-fields.ts";
+import { calculatedStatusLabel, ipPostShipmentFields, newProcessDocumentKinds, productLineIpFields,
+  projectedDateLabel } from "../lib/ip-post-shipment-fields.ts";
 
 test("the IP form lists each post-shipment field once, including Departure and the BL fields", () => {
   const keys = ipPostShipmentFields.map(field => field.key);
@@ -19,4 +20,13 @@ test("product lines repeat shipment dates but never the IP costs", () => {
 
 test("new IP documents no longer offer BL", () => {
   assert.deepEqual(newProcessDocumentKinds, ["INVOICE", "NF"]);
+});
+
+test("the IP summary tells whether status and dates were calculated or informed", () => {
+  assert.equal(calculatedStatusLabel({ status: "AGUARDANDO CHEGADA", statusSource: "calculated" }),
+    "AGUARDANDO CHEGADA · calculado pelas datas");
+  assert.equal(calculatedStatusLabel({ status: "CANCELADO", statusSource: "informed" }), "CANCELADO · informado no IP");
+  assert.equal(projectedDateLabel("2026-10-26", "calculated"), "2026-10-26 · calculada");
+  assert.equal(projectedDateLabel("2026-10-26", "confirmed"), "2026-10-26 · confirmada");
+  assert.equal(projectedDateLabel(null, null), "—");
 });

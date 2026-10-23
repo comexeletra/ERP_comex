@@ -5,7 +5,8 @@ import Link from "next/link";
 import { apiFetch, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
 import { formatNumber } from "../lib/format-number";
-import { ipPostShipmentFields, newProcessDocumentKinds, productLineIpFields } from "../lib/ip-post-shipment-fields";
+import { IpCalculatedSummary as IpSummary, ipPostShipmentFields, newProcessDocumentKinds, productLineIpFields } from "../lib/ip-post-shipment-fields";
+import IpCalculatedSummary from "./IpCalculatedSummary";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 import { purchaseOrderItemFields } from "./PurchaseOrderItemFields";
 import { calculatedTotal } from "./PurchaseOrderCalculatedFields";
@@ -18,13 +19,14 @@ type Document = { id: string; kind: "INVOICE" | "BL" | "NF"; number: string;
   purchaseOrderItemId: string | null; issueDate: string | null; homologationDate: string | null;
   quantity: string | null; unitPrice: string | null; amount: string | null; currencyCode: string | null;
   notes: string; status: string; version: string };
-type Calculated = Record<string, string | number | boolean | null | Record<string, { targetDays: number | null; actualDays: number | null; delayDays: number | null }>>;
+type Calculated = Record<string, string | number | boolean | null | string[] | Record<string, { targetDays: number | null; actualDays: number | null; delayDays: number | null }>>;
 type Shipment = { allocationId: string; allocationVersion?: string; allocationNotes?: string;
   allocationQuantity: string; factoryShipDate?: string | null; legacyFactoryShipDate?: string | null; itemId: string;
   process: DataRow & { id: string; ipNumber: string; version: string };
   calculated: Calculated };
 type ProcessDetail = { process: DataRow & { id: string; ipNumber: string; version: string;
   lifecycleStatus?: "OPEN" | "CLOSED"; closedAt?: string | null; closeReason?: string | null };
+  calculated?: IpSummary;
   documents: Document[]; invoiceTotals: { amounts: { currency: string; amount: string }[]; incompleteLines: number } };
 type EventRecord = { id: string; aggregateType: "PURCHASE_ORDER" | "IMPORT_PROCESS"; aggregateLabel: string;
   relatedLabel: string | null;
@@ -61,7 +63,10 @@ function FieldEditor({ fields, values, setValues, options }: { fields: Field[]; 
 async function read<T>(response: Response): Promise<T> {
   return readApiJson<T>(response);
 }
-function value(value: unknown): string { return value == null || value === "" ? "—" : typeof value === "boolean" ? value ? "Sim" : "Não" : String(value); }
+function value(value: unknown): string {
+  if (Array.isArray(value)) return value.length ? value.join(", ") : "—";
+  return value == null || value === "" ? "—" : typeof value === "boolean" ? value ? "Sim" : "Não" : String(value);
+}
 const calcLabels: [string, string][] = [
   ["status", "Status"], ["alert", "Alerta"], ["ruptureRisk", "Risco de ruptura"],
   ["totalPrice", "Total do item (qtd. pedida × preço)"], ["eta", "ETA"], ["ete", "ETE"],
@@ -74,6 +79,7 @@ const calcLabels: [string, string][] = [
   ["mrpTargetDate", "Meta MRP"], ["portTargetDate", "Meta saída do porto"],
   ["arrivalTargetDate", "Meta chegada Brasil"], ["deliveryTargetDate", "Meta entrega"],
   ["billDate", "BL emitido"], ["nfIssueDate", "NF emitida"], ["nfHomologationDate", "NF homologada"],
+  ["billNumber", "BL nº"], ["invoiceNumbers", "Invoices"], ["nfNumber", "NF"], ["informedStatus", "Status informado"],
   ["invoiceQuantity", "Qtd. da Invoice no item/IP"],
   ["quantityMatchesInvoice", "Qtd. Invoice confere com o IP"],
   ["invoiceUnitPrice", "Preço da Invoice"], ["priceMatchesInvoice", "Preço da Invoice confere"],
@@ -204,7 +210,7 @@ export default function FollowupPanel({ id }: { id: string }) {
       <p className="muted">Cada distribuição gera uma linha. Os campos da PO vêm do pedido; os de pós embarque vêm do IP e aparecem em todas as linhas vinculadas a ele.</p>
       {data.items.length === 0 ? <p>Cadastre um item na PO para iniciar o acompanhamento.</p> :
         <div className="table-scroll po-ip-lines"><table><thead><tr>
-          <th>PO</th><th>Produto</th><th>Qtd. pedida</th><th>IP</th><th>Qtd. neste IP</th><th>Status</th><th>ETA</th><th>Entrega</th><th>Detalhes</th>
+          <th>PO</th><th>Produto</th><th>Qtd. pedida</th><th>IP</th><th>Qtd. neste IP</th><th>Status</th><th>ETD</th><th>Departure</th><th>BL date</th><th>ETA</th><th>Chegada</th><th>ETE</th><th>Entrega</th><th>Detalhes</th>
         </tr></thead><tbody>{shipmentLines(data).map(({ item, shipment }) => {
           const process = shipment && processes.find(entry => entry.process.id === shipment.process.id);
           const documents = process?.documents ?? [];
@@ -218,11 +224,16 @@ export default function FollowupPanel({ id }: { id: string }) {
             <td>{shipment ? <strong>{shipment.process.ipNumber}</strong> : <span className="po-ip-pending">Sem IP</span>}</td>
             <td>{shipment ? `${formatNumber(shipment.allocationQuantity)} ${item.unit ?? ""}` : "—"}</td>
             <td>{shipment ? value(shipment.calculated.status) : /^(CANCELLED|CANCELED)$/i.test(String(item.sourceStatus ?? "")) ? "Cancelado" : "A distribuir"}</td>
+            <td>{shipment ? value(shipment.process.etd) : "—"}</td>
+            <td>{shipment ? value(shipment.process.actualPortDepartureDate) : "—"}</td>
+            <td>{shipment ? value(shipment.process.blDate) : "—"}</td>
             <td>{shipment ? value(shipment.calculated.eta) : "—"}</td>
+            <td>{shipment ? value(shipment.process.arrivalDate) : "—"}</td>
+            <td>{shipment ? value(shipment.calculated.ete) : "—"}</td>
             <td>{shipment ? value(shipment.process.deliveryDate) : "—"}</td>
             <td><button className="po-ip-line-toggle" type="button" aria-expanded={lineExpanded} aria-controls={detailsId}
               onClick={() => setExpandedLine(current => current === rowId ? "" : rowId)}>{lineExpanded ? "Ocultar linha" : "Ver linha"}</button></td>
-          </tr>{lineExpanded && <tr className="po-ip-line-detail"><td colSpan={9}><section id={detailsId} className="po-ip-line-detail-panel">
+          </tr>{lineExpanded && <tr className="po-ip-line-detail"><td colSpan={14}><section id={detailsId} className="po-ip-line-detail-panel">
               <h4>Pré embarque · PO {data.number}</h4>
               <dl className="followup-grid">
                 {([["Importadora", data.importer], ["Fornecedor", data.supplierText], ["Data da PO", data.orderDate],
@@ -268,6 +279,7 @@ export default function FollowupPanel({ id }: { id: string }) {
         return <article className="followup-document" key={p.id}>
           <details><summary>IP {p.ipNumber} · {p.lifecycleStatus === "CLOSED" ? "encerrado" : "aberto"} · {entry.documents.length} documento(s)</summary>
             <p>Invoices: {totals}{entry.invoiceTotals.incompleteLines ? ` · ${entry.invoiceTotals.incompleteLines} incompleta(s)` : ""}</p>
+            <IpCalculatedSummary summary={entry.calculated} />
             {editable ? <form className="stack-form" onSubmit={event => saveProcess(event, p.id, p.version)}>
               <h4>Dados do IP</h4>
               <FieldEditor fields={processFields} values={processDrafts[p.id] ?? {}}

@@ -10,7 +10,7 @@ export type IpPostShipmentField = {
 
 // The API accepts exactly these keys in PATCH /processes/:id/followup.
 export const ipPostShipmentFields: IpPostShipmentField[] = [
-  { key: "logisticsStatus", label: "Status logístico", type: "select", entity: "logistics_status" },
+  { key: "logisticsStatus", label: "Status informado (prevalece só se CANCELLED)", type: "select", entity: "logistics_status" },
   { key: "priority", label: "Prioridade do IP", type: "select", entity: "priority" },
   { key: "ipTotvsDate", label: "Data do IP no TOTVS", type: "date" },
   { key: "transportMode", label: "Modal", type: "select", entity: "transport_mode" },
@@ -51,3 +51,25 @@ export const productLineIpFields = ipPostShipmentFields.filter(field => !field.i
 
 /** BL is typed on the IP; legacy BL documents remain only as history. */
 export const newProcessDocumentKinds = ["INVOICE", "NF"];
+
+/** Status and projected dates the API calculates for the IP itself. */
+export type IpCalculatedSummary = {
+  status: string;
+  statusSource: "calculated" | "informed";
+  informedStatus: string | null;
+  eta: string | null;
+  etaSource: "confirmed" | "calculated" | null;
+  ete: string | null;
+  eteSource: "confirmed" | "calculated" | null;
+  transitDays: number | null;
+  storageDueDate: string | null;
+};
+
+export function calculatedStatusLabel(summary: Pick<IpCalculatedSummary, "status" | "statusSource">): string {
+  return `${summary.status} · ${summary.statusSource === "informed" ? "informado no IP" : "calculado pelas datas"}`;
+}
+
+export function projectedDateLabel(value: string | null, source: IpCalculatedSummary["etaSource"]): string {
+  if (!value) return "—";
+  return `${value} · ${source === "confirmed" ? "confirmada" : "calculada"}`;
+}

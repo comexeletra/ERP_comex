@@ -5,7 +5,8 @@ import Link from "next/link";
 import { apiFetch, hasIpLifecycleSupport, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
 import { formatNumber } from "../lib/format-number";
-import { ipPostShipmentFields, newProcessDocumentKinds } from "../lib/ip-post-shipment-fields";
+import { IpCalculatedSummary as IpSummary, ipPostShipmentFields, newProcessDocumentKinds } from "../lib/ip-post-shipment-fields";
+import IpCalculatedSummary from "./IpCalculatedSummary";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 import { SearchableSelect } from "./SearchableSelect";
 
@@ -18,11 +19,12 @@ type Document = { id: string; kind: "INVOICE" | "BL" | "NF"; number: string; pur
 type Allocation = { id: string; allocationQuantity: string; purchaseOrder: { id: string; number: string; importer: string };
   factoryShipDate: string | null;
   item: Row & { id: string; lineNumber: number; productCode: string; description: string; unit: string };
-  calculated: Record<string, Value> };
+  calculated: Record<string, Value | string[]> };
 type Event = { id: string; entityType: string; entityId: string; operation: string; oldValue: Record<string, Value> | null;
   newValue: Record<string, Value> | null; occurredAt: string; reason: string | null; actorId: string;
   purchaseOrderNumber?: string; productCode?: string; productDescription?: string; lineNumber?: number; unit?: string | null };
 type Data = { process: Row & { id: string; ipNumber: string; version: string; lifecycleStatus: "OPEN" | "CLOSED"; recordStatus?: "DRAFT" | "ACTIVE" | "CANCELLED"; invoiceSupplierDivergence?: boolean };
+  calculated?: IpSummary;
   purchaseOrders: { id: string; number: string; importer: string; linkSource: string }[];
   allocations: Allocation[]; documents: Document[];
   invoiceTotals: { amounts: { currency: string; amount: string }[]; incompleteLines: number }; events: Event[] };
@@ -36,6 +38,7 @@ const documentKindLabels: Record<string, string> = { INVOICE: "Invoice", NF: "NF
 const documentKindOptions = newProcessDocumentKinds.map(kind => ({ value: kind, label: documentKindLabels[kind] ?? kind }));
 const blankDoc = (): DocDraft => ({ kind: "INVOICE", purchaseOrderItemId: "", number: "", issueDate: "",
   homologationDate: "", quantity: "", unitPrice: "", amount: "", currencyCode: "", notes: "" });
+function formatList(value: Value | string[] | undefined) { return Array.isArray(value) ? value.join(", ") || "—" : format(value); }
 function format(value: Value | undefined) { return value == null || value === "" ? "—" : typeof value === "boolean" ? value ? "Sim" : "Não" : String(value); }
 function formatField(field: Field, value: Value | undefined) {
   return field.type === "number" || field.type === "money" ? formatNumber(value) : format(value);
@@ -215,6 +218,9 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
       <h3>POs nesta operação</h3>
       {data.purchaseOrders.length === 0 ? <p>Nenhuma PO vinculada ao IP.</p> :
         <ul>{data.purchaseOrders.map(po => <li key={po.id}><Link className="text-link" href={`/purchase-orders/${po.id}`}>PO {po.number}</Link> · {po.importer}</li>)}</ul>}
+      <h3>Situação calculada</h3>
+      <p className="muted">Calculada a partir das datas deste IP e repetida em todos os produtos dele.</p>
+      <IpCalculatedSummary summary={data.calculated} />
       <h3>Dados operacionais</h3>
       {canWrite ? <>
         <form className="stack-form" onSubmit={event => void save(event, async () => {
@@ -236,12 +242,13 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
       </> : <dl className="followup-grid">{fields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{formatField(field, data.process[field.key])}</dd></div>)}</dl>}
       <h3>POs, itens e quantidades nesta operação</h3>
       {data.allocations.length === 0 ? <p>Nenhum item operacional distribuído para este IP.</p> :
-        <div className="table-scroll"><table><thead><tr><th>PO</th><th>Item</th><th>Pedido</th><th>Neste IP</th><th>Saída da fábrica</th><th>Status calculado</th><th>Alerta</th></tr></thead><tbody>
+        <div className="table-scroll"><table><thead><tr><th>PO</th><th>Item</th><th>Pedido</th><th>Neste IP</th><th>Saída da fábrica</th><th>Invoice</th><th>Status calculado</th><th>Alerta</th></tr></thead><tbody>
           {data.allocations.map(allocation => <tr key={allocation.id}><td><Link className="text-link" href={`/purchase-orders/${allocation.purchaseOrder.id}`}>{allocation.purchaseOrder.number}</Link></td>
             <td>{allocation.item.productCode} · {allocation.item.description}</td>
             <td>{formatNumber(allocation.item.orderedQuantity)} {allocation.item.unit}</td><td>{formatNumber(allocation.allocationQuantity)} {allocation.item.unit}</td>
             <td>{allocation.factoryShipDate ?? "—"}</td>
-            <td>{format(allocation.calculated.status)}</td><td>{format(allocation.calculated.alert)}</td></tr>)}
+            <td>{formatList(allocation.calculated.invoiceNumbers)}</td>
+            <td>{format(allocation.calculated.status as Value)}</td><td>{format(allocation.calculated.alert as Value)}</td></tr>)}
         </tbody></table></div>}
       <h3>Invoices, BLs e NFs deste IP</h3>
       <p>Total das Invoices: {currencyTotals}{data.invoiceTotals.incompleteLines ? ` · ${data.invoiceTotals.incompleteLines} linha(s) sem valor ou moeda` : ""}</p>
