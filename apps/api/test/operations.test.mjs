@@ -102,7 +102,7 @@ test("invoice import validates SHA-256 and stores it in document metadata", asyn
 function invoiceImportClient({ revision = false, supplierMatchesExporter = true, otherImporterIp = false,
   canceledItem = false, duplicateKind = null, poUnit = null, poUnitPrice = null, poCurrency = null,
   linkedOrphanPo = false, draft = false, insufficientBalance = false, purchaseOrderStatus = "ACTIVE",
-  previousAllocationPoStatus = "ACTIVE", recordStatus = "ACTIVE" } = {}) {
+  previousAllocationPoStatus = "ACTIVE", recordStatus = "ACTIVE", shipped = false } = {}) {
   const processId = "00000000-0000-4000-8000-000000000021";
   const oldDocumentId = "00000000-0000-4000-8000-000000000022";
   const oldAllocationId = "00000000-0000-4000-8000-000000000023";
@@ -137,7 +137,8 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true,
           return { rows: [{ id: processId, importer: "OTHER IMPORTER", ip_number: "IPH/TEST" }], rowCount: 1 };
         }
         return revision || draft ? { rows: [{ id: processId, importer: "ELETRA MATRIZ", ip_number: "IPH/TEST",
-          normalized_ip_number: "IPH/TEST", record_status: draft ? "DRAFT" : recordStatus, lifecycle_status: "OPEN", version: "2" }], rowCount: 1 }
+          normalized_ip_number: "IPH/TEST", record_status: draft ? "DRAFT" : recordStatus, lifecycle_status: "OPEN", version: "2",
+          bl_date: shipped ? "2026-10-01" : null, actual_port_departure_date: null }], rowCount: 1 }
           : { rows: [], rowCount: 0 };
       }
       if (sql.includes("FROM procurement.process_purchase_order link") && sql.includes("link.process_id")) {
@@ -609,6 +610,23 @@ test("invoice revision cancels the previous allocation and invoice before replac
   // A revision keeps whatever status was informed on the IP.
   const processUpdate = queries.find(query => query.sql.includes("UPDATE imports.import_process SET record_status = 'ACTIVE'"));
   assert.equal(processUpdate.sql.includes("logistics_status"), false);
+});
+
+test("invoice revision of a shipped IP requires confirmation and a typed reason", async t => {
+  const { client, queries } = invoiceImportClient({ revision: true, shipped: true });
+  const app = await invoiceImportApp(t, client);
+  const headers = key => ({ "x-test-subject": "writer", "idempotency-key": key, "x-record-version": '"2"' });
+  const blocked = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: headers("invoice-shipped-blocked"), payload: invoicePayload() });
+  assert.equal(blocked.statusCode, 409, blocked.body);
+  assert.equal(blocked.json().code, "IP_ALREADY_SHIPPED_UNCONFIRMED");
+  const confirmed = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: headers("invoice-shipped-confirmed"),
+    payload: { ...invoicePayload(), confirmShippedChange: true, shippedChangeReason: "Invoice corrigida pelo fornecedor" } });
+  assert.equal(confirmed.statusCode, 201, confirmed.body);
+  const revision = queries.find(query => query.sql.includes("INSERT INTO audit.audit_log") && query.params[5] === "REVISION");
+  assert.equal(JSON.parse(revision.params[7]).confirmedShippedChange, true);
+  assert.equal(JSON.parse(revision.params[7]).shippedChangeReason, "Invoice corrigida pelo fornecedor");
 });
 
 test("invoice revision asks to restore a deleted IP before reusing its number", async t => {

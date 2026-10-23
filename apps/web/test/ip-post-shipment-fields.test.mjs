@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { calculatedStatusLabel, ipPostShipmentFields, newProcessDocumentKinds, productLineIpFields,
-  projectedDateLabel } from "../lib/ip-post-shipment-fields.ts";
+  projectedDateLabel, withDateWarnings } from "../lib/ip-post-shipment-fields.ts";
 
 test("the IP form lists each post-shipment field once, including Departure and the BL fields", () => {
   const keys = ipPostShipmentFields.map(field => field.key);
@@ -29,4 +29,11 @@ test("the IP summary tells whether status and dates were calculated or informed"
   assert.equal(projectedDateLabel("2026-10-26", "calculated"), "2026-10-26 · calculada");
   assert.equal(projectedDateLabel("2026-10-26", "confirmed"), "2026-10-26 · confirmada");
   assert.equal(projectedDateLabel(null, null), "—");
+});
+
+test("date warnings returned by the API are shown with the success message", () => {
+  assert.equal(withDateWarnings("Dados do IP atualizados.", { warnings: ["Chegada efetiva antes do ETD"] }),
+    "Dados do IP atualizados. Confira as datas: Chegada efetiva antes do ETD.");
+  assert.equal(withDateWarnings("Dados do IP atualizados.", { warnings: [] }), "Dados do IP atualizados.");
+  assert.equal(withDateWarnings("Dados do IP atualizados.", { id: "x" }), "Dados do IP atualizados.");
 });

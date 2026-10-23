@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { FormEvent, Fragment, useEffect, useRef, useState } from "react";
 import { apiFetch, isMissingApiRoute, readApiJson } from "../lib/api";
-import { automaticAuditReason } from "../lib/audit";
+import { automaticAuditReason, emptyShippedChange, shippedChangeFields, shippedChangeReady } from "../lib/audit";
+import ShippedChangeConfirmation from "./ShippedChangeConfirmation";
 import { processLifecycleActions, type ProcessLifecycleAction } from "../lib/ip-lifecycle";
 import { matchesPurchaseOrderNumber } from "../lib/portfolio-query";
 import { formatNumber } from "../lib/format-number";
@@ -20,7 +21,7 @@ type PurchaseOrderItemChoice = { id: string; lineNumber: number; productCode: st
 type OperationalAllocation = { id: string; poId: string; poNumber: string; productCode: string; quantity: string;
   unit: string; poItemRemainingQuantity?: string };
 type Process = { id: string; ipNumber: string; importer: string; supplierEntryId?: string | null; supplierText: string | null; supplierName?: string | null; logisticsStatus: string | null;
-  invoiceSupplierDivergence?: boolean;
+  invoiceSupplierDivergence?: boolean; shipped?: boolean;
   qualityStatus: string; sourceKind: string; priority: string | null; notes: string;
   version: string; lifecycleStatus?: "OPEN" | "CLOSED"; recordStatus?: "DRAFT" | "ACTIVE" | "CANCELLED" | "DELETED";
   recordStatusBeforeDelete?: "DRAFT" | "ACTIVE" | "CANCELLED" | null; deletedAt?: string | null; deletedBy?: string | null; deleteReason?: string | null; closedAt: string | null;
@@ -68,6 +69,7 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
   const [poItems, setPoItems] = useState<PurchaseOrderItemChoice[]>([]);
   const [selectedPoItemId, setSelectedPoItemId] = useState("");
   const [allocationQuantity, setAllocationQuantity] = useState("");
+  const [shippedChange, setShippedChange] = useState(emptyShippedChange);
   const [poSearchMessage, setPoSearchMessage] = useState("");
   const [searchingPos, setSearchingPos] = useState(false);
   const poSearchTimer = useRef<number | undefined>(undefined);
@@ -154,10 +156,13 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
       if (quantity === null || quantity <= 0n || remaining === null || quantity > remaining) {
         throw new Error("Informe uma quantidade válida, maior que zero e dentro do saldo disponível da PO.");
       }
+      if (!shippedChangeReady(Boolean(process.shipped), shippedChange)) {
+        throw new Error("Confirme a distribuição para o IP já embarcado e informe a justificativa.");
+      }
       const response = await apiFetch(`/api/v1/purchase-orders/${selectedPoId}/allocations`, { method: "POST",
         headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify({ itemId: selectedPoItemId, processId: id, quantity: allocationQuantity,
-          notes: "", reason: automaticAuditReason }) });
+          notes: "", ...shippedChangeFields(Boolean(process.shipped), shippedChange) }) });
       await readApiJson<{ id: string }>(response);
       const [savedProcess, savedPo] = await Promise.all([readSavedProcess(), readPurchaseOrderState(selectedPoId)]);
       if (!savedProcess.purchaseOrders.some(order => order.id === selectedPoId)
@@ -167,7 +172,7 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
       setProcess(savedProcess); setPoItems(savedPo.items.filter(item => (quantityUnits(item.remainingQuantity) ?? 0n) > 0n
         && !savedPo.allocations.some(allocation => allocation.itemId === item.id && allocation.processId === id)
         && !["CANCELLED", "CANCELED"].includes(String(item.sourceStatus ?? "").toUpperCase())));
-      setAllocationQuantity("");
+      setAllocationQuantity(""); setShippedChange(emptyShippedChange);
       setSelectedPoItemId("");
       setPoSearchMessage("Quantidade distribuída. O saldo atualizado da PO foi carregado; selecione outro item se necessário.");
       setNotice("Item e quantidade distribuídos para este IP.");
@@ -490,6 +495,7 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
               </div>
               {selectedPoItem && allocationUnits !== null && remainingUnits !== null && allocationUnits > remainingUnits
                 && <p className="notice error" role="alert">A quantidade informada excede o saldo disponível.</p>}
+              {process.shipped && <ShippedChangeConfirmation value={shippedChange} onChange={setShippedChange} />}
             </>}
           </form>}
         </div>}

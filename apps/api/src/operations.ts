@@ -92,6 +92,8 @@ const createProcess = processFields.extend({
 });
 const invoiceImport = z.object({
   confirmDuplicateInvoice: z.boolean().optional(),
+  confirmShippedChange: z.boolean().optional(),
+  shippedChangeReason: z.string().trim().min(3).max(1000).optional(),
   orphanPoDecisions: z.array(z.object({ purchaseOrderId: z.uuid(),
     action: z.enum(["KEEP", "REMOVE"]) }).strict()).max(200).optional(),
   process: createProcess,
@@ -125,13 +127,32 @@ const allocationFields = z.object({
 }).strict();
 const createAllocation = allocationFields.extend({
   itemId: z.uuid(), processId: z.uuid(), factoryShipDate: z.iso.date().nullable().optional(),
+  confirmShippedChange: z.boolean().optional(),
 });
 const updateAllocation = z.object({
   quantity: quantity.optional(), notes: z.string().trim().max(2000).optional(),
   factoryShipDate: z.iso.date().nullable().optional(), reason: z.string().trim().min(3).max(1000),
+  confirmShippedChange: z.boolean().optional(),
 }).strict().refine(value => value.quantity !== undefined || value.notes !== undefined
   || value.factoryShipDate !== undefined);
-const cancelAllocation = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
+const cancelAllocation = z.object({ reason: z.string().trim().min(3).max(1000),
+  confirmShippedChange: z.boolean().optional() }).strict();
+/** Reason the portal sends when the user typed none (apps/web/lib/audit.ts). */
+export const portalAutomaticReason = "Registro realizado pelo usuário no portal.";
+/**
+ * An IP with BL date or Departure has shipped: the quantity on board is fixed, so
+ * changing it needs an explicit confirmation and a reason typed by the user.
+ */
+function assertShippedChangeConfirmed(process: Record<string, unknown> | undefined,
+  body: { confirmShippedChange?: boolean; reason: string }) {
+  if (!process || (process.bl_date == null && process.actual_port_departure_date == null)) return;
+  if (body.confirmShippedChange === true && body.reason.trim() !== portalAutomaticReason) return;
+  throw new BusinessError(409, "IP_ALREADY_SHIPPED_UNCONFIRMED",
+    "Este IP já embarcou (BL date ou Departure preenchidos). Confirme a alteração da quantidade e informe a justificativa.");
+}
+function decimalKey(value: unknown): string {
+  return String(value ?? "").replace(/(\.\d*?)0+$/u, "$1").replace(/\.$/u, "");
+}
 const closeProcess = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
 const purchaseOrderLifecycleReason = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
 const processLifecycleReason = z.object({ reason: z.string().trim().min(3).max(1000) }).strict();
@@ -1274,6 +1295,9 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           if (previous.lifecycle_status === "CLOSED") {
             throw new BusinessError(409, "CLOSED_IP_REVISION", "Reopen the IP before revising its invoice.");
           }
+          // A revision replaces the allocations, so a shipped IP needs the same confirmation as an allocation change.
+          assertShippedChangeConfirmed(previous, { confirmShippedChange: body.confirmShippedChange,
+            reason: body.shippedChangeReason ?? portalAutomaticReason });
           isRevision = previous.record_status !== "DRAFT";
           processId = String(previous.id);
           if (isRevision) {
@@ -1321,7 +1345,10 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
               source: "CHINA_INVOICE", invoiceNumber: body.invoice.number,
               confirmedDuplicateInvoice: Boolean(duplicateIpNumbers.length && body.confirmDuplicateInvoice),
               invoiceImporterCnpj, confirmedImporterCnpjMismatch: confirmImporterCnpjMismatch,
-              invoiceSupplierDivergence }, auth.actor, body.process.reason);
+              invoiceSupplierDivergence,
+              ...(body.confirmShippedChange && body.shippedChangeReason
+                ? { confirmedShippedChange: true, shippedChangeReason: body.shippedChangeReason } : {}) },
+            auth.actor, body.process.reason);
         } else {
           processId = randomUUID();
           await client.query(
@@ -1555,7 +1582,8 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
       const allocations = await pool.query<Record<string, unknown>>(
         `SELECT a.id, a.purchase_order_item_id AS "itemId", a.process_id AS "processId",
                 process.ip_number AS "ipNumber", a.quantity::text, a.notes,
-                a.factory_ship_date::text AS "factoryShipDate", a.version::text
+                a.factory_ship_date::text AS "factoryShipDate", a.version::text,
+                (process.bl_date IS NOT NULL OR process.actual_port_departure_date IS NOT NULL) AS "processShipped"
          FROM procurement.po_item_allocation a
          JOIN procurement.purchase_order_item item ON item.id = a.purchase_order_item_id
          JOIN imports.import_process process ON process.id = a.process_id
@@ -2324,7 +2352,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
              AND upper(coalesce(source_status, '')) NOT IN ('CANCELLED', 'CANCELED')`,
           [body.itemId, id.data]);
         const process = await client.query(
-          `SELECT id FROM imports.import_process WHERE id = $1 AND importer = $2
+          `SELECT id, bl_date, actual_port_departure_date FROM imports.import_process WHERE id = $1 AND importer = $2
            AND importer = ANY($3::text[])
             AND lifecycle_status = 'OPEN' AND record_status = 'ACTIVE'
            AND upper(coalesce(logistics_status, '')) NOT IN ('CANCELLED', 'CANCELED')
@@ -2333,6 +2361,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         if (!item.rowCount || !process.rowCount) {
           throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Item ou IP não pertence a esta importadora.");
         }
+        assertShippedChangeConfirmed(process.rows[0], body);
         const allocationId = randomUUID();
         await client.query(
           `INSERT INTO procurement.po_item_allocation
@@ -2374,6 +2403,11 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Distribuição não encontrada ou IP encerrado.");
         checkVersion(found.rows[0], expected);
         const body = parsed.data;
+        if (body.quantity !== undefined && decimalKey(body.quantity) !== decimalKey(found.rows[0].quantity)) {
+          const process = await client.query<Record<string, unknown>>(
+            `SELECT bl_date, actual_port_departure_date FROM imports.import_process WHERE id = $1`, [found.rows[0].process_id]);
+          assertShippedChangeConfirmed(process.rows[0], body);
+        }
         const updated = await client.query<{ version: string }>(
           `UPDATE procurement.po_item_allocation SET
             quantity = coalesce($2, quantity), notes = coalesce($3, notes),
@@ -2411,6 +2445,9 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           [allocationId.data, id.data]);
         if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Distribuição não encontrada ou IP encerrado.");
         checkVersion(found.rows[0], expected);
+        const process = await client.query<Record<string, unknown>>(
+          `SELECT bl_date, actual_port_departure_date FROM imports.import_process WHERE id = $1`, [found.rows[0].process_id]);
+        assertShippedChangeConfirmed(process.rows[0], parsed.data);
         await client.query(
           `UPDATE procurement.po_item_allocation SET status = 'CANCELLED',
             version = version + 1, updated_at = now() WHERE id = $1`, [allocationId.data]);
@@ -2425,7 +2462,8 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
              )`, [id.data, found.rows[0].process_id]);
         await client.query("UPDATE procurement.purchase_order SET version = version + 1, updated_at = now() WHERE id = $1", [id.data]);
         await record(client, "PURCHASE_ORDER", id.data, "PO_ITEM_ALLOCATION", allocationId.data,
-          "CANCEL", found.rows[0], { status: "CANCELLED" }, auth.actor, parsed.data.reason);
+          "CANCEL", found.rows[0], { status: "CANCELLED",
+            ...(parsed.data.confirmShippedChange ? { confirmShippedChange: true } : {}) }, auth.actor, parsed.data.reason);
         return { id: allocationId.data, status: "CANCELLED" };
       });
     });

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { apiFetch, hasIpLifecycleSupport, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
 import { formatNumber } from "../lib/format-number";
-import { IpCalculatedSummary as IpSummary, ipPostShipmentFields, newProcessDocumentKinds } from "../lib/ip-post-shipment-fields";
+import { IpCalculatedSummary as IpSummary, ipPostShipmentFields, newProcessDocumentKinds, withDateWarnings } from "../lib/ip-post-shipment-fields";
 import IpCalculatedSummary from "./IpCalculatedSummary";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 import { SearchableSelect } from "./SearchableSelect";
@@ -177,11 +177,16 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
   async function send(path: string, method: string, body: unknown, version?: string) {
     const response = await apiFetch(path, { method, headers: { "content-type": "application/json",
       ...(version ? { "X-Record-Version": version } : { "Idempotency-Key": crypto.randomUUID() }) }, body: JSON.stringify(body) });
-    await readApiJson<unknown>(response);
+    return readApiJson<unknown>(response);
   }
-  async function save(event: FormEvent<HTMLFormElement>, action: () => Promise<void>, success: string) {
+  async function save(event: FormEvent<HTMLFormElement>, action: () => Promise<unknown>,
+    success: string | ((result: unknown) => string)) {
     event.preventDefault(); setBusy(true); setError(""); setNotice("");
-    try { await action(); setNotice(success); setEditingDoc(undefined); setDocDraft(blankDoc()); setReload(value => value + 1); }
+    try {
+      const result = await action();
+      setNotice(typeof success === "string" ? success : success(result));
+      setEditingDoc(undefined); setDocDraft(blankDoc()); setReload(value => value + 1);
+    }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setBusy(false); }
   }
@@ -223,9 +228,9 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
       <IpCalculatedSummary summary={data.calculated} />
       <h3>Dados operacionais</h3>
       {canWrite ? <>
-        <form className="stack-form" onSubmit={event => void save(event, async () => {
-          await send(`/api/v1/processes/${id}/followup`, "PATCH", { fields: makePayload(draft), reason: automaticAuditReason }, data.process.version);
-        }, "Dados do Pós Embarque atualizados.")}>
+        <form className="stack-form" onSubmit={event => void save(event, () =>
+          send(`/api/v1/processes/${id}/followup`, "PATCH", { fields: makePayload(draft), reason: automaticAuditReason }, data.process.version),
+        result => withDateWarnings("Dados do Pós Embarque atualizados.", result))}>
           <div className="operational-fields">{fields.map(field => <label key={field.key}>{field.label}
             {field.type === "boolean" ? <SearchableSelect ariaLabel={field.label} placeholder="" value={String(draft[field.key] ?? "")}
               onChange={value => setDraft({ ...draft, [field.key]: value })}

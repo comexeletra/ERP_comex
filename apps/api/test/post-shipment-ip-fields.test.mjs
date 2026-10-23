@@ -9,12 +9,12 @@ const actorId = "00000000-0000-4000-8000-000000000001";
 const processId = "00000000-0000-4000-8000-000000000011";
 const billId = "00000000-0000-4000-8000-000000000012";
 
-async function followupApp(t) {
+async function followupApp(t, storedProcess = {}) {
   const writes = [];
   const client = { async query(sql, params = []) {
     if (sql.includes("FROM imports.import_process WHERE id=$1") && sql.includes("FOR UPDATE")) {
       return { rows: [{ id: processId, importer: "ELETRA MATRIZ", version: "3", record_status: "ACTIVE",
-        lifecycle_status: "OPEN" }], rowCount: 1 };
+        lifecycle_status: "OPEN", ...storedProcess }], rowCount: 1 };
     }
     if (sql.includes("FROM imports.process_document d JOIN imports.import_process p")) {
       return { rows: [{ id: billId, process_id: processId, kind: "BL", number: "BL-OLD", version: "1" }], rowCount: 1 };
@@ -153,4 +153,20 @@ test("each IP of a PO carries the same calculated summary as the IP screen", asy
   assert.equal(body.shipments[0].calculated.status, "AGUARDANDO CHEGADA");
   assert.equal(body.shipments[0].calculated.billNumber, "BL-IP-1");
   assert.equal(body.shipments[0].process.blDate, "2026-09-03");
+});
+
+test("the IP form rejects impossible date sequences and returns warnings for stored ones", async t => {
+  const { app, writes } = await followupApp(t, { actual_port_departure_date: new Date("2026-09-10T03:00:00.000Z"),
+    arrival_date: null, clearance_date: null, etd: "2026-09-12" });
+  const rejected = await app.inject({ method: "PATCH", url: `/api/v1/processes/${processId}/followup`,
+    headers: { "x-record-version": "3" }, payload: { fields: { arrivalDate: "2026-09-09" }, reason: "Chegada" } });
+  assert.equal(rejected.statusCode, 400, rejected.body);
+  assert.equal(rejected.json().code, "IP_DATE_SEQUENCE_INVALID");
+  assert.match(rejected.json().detail, /Chegada efetiva antes da saída do porto/u);
+  assert.equal(writes.length, 0);
+
+  const accepted = await app.inject({ method: "PATCH", url: `/api/v1/processes/${processId}/followup`,
+    headers: { "x-record-version": "3" }, payload: { fields: { arrivalDate: "2026-09-11" }, reason: "Chegada" } });
+  assert.equal(accepted.statusCode, 200, accepted.body);
+  assert.deepEqual(accepted.json().warnings, ["Chegada efetiva antes do ETD"]);
 });

@@ -5,7 +5,8 @@ import Link from "next/link";
 import { apiFetch, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
 import { formatNumber } from "../lib/format-number";
-import { IpCalculatedSummary as IpSummary, ipPostShipmentFields, newProcessDocumentKinds, productLineIpFields } from "../lib/ip-post-shipment-fields";
+import { IpCalculatedSummary as IpSummary, ipPostShipmentFields, newProcessDocumentKinds, productLineIpFields,
+  withDateWarnings } from "../lib/ip-post-shipment-fields";
 import IpCalculatedSummary from "./IpCalculatedSummary";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 import { purchaseOrderItemFields } from "./PurchaseOrderItemFields";
@@ -158,16 +159,17 @@ export default function FollowupPanel({ id }: { id: string }) {
     return read(await apiFetch(path, { method, headers: { "content-type": "application/json",
       ...(version ? { "X-Record-Version": version } : { "Idempotency-Key": crypto.randomUUID() }) }, body: JSON.stringify(body) }));
   }
-  async function save(action: () => Promise<unknown>, success: string) {
+  async function save(action: () => Promise<unknown>, success: string | ((result: unknown) => string)) {
     setBusy(true); setError(""); setNotice("");
-    try { await action(); setNotice(success); setReload(value => value + 1); }
+    try { const result = await action(); setNotice(typeof success === "string" ? success : success(result)); setReload(value => value + 1); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
     finally { setBusy(false); }
   }
   function saveProcess(event: FormEvent<HTMLFormElement>, processId: string, version: string) {
     event.preventDefault();
     void save(() => send(`/api/v1/processes/${processId}/followup`, "PATCH",
-      { fields: payload(processFields, processDrafts[processId]), reason: automaticAuditReason }, version), "Dados do IP atualizados.");
+      { fields: payload(processFields, processDrafts[processId]), reason: automaticAuditReason }, version),
+    result => withDateWarnings("Dados do IP atualizados.", result));
   }
   function saveFactoryShipDate(event: FormEvent<HTMLFormElement>, shipment: Shipment) {
     event.preventDefault();

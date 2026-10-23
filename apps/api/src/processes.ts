@@ -51,6 +51,7 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
            coalesce(supplier.code, process.supplier_text) AS supplier_text, supplier.name AS supplier_name,
            process.logistics_status, process.lifecycle_status, process.record_status, process.quality_status,
            process.version,
+           (process.bl_date IS NOT NULL OR process.actual_port_departure_date IS NOT NULL) AS shipped,
            (SELECT count(*)::int FROM procurement.process_purchase_order AS link
             JOIN procurement.purchase_order AS po ON po.id = link.purchase_order_id
             WHERE link.process_id = process.id AND po.importer = ANY($1::text[])) AS purchase_order_count,
@@ -80,6 +81,7 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
            'logisticsStatus', page.logistics_status, 'lifecycleStatus', page.lifecycle_status,
            'recordStatus', page.record_status,
            'version', page.version::text,
+           'shipped', page.shipped,
            'qualityStatus', page.quality_status,
            'purchaseOrderCount', page.purchase_order_count,
            'historicalLineCount', page.historical_line_count,
@@ -107,6 +109,7 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
          'recordStatus', process.record_status,
          'sourceKind', process.source_kind, 'priority', process.priority,
          'notes', process.notes, 'version', process.version::text,
+         'shipped', process.bl_date IS NOT NULL OR process.actual_port_departure_date IS NOT NULL,
          'lifecycleStatus', process.lifecycle_status, 'closedAt', process.closed_at,
          'closedBy', process.closed_by, 'closeReason', process.close_reason,
          'deletedAt', process.deleted_at, 'deletedBy', process.deleted_by, 'deleteReason', process.delete_reason,

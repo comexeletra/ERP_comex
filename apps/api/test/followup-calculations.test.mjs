@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateFollowup, calculateProcess, invoiceTotals } from "../dist/followup-calculations.js";
+import { calculateFollowup, calculateProcess, checkShipmentDates, invoiceTotals } from "../dist/followup-calculations.js";
 
 test("calculates price exactly and keeps unknown dates empty", () => {
   const result = calculateFollowup({ id: "item", orderedQuantity: "3.00000000", unitPrice: "0.10000000",
@@ -180,4 +180,33 @@ test("the IP summary shows its own status and calculated ETA/ETE beside the conf
   assert.equal(confirmed.storageDueDate, "2026-09-08");
   assert.equal(calculateProcess({}, []).eta, null);
   assert.equal(calculateProcess({}, []).etaSource, null);
+});
+
+test("blocks only impossible effective-date sequences touched by the edit", () => {
+  const current = { actualPortDepartureDate: "2026-09-10", arrivalDate: null, etd: "2026-09-05" };
+  assert.deepEqual(checkShipmentDates(current, { arrivalDate: "2026-09-09" }).errors,
+    ["Chegada efetiva antes da saída do porto (Departure)"]);
+  assert.deepEqual(checkShipmentDates({ arrivalDate: "2026-10-01" }, { deliveryDate: "2026-09-30" }).errors,
+    ["Entrega efetiva antes da chegada efetiva"]);
+  assert.deepEqual(checkShipmentDates({ etd: "2026-09-05" }, { etaConfirmed: "2026-09-04" }).errors,
+    ["ETA confirmada antes do ETD"]);
+  assert.deepEqual(checkShipmentDates(current, { arrivalDate: "2026-10-20" }), { errors: [], warnings: [] });
+});
+
+test("keeps historical inconsistencies as warnings so the IP can still be edited", () => {
+  // Already stored: arrival before departure. Editing another field must not be blocked.
+  const historical = { actualPortDepartureDate: "2026-09-10", arrivalDate: "2026-09-09", etd: "2026-09-12",
+    clearanceDate: "2026-09-08", etaConfirmed: "2026-10-01", eteConfirmed: "2026-09-30" };
+  const result = checkShipmentDates(historical, { duimpNumber: "26BR1" });
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.warnings, [
+    "Chegada efetiva antes da saída do porto (Departure)",
+    "Chegada efetiva antes do ETD",
+    "Desembaraço antes da chegada efetiva",
+    "ETE confirmada antes da ETA confirmada",
+  ]);
+  // Re-sending the same stored value is not a change.
+  assert.deepEqual(checkShipmentDates(historical, { arrivalDate: "2026-09-09" }).errors, []);
+  // Clearance before arrival is never blocked: it can happen with early customs registration.
+  assert.deepEqual(checkShipmentDates({ arrivalDate: "2026-10-01" }, { clearanceDate: "2026-09-30" }).errors, []);
 });

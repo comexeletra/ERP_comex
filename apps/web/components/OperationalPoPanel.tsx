@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { apiFetch, hasPoLifecycleSupport, readApiJson } from "../lib/api";
-import { automaticAuditReason } from "../lib/audit";
+import { automaticAuditReason, emptyShippedChange, quantityChanged, shippedChangeFields, shippedChangeReady } from "../lib/audit";
+import ShippedChangeConfirmation from "./ShippedChangeConfirmation";
 import { purchaseOrderActorLabel, purchaseOrderLifecycleActions, type PurchaseOrderLifecycleStatus } from "../lib/po-lifecycle";
 import { SearchableSelect } from "./SearchableSelect";
 import { blankPurchaseOrderItemFields, OperationalFieldDraft, OperationalFieldsEditor,
@@ -33,7 +34,7 @@ type Item = { id: string; lineNumber: number; externalLineReference: string | nu
   referencePrices?: ProductPriceReference[]; priceReference?: ProductPriceReference | null;
   latestTotvsDescription?: string | null };
 type Allocation = { id: string; itemId: string; processId: string; ipNumber: string;
-  quantity: string; notes: string; factoryShipDate: string | null; version: string };
+  quantity: string; notes: string; factoryShipDate: string | null; version: string; processShipped?: boolean };
 type OperationalPo = { id: string; importer: string; number: string; supplierText: string | null;
   orderDate: string | null; notes: string; sourceKind: string; version: string;
   lifecycleStatus?: PurchaseOrderLifecycleStatus;
@@ -44,7 +45,7 @@ type OperationalPo = { id: string; importer: string; number: string; supplierTex
     requester: string; approvalDate: string | null } | null;
   items: Item[]; allocations: Allocation[] };
 type FollowupItem = { id: string } & Record<string, unknown>;
-type ProcessOption = { id: string; ipNumber: string; importer: string };
+type ProcessOption = { id: string; ipNumber: string; importer: string; shipped?: boolean };
 type ImporterChoice = { code: string; cnpj: string | null; shortName: string | null; acceptsNewPurchaseOrders: boolean };
 type ReimportItem = { externalLineReference: string; productCode: string; description: string;
   orderedQuantity: string; unitPrice: string };
@@ -175,6 +176,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   const [allocationQuantity, setAllocationQuantity] = useState("");
   const [allocationNotes, setAllocationNotes] = useState("");
   const [editingAllocation, setEditingAllocation] = useState<Allocation>();
+  const [shippedChange, setShippedChange] = useState(emptyShippedChange);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -554,25 +556,38 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       setCreatingIp(false);
     }, "IP cadastrado e selecionado. Para criar o vínculo com a PO, informe a quantidade e clique em Distribuir quantidade.");
   }
+  const allocationIpShipped = editingAllocation ? Boolean(editingAllocation.processShipped)
+    : Boolean(ipOptions.find(option => option.id === processId)?.shipped);
+  // Only a new allocation or a different quantity changes what is on board of a shipped IP.
+  const allocationNeedsConfirmation = allocationIpShipped
+    && (!editingAllocation || quantityChanged(editingAllocation.quantity, allocationQuantity));
   async function saveAllocation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (commonFieldsTouched.size) { setError("Salve primeiro os dados compartilhados da PO."); return; }
     if (!itemId || (!processId && !editingAllocation)) return;
+    if (!shippedChangeReady(allocationNeedsConfirmation, shippedChange)) {
+      setError("Confirme a alteração no IP já embarcado e informe a justificativa."); return;
+    }
     await save(async () => {
-      const body = { quantity: allocationQuantity, notes: allocationNotes, reason: automaticAuditReason };
+      const body = { quantity: allocationQuantity, notes: allocationNotes,
+        ...shippedChangeFields(allocationNeedsConfirmation, shippedChange) };
       await send(editingAllocation ? `/api/v1/purchase-orders/${id}/allocations/${editingAllocation.id}` :
         `/api/v1/purchase-orders/${id}/allocations`, editingAllocation ? "PATCH" : "POST",
       editingAllocation ? body : { ...body, itemId, processId }, editingAllocation?.version);
-      setEditingAllocation(undefined); setAllocationQuantity(""); setAllocationNotes("");
+      setEditingAllocation(undefined); setAllocationQuantity(""); setAllocationNotes(""); setShippedChange(emptyShippedChange);
     }, editingAllocation ? "Distribuição atualizada." : "Quantidade distribuída para o IP.");
   }
   async function cancelAllocation() {
     if (commonFieldsTouched.size) { setError("Salve primeiro os dados compartilhados da PO."); return; }
     if (!editingAllocation) return;
+    const shipped = Boolean(editingAllocation.processShipped);
+    if (!shippedChangeReady(shipped, shippedChange)) {
+      setError("Confirme o cancelamento no IP já embarcado e informe a justificativa."); return;
+    }
     await save(async () => {
       await send(`/api/v1/purchase-orders/${id}/allocations/${editingAllocation.id}`, "DELETE",
-        { reason: automaticAuditReason }, editingAllocation.version);
-      setEditingAllocation(undefined); setAllocationQuantity(""); setAllocationNotes("");
+        shippedChangeFields(shipped, shippedChange), editingAllocation.version);
+      setEditingAllocation(undefined); setAllocationQuantity(""); setAllocationNotes(""); setShippedChange(emptyShippedChange);
     }, "Distribuição cancelada; o saldo voltou ao item.");
   }
 
@@ -871,11 +886,12 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             onChange={event => setAllocationQuantity(event.target.value)} placeholder="Ex.: 40" /></label>
           <label>Observações<textarea maxLength={2000} value={allocationNotes}
             onChange={event => setAllocationNotes(event.target.value)} /></label>
+          {allocationIpShipped && <ShippedChangeConfirmation value={shippedChange} onChange={setShippedChange} />}
           <button className="button" disabled={saving || commonFieldsTouched.size > 0 || (!editingAllocation && !processId)}>
             {editingAllocation ? "Atualizar distribuição" : "Distribuir quantidade"}</button>
           {editingAllocation && <div className="operational-actions">
             <button className="button secondary" type="button" onClick={() => {
-              setEditingAllocation(undefined); setAllocationQuantity(""); setAllocationNotes("");
+              setEditingAllocation(undefined); setAllocationQuantity(""); setAllocationNotes(""); setShippedChange(emptyShippedChange);
             }}>Cancelar edição</button>
             <button className="button secondary" type="button" disabled={saving || commonFieldsTouched.size > 0}
               onClick={() => void cancelAllocation()}>Cancelar distribuição</button>

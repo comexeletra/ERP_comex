@@ -73,3 +73,10 @@ export function projectedDateLabel(value: string | null, source: IpCalculatedSum
   if (!value) return "—";
   return `${value} · ${source === "confirmed" ? "confirmada" : "calculada"}`;
 }
+
+/** Appends the date warnings returned by PATCH /processes/:id/followup to the success message. */
+export function withDateWarnings(message: string, result: unknown): string {
+  const warnings = result && typeof result === "object" && Array.isArray((result as { warnings?: unknown }).warnings)
+    ? (result as { warnings: unknown[] }).warnings.filter((warning): warning is string => typeof warning === "string") : [];
+  return warnings.length ? `${message} Confira as datas: ${warnings.join("; ")}.` : message;
+}

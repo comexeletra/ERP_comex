@@ -85,6 +85,36 @@ export function calculateProcess(process: Row, documents: Row[]) {
   return { status, statusSource, informedStatus, ...shipmentDates(process) };
 }
 
+// Effective dates that cannot happen out of order block an edit; estimates and
+// steps that may legitimately overlap (early customs registration) only warn.
+const shipmentDateRules: { earlier: string; later: string; message: string; blocking: boolean }[] = [
+  { earlier: "etd", later: "etaConfirmed", message: "ETA confirmada antes do ETD", blocking: true },
+  { earlier: "actualPortDepartureDate", later: "arrivalDate",
+    message: "Chegada efetiva antes da saída do porto (Departure)", blocking: true },
+  { earlier: "arrivalDate", later: "deliveryDate", message: "Entrega efetiva antes da chegada efetiva", blocking: true },
+  { earlier: "etd", later: "arrivalDate", message: "Chegada efetiva antes do ETD", blocking: false },
+  { earlier: "arrivalDate", later: "clearanceDate", message: "Desembaraço antes da chegada efetiva", blocking: false },
+  { earlier: "etaConfirmed", later: "eteConfirmed", message: "ETE confirmada antes da ETA confirmada", blocking: false },
+];
+
+/**
+ * Checks the IP dates after applying `changes` to `current`. A blocking rule only
+ * rejects the edit when the edit changes one of its dates, so IPs that already hold
+ * an inconsistent pair can still be updated; those pairs come back as warnings.
+ */
+export function checkShipmentDates(current: Row, changes: Row) {
+  const next = { ...current, ...changes };
+  const changed = (key: string) => key in changes && date(changes[key]) !== date(current[key]);
+  const errors: string[] = []; const warnings: string[] = [];
+  for (const rule of shipmentDateRules) {
+    const earlier = date(next[rule.earlier]); const later = date(next[rule.later]);
+    if (!earlier || !later || later >= earlier) continue;
+    if (rule.blocking && (changed(rule.earlier) || changed(rule.later))) errors.push(rule.message);
+    else warnings.push(rule.message);
+  }
+  return { errors, warnings };
+}
+
 /** Spreadsheet rules expressed against the item and its one shipment (IP). */
 export function calculateFollowup(item: Row, process: Row, documents: Row[],
   today = new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date())) {

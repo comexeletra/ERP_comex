@@ -4,7 +4,8 @@ import Link from "next/link";
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, isMissingApiRoute, readApiJson } from "../lib/api";
-import { automaticAuditReason } from "../lib/audit";
+import { automaticAuditReason, emptyShippedChange, shippedChangeReady } from "../lib/audit";
+import ShippedChangeConfirmation from "./ShippedChangeConfirmation";
 import { deletedIpInvoiceBlockMessage } from "../lib/ip-lifecycle";
 import { SearchableSelect } from "./SearchableSelect";
 import {
@@ -72,7 +73,7 @@ type InvoiceMatch = { key: string; sourceRow: number; sourcePoNumber: string; po
   updateProduct: boolean; updatePoItem: boolean; confirmCodeMismatch: boolean; confirmSupplierMismatch: boolean;
   confirmUnitMismatch: boolean; confirmPriceMismatch: boolean };
 type InvoiceDuplicate = { id: string; ipNumber: string; recordStatus: string; version: string;
-  logisticsStatus: string | null; lifecycleStatus: string };
+  logisticsStatus: string | null; lifecycleStatus: string; shipped?: boolean };
 type InvoiceExistingProcess = { id: string; ipNumber: string; importer: string; recordStatus: string; version: string;
   purchaseOrders: Array<{ id: string; number: string }>;
   operationalAllocations: Array<{ id: string; poId: string; poNumber: string; productCode: string;
@@ -215,6 +216,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   const [duplicateInvoiceIps, setDuplicateInvoiceIps] = useState<string[]>([]);
   const [ipReferenceOtherImporter, setIpReferenceOtherImporter] = useState(false);
   const [confirmDuplicateInvoice, setConfirmDuplicateInvoice] = useState(false);
+  const [shippedChange, setShippedChange] = useState(emptyShippedChange);
   const [invoiceExistingProcess, setInvoiceExistingProcess] = useState<InvoiceExistingProcess | null>(null);
   const [reviewTarget, setReviewTarget] = useState<InvoiceExistingProcess | null>(null);
   const [orphanPoDecisions, setOrphanPoDecisions] = useState<Record<string, "KEEP" | "REMOVE">>({});
@@ -484,7 +486,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         const query = new URLSearchParams({ ipNumber: draft.ipNumber.trim(), importer: invoiceImporter,
           page: "1", pageSize: "200", recordStatus: "all" });
         const existing = await readResponse<{ items: Array<{ id: string; ipNumber: string; recordStatus: string; version: string;
-          logisticsStatus: string | null; lifecycleStatus: string }> }>(
+          logisticsStatus: string | null; lifecycleStatus: string; shipped?: boolean }> }>(
           await apiFetch(`/api/v1/processes?${query}`, { cache: "no-store" }));
         const duplicate = existing.items.find(item => item.ipNumber.trim().toLocaleUpperCase("en-US")
           === draft.ipNumber.trim().toLocaleUpperCase("en-US"));
@@ -860,6 +862,10 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         if (currentDuplicateIps.length && !confirmDuplicateInvoice) {
           throw new Error("Confirme a invoice duplicada antes de continuar.");
         }
+        const invoiceIpShipped = Boolean(invoiceDuplicate?.shipped);
+        if (!shippedChangeReady(invoiceIpShipped, shippedChange)) {
+          throw new Error("O IP já embarcou: confirme a revisão das distribuições e informe a justificativa.");
+        }
         const invoiceAllocationTotals = new Map<number, number>();
         for (const match of invoiceMatches) {
           invoiceAllocationTotals.set(match.sourceRow,
@@ -899,8 +905,9 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         }
         const payload = {
           confirmDuplicateInvoice: currentDuplicateIps.length > 0 && confirmDuplicateInvoice,
+          ...(invoiceIpShipped ? { confirmShippedChange: true, shippedChangeReason: shippedChange.reason.trim() } : {}),
           orphanPoDecisions: orphanPos.map(order => ({ purchaseOrderId: order.id, action: orphanPoDecisions[order.id] })),
-          process: { importer, supplierText: invoiceDraft.exporterText, ipNumber: invoiceDraft.ipNumber.trim(), logisticsStatus: "WAITING SHIPMENT",
+          process: { importer, supplierText: invoiceDraft.exporterText, ipNumber: invoiceDraft.ipNumber.trim(), logisticsStatus: null,
             priority: priority || null, notes, reason: automaticAuditReason },
           invoice: { fileName: invoiceDraft.fileName, number: invoiceDraft.invoiceNumber,
             issueDate: /^\d{4}-\d{2}-\d{2}$/u.test(invoiceDraft.invoiceDate) ? invoiceDraft.invoiceDate : null,
@@ -1189,6 +1196,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                  ? `O IP REF ${invoiceDraft.ipNumber} já existe como rascunho. Esta carga preencherá esse cadastro e aplicará as distribuições revisadas.`
                  : `O IP REF ${invoiceDraft.ipNumber} já existe. Ao confirmar, será criada uma revisão e as distribuições ativas anteriores serão substituídas.`}
             </p>}
+            {invoiceDuplicate?.shipped && <ShippedChangeConfirmation value={shippedChange} onChange={setShippedChange} />}
             {duplicateInvoiceIps.length > 0 && <div className="notice error" role="alert">
               <p>Esta invoice já está associada aos IPs ativos: {duplicateInvoiceIps.join(", ")}.</p>
               <label><input type="checkbox" checked={confirmDuplicateInvoice}
@@ -1372,6 +1380,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           || invoiceHasUnconfirmedCodeMismatch || invoiceHasUnconfirmedSupplierMismatch
           || invoiceHasUnconfirmedUnitMismatch || invoiceHasUnconfirmedPriceMismatch
           || ipReferenceOtherImporter || (duplicateInvoiceIps.length > 0 && !confirmDuplicateInvoice)
+          || !shippedChangeReady(Boolean(invoiceDuplicate?.shipped), shippedChange)
           || orphanPos.some(order => !orphanPoDecisions[order.id])
           || (importerCnpjMismatch && !confirmImporterCnpjMismatch)
           || invoiceDraft.lines.some(line => Math.abs(invoiceMatches.filter(match => match.sourceRow === line.sourceRow)

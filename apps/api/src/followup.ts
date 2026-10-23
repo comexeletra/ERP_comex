@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
-import { calculateFollowup, calculateProcess, invoiceTotals } from "./followup-calculations.js";
+import { calculateFollowup, calculateProcess, checkShipmentDates, invoiceTotals } from "./followup-calculations.js";
 import { actorAndScopes, assertPoActive, BusinessError, checkVersion, createPo as createPoSchema,
   itemFields as basicItemSchema, keyFrom, lockedPo, problem, validatePurchaseRequest,
   receipt, record, saveReceipt, transaction, versionFrom, validateNewPurchaseOrder,
@@ -643,11 +643,16 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
         if (found.rows[0].record_status !== "ACTIVE") throw new BusinessError(409, "IP_NOT_ACTIVE", "Draft or cancelled IPs cannot be edited here.");
         if (found.rows[0].lifecycle_status === "CLOSED")
           throw new BusinessError(409, "PROCESS_CLOSED", "Reabra o IP antes de editar os dados do Pós Embarque.");
+        const stored = Object.fromEntries(Object.entries(processFields).map(([key, [column]]) => [key, found.rows[0][column]]));
+        const dates = checkShipmentDates(stored, fields);
+        if (dates.errors.length) {
+          throw new BusinessError(400, "IP_DATE_SEQUENCE_INVALID", `Revise as datas do IP: ${dates.errors.join("; ")}.`);
+        }
         const keys = Object.keys(fields); const sql = keys.map((key, index) => `${processFields[key][0]}=$${index + 2}`).join(",");
         const changed = await client.query(`UPDATE imports.import_process SET ${sql},version=version+1,updated_at=now() WHERE id=$1 RETURNING version::text`,
           [id.data, ...keys.map(key => fields[key])]);
         await record(client, "IMPORT_PROCESS", id.data, "IMPORT_PROCESS", id.data, "FOLLOWUP_UPDATE", found.rows[0], fields, auth.actor, why.data);
-        return { id: id.data, version: changed.rows[0].version };
+        return { id: id.data, version: changed.rows[0].version, warnings: dates.warnings };
       });
     });
 
