@@ -460,9 +460,15 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
         ORDER BY event.occurred_at DESC, event.id DESC`, [id.data, scopes])]);
       const events = [...processEvents.rows, ...allocationEvents.rows].sort((left, right) =>
         new Date(right.occurredAt as string | Date).getTime() - new Date(left.occurredAt as string | Date).getTime());
+      // Conflicting values found when the workbook history was promoted to this IP (M027).
+      const conflicts = await pool.query<{ open_conflicts: number }>(`SELECT count(*)::int AS open_conflicts
+        FROM migration.data_issue WHERE issue_code = 'IP_SOURCE_CONFLICT' AND status = 'OPEN'
+          AND upper(btrim(evidence->>'ipNumber')) = $1`, [found.rows[0].normalized_ip_number]);
       reply.header("ETag", `"${process.version}"`);
       return { process, calculated: calculateProcess(process, docs), purchaseOrders: purchaseOrders.rows,
-        allocations: allocationItems, documents: docs, invoiceTotals: invoiceTotals(docs), events };
+        allocations: allocationItems, documents: docs, invoiceTotals: invoiceTotals(docs), events,
+        openSourceConflicts: Number(conflicts.rows[0]?.open_conflicts ?? 0),
+        dateWarnings: checkShipmentDates(process, {}).warnings };
     });
 
   app.get<{ Params: { id: string } }>("/api/v1/purchase-orders/:id/followup",

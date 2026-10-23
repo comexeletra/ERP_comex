@@ -24,7 +24,7 @@ type Event = { id: string; entityType: string; entityId: string; operation: stri
   newValue: Record<string, Value> | null; occurredAt: string; reason: string | null; actorId: string;
   purchaseOrderNumber?: string; productCode?: string; productDescription?: string; lineNumber?: number; unit?: string | null };
 type Data = { process: Row & { id: string; ipNumber: string; version: string; lifecycleStatus: "OPEN" | "CLOSED"; recordStatus?: "DRAFT" | "ACTIVE" | "CANCELLED"; invoiceSupplierDivergence?: boolean };
-  calculated?: IpSummary;
+  calculated?: IpSummary; openSourceConflicts?: number; dateWarnings?: string[];
   purchaseOrders: { id: string; number: string; importer: string; linkSource: string }[];
   allocations: Allocation[]; documents: Document[];
   invoiceTotals: { amounts: { currency: string; amount: string }[]; incompleteLines: number }; events: Event[] };
@@ -223,6 +223,12 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
       <h3>POs nesta operação</h3>
       {data.purchaseOrders.length === 0 ? <p>Nenhuma PO vinculada ao IP.</p> :
         <ul>{data.purchaseOrders.map(po => <li key={po.id}><Link className="text-link" href={`/purchase-orders/${po.id}`}>PO {po.number}</Link> · {po.importer}</li>)}</ul>}
+      {(data.openSourceConflicts ?? 0) > 0 && <p className="notice" role="status">
+        Há {data.openSourceConflicts} pendência(s) de origem nas datas deste IP: a planilha histórica tinha valores
+        diferentes para o mesmo campo. Revise em <Link className="text-link" href="/quality">Qualidade</Link>, filtrando
+        pelo código IP_SOURCE_CONFLICT.</p>}
+      {(data.dateWarnings?.length ?? 0) > 0 && <p className="notice" role="status">
+        Confira as datas deste IP: {data.dateWarnings!.join("; ")}.</p>}
       <h3>Situação calculada</h3>
       <p className="muted">Calculada a partir das datas deste IP e repetida em todos os produtos dele.</p>
       <IpCalculatedSummary summary={data.calculated} />

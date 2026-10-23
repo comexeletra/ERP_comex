@@ -115,6 +115,7 @@ async function readApp(t) {
           po_id: poId, po_number: "PO-1", importer: "ELETRA MATRIZ" }] };
       }
       if (sql.includes("FROM imports.process_document")) return { rows: [{ ...invoiceRow }] };
+      if (sql.includes("FROM migration.data_issue")) return { rows: [{ open_conflicts: 2 }] };
       return { rows: [] };
     },
     async connect() { throw new Error("read routes must not open a transaction"); },
@@ -141,6 +142,16 @@ test("the IP followup returns the IP status and ETA/ETE calculated from its own 
   assert.equal(body.allocations[0].calculated.billNumber, "BL-IP-1");
   assert.equal(body.allocations[0].calculated.billDate, "2026-09-03");
   assert.deepEqual(body.allocations[0].calculated.invoiceNumbers, ["INV-1"]);
+  assert.equal(body.openSourceConflicts, 2);
+  assert.deepEqual(body.dateWarnings, []);
+});
+
+test("opening an IP lists the date sequences already stored out of order", async t => {
+  const app = await readApp(t);
+  ipRow.arrival_date = "2026-08-30";
+  t.after(() => { ipRow.arrival_date = null; });
+  const response = await app.inject({ method: "GET", url: `/api/v1/processes/${processId}/followup` });
+  assert.deepEqual(response.json().dateWarnings, ["Chegada efetiva antes do ETD"]);
 });
 
 test("each IP of a PO carries the same calculated summary as the IP screen", async t => {
