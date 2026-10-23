@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiFetch, hasIpLifecycleSupport, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
 import { formatNumber } from "../lib/format-number";
+import { ipPostShipmentFields, newProcessDocumentKinds } from "../lib/ip-post-shipment-fields";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 import { SearchableSelect } from "./SearchableSelect";
 
@@ -30,34 +31,9 @@ type LegacyProcess = Row & { id: string; ipNumber: string; purchaseOrders: Data[
 type DocDraft = { kind: Document["kind"]; purchaseOrderItemId: string; number: string; issueDate: string;
   homologationDate: string; quantity: string; unitPrice: string; amount: string; currencyCode: string; notes: string };
 
-const fields: Field[] = [
-  { key: "logisticsStatus", label: "Status logístico", type: "select", entity: "logistics_status" },
-  { key: "priority", label: "Prioridade do IP", type: "select", entity: "priority" },
-  { key: "ipTotvsDate", label: "Data do IP no TOTVS", type: "date" },
-  { key: "actualPortDepartureDate", label: "Saída efetiva do porto de origem", type: "date" },
-  { key: "transportMode", label: "Modal", type: "select", entity: "transport_mode" },
-  { key: "incoterm", label: "Incoterm", type: "select", entity: "incoterm" },
-  { key: "broker", label: "Despachante", type: "select", entity: "broker" },
-  { key: "portLoading", label: "Porto de origem", type: "select", entity: "port_loading" },
-  { key: "portDischarge", label: "Porto de destino", type: "select", entity: "port_discharge" },
-  { key: "etd", label: "ETD", type: "date" }, { key: "etaConfirmed", label: "ETA confirmada", type: "date" },
-  { key: "arrivalDate", label: "Chegada efetiva", type: "date" }, { key: "duimpNumber", label: "DUIMP", max: 100 },
-  { key: "duimpDate", label: "Registro da DUIMP", type: "date" },
-  { key: "customsChannel", label: "Canal aduaneiro", type: "select", entity: "customs_channel" },
-  { key: "clearanceDate", label: "Desembaraço", type: "date" }, { key: "eteConfirmed", label: "ETE confirmada", type: "date" },
-  { key: "nfRequestDate", label: "Solicitação da NF", type: "date" }, { key: "deliveryDate", label: "Entrega efetiva", type: "date" },
-  { key: "freightCurrency", label: "Moeda do frete", type: "select", entity: "currency" },
-  { key: "freightCost", label: "Frete", type: "money" }, { key: "containerNumber", label: "Container", max: 120 },
-  { key: "containerType", label: "Tipo de container", type: "select", entity: "container_type" },
-  { key: "containerQuantity", label: "Quantidade de containers", type: "number" },
-  { key: "forwarder", label: "Agente de carga", type: "select", entity: "forwarder" },
-  { key: "documentsOk", label: "Documentação conferida", type: "boolean" },
-  { key: "storageDueOverride", label: "Vencimento confirmado da armazenagem", type: "date" },
-  { key: "taxesPaidBrl", label: "Impostos pagos (R$)", type: "money" },
-  { key: "fineBrl", label: "Multa (R$)", type: "money" }, { key: "storageBrl", label: "Armazenagem (R$)", type: "money" },
-  { key: "demurrageBrl", label: "Demurrage (R$)", type: "money" },
-  { key: "demurrageContainerQuantity", label: "Containers com demurrage", type: "number" },
-];
+const fields: Field[] = ipPostShipmentFields;
+const documentKindLabels: Record<string, string> = { INVOICE: "Invoice", NF: "NF" };
+const documentKindOptions = newProcessDocumentKinds.map(kind => ({ value: kind, label: documentKindLabels[kind] ?? kind }));
 const blankDoc = (): DocDraft => ({ kind: "INVOICE", purchaseOrderItemId: "", number: "", issueDate: "",
   homologationDate: "", quantity: "", unitPrice: "", amount: "", currencyCode: "", notes: "" });
 function format(value: Value | undefined) { return value == null || value === "" ? "—" : typeof value === "boolean" ? value ? "Sim" : "Não" : String(value); }
@@ -82,6 +58,7 @@ const allocationHistoryLabels: Record<string, string> = {
 const historyOperationLabels: Record<string, string> = {
   CREATE: "Cadastro", UPDATE: "Alteração", FOLLOWUP_UPDATE: "Atualização do acompanhamento",
   CANCEL: "Cancelamento", CLOSE: "Encerramento", REOPEN: "Reabertura",
+  HISTORICAL_BACKFILL: "Preenchimento a partir do histórico",
 };
 function camelCaseKey(key: string) { return key.replace(/_([a-z])/gu, (_, letter: string) => letter.toUpperCase()); }
 function formatHistoryActor(actor: string) {
@@ -273,12 +250,12 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
           ? data.allocations.find(item => item.item.id === document.purchaseOrderItemId)?.item.productCode ?? "Item relacionado a PO" : "IP geral"}
         {document.kind === "INVOICE" && <> · {formatNumber(document.quantity)} × {formatNumber(document.unitPrice)} · {formatNumber(document.amount, "valor calculado")} {document.currencyCode ?? ""}</>}
         {document.kind === "NF" && <> · Homologação {document.homologationDate ?? "—"}</>}
-        {canWrite && <div className="operational-actions"><button type="button" className="button secondary" onClick={() => {
+        {canWrite && <div className="operational-actions">{document.kind !== "BL" && <button type="button" className="button secondary" onClick={() => {
           setEditingDoc(document.id); setDocDraft({ kind: document.kind, purchaseOrderItemId: document.purchaseOrderItemId ?? "",
             number: document.number, issueDate: document.issueDate ?? "", homologationDate: document.homologationDate ?? "",
             quantity: document.quantity ?? "", unitPrice: document.unitPrice ?? "", amount: document.amount ?? "",
             currencyCode: document.currencyCode ?? "", notes: document.notes });
-        }}>Editar</button><button type="button" className="button secondary" disabled={busy}
+        }}>Editar</button>}<button type="button" className="button secondary" disabled={busy}
           onClick={() => void (async () => { setBusy(true); setError(""); try {
             await send(`/api/v1/processes/${id}/documents/${document.id}`, "DELETE", { reason: automaticAuditReason }, document.version);
             setNotice("Documento cancelado."); setReload(value => value + 1);
@@ -304,7 +281,7 @@ export default function ProcessPostShipmentPanel({ id }: { id: string }) {
         {!editingDoc && <><div className="operational-fields">
           <label>Tipo<SearchableSelect ariaLabel="Tipo do documento" placeholder="" value={docDraft.kind}
             onChange={kind => setDocDraft({ ...docDraft, kind: kind as DocDraft["kind"] })}
-            options={[{ value: "INVOICE", label: "Invoice" }, { value: "BL", label: "BL" }, { value: "NF", label: "NF" }]} /></label>
+            options={documentKindOptions} /></label>
           <label>Item relacionado<SearchableSelect ariaLabel="Item relacionado" placeholder="Documento geral do IP"
             value={docDraft.purchaseOrderItemId} onChange={purchaseOrderItemId => setDocDraft({ ...docDraft, purchaseOrderItemId })}
             options={data.allocations.map(allocation => ({ value: allocation.item.id,

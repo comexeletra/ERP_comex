@@ -55,11 +55,11 @@ export function calculateFollowup(item: Row, process: Row, documents: Row[],
   const active = documents.filter(doc => doc.status === "ACTIVE");
   const invoices = active.filter(doc => doc.kind === "INVOICE" &&
     (doc.purchaseOrderItemId === item.id || doc.purchaseOrderItemId == null));
-  const bills = active.filter(doc => doc.kind === "BL" &&
-    (doc.purchaseOrderItemId === item.id || doc.purchaseOrderItemId == null));
   const nfs = active.filter(doc => doc.kind === "NF" &&
     (doc.purchaseOrderItemId === item.id || doc.purchaseOrderItemId == null));
-  const firstBillDate = bills.map(doc => date(doc.issueDate)).filter((v): v is string => Boolean(v)).sort()[0] ?? null;
+  // One IP is one shipment: the BL typed on the IP applies to every item in it.
+  const firstBillDate = date(process.blDate);
+  const billNumber = typeof process.blNumber === "string" && process.blNumber.trim() ? process.blNumber.trim() : null;
   const firstNfDate = nfs.map(doc => date(doc.issueDate)).filter((v): v is string => Boolean(v)).sort()[0] ?? null;
   const mode = typeof process.transportMode === "string" ? process.transportMode.trim() : "";
   const sea = /^(SEA|MARITIMO|MARÍTIMO)$/i.test(mode);
@@ -127,7 +127,7 @@ export function calculateFollowup(item: Row, process: Row, documents: Row[],
     portTargetDate: addDays(item.actualFactoryShipDate, numeric(item.targetPortDays)),
     arrivalTargetDate: addDays(process.actualPortDepartureDate ?? process.etd, numeric(item.targetTransitDays)),
     deliveryTargetDate: addDays(process.arrivalDate, numeric(item.targetCustomsDays)),
-    billDate: firstBillDate, nfIssueDate: firstNfDate,
+    billDate: firstBillDate, billNumber, nfIssueDate: firstNfDate,
     nfHomologationDate: nfs.map(doc => date(doc.homologationDate)).filter((v): v is string => Boolean(v)).sort()[0] ?? null,
     stages, totalTargetDays, totalActualDays,
     totalDelayDays: totalTargetDays === null || totalActualDays === null ? null : totalActualDays - totalTargetDays,

@@ -5,39 +5,14 @@ import Link from "next/link";
 import { apiFetch, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
 import { formatNumber } from "../lib/format-number";
+import { ipPostShipmentFields, newProcessDocumentKinds, productLineIpFields } from "../lib/ip-post-shipment-fields";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "./OperationalOptionSelect";
 import { purchaseOrderItemFields } from "./PurchaseOrderItemFields";
 import { calculatedTotal } from "./PurchaseOrderCalculatedFields";
 import { SearchableSelect } from "./SearchableSelect";
 
 type Field = { key: string; label: string; type?: "date" | "number" | "money" | "boolean" | "select"; max?: number; entity?: string };
-const processFields: Field[] = [
-  { key: "logisticsStatus", label: "Status", type: "select", entity: "logistics_status" },
-  { key: "priority", label: "Prioridade do IP", type: "select", entity: "priority" },
-  { key: "ipTotvsDate", label: "Data do IP no TOTVS", type: "date" },
-  { key: "transportMode", label: "Modal (SEA, AIR...) ", type: "select", entity: "transport_mode" },
-  { key: "incoterm", label: "Incoterm", type: "select", entity: "incoterm" },
-  { key: "broker", label: "Despachante", type: "select", entity: "broker" },
-  { key: "portLoading", label: "POL / origem", type: "select", entity: "port_loading" }, { key: "portDischarge", label: "POD / destino", type: "select", entity: "port_discharge" },
-  { key: "etd", label: "ETD", type: "date" }, { key: "etaConfirmed", label: "ETA confirmada", type: "date" },
-  { key: "arrivalDate", label: "Chegada efetiva", type: "date" },
-  { key: "duimpNumber", label: "DUIMP", max: 100 }, { key: "duimpDate", label: "Registro da DUIMP", type: "date" },
-  { key: "customsChannel", label: "Canal", type: "select", entity: "customs_channel" }, { key: "clearanceDate", label: "Desembaraço", type: "date" },
-  { key: "eteConfirmed", label: "ETE confirmada", type: "date" },
-  { key: "nfRequestDate", label: "Solicitação da NF", type: "date" },
-  { key: "deliveryDate", label: "Entrega efetiva", type: "date" },
-  { key: "freightCurrency", label: "Moeda do frete", type: "select", entity: "currency" }, { key: "freightCost", label: "Frete", type: "money" },
-  { key: "containerNumber", label: "Container", max: 120 }, { key: "containerType", label: "Tipo do container", type: "select", entity: "container_type" },
-  { key: "containerQuantity", label: "Qtd. containers", type: "number" },
-  { key: "forwarder", label: "Agente de carga", type: "select", entity: "forwarder" },
-  { key: "documentsOk", label: "Documentação conferida", type: "boolean" },
-  { key: "storageDueOverride", label: "Vencimento armazenagem confirmado", type: "date" },
-  { key: "taxesPaidBrl", label: "Impostos pagos (R$)", type: "money" },
-  { key: "fineBrl", label: "Multa (R$)", type: "money" },
-  { key: "storageBrl", label: "Armazenagem (R$)", type: "money" },
-  { key: "demurrageBrl", label: "Demurrage (R$)", type: "money" },
-  { key: "demurrageContainerQuantity", label: "Qtd. containers com demurrage", type: "number" },
-];
+const processFields: Field[] = ipPostShipmentFields;
 type DataRow = Record<string, string | number | boolean | null | undefined>;
 type Document = { id: string; kind: "INVOICE" | "BL" | "NF"; number: string;
   purchaseOrderItemId: string | null; issueDate: string | null; homologationDate: string | null;
@@ -113,7 +88,8 @@ const eventEntityLabels: Record<string, string> = {
   PURCHASE_ORDER: "Dados da PO", PURCHASE_ORDER_ITEM: "Item da PO", PO_ITEM_ALLOCATION: "Distribuição PO–IP",
   IMPORT_PROCESS: "Dados logísticos do IP", PROCESS_DOCUMENT: "Documento do IP",
 };
-const eventOperationLabels: Record<string, string> = { CREATE: "cadastrado", UPDATE: "alterado", FOLLOWUP_UPDATE: "dados atualizados", CANCEL: "cancelado", CLOSE: "encerrado", REOPEN: "reaberto" };
+const eventOperationLabels: Record<string, string> = { CREATE: "cadastrado", UPDATE: "alterado", FOLLOWUP_UPDATE: "dados atualizados", CANCEL: "cancelado", CLOSE: "encerrado", REOPEN: "reaberto",
+  HISTORICAL_BACKFILL: "preenchido a partir do histórico" };
 function eventSnapshot(value: unknown) { return value == null ? "Sem valor anterior" : JSON.stringify(value, null, 2); }
 function eventDate(value: string) { return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short",
   timeZone: "America/Sao_Paulo" }).format(new Date(value)); }
@@ -127,6 +103,8 @@ type DocDraft = { kind: "INVOICE" | "BL" | "NF"; purchaseOrderItemId: string; nu
   issueDate: string; homologationDate: string; quantity: string; unitPrice: string; amount: string; currencyCode: string; notes: string };
 const blankDoc = (): DocDraft => ({ kind: "INVOICE", purchaseOrderItemId: "", number: "", issueDate: "",
   homologationDate: "", quantity: "", unitPrice: "", amount: "", currencyCode: "", notes: "" });
+const documentKindLabels: Record<string, string> = { INVOICE: "Invoice", NF: "NF" };
+const documentKindOptions = newProcessDocumentKinds.map(kind => ({ value: kind, label: documentKindLabels[kind] ?? kind }));
 
 export default function FollowupPanel({ id }: { id: string }) {
   const [data, setData] = useState<Followup>(); const [roles, setRoles] = useState<string[]>([]);
@@ -260,7 +238,7 @@ export default function FollowupPanel({ id }: { id: string }) {
                   <div><dt>Quantidade neste IP</dt><dd>{formatNumber(shipment.allocationQuantity)} {item.unit ?? ""}</dd></div>
                   <div><dt>Saída da fábrica</dt><dd>{value(shipment.factoryShipDate)}</dd></div>
                   <div><dt>Alerta</dt><dd>{value(shipment.calculated.alert)}</dd></div>
-                  {processFields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{field.type === "number" || field.type === "money" ? formatNumber(shipment.process[field.key]) : value(shipment.process[field.key])}</dd></div>)}
+                  {productLineIpFields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{field.type === "number" || field.type === "money" ? formatNumber(shipment.process[field.key]) : value(shipment.process[field.key])}</dd></div>)}
                 </dl>
                 {shipment.legacyFactoryShipDate && <p className="notice">Data antiga de saída da fábrica ({value(shipment.legacyFactoryShipDate)}) sem IP associado. Informe a data deste vínculo se necessário.</p>}
                 {canWriteProcess && typeof shipment.allocationVersion === "string" && <form className="shipment-date-form" onSubmit={event => saveFactoryShipDate(event, shipment)}>
@@ -303,7 +281,7 @@ export default function FollowupPanel({ id }: { id: string }) {
               <strong>{document.kind} {document.number}</strong> · {value(document.issueDate)}
               {document.kind === "INVOICE" && <> · {formatNumber(document.quantity)} un. · {formatNumber(document.amount)} {document.currencyCode ?? ""}</>}
               {document.kind === "NF" && <> · homologação {value(document.homologationDate)}</>}
-              {editable && <button className="button secondary" type="button" onClick={() => {
+              {editable && document.kind !== "BL" && <button className="button secondary" type="button" onClick={() => {
                 setEditingDoc(current => ({ ...current, [p.id]: document.id }));
                 setDocDrafts(current => ({ ...current, [p.id]: {
                   kind: document.kind, purchaseOrderItemId: document.purchaseOrderItemId ?? "",
@@ -319,7 +297,7 @@ export default function FollowupPanel({ id }: { id: string }) {
               {!editingDoc[p.id] && <div className="operational-fields">
                 <label>Tipo<SearchableSelect ariaLabel="Tipo do documento" placeholder="" value={documentDraft.kind}
                   onChange={kind => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, kind: kind as DocDraft["kind"] } }))}
-                  options={[{ value: "INVOICE", label: "Invoice" }, { value: "BL", label: "BL" }, { value: "NF", label: "NF" }]} /></label>
+                  options={documentKindOptions} /></label>
                 <label>Item relacionado<SearchableSelect ariaLabel="Item relacionado" placeholder="Documento geral do IP"
                   value={documentDraft.purchaseOrderItemId} onChange={purchaseOrderItemId => setDocDrafts(current => ({ ...current, [p.id]: { ...documentDraft, purchaseOrderItemId } }))}
                   options={data.shipments.filter(shipment => shipment.process.id === p.id).flatMap(shipment => {

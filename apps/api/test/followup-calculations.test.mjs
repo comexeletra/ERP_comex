@@ -18,12 +18,11 @@ test("derives shipment dates, customs alert and invoice comparison per allocated
   const item = { id: "item-a", orderedQuantity: "100", unitPrice: "12.50", currencyCode: "USD",
     allocationQuantity: "40", necessityDate: "2026-11-01", scApprovalDate: "2026-08-01",
     poApprovalDate: "2026-08-05", poSentDate: "2026-08-06", targetOrderDays: 3 };
-  const process = { transportMode: "SEA", etd: "2026-09-01", arrivalDate: "2026-10-01",
+  const process = { transportMode: "SEA", etd: "2026-09-01", blDate: "2026-09-02", arrivalDate: "2026-10-01",
     duimpDate: "2026-10-02" };
   const docs = [
     { kind: "INVOICE", status: "ACTIVE", purchaseOrderItemId: "item-a", quantity: "40", unitPrice: "12.50", issueDate: "2026-09-01" },
     { kind: "INVOICE", status: "ACTIVE", purchaseOrderItemId: "item-b", quantity: "60", unitPrice: "13.00", issueDate: "2026-09-01" },
-    { kind: "BL", status: "ACTIVE", purchaseOrderItemId: null, issueDate: "2026-09-02" },
   ];
   const result = calculateFollowup(item, process, docs, "2026-10-04");
   assert.equal(result.eta, "2026-10-26");
@@ -83,12 +82,32 @@ test("confirmed dates take precedence and delivered shipment has no alert", () =
 test("documents assigned to another PO item do not advance this item", () => {
   const result = calculateFollowup({ id: "item-a", allocationQuantity: "10" }, { etd: "2026-10-10" }, [
     { kind: "INVOICE", status: "ACTIVE", purchaseOrderItemId: "item-a", quantity: "10" },
-    { kind: "BL", status: "ACTIVE", purchaseOrderItemId: "item-b", issueDate: "2026-10-02" },
     { kind: "NF", status: "ACTIVE", purchaseOrderItemId: "item-b", issueDate: "2026-10-03" },
   ], "2026-10-04");
   assert.equal(result.status, "AGUARDANDO EMBARQUE");
   assert.equal(result.billDate, null);
   assert.equal(result.nfIssueDate, null);
+});
+
+test("BL number and date come from the IP, so every item in the IP shares them", () => {
+  const process = { transportMode: "SEA", etd: "2026-10-01", blNumber: "BL-IP-1", blDate: "2026-10-03" };
+  const docs = [
+    { kind: "INVOICE", status: "ACTIVE", purchaseOrderItemId: null, quantity: null },
+    // A legacy BL document is history only; it no longer drives the shipment dates.
+    { kind: "BL", status: "ACTIVE", purchaseOrderItemId: null, number: "BL-OLD", issueDate: "2026-09-01" },
+  ];
+  const first = calculateFollowup({ id: "item-a", allocationQuantity: "60", poSentDate: "2026-08-01" }, process, docs, "2026-10-04");
+  const second = calculateFollowup({ id: "item-b", allocationQuantity: "50" }, process, docs, "2026-10-04");
+  for (const result of [first, second]) {
+    assert.equal(result.billDate, "2026-10-03");
+    assert.equal(result.billNumber, "BL-IP-1");
+    assert.equal(result.status, "AGUARDANDO CHEGADA");
+  }
+  assert.equal(first.factoryLeadDays, 63);
+  const withoutBl = calculateFollowup({ id: "item-a" }, { transportMode: "SEA", etd: "2026-10-01" }, docs, "2026-10-04");
+  assert.equal(withoutBl.billDate, null);
+  assert.equal(withoutBl.billNumber, null);
+  assert.equal(withoutBl.status, "AGUARDANDO EMBARQUE");
 });
 
 test("invoice totals remain separated by currency and report incomplete lines", () => {

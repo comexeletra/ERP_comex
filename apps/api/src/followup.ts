@@ -40,6 +40,7 @@ const processFields: Record<string, [string, FieldType, number?]> = {
   incoterm: ["incoterm", "text", 20], broker: ["broker", "text", 160],
   portLoading: ["port_loading", "text", 160], portDischarge: ["port_discharge", "text", 160],
   etd: ["etd", "date"], etaConfirmed: ["eta_confirmed", "date"],
+  blNumber: ["bl_number", "text", 120], blDate: ["bl_date", "date"],
   arrivalDate: ["arrival_date", "date"], duimpNumber: ["duimp_number", "text", 100],
   duimpDate: ["duimp_date", "date"], customsChannel: ["customs_channel", "text", 80],
   clearanceDate: ["clearance_date", "date"], eteConfirmed: ["ete_confirmed", "date"],
@@ -52,6 +53,9 @@ const processFields: Record<string, [string, FieldType, number?]> = {
   storageBrl: ["storage_brl", "money"], demurrageBrl: ["demurrage_brl", "money"],
   demurrageContainerQuantity: ["demurrage_container_quantity", "integer"],
 };
+/** Post-shipment fields the IP form may send; the web catalog must list the same keys. */
+export const processFollowupFieldKeys = Object.freeze(Object.keys(processFields));
+const billIsIpField = "BL nº e BL date são campos do IP: preencha-os nos dados do Pós Embarque.";
 const dateSchema = z.iso.date();
 const moneySchema = z.string().regex(/^(?:0|[1-9]\d{0,15})(?:\.\d{1,8})?$/);
 function validateFields(value: unknown, definition: Record<string, [string, FieldType, number?]>) {
@@ -651,6 +655,7 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
     { config: permissionConfig("processes.write") }, async (request, reply) => {
       const id = z.uuid().safeParse(request.params.id); const body = docSchema.safeParse(request.body);
       if (!id.success || !body.success) return problem(reply, 400, "INVALID_DOCUMENT", "Revise o documento.");
+      if (body.data.kind === "BL") return problem(reply, 400, "BL_IS_IP_FIELD", billIsIpField);
       let auth: ReturnType<typeof context>;
       try { auth = context(request, false, true); } catch (error) { if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message); throw error; }
       return transaction(pool, reply, async client => {
@@ -686,6 +691,7 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
           WHERE d.id=$1 AND d.process_id=$2 AND d.status='ACTIVE' AND p.importer=ANY($3::text[])
             AND p.lifecycle_status='OPEN' AND p.record_status='ACTIVE' FOR UPDATE OF d, p`, [docId.data, id.data, auth.scopes]);
         if (!found.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Documento não encontrado ou IP encerrado.");
+        if (found.rows[0].kind === "BL") throw new BusinessError(400, "BL_IS_IP_FIELD", billIsIpField);
         checkVersion(found.rows[0], auth.version!);
         const d = body.data;
         if (found.rows[0].kind !== "INVOICE" && (d.quantity !== null || d.unitPrice !== null || d.amount !== null || d.currencyCode !== null))
