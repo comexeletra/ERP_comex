@@ -122,6 +122,15 @@ Se algo essencial não estiver claro, pergunte antes de supor.
 - Não copie dados de negócio de produção para homologação, exceto quando o usuário solicitar explicitamente essa operação. Nesse caso, transfira somente as entidades e os campos solicitados, mantenha o destino isolado em homologação e nunca escreva na produção.
 - Não mostre, registre em commits ou inclua em capturas de tela tokens, senhas, URLs de conexão ou outros segredos. Use variáveis de ambiente e os arquivos protegidos já provisionados.
 - Não altere variáveis da Vercel nem configurações da VPS como parte de um deploy de código sem que a tarefa peça essa mudança.
+- O domínio do Preview fica atrás da autenticação da Vercel. Sem `gh` nem `vercel` instalados, use `npx --yes vercel@50.1.6 ls erp-comex --environment preview` para conferir o status e `MSYS_NO_PATHCONV=1 npx --yes vercel@50.1.6 curl /login --deployment <url> -- -sL` para ler uma página. No Git Bash, sem `MSYS_NO_PATHCONV=1`, o caminho iniciado por `/` é convertido e a página inicial é retornada no lugar dele.
+
+## Idiomas da interface (pt-BR, zh-CN, en)
+
+- Todo texto de tela vem de `apps/web/lib/i18n/` (`pt-BR.ts` é a fonte; `en.ts` e `zh-CN.ts` são tipados como `Messages`, e chave faltando quebra o type-check). Ao criar ou alterar texto, atualize os três dicionários.
+- No render, use `m` de `useI18n()`. Em efeitos e callbacks assíncronos, use `messages()` ou `getMessages()`, para não refazer cargas ao trocar o idioma e não divergir na hidratação.
+- Módulos de `lib/` não importam valores entre si (os testes `node --test` não resolvem imports sem extensão): funções de `lib/` que geram texto recebem `m: Messages` como parâmetro, com `import type`.
+- Valores trocados com a API (status, papéis, nomes de abas da planilha, mensagens comparadas) continuam em português; só a exibição é traduzida. Marque literais desse tipo com `// i18n-ignore: <motivo>`.
+- `test/i18n-coverage.test.mjs` falha se surgir texto em português solto em `app/` ou `components/`. Mensagens geradas pela API e cabeçalhos das planilhas TOTVS/INV continuam em português.
 
 ## Acesso SSH da VPS de homologação
 
