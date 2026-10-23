@@ -1,9 +1,16 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useI18n } from "../../components/I18nProvider";
 import { apiFetch } from "../../lib/api";
 
+// Exact API error texts; the API answers in Portuguese.
+const invalidCurrentPasswordError = "Senha atual inválida."; // i18n-ignore: API contract
+const samePasswordError = "A nova senha deve ser diferente."; // i18n-ignore: API contract
+
 export default function ChangePasswordPage() {
+  const { m } = useI18n();
+  const t = m.changePassword;
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -20,22 +27,22 @@ export default function ChangePasswordPage() {
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => null) as { error?: string } | null;
-        if (response.status === 401 && payload?.error === "Senha atual inválida.") {
-          setError("Senha atual inválida. Use a mesma senha com que entrou nesta conta.");
+        if (response.status === 401 && payload?.error === invalidCurrentPasswordError) {
+          setError(t.invalidCurrent);
         } else if (response.status === 401) {
-          setError("Sua sessão expirou. Entre novamente antes de trocar a senha.");
+          setError(t.sessionExpired);
         } else if (response.status === 403) {
-          setError("A verificação de segurança recusou a solicitação. Atualize a página e tente novamente.");
-        } else if (response.status === 400 && payload?.error === "A nova senha deve ser diferente.") {
-          setError(payload.error);
+          setError(t.securityRejected);
+        } else if (response.status === 400 && payload?.error === samePasswordError) {
+          setError(t.mustDiffer);
         } else {
-          setError("Não foi possível trocar a senha.");
+          setError(t.failed);
         }
         return;
       }
       window.location.assign("/");
     } catch {
-      setError("Não foi possível trocar a senha. Tente novamente.");
+      setError(t.failedRetry);
     } finally {
       setBusy(false);
     }
@@ -43,13 +50,13 @@ export default function ChangePasswordPage() {
 
   return <main className="shell auth-shell">
     <section className="card auth-card">
-      <p className="eyebrow">ERP Comex</p><h1>Trocar senha</h1>
-      <p className="muted">Escolha uma senha com pelo menos 15 caracteres.</p>
+      <p className="eyebrow">ERP Comex</p><h1>{t.title}</h1>
+      <p className="muted">{t.instructions}</p>
       <form className="stack-form" onSubmit={(event) => void change(event)}>
-        <label>Senha atual<input type="password" autoComplete="current-password" required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label>
-        <label>Nova senha<input type="password" autoComplete="new-password" minLength={15} required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label>
+        <label>{t.current}<input type="password" autoComplete="current-password" required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label>
+        <label>{t.next}<input type="password" autoComplete="new-password" minLength={15} required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label>
         {error && <p className="notice error" role="alert">{error}</p>}
-        <button className="button" type="submit" disabled={busy}>{busy ? "Salvando…" : "Salvar nova senha"}</button>
+        <button className="button" type="submit" disabled={busy}>{busy ? t.saving : t.submit}</button>
       </form>
     </section>
   </main>;

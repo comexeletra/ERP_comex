@@ -3,33 +3,38 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import type { Messages } from "../lib/i18n/pt-BR";
+import { useI18n } from "./I18nProvider";
+import LanguageSwitcher from "./LanguageSwitcher";
 
 type IconName = "orders" | "ship" | "flow" | "reports" | "sheet" | "requests" | "catalog"
   | "sc" | "noIp" | "noPo" | "quality" | "users" | "events" | "collapse" | "password" | "logout" | "sun" | "moon";
-type SidebarItem = { label: string; href: string; icon: IconName; match?: string[]; exclude?: string[]; exact?: boolean };
-type SidebarGroup = { label: string; items: SidebarItem[] };
+type SidebarItem = {
+  label: keyof Messages["sidebar"]["items"]; href: string; icon: IconName; match?: string[]; exclude?: string[]; exact?: boolean;
+};
+type SidebarGroup = { label: keyof Messages["sidebar"]["groups"]; items: SidebarItem[] };
 
 const groups: SidebarGroup[] = [
-  { label: "Operação", items: [
-    { label: "Pré embarque · POs", href: "/", icon: "orders", match: ["/purchase-orders"],
+  { label: "operation", items: [
+    { label: "preShipment", href: "/", icon: "orders", match: ["/purchase-orders"],
       exclude: ["/purchase-orders/lines"] },
-    { label: "Carteira por produto", href: "/purchase-orders/lines", icon: "sheet" },
-    { label: "Pós embarque · IPs", href: "/processes", icon: "ship" },
-    { label: "End-to-end", href: "/end-to-end", icon: "flow" },
+    { label: "productPortfolio", href: "/purchase-orders/lines", icon: "sheet" },
+    { label: "postShipment", href: "/processes", icon: "ship" },
+    { label: "endToEnd", href: "/end-to-end", icon: "flow" },
   ] },
-  { label: "Gestão", items: [
-    { label: "Solicitações", href: "/requests", icon: "requests" },
-    { label: "Cadastros", href: "/catalog", icon: "catalog", exact: true },
+  { label: "management", items: [
+    { label: "requests", href: "/requests", icon: "requests" },
+    { label: "catalog", href: "/catalog", icon: "catalog", exact: true },
   ] },
 ];
 
-const adminGroup: SidebarGroup = { label: "Administração", items: [
-  { label: "Gerenciar acessos", href: "/admin/users", icon: "users" },
-  { label: "Fila de eventos", href: "/admin/outbox", icon: "events" },
+const adminGroup: SidebarGroup = { label: "admin", items: [
+  { label: "users", href: "/admin/users", icon: "users" },
+  { label: "outbox", href: "/admin/outbox", icon: "events" },
 ] };
 
-const pcmGroup: SidebarGroup = { label: "PCM", items: [
-  { label: "Solicitações de Compra", href: "/pcm", icon: "sc" },
+const pcmGroup: SidebarGroup = { label: "pcm", items: [
+  { label: "purchaseRequests", href: "/pcm", icon: "sc" },
 ] };
 
 const icons: Record<IconName, ReactNode> = {
@@ -70,57 +75,61 @@ export default function AppSidebar({ collapsed, isMaster, displayName, roles, im
   importerScopes: string[]; theme: "light" | "dark"; onToggleTheme: () => void; onToggle: () => void; onLogout: () => void;
 }) {
   const pathname = usePathname();
+  const { locale, m } = useI18n();
+  const t = m.sidebar;
   const visibleGroups = [
     ...groups,
     ...(isMaster ? [adminGroup] : []),
     ...(isMaster || roles.includes("Administrador") || roles.includes("PCM") ? [pcmGroup] : []),
   ];
-  const userName = displayName ?? "Usuário autenticado";
-  const initials = userName.split(/\s+/u).filter(Boolean).slice(0, 2).map(name => name[0]).join("").toLocaleUpperCase("pt-BR");
-  const roleText = roles.length > 0 ? roles.join(", ") : "Não atribuído";
-  const importerText = isMaster ? "Todas (Master)" : importerScopes.length > 0 ? importerScopes.join(", ") : "Nenhuma atribuída";
+  const userName = displayName ?? t.authenticatedUser;
+  const initials = userName.split(/\s+/u).filter(Boolean).slice(0, 2).map(name => name[0]).join("").toLocaleUpperCase(locale);
+  const roleText = roles.length > 0 ? roles.join(", ") : t.noRole;
+  const importerText = isMaster ? t.allImporters : importerScopes.length > 0 ? importerScopes.join(", ") : t.noImporters;
 
   return <aside className={collapsed ? "app-sidebar is-collapsed" : "app-sidebar"}>
-    <Link className="sidebar-brand" href="/" aria-label="ERP Comex, carteira de POs">
+    <Link className="sidebar-brand" href="/" aria-label={t.homeLabel}>
       <span className="sidebar-brand-mark">EC</span>
-      <span className="sidebar-brand-copy">ERP Comex<small>Gestão de importações</small></span>
+      <span className="sidebar-brand-copy">ERP Comex<small>{t.brandSubtitle}</small></span>
     </Link>
     <button className="sidebar-toggle" type="button" onClick={onToggle}
-      aria-label={collapsed ? "Expandir menu lateral" : "Recolher menu lateral"}
-      title={collapsed ? "Expandir menu" : "Recolher menu"}>
+      aria-label={collapsed ? t.expandAria : t.collapseAria}
+      title={collapsed ? t.expandTitle : t.collapseTitle}>
       <SidebarIcon name="collapse" />
-      <span>{collapsed ? "Expandir" : "Recolher menu"}</span>
+      <span>{collapsed ? t.expand : t.collapse}</span>
     </button>
-    <nav className="sidebar-navigation" aria-label="Navegação principal">
+    <nav className="sidebar-navigation" aria-label={t.navigation}>
       {visibleGroups.map(group => <section className="sidebar-group" key={group.label}>
-        <h2>{group.label}</h2>
+        <h2>{t.groups[group.label]}</h2>
         <ul>{group.items.map(item => {
           const active = isItemActive(pathname, item);
+          const label = `${t.groups[group.label]}: ${t.items[item.label]}`;
           return <li key={item.href}><Link href={item.href} className={active ? "sidebar-link active" : "sidebar-link"}
-            aria-current={active ? "page" : undefined} aria-label={collapsed ? `${group.label}: ${item.label}` : undefined}
-            title={collapsed ? `${group.label}: ${item.label}` : undefined}>
-            <SidebarIcon name={item.icon} /><span>{item.label}</span>
+            aria-current={active ? "page" : undefined} aria-label={collapsed ? label : undefined}
+            title={collapsed ? label : undefined}>
+            <SidebarIcon name={item.icon} /><span>{t.items[item.label]}</span>
           </Link></li>;
       })}</ul>
       </section>)}
     </nav>
-    <section className="sidebar-account" aria-label="Conta do usuário">
-      <div className="sidebar-user" title={collapsed ? `${userName} · Papel: ${roleText} · Importadoras: ${importerText}` : undefined}>
+    <section className="sidebar-account" aria-label={t.account}>
+      <div className="sidebar-user" title={collapsed ? `${userName} · ${t.role(roleText)} · ${t.importers(importerText)}` : undefined}>
         <span className="sidebar-avatar" aria-hidden="true">{initials || "U"}</span>
-        <span className="sidebar-user-copy"><strong>{userName}</strong><small>Papel: {roleText}</small><small>Importadoras: {importerText}</small></span>
+        <span className="sidebar-user-copy"><strong>{userName}</strong><small>{t.role(roleText)}</small><small>{t.importers(importerText)}</small></span>
       </div>
+      <LanguageSwitcher className="sidebar-language" />
       <button className="sidebar-account-action" type="button" onClick={onToggleTheme}
-        aria-label={theme === "dark" ? "Ativar tema claro" : "Ativar tema escuro"}
-        aria-pressed={theme === "dark"} title={collapsed ? (theme === "dark" ? "Ativar tema claro" : "Ativar tema escuro") : undefined}>
+        aria-label={theme === "dark" ? t.lightThemeAria : t.darkThemeAria}
+        aria-pressed={theme === "dark"} title={collapsed ? (theme === "dark" ? t.lightThemeAria : t.darkThemeAria) : undefined}>
         <SidebarIcon name={theme === "dark" ? "sun" : "moon"} />
-        <span>{theme === "dark" ? "Tema claro" : "Tema escuro"}</span>
+        <span>{theme === "dark" ? t.lightTheme : t.darkTheme}</span>
       </button>
-      <Link className="sidebar-account-action" href="/change-password" title={collapsed ? "Trocar senha" : undefined}>
-        <SidebarIcon name="password" /><span>Trocar senha</span>
+      <Link className="sidebar-account-action" href="/change-password" title={collapsed ? t.changePassword : undefined}>
+        <SidebarIcon name="password" /><span>{t.changePassword}</span>
       </Link>
       <button className="sidebar-account-action" type="button" onClick={onLogout}
-        title={collapsed ? "Sair" : undefined}>
-        <SidebarIcon name="logout" /><span>Sair</span>
+        title={collapsed ? t.logout : undefined}>
+        <SidebarIcon name="logout" /><span>{t.logout}</span>
       </button>
     </section>
   </aside>;

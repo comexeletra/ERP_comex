@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { buildE2eFlow, DEFAULT_E2E_FLOW_CONFIG, formatDayOffset, railCenter } from "../lib/e2e-flow.ts";
+import { ptBR } from "../lib/i18n/pt-BR.ts";
 
 const component = await readFile(new URL("../components/E2eFlowDemo.tsx", import.meta.url), "utf8");
 const page = await readFile(new URL("../app/end-to-end/page.tsx", import.meta.url), "utf8");
@@ -74,7 +75,8 @@ test("rail centers align with the six-column card grid", () => {
 
 test("end-to-end demo page is routed, listed in the sidebar and follows the app identity", () => {
   assert.match(page, /<E2eFlowDemo \/>/u);
-  assert.match(sidebar, /\{ label: "End-to-end", href: "\/end-to-end", icon: "flow" \}/u);
+  assert.match(sidebar, /\{ label: "endToEnd", href: "\/end-to-end", icon: "flow" \}/u);
+  assert.equal(ptBR.sidebar.items.endToEnd, "End-to-end");
   assert.match(component, /<main className="shell e2e-flow"/u);
   assert.match(component, /<header className="page-header"><p className="eyebrow">/u);
   assert.match(component, /Demonstração/u);

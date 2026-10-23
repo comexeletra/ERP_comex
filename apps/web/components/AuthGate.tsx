@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 import AppSidebar from "./AppSidebar";
+import { useI18n } from "./I18nProvider";
 
 type Identity = {
   authenticated: boolean;
@@ -16,6 +17,7 @@ type Identity = {
 
 export default function AuthGate({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const { m, messages } = useI18n();
   const [identity, setIdentity] = useState<Identity>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
@@ -38,12 +40,12 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     apiFetch("/auth/me")
       .then(async (response) => {
         if (response.status === 401) return;
-        if (!response.ok) throw new Error("Não foi possível verificar a sessão.");
+        if (!response.ok) throw new Error(messages().auth.sessionCheckFailed);
         setIdentity(await response.json() as Identity);
       })
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Erro inesperado."))
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : messages().common.unexpectedError))
       .finally(() => setLoading(false));
-  }, [pathname]);
+  }, [messages, pathname]);
 
   useEffect(() => {
     if (!loading && !error && !identity && pathname !== "/login") {
@@ -54,10 +56,10 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   async function logout() {
     try {
       const response = await apiFetch("/auth/logout", { method: "POST" });
-      if (!response.ok) throw new Error("Não foi possível encerrar a sessão.");
+      if (!response.ok) throw new Error(m.auth.logoutFailed);
       window.location.assign("/login");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Erro inesperado.");
+      setError(reason instanceof Error ? reason.message : m.common.unexpectedError);
     }
   }
 
@@ -77,11 +79,11 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   }
 
   if (pathname === "/login") return <>{children}</>;
-  if (loading) return <main className="shell"><p>Verificando sessão…</p></main>;
-  if (error) return <main className="shell"><p className="notice error">{error}</p><Link className="button" href="/login">Entrar</Link></main>;
-  if (!identity) return <main className="shell"><p role="status">Redirecionando para o login…</p></main>;
+  if (loading) return <main className="shell"><p>{m.auth.checkingSession}</p></main>;
+  if (error) return <main className="shell"><p className="notice error">{error}</p><Link className="button" href="/login">{m.auth.signIn}</Link></main>;
+  if (!identity) return <main className="shell"><p role="status">{m.auth.redirecting}</p></main>;
   if (identity.mustChangePassword && pathname !== "/change-password") {
-    return <main className="shell"><p className="notice">Troque sua senha inicial para continuar.</p><Link className="button" href="/change-password">Trocar senha</Link></main>;
+    return <main className="shell"><p className="notice">{m.auth.mustChangePassword}</p><Link className="button" href="/change-password">{m.auth.changePassword}</Link></main>;
   }
 
   return <div className={sidebarCollapsed ? "app-layout sidebar-collapsed" : "app-layout"}>

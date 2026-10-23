@@ -805,6 +805,20 @@ td .button + .button { margin-left: 6px; }
 .app-sidebar.is-collapsed .sidebar-navigation { gap: 13px; }
 .app-sidebar.is-collapsed .sidebar-group ul { gap: 5px; }
 .app-sidebar.is-collapsed .sidebar-link { justify-content: center; padding-left: 8px; padding-right: 8px; }
+.language-switcher { display: grid; gap: 4px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.language-option { background: transparent; border: 1px solid #c9d7db; border-radius: 7px; color: #304e59; cursor: pointer; font: inherit; font-size: .76rem; font-weight: 700; min-height: 30px; padding: 4px 6px; }
+.language-option:hover { background: #e7f1f2; }
+.language-option.active { background: #0d7885; border-color: #0d7885; color: #fff; }
+.language-option:focus-visible { outline: 3px solid #f2a23a; outline-offset: 2px; }
+.sidebar-language { margin: 0 2px 6px; }
+.sidebar-language .language-option { border-color: #345761; color: #d6e5e8; }
+.sidebar-language .language-option:hover { background: #1d414d; color: #fff; }
+.sidebar-language .language-option.active { background: #0d7885; border-color: #0d7885; color: #fff; }
+.app-sidebar.is-collapsed .sidebar-language { grid-template-columns: 1fr; margin-left: 0; margin-right: 0; }
+.auth-language { justify-self: end; margin: 0 0 22px auto; max-width: 190px; }
+:root[data-theme="dark"] .auth-language .language-option { border-color: #465c68; color: #d4e0e6; }
+:root[data-theme="dark"] .auth-language .language-option:hover { background: #202f39; }
+:root[data-theme="dark"] .auth-language .language-option.active { background: #0d7885; border-color: #0d7885; color: #fff; }
 @media (max-width: 760px) {
   .app-layout, .app-layout.sidebar-collapsed { display: block; }
   .app-sidebar, .app-sidebar.is-collapsed { height: auto; max-height: none; min-height: 0; overflow: visible; padding: 10px 12px 12px; position: relative; width: 100%; }
