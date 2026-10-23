@@ -6,6 +6,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../../../lib/api";
 import { formatUsDateTime } from "../../../lib/date-format";
 import { canWriteRequests } from "../../../lib/request-permissions";
+import { getMessages, useI18n } from "../../../components/I18nProvider";
 import { loadOperationalOptions, OperationalOption, OperationalOptionSelect } from "../../../components/OperationalOptionSelect";
 
 type RequestDetail = { id: string; requestNumber: string; importer: string; sourceKind: string;
@@ -21,6 +22,9 @@ const blankItem = (): DraftItem => ({ description: "", purposeText: "", costCent
 
 export default function RequestDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const { m } = useI18n();
+  const t = m.requestDetail;
+  const r = m.requests;
   const [request, setRequest] = useState<RequestDetail>();
   const [options, setOptions] = useState<OperationalOption[]>([]);
   const [canWrite, setCanWrite] = useState(false);
@@ -44,19 +48,20 @@ export default function RequestDetailPage() {
       loadOperationalOptions(),
     ])
       .then(async ([identityResponse, response, optionValues]) => {
-        if (!identityResponse.ok) throw new Error("Sua sessão expirou. Entre novamente.");
+        const text = getMessages();
+        if (!identityResponse.ok) throw new Error(text.common.sessionExpired);
         const identity = await identityResponse.json() as { roles: string[] };
         if (!controller.signal.aborted) {
           setCanWrite(canWriteRequests(identity.roles)); setOptions(optionValues);
         }
-        if (response.status === 401) throw new Error("Sua sessão expirou. Entre novamente.");
-        if (response.status === 403) throw new Error("Seu perfil não pode consultar esta solicitação.");
-        if (response.status === 404) throw new Error("Solicitação não encontrada no seu escopo.");
-        if (!response.ok) throw new Error("Não foi possível carregar a solicitação.");
+        if (response.status === 401) throw new Error(text.common.sessionExpired);
+        if (response.status === 403) throw new Error(text.requestDetail.forbidden);
+        if (response.status === 404) throw new Error(text.requestDetail.notFound);
+        if (!response.ok) throw new Error(text.requestDetail.loadFailed);
         return await response.json() as RequestDetail;
       })
       .then(data => { if (!controller.signal.aborted) setRequest(data); })
-      .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Erro inesperado."); })
+      .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : getMessages().common.unexpectedError); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [id]);
@@ -66,7 +71,7 @@ export default function RequestDetailPage() {
     apiFetch(`/api/v1/requests/${encodeURIComponent(id)}/history?page=${historyPage}&pageSize=25`,
       { signal: controller.signal })
       .then(async response => {
-        if (!response.ok) throw new Error("Não foi possível carregar o histórico da solicitação.");
+        if (!response.ok) throw new Error(getMessages().requestDetail.historyFailed);
         return await response.json() as HistoryPage;
       })
       .then(data => {
@@ -76,7 +81,7 @@ export default function RequestDetailPage() {
         setHistoryError("");
       })
       .catch(cause => {
-        if (!controller.signal.aborted) setHistoryError(cause instanceof Error ? cause.message : "Erro inesperado.");
+        if (!controller.signal.aborted) setHistoryError(cause instanceof Error ? cause.message : getMessages().common.unexpectedError);
       })
       .finally(() => { if (!controller.signal.aborted) setHistoryLoading(false); });
     return () => controller.abort();
@@ -103,16 +108,16 @@ export default function RequestDetailPage() {
       const data = await response.json() as RequestDetail & { detail?: string; code?: string };
       if (!response.ok) {
         if (response.status === 409 && data.code === "VERSION_CONFLICT") {
-          throw new Error("A solicitação mudou desde que você a abriu. Seu rascunho foi mantido; recarregue a página para comparar.");
+          throw new Error(t.versionConflict);
         }
         if (response.status === 409 && data.code === "REQUEST_NOT_EDITABLE") {
-          throw new Error("Esta solicitação não aceita mais edição porque seu status mudou.");
+          throw new Error(t.notEditable);
         }
-        throw new Error(data.detail || "Não foi possível salvar a solicitação.");
+        throw new Error(data.detail || t.saveFailed);
       }
-      setRequest(data); setDraft(undefined); setNotice("Alterações salvas.");
+      setRequest(data); setDraft(undefined); setNotice(t.saved);
       setHistoryPage(1); setHistoryRevision(value => value + 1);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Erro inesperado."); }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : m.common.unexpectedError); }
     finally { setSaving(false); }
   }
 
@@ -122,80 +127,80 @@ export default function RequestDetailPage() {
   }
 
   return <main className="shell">
-    <header className="page-header"><p className="eyebrow">ERP Comex · Solicitações</p>
-      <h1>{request?.requestNumber ?? "Detalhe da solicitação"}</h1>
-      <Link className="text-link" href="/requests">← Voltar às solicitações</Link>
+    <header className="page-header"><p className="eyebrow">{t.eyebrow}</p>
+      <h1>{request?.requestNumber ?? t.fallbackTitle}</h1>
+      <Link className="text-link" href="/requests">{t.back}</Link>
     </header>
     <section className="card" aria-live="polite">
-      {loading && <p role="status">Carregando solicitação…</p>}
+      {loading && <p role="status">{t.loading}</p>}
       {error && <div className="notice error" role="alert">{error}</div>}
       {notice && <p className="notice success" role="status">{notice}</p>}
       {request && <>
         <dl className="field-list">
-          <dt>Importador</dt><dd>{request.importer}</dd>
-          <dt>Origem</dt><dd>{request.sourceKind}</dd>
-          <dt>Solicitante</dt><dd>{request.requesterReference}</dd>
-          <dt>Status</dt><dd>{request.status}</dd>
-          <dt>Versão</dt><dd>{request.version}</dd>
-          <dt>Motivo</dt><dd>{request.reason}</dd>
-          {request.notes && <><dt>Observações</dt><dd>{request.notes}</dd></>}
-          <dt>Criada em</dt><dd>{formatUsDateTime(request.createdAt)}</dd>
+          <dt>{r.importer}</dt><dd>{request.importer}</dd>
+          <dt>{t.source}</dt><dd>{request.sourceKind}</dd>
+          <dt>{r.requesterShort}</dt><dd>{request.requesterReference}</dd>
+          <dt>{r.status}</dt><dd>{(r.statuses as Record<string, string>)[request.status] ?? request.status}</dd>
+          <dt>{t.version}</dt><dd>{request.version}</dd>
+          <dt>{m.postShipment.reason}</dt><dd>{request.reason}</dd>
+          {request.notes && <><dt>{m.followup.notes}</dt><dd>{request.notes}</dd></>}
+          <dt>{t.createdAt}</dt><dd>{formatUsDateTime(request.createdAt)}</dd>
         </dl>
-        {!draft && <><h2>Itens solicitados</h2>
+        {!draft && <><h2>{r.items}</h2>
         {request.items.map(item => <article className="request-line" key={item.id}>
-          <h3>Item {item.lineNumber}</h3><p>{item.description}</p>
-          <p className="muted">Origem: {item.sourceKind}</p>
-          {item.purposeText && <p><strong>Finalidade informada:</strong> {item.purposeText}</p>}
-          {item.costCenterText && <p><strong>Centro de custo informado:</strong> {item.costCenterText}</p>}
+          <h3>{r.item(item.lineNumber)}</h3><p>{item.description}</p>
+          <p className="muted">{t.sourceLine(item.sourceKind)}</p>
+          {item.purposeText && <p><strong>{t.purposeInformed}</strong> {item.purposeText}</p>}
+          {item.costCenterText && <p><strong>{t.costCenterInformed}</strong> {item.costCenterText}</p>}
         </article>)}</>}
-        {!draft && canWrite && request.status === "SUBMITTED" && <button className="button" type="button" onClick={beginEditing}>Editar solicitação</button>}
+        {!draft && canWrite && request.status === "SUBMITTED" && <button className="button" type="button" onClick={beginEditing}>{t.edit}</button>}
         {draft && <form className="stack-form request-form" onSubmit={save}>
-          <h2>Editar solicitação</h2>
-          <p className="muted">A edição está disponível enquanto o status for Enviada. Número, importador e status não podem ser alterados aqui.</p>
-          <label>Solicitante / referência<OperationalOptionSelect required entity="requester" value={draft.requesterReference} values={options}
+          <h2>{t.edit}</h2>
+          <p className="muted">{t.editHelp}</p>
+          <label>{r.requester}<OperationalOptionSelect required entity="requester" value={draft.requesterReference} values={options}
             onChange={requesterReference => setDraft(current => current && ({ ...current, requesterReference }))} /></label>
-          <label>Motivo da solicitação<textarea required minLength={8} maxLength={2000} value={draft.reason}
+          <label>{r.reason}<textarea required minLength={8} maxLength={2000} value={draft.reason}
             onChange={event => setDraft(current => current && ({ ...current, reason: event.target.value }))} /></label>
-          <label>Observações gerais<textarea maxLength={2000} value={draft.notes}
+          <label>{r.notes}<textarea maxLength={2000} value={draft.notes}
             onChange={event => setDraft(current => current && ({ ...current, notes: event.target.value }))} /></label>
-          <h3>Itens solicitados</h3>
+          <h3>{r.items}</h3>
           {draft.items.map((item, index) => <fieldset className="request-line" key={item.id ?? `new-${index}`}>
-            <legend>Item {index + 1}</legend>
-            <label>Descrição informada pelo solicitante<textarea required maxLength={1000} value={item.description}
+            <legend>{r.item(index + 1)}</legend>
+            <label>{r.description}<textarea required maxLength={1000} value={item.description}
               onChange={event => updateItem(index, { description: event.target.value })} /></label>
             <div className="catalog-controls">
-              <label>Finalidade informada (opcional)<OperationalOptionSelect entity="purpose" value={item.purposeText} values={options}
+              <label>{r.purpose}<OperationalOptionSelect entity="purpose" value={item.purposeText} values={options}
                 onChange={purposeText => updateItem(index, { purposeText })} /></label>
-              <label>Centro de custo informado (opcional)<OperationalOptionSelect entity="cost_center" value={item.costCenterText} values={options}
+              <label>{r.costCenter}<OperationalOptionSelect entity="cost_center" value={item.costCenterText} values={options}
                 onChange={costCenterText => updateItem(index, { costCenterText })} /></label>
             </div>
-            {draft.items.length > 1 && <button className="button secondary" type="button" aria-label={`Remover item ${index + 1}`}
+            {draft.items.length > 1 && <button className="button secondary" type="button" aria-label={r.removeItemAria(index + 1)}
               onClick={() => setDraft(current => current && ({ ...current,
-                items: current.items.filter((_, itemIndex) => itemIndex !== index) }))}>Remover item</button>}
+                items: current.items.filter((_, itemIndex) => itemIndex !== index) }))}>{r.removeItem}</button>}
           </fieldset>)}
           {draft.items.length < 100 && <button className="button secondary" type="button"
-            onClick={() => setDraft(current => current && ({ ...current, items: [...current.items, blankItem()] }))}>Adicionar item</button>}
-          <div><button className="button" type="submit" disabled={saving}>{saving ? "Salvando…" : "Salvar alterações"}</button>
-            <button className="button secondary" type="button" disabled={saving} onClick={() => { setDraft(undefined); setError(""); }}>Cancelar edição</button></div>
+            onClick={() => setDraft(current => current && ({ ...current, items: [...current.items, blankItem()] }))}>{r.addItem}</button>}
+          <div><button className="button" type="submit" disabled={saving}>{saving ? t.saving : t.save}</button>
+            <button className="button secondary" type="button" disabled={saving} onClick={() => { setDraft(undefined); setError(""); }}>{t.cancelEdit}</button></div>
         </form>}
       </>}
     </section>
-    {request && <section className="card request-history" aria-label="Histórico da solicitação">
-      <h2>Histórico da solicitação</h2>
+    {request && <section className="card request-history" aria-label={t.history}>
+      <h2>{t.history}</h2>
       {historyError && <p className="notice error" role="alert">{historyError}</p>}
-      {historyLoading && history.length === 0 && <p role="status">Carregando histórico…</p>}
-      {!historyLoading && !historyError && history.length === 0 && <p className="muted">Nenhum evento registrado.</p>}
+      {historyLoading && history.length === 0 && <p role="status">{t.historyLoading}</p>}
+      {!historyLoading && !historyError && history.length === 0 && <p className="muted">{t.noEvents}</p>}
       <ol className="request-history-list">
         {history.map(entry => <li key={entry.id}>
-          <strong>{entry.operation === "CREATE" ? "Solicitação criada" : "Solicitação alterada"}</strong>
+          <strong>{entry.operation === "CREATE" ? t.created : t.changed}</strong>
           <span className="muted">{formatUsDateTime(entry.occurredAt)} · {entry.actor}</span>
-          {entry.changedFields.length > 0 && <p>Campos: {entry.changedFields.join(", ")}</p>}
-          {entry.reason && <p>Motivo registrado: {entry.reason}</p>}
+          {entry.changedFields.length > 0 && <p>{t.fields(entry.changedFields.join(", "))}</p>}
+          {entry.reason && <p>{t.recordedReason(entry.reason)}</p>}
         </li>)}
       </ol>
       {history.length < historyTotal && <button className="button secondary" type="button" disabled={historyLoading}
         onClick={() => { setHistoryLoading(true); setHistoryPage(value => value + 1); }}>
-        {historyLoading ? "Carregando…" : "Carregar eventos anteriores"}
+        {historyLoading ? t.loadingMore : t.loadMore}
       </button>}
     </section>}
   </main>;

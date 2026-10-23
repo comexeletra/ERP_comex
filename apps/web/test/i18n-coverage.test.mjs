@@ -6,19 +6,12 @@ const root = new URL("../", import.meta.url);
 
 // Screens still being translated. Remove each file from this list when it moves to the dictionaries.
 const pending = new Set([
-  "app/admin/outbox/page.tsx",
-  "app/admin/users/page.tsx",
   "app/catalog/page.tsx",
   "app/catalog/values/NcmTaxTreatments.tsx",
   "app/catalog/values/page.tsx",
   "app/pcm/page.tsx",
-  "app/quality/page.tsx",
-  "app/requests/page.tsx",
-  "app/requests/[id]/page.tsx",
   "app/source-audit/page.tsx",
   "components/E2eFlowDemo.tsx",
-  "components/LegacyQueue.tsx",
-  "components/ReportsView.tsx",
 ]);
 
 async function tsxFiles(directory) {
