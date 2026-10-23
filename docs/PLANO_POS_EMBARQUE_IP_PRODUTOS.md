@@ -105,11 +105,11 @@ Confirmadas pelo usuário em 2026-10-22:
   - Migration M068 cria `bl_number` e `bl_date` em `imports.import_process` e os preenche a partir do BL ativo do IP.
   - O tipo BL deixa de ser oferecido em novos documentos; os BLs já cadastrados ficam como histórico.
 - **D4 — Status calculado pelas datas.** O status exibido no IP, nas linhas, nas listas e nos relatórios é o calculado. O campo de status informado continua existindo e só prevalece quando for `CANCELLED`. A carga de invoice deixa de gravar `WAITING SHIPMENT`.
-- **D5 — Distribuição em IP embarcado.** IP embarcado é o que tem BL date ou Departure preenchidos. Nele, criar, alterar ou cancelar distribuição (inclusive pela revisão de invoice) exige confirmação explícita e justificativa digitada pelo usuário. O caso é raro, mas fica coberto.
+- **D5 — Distribuição em IP embarcado.** IP embarcado é o que tem BL date ou Departure preenchidos. Nele, criar distribuição, mudar a quantidade, cancelar ou revisar a invoice exige confirmação explícita e justificativa digitada pelo usuário. Editar só a saída da fábrica ou as observações continua livre, porque não muda a quantidade embarcada. O caso é raro, mas fica coberto.
 
 Seguem a recomendação, salvo objeção do usuário:
 
-- **D6 — Sequência das datas.** Bloquear somente o fisicamente impossível entre datas efetivas, e apenas quando a edição altera uma das datas envolvidas: chegada antes da Departure, entrega antes da chegada e ETA antes do ETD. Os demais casos geram só aviso, porque existem no histórico: chegada antes do ETD, desembaraço antes da chegada, ETE antes da ETA e BL date depois da Departure.
+- **D6 — Sequência das datas.** Bloquear somente o fisicamente impossível entre datas efetivas, e apenas quando a edição altera uma das datas envolvidas: chegada antes da Departure, entrega antes da chegada e ETA antes do ETD. Os demais casos geram só aviso, porque existem no histórico: chegada antes do ETD, desembaraço antes da chegada e ETE antes da ETA. "BL date depois da Departure" não virou aviso: o BL costuma ser emitido no embarque ou logo depois.
 - **D7 — Custos ficam no IP.** Frete, impostos e demurrage não aparecem por produto. Um eventual rateio é tarefa separada.
 - **D8 — ETA/ETE calculadas.** Manter a regra atual e mostrar "confirmada" e "calculada" lado a lado. A planilha também projeta a ETE sem ETD (hoje + 10 + trânsito + 10); essa projeção só será replicada se a operação confirmar.
 - **D9 — Saldo sem IP na carteira por produto.** Mostrar uma linha "A distribuir" com a quantidade restante e sem datas.
@@ -246,3 +246,29 @@ Cada fase segue o mesmo ciclo: testes primeiro; `corepack pnpm test` e `corepack
 - **Validação só com dados sintéticos.** O HML não tem distribuições, então o volume real (cerca de 6,8 mil itens) só será exercitado com dados autorizados ou em cópia restaurada.
 - **Promoção para produção.** A produção está em M034; liberar este trabalho em produção exige promover antes M035–M067.
 - **Compatibilidade de versões.** O web publicado pode conversar com uma API antiga na VPS. Por isso, os campos novos são opcionais, e a ausência deles é tratada pelo padrão `compatibilityWarning` já usado nas telas.
+
+## 10. Execução (2026-10-23)
+
+Todas as fases foram implementadas na `homologacao` e publicadas no HML; a produção não foi alterada.
+
+| Fase | Commits | Resultado |
+|---|---|---|
+| 1 — BL no IP | `c050193`, `f834fa2` | M068 validada em cópia restaurada e aplicada só no HML; BL nº/BL date no formulário do IP; `BL_IS_IP_FIELD` para novos documentos BL; catálogo único de campos (Departure na PO, custos fora das linhas). |
+| 2 — Status e linha | `af2f77b` | Status calculado pelas datas (informado só para `CANCELLED`); carga de invoice sem `WAITING SHIPMENT`; resumo calculado do IP; BL/Invoice/NF por linha. |
+| 3 — Telas | `483d589` | Colunas ETD, Departure, BL date, ETA, Chegada, ETE e Entrega na PO; status e ETA/ETE calculados × informados no IP e na PO. |
+| 4 — Integridade | `20da18d` | `IP_DATE_SEQUENCE_INVALID` e avisos; `IP_ALREADY_SHIPPED_UNCONFIRMED` nas distribuições e na revisão de invoice; confirmação nas telas da PO, do IP e da invoice. |
+| 5/6 — Carteira e exportação | `2ca91b2` | `GET /api/v1/purchase-order-lines`, tela "Carteira por produto", exportação `purchase-order-lines-xlsx` na ordem B:AZ; lista de IPs e relatório pelo status calculado; resumo por item na PO. |
+| 7 — Histórico | `8d579fb` | Contagem de `IP_SOURCE_CONFLICT` aberto e avisos de datas gravadas fora de ordem ao abrir o IP. |
+| 8 — Homologação | `413fe6a` | Release HML `hml-release-413fe6a`; teste opt-in `test:post-shipment:hml` aprovado; Preview Vercel `success`. |
+
+Ajustes em relação ao plano:
+
+- **Fase 2:** as rotas de acompanhamento da PO e do IP continuam montando a própria resposta, mas compartilham `calculateFollowup`/`calculateProcess`. `shipment-lines.ts` concentra a consulta da carteira por produto e da exportação. A regra SQL de status existe uma única vez (`shipmentStatusSql`), usada pelas linhas, pela lista de IPs e pelo relatório. A paridade com o cálculo da API foi conferida no teste de integração do HML.
+- **Fase 7:** o módulo de Qualidade não lê o filtro pela URL. O aviso no IP aponta para a Qualidade e orienta a filtrar por `IP_SOURCE_CONFLICT`.
+
+Pendências:
+
+- **Worker de exportação no HML.** A VPS não tem worker apontando para o HML, então exportações enfileiradas no HML não são processadas. Criá-lo é mudança de configuração da VPS e depende de aprovação.
+- **Validação visual.** O domínio estável do Preview exige login SSO da Vercel, e a validação visual não foi feita pelo agente.
+- **Promoção para produção.** Exige promover M035–M068 com cópia restaurada e backup, e um Pull Request de `homologacao` para `main` após a aprovação dos testes.
+

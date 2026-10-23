@@ -1,5 +1,37 @@
 # API ERP na VPS Hostinger
 
+## Pós-embarque do IP nos produtos no HML (2026-10-23)
+
+O commit `413fe6a` completa o plano `docs/PLANO_POS_EMBARQUE_IP_PRODUTOS.md` sobre a M068: status do IP e das
+linhas calculado pelas datas (o status informado só prevalece quando é `CANCELLED`; a carga de invoice deixa de
+gravar `WAITING SHIPMENT`); bloqueio de datas efetivas fora de ordem (`IP_DATE_SEQUENCE_INVALID`) com avisos para
+os demais casos; confirmação com justificativa digitada para criar, mudar a quantidade, cancelar distribuição ou
+revisar invoice em IP com BL date ou Departure (`IP_ALREADY_SHIPPED_UNCONFIRMED`); carteira por produto
+(`GET /api/v1/purchase-order-lines`) e sua exportação (`POST /api/v1/exports/purchase-order-lines`, job
+`purchase-order-lines-xlsx`); lista de IPs e relatório de pós-embarque pelo status calculado. Não houve migration;
+o ledger HML segue em M001–M068.
+
+O release foi compilado na VPS como `/opt/import-erp/apps/api/hml-release-413fe6a` a partir de `git archive`,
+reaproveitando o `node_modules` de `hml-release-c050193` (dependências inalteradas), e ativado pelo drop-in
+`zzzzzzzzzzzzzzzzzz-release-413fe6a.conf`. O drop-in e o `ExecStart` anteriores estão em
+`/var/backups/import-erp/hml-post-shipment-413fe6a-predeploy`. Para rollback somente do código, remova o drop-in
+novo, execute `systemctl daemon-reload` e reinicie `import-erp-hml-api` (volta a `hml-release-c050193`).
+`/health/live` responde 200; `GET /api/v1/purchase-order-lines` e `POST /api/v1/exports/purchase-order-lines` sem
+sessão respondem 401.
+
+O teste opt-in `apps/api/test/post-shipment-propagation-hml.integration.mjs` (`npm run test:post-shipment:hml`)
+passou no release, com a role `import_erp_hml_app` (run `D07A6BC4665F`): duas POs divididas entre dois IPs
+mostraram BL, ETD, ETA e status de cada IP nas parcelas certas; editar o IP não gravou os itens das POs; datas
+impossíveis e mudança não confirmada em IP embarcado foram recusadas; o filtro de status da carteira por produto
+selecionou exatamente as linhas com o status calculado pela API; a lista de IPs devolveu o mesmo status do
+acompanhamento. Ao final, as 3 distribuições e a invoice foram canceladas e os 2 IPs e as 2 POs sintéticos ficaram
+`DELETED` (a auditoria é append-only); o HML terminou sem distribuições nem IPs ativos. O push de `homologacao`
+para `413fe6a` recebeu status Vercel `success`.
+
+Pendência: a VPS só tem o worker de exportação de produção (`import-erp-export-worker`, com `api.env`). Não há
+worker apontando para o HML, então exportações enfileiradas no HML (de POs ou por produto) não são processadas
+ali. Criar esse serviço é mudança de configuração da VPS e depende de aprovação. Nenhuma produção foi alterada.
+
 ## BL nº e BL date no IP (M068) no HML (2026-10-23)
 
 O commit `c050193` move BL nº e BL date para o IP (um IP é um embarque): o formulário de Pós Embarque passa a ter
