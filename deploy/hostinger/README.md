@@ -1,5 +1,20 @@
 # API ERP na VPS Hostinger
 
+## Dados de demonstração da PO 030201 no HML (2026-10-26)
+
+A pedido do usuário, `seed-hml-po-030201-demo.mjs` dividiu os 215 itens da PO 030201 ativa
+(importador ELETRA INDUSTRIA…, fornecedor EX000135) em sete IPs `DEMO-030201-IP01`…`IP07`, cada um numa
+etapa: entregue, desembaraço, aguardando chegada, aguardando embarque e três aguardando produção. Cada item
+foi alocado inteiro a um IP, com a data de fim de produção na alocação. A carga usou as rotas da API do release
+`hml-release-443b927` com a role `import_erp_hml_app` em `erp_po_totvs_hml` (run `B8297002A4C2`), portanto com
+auditoria e outbox. A conferência em SQL encontrou 215/215 itens totalmente alocados e 12 IPs no HML. A PO
+excluída de mesmo número (Eletra Cwb) não foi alterada.
+
+O script fica também em `/root/hml-demo/`. Execute-o com
+`MIGRATION_ENV=isolated ERP_API_RELEASE_DIR=/opt/import-erp/apps/api/hml-release-<sha> /opt/node-v24/bin/node --env-file=/etc/import-erp/homologation-db.env seed-hml-po-030201-demo.mjs apply|revert`.
+Use `--env-file`: `source` do arquivo no shell não exporta `DATABASE_URL`. `revert` cancela as alocações e
+invoices demo e exclui os IPs pela API; `apply` recusa rodar enquanto existirem IPs demo ou alocações ativas na PO.
+
 ## Rate limit por cliente real no HML (2026-10-26)
 
 Os commits `443b927` e `9febc70` fazem a Vercel encaminhar o IP validado do
