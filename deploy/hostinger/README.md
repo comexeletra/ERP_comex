@@ -23,6 +23,16 @@ leitura executou o código do release com `import_erp_hml_app` em
 duas consultas de dados e nenhum `sourcePoNumber` interno nos itens. Nenhum
 banco ou serviço de produção foi consultado ou alterado.
 
+O push da branch `homologacao` no commit `570d0eb` gerou o Preview
+`dpl_DF5jNCKnXR6N1k4YfBKKauTP3bM5`, com status `Ready`, branch
+`homologacao`, commit `570d0eb` e alias
+`erp-comex-git-homologacao-eletra-comex.vercel.app`. A rota `/login` no alias
+estável respondeu com a página do TMS - Supply Chain. O arquivo IPH034A citado
+no plano não estava disponível no workspace para o upload autenticado; a
+IPH034B disponível foi apenas analisada localmente (91 linhas, 97 destinos,
+6 POs e nenhum erro de parsing) e não foi tratada como substituta do aceite da
+IPH034A.
+
 ## Pós-embarque do IP nos produtos no HML (2026-10-23)
 
 O commit `413fe6a` completa o plano `docs/PLANO_POS_EMBARQUE_IP_PRODUTOS.md` sobre a M068: status do IP e das
