@@ -3,6 +3,7 @@ import test from "node:test";
 import Fastify from "fastify";
 import { registerAuthorization } from "../dist/authorization.js";
 import { registerExportJobRoutes } from "../dist/export-jobs.js";
+import { shipmentLineQuery } from "../dist/shipment-lines.js";
 
 const actorId = "00000000-0000-4000-8000-000000000001";
 
@@ -48,6 +49,15 @@ test("product line exports are queued with the carteira filters", async t => {
   const insert = queries.find(query => query.sql.includes("INSERT INTO jobs.export_job"));
   assert.match(insert.sql, /'purchase-order-lines-xlsx'/u);
   assert.deepEqual(JSON.parse(insert.params[4]), { ipNumber: "IP-1", status: "AGUARDANDO CHEGADA", situation: "open" });
+  // The End to End screen exports the stage it shows; the worker parses the stored filters again.
+  const staged = await app.inject({ method: "POST", url: "/api/v1/exports/purchase-order-lines",
+    payload: { stage: "T3", view: "reached", late: "true" } });
+  assert.equal(staged.statusCode, 202, staged.body);
+  const stored = JSON.parse(queries.filter(query => query.sql.includes("INSERT INTO jobs.export_job")).at(-1).params[4]);
+  assert.deepEqual(stored, { stage: "T3", view: "reached", late: "true", situation: "open" });
+  assert.equal(shipmentLineQuery.safeParse(stored).success, true);
+  const badStage = await app.inject({ method: "POST", url: "/api/v1/exports/purchase-order-lines", payload: { stage: "T9" } });
+  assert.equal(badStage.statusCode, 400, badStage.body);
 });
 
 test("recent exports list both PO and product line exports with their type", async t => {

@@ -1,9 +1,10 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
 import { loadE2eTargetSets } from "./e2e-targets.js";
-import { calculateE2e, calculateFollowup, e2eTargetSetFor, todayInBrasilia } from "./followup-calculations.js";
+import { calculateE2e, calculateFollowup, E2E_STAGE_CODES, e2eTargetSetFor, todayInBrasilia,
+  type E2eStageCode } from "./followup-calculations.js";
 
 type Row = Record<string, unknown>;
 
@@ -14,6 +15,8 @@ export const shipmentLineStatuses = ["A DISTRIBUIR", "AGUARDANDO PRODUÇÃO", "A
 export type ShipmentLineFilters = {
   importer?: string; purchaseOrder?: string; ipNumber?: string; product?: string;
   status?: (typeof shipmentLineStatuses)[number]; etaFrom?: string; etaTo?: string; situation: "open" | "all";
+  /** E2E stage: the lines now in it (`current`) or those that already have its actual date (`reached`). */
+  stage?: E2eStageCode; view?: "current" | "reached"; late?: "true";
 };
 
 // IP columns repeated on every product line. Costs stay on the IP: repeating them per
@@ -130,15 +133,69 @@ const linesSql = `WITH balance AS (
         page.sort_ip_number NULLS LAST, page.line_id) FILTER (WHERE page.line_id IS NOT NULL), '[]'::jsonb) AS items
   FROM page`;
 
-export type ShipmentLine = Awaited<ReturnType<typeof queryShipmentLines>>["lines"][number];
+export type ShipmentLine = Awaited<ReturnType<typeof calculateLines>>[number];
+type LineE2e = ReturnType<typeof calculateE2e>;
 
-/** Product lines (one per active allocation plus the balance without IP) with their IP data. */
-export async function queryShipmentLines(pool: Pool, scopes: readonly string[], filters: ShipmentLineFilters,
-  limit: number, offset: number) {
+const lineE2e = (line: ShipmentLine) => (line.calculated as { e2e?: LineE2e | null }).e2e ?? null;
+const inFlow = (line: ShipmentLine) => (line.calculated as { status?: unknown }).status !== "CANCELADO";
+
+/**
+ * Whether a line passes the E2E stage filters. `current`: the line is now in the stage (and
+ * late there). `reached`: the stage already has its actual date (and had a delay); without a
+ * stage, any stage with a delay. Cancelled lines never pass.
+ */
+export function matchesE2eStage(line: ShipmentLine, { stage, view = "current", late }: ShipmentLineFilters): boolean {
+  const e2e = lineE2e(line);
+  if (!e2e || !inFlow(line)) return false;
+  if (view === "current") return (!stage || e2e.currentStage === stage) && (!late || e2e.currentStageLate);
+  if (!stage) return !late || e2e.bottleneck !== null;
+  return e2e.stages[stage].source === "actual" && (!late || (e2e.stages[stage].delayDays ?? 0) > 0);
+}
+
+/** Lines in each E2E stage and lines that already passed it, with the late ones, for the animated flow. */
+export function summarizeE2eStages(lines: ShipmentLine[]) {
+  const flow = lines.filter(inFlow);
+  const stages = Object.fromEntries(E2E_STAGE_CODES.map(stage => {
+    const count = (view: "current" | "reached", late?: "true") =>
+      flow.filter(line => matchesE2eStage(line, { situation: "all", stage, view, late })).length;
+    return [stage, { current: count("current"), currentLate: count("current", "true"),
+      reached: count("reached"), reachedLate: count("reached", "true") }];
+  })) as Record<E2eStageCode, { current: number; currentLate: number; reached: number; reachedLate: number }>;
+  const delivered = flow.filter(line => { const e2e = lineE2e(line); return e2e !== null && e2e.currentStage === null; }).length;
+  return { totalCount: flow.length, delivered, stages };
+}
+
+async function queryLineRows(pool: Pool, scopes: readonly string[], filters: ShipmentLineFilters,
+  limit: number | null, offset: number) {
   const result = await pool.query<{ total_count: number; items: Row[] }>(linesSql, [scopes,
     filters.importer || null, filters.purchaseOrder || null, filters.ipNumber || null, filters.product || null,
     filters.status ?? null, filters.etaFrom ?? null, filters.etaTo ?? null, filters.situation, limit, offset]);
-  const rows = result.rows[0]?.items ?? [];
+  return { totalCount: Number(result.rows[0]?.total_count ?? 0), rows: result.rows[0]?.items ?? [] };
+}
+
+/**
+ * Product lines (one per active allocation plus the balance without IP) with their IP data.
+ * The E2E stage filters depend on the calculation, so with them every line is calculated
+ * before paging.
+ */
+export async function queryShipmentLines(pool: Pool, scopes: readonly string[], filters: ShipmentLineFilters,
+  limit: number, offset: number) {
+  if (!filters.stage && !filters.late) {
+    const { totalCount, rows } = await queryLineRows(pool, scopes, filters, limit, offset);
+    return { totalCount, lines: await calculateLines(pool, rows) };
+  }
+  const { rows } = await queryLineRows(pool, scopes, filters, null, 0);
+  const lines = (await calculateLines(pool, rows)).filter(line => matchesE2eStage(line, filters));
+  return { totalCount: lines.length, lines: lines.slice(offset, offset + limit) };
+}
+
+/** Every line matching the filters, summarized by E2E stage. */
+export async function queryE2eStageSummary(pool: Pool, scopes: readonly string[], filters: ShipmentLineFilters) {
+  const { rows } = await queryLineRows(pool, scopes, filters, null, 0);
+  return summarizeE2eStages(await calculateLines(pool, rows));
+}
+
+async function calculateLines(pool: Pool, rows: Row[]) {
   const processIds = [...new Set(rows.map(row => (row.process as Row | null)?.id).filter((id): id is string =>
     typeof id === "string"))];
   const documents = processIds.length ? (await pool.query<Row>(`SELECT * FROM imports.process_document
@@ -146,7 +203,7 @@ export async function queryShipmentLines(pool: Pool, scopes: readonly string[], 
     .map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [camelKey(key), value]))) : [];
   const targetSets = await loadE2eTargetSets(pool);
   const today = todayInBrasilia();
-  const lines = rows.map(row => {
+  return rows.map(row => {
     const process = processView(row.process);
     const item = row.item as Row;
     const quantity = String(row.line_quantity);
@@ -156,21 +213,30 @@ export async function queryShipmentLines(pool: Pool, scopes: readonly string[], 
         documents.filter(document => document.processId === process.id), today, targetSets)
       // The balance without IP still runs the stages up to the HQ shipment deadline.
       : { status: "A DISTRIBUIR", e2e: calculateE2e(item, {}, "A DISTRIBUIR", // i18n-ignore: API status
-        e2eTargetSetFor(targetSets, item.necessityDate, today), null) };
+        e2eTargetSetFor(targetSets, item.necessityDate, today), null, today) };
     return {
       lineId: row.line_id, lineKind: row.line_kind, quantity, factoryShipDate,
       purchaseOrder: row.purchase_order as Row, item, process, calculated,
     };
   });
-  return { totalCount: Number(result.rows[0]?.total_count ?? 0), lines };
 }
 
 const optionalText = (max: number) => z.string().trim().max(max).optional();
-export const shipmentLineQuery = z.object({
+const lineFilterQuery = z.object({
   importer: optionalText(120), purchaseOrder: optionalText(80), ipNumber: optionalText(80), product: optionalText(200),
   status: z.enum(shipmentLineStatuses).optional(), etaFrom: z.iso.date().optional(), etaTo: z.iso.date().optional(),
   situation: z.enum(["open", "all"]).default("open"),
 });
+export const shipmentLineQuery = lineFilterQuery.extend({
+  stage: z.enum(E2E_STAGE_CODES).optional(), view: z.enum(["current", "reached"]).optional(),
+  late: z.enum(["true"]).optional(),
+});
+
+function invalidQuery(request: FastifyRequest, reply: FastifyReply, error: z.ZodError) {
+  return reply.code(400).send({ type: "about:blank", title: "Parâmetros inválidos", status: 400,
+    detail: "Revise os filtros e a paginação.", instance: request.url.split("?", 1)[0], traceId: request.id,
+    code: "INVALID_QUERY", errors: error.flatten().fieldErrors });
+}
 
 export async function registerShipmentLineRoutes(app: FastifyInstance, pool: Pool): Promise<void> {
   app.get("/api/v1/purchase-order-lines", { config: permissionConfig("purchase-orders.read") }, async (request, reply) => {
@@ -178,15 +244,20 @@ export async function registerShipmentLineRoutes(app: FastifyInstance, pool: Poo
       page: z.coerce.number().int().min(1).default(1),
       pageSize: z.coerce.number().int().min(1).max(200).default(50),
     }).strict().safeParse(request.query);
-    if (!parsed.success) {
-      return reply.code(400).send({ type: "about:blank", title: "Parâmetros inválidos", status: 400,
-        detail: "Revise os filtros e a paginação.", instance: request.url.split("?", 1)[0], traceId: request.id,
-        code: "INVALID_QUERY", errors: parsed.error.flatten().fieldErrors });
-    }
+    if (!parsed.success) return invalidQuery(request, reply, parsed.error);
     const { page, pageSize, ...filters } = parsed.data;
     const result = await queryShipmentLines(pool, request.authorizationContext?.importerScopes ?? [], filters,
       pageSize, (page - 1) * pageSize);
     reply.header("Cache-Control", "no-store");
     return { page, pageSize, ...result };
   });
+
+  app.get("/api/v1/purchase-order-lines/e2e-stages", { config: permissionConfig("purchase-orders.read") },
+    async (request, reply) => {
+      const parsed = lineFilterQuery.strict().safeParse(request.query);
+      if (!parsed.success) return invalidQuery(request, reply, parsed.error);
+      const result = await queryE2eStageSummary(pool, request.authorizationContext?.importerScopes ?? [], parsed.data);
+      reply.header("Cache-Control", "no-store");
+      return result;
+    });
 }

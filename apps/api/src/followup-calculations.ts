@@ -135,8 +135,12 @@ function demandTypeKind(value: unknown): "mts" | "notMts" | "unknown" {
  * before the need date; every later stage is due at the previous stage's actual end plus its
  * target. Stages not reached yet end at the forecast (ETD, ETA, ETE) and say so in `source`.
  * Delay = actual days − target days (T0: actual days = plan received − T0 deadline).
+ * The line is in the stage after its last actual date (a missing date in the middle does not
+ * pull it back) and late there once `today` passes that stage's deadline. Delivered and
+ * cancelled lines have no current stage.
  */
-export function calculateE2e(item: Row, process: Row, status: string, targets: E2eTargetSet, factoryShipDate: unknown) {
+export function calculateE2e(item: Row, process: Row, status: string, targets: E2eTargetSet, factoryShipDate: unknown,
+  today = todayInBrasilia()) {
   const demandType = demandTypeKind(item.demandType);
   const mode = text(process.transportMode)?.toUpperCase() ?? null;
   const air = mode === null ? null : /^(AIR|AEREO|AÉREO|COURIER)$/u.test(mode);
@@ -154,18 +158,25 @@ export function calculateE2e(item: Row, process: Row, status: string, targets: E
     demandType === "mts" ? targets.t3MtsDays : targets.t3NotMtsDays,
     air === null ? null : air ? targets.t4AirDays : targets.t4SeaDays, targets.t5Days];
   let previousEnd: string | null = null;
+  let accumulated: number | null = 0;
   const stages = Object.fromEntries(E2E_STAGE_CODES.map((code, index) => {
     const [actualEnd, forecastEnd] = ends[index];
     const end = actualEnd ?? forecastEnd;
     const target = targetDays[index];
     const deadline = index === 0 ? monthShift(item.necessityDate, -4) : target === null ? null : addDays(previousEnd, target);
     const actualDays = index === 0 ? daysBetween(deadline, end) : daysBetween(previousEnd, end);
+    const delayDays = actualDays === null || target === null ? null : actualDays - target;
+    accumulated = accumulated === null || delayDays === null ? null : accumulated + delayDays;
     const stage = { deadline, actual: end, source: actualEnd ? "actual" : forecastEnd ? "forecast" : null, targetDays: target,
-      actualDays, delayDays: actualDays === null || target === null ? null : actualDays - target };
+      actualDays, delayDays, accumulatedDelayDays: accumulated };
     previousEnd = end;
     return [code, stage];
   })) as Record<E2eStageCode, { deadline: string | null; actual: string | null; source: "actual" | "forecast" | null;
-    targetDays: number | null; actualDays: number | null; delayDays: number | null }>;
+    targetDays: number | null; actualDays: number | null; delayDays: number | null; accumulatedDelayDays: number | null }>;
+  const lastActual = E2E_STAGE_CODES.map(code => stages[code].source).lastIndexOf("actual");
+  const currentStage = status === "CANCELADO" || lastActual === E2E_STAGE_CODES.length - 1 ? null
+    : E2E_STAGE_CODES[lastActual + 1];
+  const currentDeadline = currentStage ? stages[currentStage].deadline : null;
   const values = Object.values(stages);
   const totalTargetDays = values.every(stage => stage.targetDays !== null) ? values.reduce((sum, stage) => sum + stage.targetDays!, 0) : null;
   const totalActualDays = values.every(stage => stage.actualDays !== null) ? values.reduce((sum, stage) => sum + stage.actualDays!, 0) : null;
@@ -175,6 +186,7 @@ export function calculateE2e(item: Row, process: Row, status: string, targets: E
     totalDelayDays: totalTargetDays === null || totalActualDays === null ? null : totalActualDays - totalTargetDays,
     bottleneck: delayed.sort((a, b) => stages[b].delayDays! - stages[a].delayDays!)[0] ?? null,
     currentStatus: status, arrivalYearMonth: stages.T4.actual?.slice(0, 7) ?? null,
+    currentStage, currentStageLate: currentDeadline !== null && today > currentDeadline,
   };
 }
 
@@ -217,7 +229,8 @@ export function calculateFollowup(item: Row, process: Row, documents: Row[], tod
     daysBetween(ete, addDays(necessity, -7))! < 0 ? "RUPTURA" : "SEM RISCO";
   const scApproval = date(item.scApprovalDate);
   const poSent = date(item.poSentDate);
-  const e2e = calculateE2e(item, process, shipping.status, e2eTargetSetFor(targetSets, necessity, today), item.actualFactoryShipDate);
+  const e2e = calculateE2e(item, process, shipping.status, e2eTargetSetFor(targetSets, necessity, today), item.actualFactoryShipDate,
+    today);
   const invoiceLines = invoices.filter(doc => doc.purchaseOrderItemId === item.id);
   const invoiceQuantity = invoiceLines.length && invoiceLines.every(doc => fixed8(doc.quantity) !== null)
     ? invoiceLines.reduce((sum, doc) => sum + fixed8(doc.quantity)!, 0n) : null;

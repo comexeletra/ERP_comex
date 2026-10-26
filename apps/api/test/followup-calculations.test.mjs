@@ -267,3 +267,38 @@ test("E2E of a balance without IP plans the HQ shipment from the PO and leaves l
   const noPlan = calculateE2e({ ...resistor, commercialPlanReceivedDate: null }, {}, "A DISTRIBUIR", DEFAULT_E2E_TARGET_SET, null);
   assert.deepEqual([noPlan.stages.T0.actualDays, noPlan.stages.T1.deadline, noPlan.stages.T1.actualDays], [null, null, null]);
 });
+
+test("E2E current stage follows the last actual date and is late only after its deadline", () => {
+  const atSea = today => calculateFollowup(resistor, shippedBySea, invoice, today).e2e;
+  // T3 has an actual date (departure), so the line is in T4 until it arrives; the T4 deadline is 2026-11-24.
+  assert.deepEqual([atSea("2026-10-26").currentStage, atSea("2026-10-26").currentStageLate], ["T4", false]);
+  assert.equal(atSea("2026-11-24").currentStageLate, false);
+  assert.equal(atSea("2026-11-25").currentStageLate, true);
+  // A missing date in the middle does not pull the line back: shipped without the PO sent date is still in T4.
+  assert.equal(calculateFollowup({ ...resistor, poSentDate: null }, shippedBySea, invoice, "2026-10-26").e2e.currentStage, "T4");
+  // The balance without IP waits for the HQ shipment (T3), due on 2026-09-23.
+  const balance = calculateE2e(resistor, {}, "A DISTRIBUIR", DEFAULT_E2E_TARGET_SET, null, "2026-10-26");
+  assert.deepEqual([balance.currentStage, balance.currentStageLate], ["T3", true]);
+  const notStarted = calculateE2e({ necessityDate: "2026-12-01" }, {}, "A DISTRIBUIR", DEFAULT_E2E_TARGET_SET, null, "2026-07-31");
+  assert.deepEqual([notStarted.currentStage, notStarted.currentStageLate], ["T0", false]);
+});
+
+test("E2E lines delivered or cancelled leave the flow; a stage without deadline is never late", () => {
+  const delivered = calculateFollowup(resistor, { ...shippedBySea, arrivalDate: "2026-11-20", deliveryDate: "2026-11-28" },
+    invoice, "2026-12-30").e2e;
+  assert.deepEqual([delivered.currentStage, delivered.currentStageLate], [null, false]);
+  const cancelled = calculateFollowup(resistor, { ...shippedBySea, logisticsStatus: "CANCELLED" }, invoice, "2026-12-30").e2e;
+  assert.deepEqual([cancelled.currentStage, cancelled.currentStageLate], [null, false]);
+  // Without a transport mode the transit has no target, so there is no deadline to miss.
+  const noMode = calculateFollowup(resistor, { ...shippedBySea, transportMode: null }, invoice, "2027-06-01").e2e;
+  assert.deepEqual([noMode.currentStage, noMode.stages.T4.deadline, noMode.currentStageLate], ["T4", null, false]);
+  const noNeed = calculateE2e({}, {}, "A DISTRIBUIR", DEFAULT_E2E_TARGET_SET, null, "2026-10-26");
+  assert.deepEqual([noNeed.currentStage, noNeed.stages.T0.deadline, noNeed.currentStageLate], ["T0", null, false]);
+});
+
+test("E2E accumulated delay adds the stage delays from T0 and stops at the first unknown delay", () => {
+  const { e2e } = calculateFollowup(resistor, shippedBySea, invoice, "2026-10-26");
+  assert.deepEqual(["T0", "T1", "T2", "T3", "T4", "T5"].map(code => e2e.stages[code].accumulatedDelayDays), [-6, 4, 0, 7, 5, 5]);
+  const noMode = calculateFollowup(resistor, { ...shippedBySea, transportMode: null }, invoice, "2026-10-26").e2e;
+  assert.deepEqual(["T3", "T4", "T5"].map(code => noMode.stages[code].accumulatedDelayDays), [7, null, null]);
+});
