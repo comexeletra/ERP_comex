@@ -83,7 +83,7 @@ Ver na mesma tela o fluxo de referência (prazos, régua, etapa ativa e marcos) 
 
 ## 5. Riscos e cuidados
 
-- **Nomes diferentes:** os cards usam o nome da fase do Modelo (por exemplo, "Produção HQ"), enquanto o cabeçalho da tabela continua com o título da etapa da API ("T3 · Até a saída da China"). O código da etapa liga os dois.
+- **Nomes das etapas:** a pedido do usuário, os títulos das etapas (`e2eLines.stageTitles`) seguem a nomenclatura dos cards nos três idiomas: Plano comercial, Aprovação da SC, Emissão da PO, Produção HQ, Transporte e Desembaraço e entrega. Os títulos aparecem na tabela End to End, na Análise por PO e no acompanhamento da PO. O T4 fica neutro ("Transporte") porque a coluna reúne linhas marítimas e aéreas; o card continua mostrando o modal escolhido. A exportação Excel usa só os códigos (`T3 Deadline`) e não muda.
 - **Tela mais longa:** a tabela fica abaixo dos painéis do Modelo.
 - **Favoritos de `/end-to-end/model`:** continuam funcionando pelo redirecionamento.
 
@@ -96,4 +96,5 @@ Ver na mesma tela o fluxo de referência (prazos, régua, etapa ativa e marcos) 
   - `npm run build`: concluído.
 - **Commit `6e2494a`:** publicado com `git push production homologacao`. O status do commit no GitHub mostra o deploy da Vercel como `success` ("Deployment has completed").
 - **Redirecionamento:** no build local (`next start`), `/end-to-end/model` responde com `NEXT_REDIRECT;replace;/end-to-end;307`, o mesmo mecanismo de `/reports`.
+- **Nomes das etapas:** ajuste feito depois da primeira publicação. Um teste novo garante que cada título é `Tn · <nome do card>`, exceto o T4; ao todo, 174 testes passando.
 - **Pendente:** conferir a tela no domínio do Preview com login. Nesta máquina, a CLI da Vercel está autenticada numa conta sem acesso ao time `eletra-comex`, e o domínio exige SSO da Vercel. O HTML do servidor só traz a casca do layout até a sessão ser validada no navegador.

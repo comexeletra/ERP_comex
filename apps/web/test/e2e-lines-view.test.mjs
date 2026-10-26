@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { buildE2eFlow, DEFAULT_E2E_FLOW_CONFIG } from "../lib/e2e-flow.ts";
 import { en } from "../lib/i18n/en.ts";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
 import { zhCN } from "../lib/i18n/zh-CN.ts";
@@ -79,4 +80,16 @@ test("the stage cards, the selected columns and the texts exist in every languag
   }
   assert.equal(ptBR.e2eLines.flow.inStage(1), "1 produto na etapa");
   assert.equal(ptBR.e2eLines.flow.late(2), "2 atrasados");
+});
+
+test("the stage columns use the company names shown on the model cards", () => {
+  for (const messages of [ptBR, en, zhCN]) {
+    for (const phase of buildE2eFlow(DEFAULT_E2E_FLOW_CONFIG, { mts: false, air: false }, messages).phases) {
+      // The T4 card follows the sea/air toggle, while a column holds lines of both modes.
+      if (phase.code !== "T4") assert.equal(messages.e2eLines.stageTitles[phase.code], `${phase.code} · ${phase.name}`);
+    }
+  }
+  assert.equal(ptBR.e2eLines.stageTitles.T4, "T4 · Transporte");
+  assert.equal(en.e2eLines.stageTitles.T4, "T4 · Transport");
+  assert.equal(zhCN.e2eLines.stageTitles.T4, "T4 · 运输");
 });
