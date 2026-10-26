@@ -3,7 +3,7 @@
 Every ERP database must receive the migrations required by the code deployed to
 it. As of 2026-10-21, `erp_po_totvs_test` and
 `erp_po_totvs_gatewayflow_20261010_test` are at M001–M034, while
-`erp_po_totvs_hml` is at M001–M069 (2026-10-26). HML contains business data and is no longer
+`erp_po_totvs_hml` is at M001–M070 (2026-10-26). HML contains business data and is no longer
 empty; the 2026-10-15 setup below records its initial state. See
 `deploy/hostinger/README.md` for M063 backup and validation evidence.
 

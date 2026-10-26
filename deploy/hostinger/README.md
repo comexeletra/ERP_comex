@@ -1,5 +1,36 @@
 # API ERP na VPS Hostinger
 
+## Metas E2E por data de necessidade (M070) e tela End to End no HML (2026-10-26)
+
+Os commits `09ea414` (API) e `838db2b` (web) passam o End to End para as regras da planilha original: um único
+cálculo na API (`calculateFollowup` → `e2e`) alimenta a tela `/end-to-end` (uma linha por produto e IP com T0–T5,
+totais, gargalo e mês de chegada), a exportação Excel, a análise por PO (`/end-to-end/po?id=`) e o painel de Follow
+Up. As metas ficam em `catalog.e2e_target_set` (M070), editáveis somente por Master/Administrador em
+`/end-to-end/targets`, com motivo, auditoria e outbox. As colunas `target_*_days` do item deixaram de ser usadas.
+
+Antes da migration, o HML estava em M001–M069. Backup custom pré-M070:
+`/var/backups/import-erp/erp_po_totvs_hml_m070_20261026T200210Z.dump`, 466.764.361 bytes, SHA-256
+`b1fd09962174820fb15ae05eacaa8e6ec57eed8b2f7f5a17fd23538f1b562e65`, 432 entradas no `pg_restore --list`. A M070 foi
+validada na cópia restaurada `erp_po_totvs_hml_m070check` (ledger 70, conjunto inicial 8/8/7/30/45/55/10/10 e grants
+para `import_erp_app` e `import_erp_hml_app`), que foi removida. A M070 foi aplicada somente no `erp_po_totvs_hml`,
+numa transação que recusa outro banco, com checksum LF
+`4a3bdce09a019db79276f732be72d1eb5ce03c862bd234aed6a4894fffd2b0f4`; ledger 70/70.
+
+O release `/opt/import-erp/apps/api/hml-release-838db2b` foi montado com `git -c core.autocrlf=false archive`,
+reaproveitando o `node_modules` de `hml-release-1a4592a`, e ativado pelo drop-in
+`zzzzzzzzzzzzzzzzzzzzzz-release-838db2b.conf`; os drop-ins anteriores estão em
+`/var/backups/import-erp/hml-e2e-838db2b-predeploy`. Para rollback somente do código, remova o drop-in novo, execute
+`systemctl daemon-reload` e reinicie `import-erp-hml-api` (volta a `hml-release-1a4592a`, que não lê a M070). Após o
+restart, `/health/live` respondeu 200 e `/api/v1/e2e-targets`, `/api/v1/purchase-order-lines` e
+`/api/v1/purchase-orders` sem sessão responderam 401. O worker HML foi movido com
+`enable-homologation-export-worker.sh 838db2b`; o worker de produção manteve o `ActiveEnterTimestamp` de
+2026-10-19 20:38:54 de Brasília. O Preview `erp-comex-ezsu5l3ax` do commit `838db2b` ficou `Ready` no domínio estável.
+
+Conferência somente leitura (sessão `default_transaction_read_only`, `queryShipmentLines` do release) da PO 030201:
+225 linhas nos IPs A–G; as 57 linhas de resistores do IP B têm T0 −6, T1 +10, T2 −4, T3 +7, T4 −2 e T5 0 (T4 e T5
+por previsão), total 118/123/+5, gargalo T1, chegada 2026-11. Produção (`erp_po_totvs_test`, `api.env`,
+`import-erp-api`, `import-erp-export-worker`) e as variáveis da Vercel não foram alterados.
+
 ## Tipo de demanda (M069), análise E2E e simulação da PO 030201 no HML (2026-10-26)
 
 O commit `738c954` cria a lista `DEMAND_TYPE` (MTS / Não MTS) e o campo `demand_type` do item da PO, separado da
