@@ -1,5 +1,36 @@
 # API ERP na VPS Hostinger
 
+## Rate limit por cliente real no HML (2026-10-26)
+
+Os commits `443b927` e `9febc70` fazem a Vercel encaminhar o IP validado do
+cliente em um cabeçalho próprio e fazem a API confiar nele somente quando o
+gateway token também é válido. O limite global passou de uma cota coletiva de
+120/min para 300/min por IP; o login permanece em 10/min por IP. Não houve
+migration nem escrita de dados.
+
+A API foi compilada na VPS como
+`/opt/import-erp/apps/api/hml-release-443b927`, reaproveitando o `node_modules`
+do release anterior `hml-release-64ecb66`, e ativada pelo drop-in
+`zzzzzzzzzzzzzzzzzzzz-release-443b927.conf`. O drop-in e o `ExecStart`
+anteriores estão em
+`/var/backups/import-erp/hml-rate-limit-443b927-predeploy`. Para rollback,
+remova o drop-in novo, execute `systemctl daemon-reload` e reinicie
+`import-erp-hml-api`; o serviço volta ao release anterior.
+
+O serviço ficou `active`, `/health/live` respondeu 200 e o runtime foi
+confirmado no banco `erp_po_totvs_hml`. Em testes sem sessão e sem consulta de
+credenciais, uma chave sintética atingiu 429 após 300 respostas e outra
+continuou em 200; no login, uma chave atingiu 429 após 10 respostas e outra
+continuou em 403. Um diagnóstico temporário, removido após a verificação,
+registrou apenas `kind: client` para uma chamada feita pelo Preview, confirmando
+que o cabeçalho atravessou Vercel e os dois Traefiks sem registrar o IP.
+
+O push da branch `homologacao` no commit `9febc70` gerou o Preview
+`dpl_JCzSL1yGsikwGgHi696p1Rcedsba`, com status `Ready` e alias
+`erp-comex-git-homologacao-eletra-comex.vercel.app`. A validação manual com
+dois navegadores em redes físicas distintas continua pendente; nenhuma senha
+real foi usada ou alterada.
+
 ## Candidatos da invoice em lote no HML (2026-10-26)
 
 Os commits `353baf7` e `64ecb66` adicionam
