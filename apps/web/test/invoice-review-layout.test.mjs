@@ -40,3 +40,29 @@ test("invoice review shows per-row PO action and duplicate confirmation", () => 
   assert.match(component, /\{t\.confirmDuplicateInvoice\}<\/label>/u);
   assert.equal(ptBR.newRecord.confirmDuplicateInvoice, "Confirmo a duplicidade desta invoice.");
 });
+
+test("invoice audit points form a checklist with pending and confirmed states", () => {
+  assert.match(component, /<section className="invoice-audit" aria-label=\{t\.auditPoints\}>/u);
+  assert.match(component, /t\.auditProgress\(progress\.confirmed, progress\.required\)/u);
+  assert.match(component, /className=\{`notice \$\{point\.confirmed === null \? "" : point\.confirmed \? "success" : "error"\}`\}/u);
+  assert.match(component, /<dl className="invoice-audit-values">/u);
+  assert.match(component, /<label className="invoice-audit-confirm"><input type="checkbox"/u);
+  assert.equal(ptBR.newRecord.auditProgress(1, 2), "1 de 2 confirmados");
+  assert.equal(ptBR.newRecord.auditKind.SUPPLIER, "Fornecedor");
+  assert.equal(ptBR.newRecord.auditStatus.pending, "Pendente");
+  assert.equal(ptBR.newRecord.auditStatus.confirmed, "Confirmado");
+});
+
+test("invoice audit confirmations and registry updates keep the checkbox beside its text", () => {
+  // .stack-form label is a bold grid and .operational-fields inputs are full width; both must be undone here.
+  assert.match(styles, /\.invoice-match-table \.invoice-audit-confirm\s*\{[^}]*display:\s*flex;[^}]*font-weight:\s*400/u);
+  assert.match(styles, /\.invoice-audit-confirm input\s*\{[^}]*flex:\s*0 0 auto;/u);
+  assert.match(styles, /\.invoice-match-table td:nth-child\(4\) > \.operational-fields input\[type="checkbox"\]\s*\{[^}]*width:\s*auto/u);
+});
+
+test("invoice comparison is a table with highlighted divergent fields", () => {
+  assert.match(component, /<table className="invoice-compare-table">/u);
+  assert.match(component, /className=\{row\.differs \? "invoice-compare-differs" : undefined\}/u);
+  assert.match(styles, /\.invoice-match-table \.invoice-compare-table th, \.invoice-match-table \.invoice-compare-table td\s*\{[^}]*position:\s*static;[^}]*width:\s*auto/u);
+  assert.equal(ptBR.newRecord.compareField.ncm, "NCM");
+});

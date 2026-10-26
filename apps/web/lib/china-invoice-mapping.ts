@@ -75,3 +75,61 @@ export function invoiceSupplierMatchesExporter(
   const normalizedExporter = normalize(exporter);
   return supplierValues.some(value => Boolean(value && normalize(value) === normalizedExporter));
 }
+
+export type InvoiceAuditPointKind = "CODE" | "SUPPLIER" | "UNIT" | "PRICE" | "CURRENCY";
+/** `confirmed` is null for informative points that need analysis but no confirmation. */
+export type InvoiceAuditPoint = { kind: InvoiceAuditPointKind; invoiceValue: string; poValue: string; confirmed: boolean | null };
+
+export function invoiceAuditPoints(
+  invoice: { productCode: string; exporter: string; line: { unit: string; unitPrice: string } | null },
+  poItem: { productCode: string; unit: string; unitPrice: string | null; currency: string | null;
+    supplierValues: readonly (string | null | undefined)[] },
+  confirmations: { code: boolean; supplier: boolean; unit: boolean; price: boolean },
+): InvoiceAuditPoint[] {
+  const points: InvoiceAuditPoint[] = [];
+  if (invoicePoCodeDiffers(invoice.productCode, poItem.productCode)) {
+    points.push({ kind: "CODE", invoiceValue: invoice.productCode, poValue: poItem.productCode, confirmed: confirmations.code });
+  }
+  if (!invoiceSupplierMatchesExporter(poItem.supplierValues, invoice.exporter)) {
+    points.push({ kind: "SUPPLIER", invoiceValue: invoice.exporter,
+      poValue: poItem.supplierValues.filter(Boolean).join(" · "), confirmed: confirmations.supplier });
+  }
+  if (invoice.line && invoicePoUnitDiffers(invoice.line.unit, poItem.unit)) {
+    points.push({ kind: "UNIT", invoiceValue: invoice.line.unit, poValue: poItem.unit, confirmed: confirmations.unit });
+  }
+  if (invoice.line && invoicePoPriceDiffers(invoice.line.unitPrice, poItem.unitPrice, poItem.currency)) {
+    points.push({ kind: "PRICE", invoiceValue: `${invoice.line.unitPrice} CNY`,
+      poValue: `${poItem.unitPrice} ${poItem.currency}`, confirmed: confirmations.price });
+  }
+  if (poItem.currency && poItem.currency !== "CNY") {
+    points.push({ kind: "CURRENCY", invoiceValue: "CNY", poValue: poItem.currency, confirmed: null });
+  }
+  return points;
+}
+
+export function invoiceAuditProgress(points: readonly InvoiceAuditPoint[]): { required: number; confirmed: number } {
+  const required = points.filter(point => point.confirmed !== null);
+  return { required: required.length, confirmed: required.filter(point => point.confirmed).length };
+}
+
+export type InvoiceComparisonField = "description" | "ncm" | "unit" | "price" | "manufacturer";
+export type InvoiceComparisonRow = { field: InvoiceComparisonField; invoice: string; poItem: string; product: string; differs: boolean };
+
+export function invoiceComparisonRows(
+  invoiceLine: { description: string; ncm: string; unit: string; unitPrice: string; manufacturer: string } | null,
+  poItem: { description: string; unit: string; ncmCode: string | null; unitPrice: string | null; currency: string | null },
+  product: { name: string | null; ncmCode: string | null; manufacturer: string | null },
+): InvoiceComparisonRow[] {
+  const ncms = new Set([invoiceLine?.ncm, poItem.ncmCode, product.ncmCode]
+    .map(value => (value ?? "").replace(/\D/gu, "")).filter(Boolean));
+  const poPrice = poItem.unitPrice === null ? "" : `${poItem.unitPrice} ${poItem.currency ?? ""}`.trim();
+  return [
+    { field: "description", invoice: invoiceLine?.description ?? "", poItem: poItem.description, product: product.name ?? "", differs: false },
+    { field: "ncm", invoice: invoiceLine?.ncm ?? "", poItem: poItem.ncmCode ?? "", product: product.ncmCode ?? "", differs: ncms.size > 1 },
+    { field: "unit", invoice: invoiceLine?.unit ?? "", poItem: poItem.unit, product: "",
+      differs: Boolean(invoiceLine?.unit && poItem.unit && invoicePoUnitDiffers(invoiceLine.unit, poItem.unit)) },
+    { field: "price", invoice: invoiceLine?.unitPrice ? `${invoiceLine.unitPrice} CNY` : "", poItem: poPrice, product: "",
+      differs: Boolean(invoiceLine && invoicePoPriceDiffers(invoiceLine.unitPrice, poItem.unitPrice, poItem.currency)) },
+    { field: "manufacturer", invoice: invoiceLine?.manufacturer ?? "", poItem: "", product: product.manufacturer ?? "", differs: false },
+  ];
+}

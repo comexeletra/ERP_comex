@@ -106,7 +106,27 @@
 .invoice-match-table td:nth-child(3) .notice { font-size: var(--fs-xs); line-height: 1.4; margin: 8px 0 0; padding: 8px; }
 .invoice-match-table td:nth-child(4) > .operational-fields { gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 10px; }
 .invoice-match-table td:nth-child(4) > .operational-fields > label { align-items: flex-start; display: flex; font-size: var(--fs-xs); gap: 7px; line-height: 1.35; }
-.invoice-match-table td:nth-child(4) > .operational-fields input[type="checkbox"] { flex: 0 0 auto; margin-top: 2px; }
+.invoice-match-table td:nth-child(4) > .operational-fields input[type="checkbox"] { flex: 0 0 auto; margin-top: 2px; width: auto; }
+/* Invoice audit points: one checklist per destination, pending in red and confirmed in green */
+.invoice-audit { display: grid; gap: 6px; margin-top: 10px; }
+.invoice-audit-header { align-items: center; color: var(--color-text-strong); display: flex; flex-wrap: wrap; font-size: var(--fs-xs); gap: 6px 10px; justify-content: space-between; }
+.invoice-audit-list { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.invoice-audit-list > .notice { display: grid; font-size: var(--fs-xs); gap: 6px; line-height: 1.4; padding: 8px 10px; }
+.invoice-audit-title { align-items: center; display: flex; gap: 8px; justify-content: space-between; letter-spacing: .03em; text-transform: uppercase; }
+.invoice-audit-values { display: grid; gap: 3px 10px; grid-template-columns: max-content minmax(0, 1fr); margin: 0; }
+.invoice-audit-values dt { font-weight: 700; }
+.invoice-audit-values dd { margin: 0; }
+.invoice-audit-note { margin: 0; }
+.invoice-match-table .invoice-audit-confirm { align-items: flex-start; cursor: pointer; display: flex; font-weight: 400; gap: 7px; }
+.invoice-audit-confirm input { flex: 0 0 auto; margin: 1px 0 0; }
+.invoice-compare-table { border-collapse: collapse; font-size: var(--fs-xs); margin-top: 8px; width: 100%; }
+.invoice-match-table .invoice-compare-table th, .invoice-match-table .invoice-compare-table td {
+  border-bottom: 1px solid var(--color-divider); min-width: 0; padding: 5px 8px; position: static; vertical-align: top; width: auto;
+}
+.invoice-compare-table thead th { color: var(--color-text-muted); font-weight: 700; }
+.invoice-compare-table tbody th { background: transparent; color: var(--color-text-secondary); white-space: nowrap; }
+.invoice-compare-differs td { background: var(--color-warning-bg); color: var(--color-warning-text); font-weight: 700; }
+.invoice-compare-legend { color: var(--color-text-muted); font-size: var(--fs-xs); margin: 6px 0 0; }
 
 /* Follow-up */
 .followup-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); margin: 12px 0; }

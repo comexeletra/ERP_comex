@@ -30,7 +30,8 @@ import DeletedPurchaseOrderActions, { PurchaseOrderReplacePayload } from "./Dele
 import { classifyTotvsPurchaseRequest, totvsPurchaseRequestPayload } from "../lib/totvs-purchase-request";
 import { getMessages, useI18n } from "./I18nProvider";
 import PageHeader from "./PageHeader";
-import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoiceCandidatesForProduct, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
+import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoiceAuditPoints, InvoiceAuditPointKind, invoiceAuditProgress,
+  invoiceCandidatesForProduct, invoiceComparisonRows, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
   invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping";
 
 const poRoles = new Set(["Master", "Administrador", "Importação", "Compras"]);
@@ -95,6 +96,10 @@ function normalizeLookup(value: string | null | undefined): string {
 function supplierMatchesExporter(candidate: InvoiceItemCandidate, exporter: string): boolean {
   return invoiceSupplierMatchesExporter([candidate.supplierText, candidate.supplierName, candidate.supplierCode], exporter);
 }
+
+const invoiceAuditConfirmationField = {
+  CODE: "confirmCodeMismatch", SUPPLIER: "confirmSupplierMismatch", UNIT: "confirmUnitMismatch", PRICE: "confirmPriceMismatch",
+} as const satisfies Record<Exclude<InvoiceAuditPointKind, "CURRENCY">, keyof InvoiceMatch>;
 
 function normalizePoNumber(value: string): string {
   return value.toLocaleUpperCase("en-US").replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "");
@@ -1210,11 +1215,16 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                 const allocated = rowParts.reduce((total, item) => total + (Number(item.quantity) || 0), 0);
                 const balanced = sourceLine ? Math.abs(allocated - Number(sourceLine.quantity)) <= 0.00000001 : false;
                 const selectedCandidate = match.candidates.find(candidate => candidate.id === match.itemId);
-                const codeMismatch = Boolean(selectedCandidate && invoicePoCodeDiffers(match.productCode, selectedCandidate.productCode));
-                const unitMismatch = Boolean(selectedCandidate && sourceLine
-                  && invoicePoUnitDiffers(sourceLine.unit, selectedCandidate.unit));
-                const priceMismatch = Boolean(selectedCandidate && sourceLine
-                  && invoicePoPriceDiffers(sourceLine.unitPrice, selectedCandidate.unitPrice, selectedCandidate.currency));
+                const auditPoints = selectedCandidate ? invoiceAuditPoints(
+                  { productCode: match.productCode, exporter: invoiceDraft.exporterText, line: sourceLine ?? null },
+                  { ...selectedCandidate, supplierValues: [selectedCandidate.supplierName, selectedCandidate.supplierText, selectedCandidate.supplierCode] },
+                  { code: match.confirmCodeMismatch, supplier: match.confirmSupplierMismatch,
+                    unit: match.confirmUnitMismatch, price: match.confirmPriceMismatch }) : [];
+                const progress = invoiceAuditProgress(auditPoints);
+                const comparisonRows = selectedCandidate ? invoiceComparisonRows(sourceLine ?? null,
+                  { description: selectedCandidate.description, unit: selectedCandidate.unit, ncmCode: selectedCandidate.poNcmCode,
+                    unitPrice: selectedCandidate.unitPrice, currency: selectedCandidate.currency },
+                  { name: selectedCandidate.productName, ncmCode: selectedCandidate.productNcmCode, manufacturer: selectedCandidate.manufacturer }) : [];
                 const destinationIssue = classifyInvoiceDestination(match.candidates, match.poExists,
                   match.productCode, match.quantity, match.itemId, match.poStatus ?? "ACTIVE");
                 return <tr key={match.key}>
@@ -1251,42 +1261,41 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                         : <Link href="/purchase-orders/new" target="_blank" rel="noopener noreferrer">{t.createPoTab}</Link>}
                     </div>}
                     {selectedCandidate && <small>{selectedCandidate.description}</small>}
-                    {codeMismatch && selectedCandidate && <div className="notice error" role="alert">
-                      <p>{t.codeMismatch(match.productCode, selectedCandidate.productCode)}</p>
-                      <label><input type="checkbox" checked={match.confirmCodeMismatch}
-                        onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
-                          ? { ...item, confirmCodeMismatch: event.target.checked } : item))} />{t.confirmCode}</label>
-                    </div>}
-                    {selectedCandidate && !supplierMatchesExporter(selectedCandidate, invoiceDraft.exporterText) && <div className="notice error" role="alert">
-                      <p>{t.supplierMismatch(selectedCandidate.poNumber, [selectedCandidate.supplierName, selectedCandidate.supplierText, selectedCandidate.supplierCode].filter(Boolean).join(" · ") || t.noSupplierRegistered, invoiceDraft.exporterText)}</p>
-                      <label><input type="checkbox" checked={match.confirmSupplierMismatch}
-                        onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
-                          ? { ...item, confirmSupplierMismatch: event.target.checked } : item))} />{t.confirmSupplier}</label>
-                    </div>}
-                    {unitMismatch && selectedCandidate && sourceLine && <div className="notice error" role="alert">
-                      <p>{t.unitMismatch(sourceLine.unit, selectedCandidate.unit)}</p>
-                      <label><input type="checkbox" checked={match.confirmUnitMismatch}
-                        onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
-                          ? { ...item, confirmUnitMismatch: event.target.checked } : item))} />{t.confirmUnit}</label>
-                    </div>}
-                    {priceMismatch && selectedCandidate && sourceLine && <div className="notice error" role="alert">
-                      <p>{t.priceMismatch(sourceLine.unitPrice, selectedCandidate.unitPrice ?? "—")}</p>
-                      <label><input type="checkbox" checked={match.confirmPriceMismatch}
-                        onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
-                          ? { ...item, confirmPriceMismatch: event.target.checked } : item))} />{t.confirmPrice}</label>
-                    </div>}
-                    {selectedCandidate && selectedCandidate.currency && selectedCandidate.currency !== "CNY"
-                      && <p className="notice">{t.currencyManual(selectedCandidate.currency)}</p>}
-                    {match.itemId && <details><summary>{t.compare}</summary>
-                      {(() => {
-                        const candidate = match.candidates.find(value => value.id === match.itemId);
-                        return candidate ? <>
-                          <p>{t.productRecord(candidate.productName ?? t.notRegistered, candidate.productNcmCode ?? "—", candidate.manufacturer ?? t.manufacturerNotRegistered)}</p>
-                          <p>{t.invoiceRecord(sourceLine?.description ?? "", sourceLine?.ncm || "—", sourceLine?.manufacturer || t.manufacturerNotInformed)}</p>
-                          <p>{t.poItemRecord(candidate.description, candidate.unit, candidate.poNcmCode ?? "—", candidate.unitPrice ?? "—", candidate.currency ?? "")}</p>
-                          <p>{t.invoiceLineRecord(sourceLine?.unitPrice ?? "", sourceLine?.unit ?? "", sourceLine?.ncm || "—")}</p>
-                        </> : null;
-                      })()}
+                    {selectedCandidate && auditPoints.length > 0 && <section className="invoice-audit" aria-label={t.auditPoints}>
+                      <header className="invoice-audit-header"><strong>{t.auditPoints}</strong>
+                        {progress.required > 0 && <span className={`badge badge-sm ${progress.confirmed === progress.required ? "badge-success" : "badge-danger"}`}>
+                          {t.auditProgress(progress.confirmed, progress.required)}</span>}</header>
+                      <ul className="invoice-audit-list">{auditPoints.map(point => {
+                        const field = point.kind === "CURRENCY" ? null : invoiceAuditConfirmationField[point.kind];
+                        const confirmLabel = point.kind === "CURRENCY" ? "" : { CODE: t.confirmCode, SUPPLIER: t.confirmSupplier,
+                          UNIT: t.confirmUnit, PRICE: t.confirmPrice }[point.kind];
+                        const note = (t.auditNote as Partial<Record<InvoiceAuditPointKind, string>>)[point.kind];
+                        return <li key={point.kind} className={`notice ${point.confirmed === null ? "" : point.confirmed ? "success" : "error"}`}>
+                          <div className="invoice-audit-title"><strong>{t.auditKind[point.kind]}</strong>
+                            <span className={`badge badge-sm ${point.confirmed === null ? "badge-info" : point.confirmed ? "badge-success" : "badge-danger"}`}>
+                              {point.confirmed === null ? t.auditStatus.manual : point.confirmed ? t.auditStatus.confirmed : t.auditStatus.pending}</span></div>
+                          <dl className="invoice-audit-values">
+                            <dt>{t.auditInvoice}</dt><dd>{point.invoiceValue || "—"}</dd>
+                            <dt>{t.auditPo(selectedCandidate.poNumber)}</dt>
+                            <dd>{point.poValue || (point.kind === "SUPPLIER" ? t.noSupplierRegistered : "—")}</dd>
+                          </dl>
+                          {note && <p className="invoice-audit-note">{note}</p>}
+                          {field && <label className="invoice-audit-confirm"><input type="checkbox" checked={point.confirmed === true}
+                            onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
+                              ? { ...item, [field]: event.target.checked } : item))} />{confirmLabel}</label>}
+                        </li>;
+                      })}</ul>
+                    </section>}
+                    {selectedCandidate && <details><summary>{t.compare}</summary>
+                      <table className="invoice-compare-table">
+                        <thead><tr><th scope="col">{t.compareColumn.field}</th><th scope="col">{t.compareColumn.invoice}</th>
+                          <th scope="col">{t.compareColumn.poItem}</th><th scope="col">{t.compareColumn.product}</th></tr></thead>
+                        <tbody>{comparisonRows.map(row => <tr key={row.field} className={row.differs ? "invoice-compare-differs" : undefined}>
+                          <th scope="row">{t.compareField[row.field]}</th>
+                          <td>{row.invoice || "—"}</td><td>{row.poItem || "—"}</td><td>{row.product || "—"}</td>
+                        </tr>)}</tbody>
+                      </table>
+                      {comparisonRows.some(row => row.differs) && <p className="invoice-compare-legend">{t.compareLegend}</p>}
                     </details>}
                     {match.itemId && <div className="operational-fields">
                       <label><input type="checkbox" disabled={!match.candidates.find(candidate => candidate.id === match.itemId)?.productId}
