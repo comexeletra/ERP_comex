@@ -1,5 +1,5 @@
 /*
- * End-to-end flow (components/E2eFlowDemo.tsx). Brazil uses the logo green and China the
+ * End-to-end flow (components/E2eLinesView.tsx and E2eModelPanels.tsx). Brazil uses the logo green and China the
  * logo blue; both come from the global tokens, so the dark theme needs no extra rules.
  */
 .e2e-flow {
@@ -97,6 +97,8 @@
 .e2e-phase-route .e2e-label { flex: 0 0 30px; padding-top: 2px; }
 .e2e-phase-foot { border-top: 1px solid var(--color-divider); margin-top: auto; padding-top: 12px; }
 .e2e-phase-foot b { font-size: var(--fs-lg); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Product lines now in (or past) the stage, below the model data of the card */
+.e2e-stage-count { align-items: center; border-top: 1px solid var(--color-divider); display: flex; flex-wrap: wrap; gap: 6px 8px; justify-content: space-between; padding-top: 10px; }
 
 /* Lead-time ruler */
 .e2e-panel-heading { align-items: baseline; display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: space-between; }
@@ -181,8 +183,7 @@
 .e2e-lines-table .e2e-deviation { font-size: var(--fs-xs); padding: 2px 8px; }
 .e2e-lines-table .product-lines-description { display: inline-block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
 .e2e-stage-head { background: var(--e2e-side-soft, var(--color-surface-sunken)); border-bottom: 3px solid var(--e2e-side, var(--color-border-strong)); color: var(--e2e-side-text, var(--color-text-strong)); text-align: center; }
-/* Stage selected on the animated flow above the table (components/E2eLinesView.tsx) */
-.e2e-phase.e2e-stage-card { gap: 10px; min-height: 0; }
+/* Stage selected on the model above the table (components/E2eLinesView.tsx) */
 .e2e-lines-table .is-selected { background: var(--e2e-side-tint); }
 .e2e-lines-table .e2e-stage-head.is-selected { background: var(--e2e-side); color: var(--e2e-side-on); }
 .e2e-targets-form { align-items: end; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }

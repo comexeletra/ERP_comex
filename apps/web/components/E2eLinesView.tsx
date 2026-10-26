@@ -4,12 +4,13 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, readApiJson } from "../lib/api";
 import { E2E_STAGE_CODES, formatE2eDate, type E2eResult, type E2eStageCode } from "../lib/e2e-analysis";
-import { DEFAULT_E2E_FLOW_CONFIG, type E2eIconName, type E2eSide } from "../lib/e2e-flow";
+import { buildE2eFlow, DEFAULT_E2E_FLOW_CONFIG } from "../lib/e2e-flow";
 import { formatNumber } from "../lib/format-number";
 import { statusLabel } from "../lib/i18n/labels";
 import { emptyProductLineFilters, parseE2eStageFilter, parseProductLineFilters, productLineFilterBody, productLineQuery,
   productLineStatuses, type E2eStageFilter, type ProductLineFilters } from "../lib/purchase-order-lines";
 import { E2eFlowRail, Icon, useE2eStepper } from "./E2eFlowParts";
+import { E2eModelDetails, E2eModelSummary } from "./E2eModelPanels";
 import E2eTabs from "./E2eTabs";
 import { getMessages, useI18n } from "./I18nProvider";
 import PageHeader from "./PageHeader";
@@ -28,15 +29,13 @@ type LinesEntry = { data?: LinesPage; error?: string };
 type StageCount = { current: number; currentLate: number; reached: number; reachedLate: number };
 type StageSummary = { totalCount: number; delivered: number; stages: Record<E2eStageCode, StageCount> };
 const pageSize = 50;
-
-const stageIcons: E2eIconName[] = ["plan", "cart", "send", "factory", "ship", "truck"];
-const stagePhases: { code: E2eStageCode; side: E2eSide; icon: E2eIconName }[] = E2E_STAGE_CODES.map((code, index) =>
-  ({ code, side: index < 3 ? "br" : "cn", icon: stageIcons[index] }));
+const stageSide = (code: E2eStageCode) => E2E_STAGE_CODES.indexOf(code) < 3 ? "side-br" : "side-cn";
 
 /**
- * The End to End spreadsheet: one row per PO product line and IP with T0–T5 and the totals,
- * under the animated stages. Selecting a stage (or letting the animation run) keeps only the
- * lines now in it, or, in the accumulated view, those that already completed it.
+ * The End to End screen: the reference model of the six stages above the spreadsheet with one row
+ * per PO product line and IP, T0–T5 and the totals. Selecting a stage (or letting the animation run)
+ * shows it on the model and keeps only the lines now in it, or, in the accumulated view, those that
+ * already completed it. The MTS and transport toggles change only the model.
  */
 export default function E2eLinesView({ initialQuery }: { initialQuery: string }) {
   const { m, locale } = useI18n();
@@ -56,6 +55,9 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   const current = stepper.current;
   const [view, setView] = useState(initial.stage.view);
   const [late, setLate] = useState(initial.stage.late);
+  const [mts, setMts] = useState(false);
+  const [air, setAir] = useState(false);
+  const model = buildE2eFlow(DEFAULT_E2E_FLOW_CONFIG, { mts, air }, m);
   const stage: E2eStageFilter = { stage: current === null ? "" : E2E_STAGE_CODES[current], view, late };
   // The page belongs to one stage filter: a new stage (also from the animation) starts on page 1.
   const stageKey = `${stage.stage}|${view}|${late}`;
@@ -122,18 +124,31 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
     : <span className={`e2e-deviation${value > 0 ? " is-late" : " is-ok"}`}>{value > 0 ? `+${value}` : value}</span>;
   const modal = (line: E2eLine) => line.calculated.e2e?.air === true ? m.e2eAnalysis.air
     : line.calculated.e2e?.air === false ? m.e2eAnalysis.sea : line.process?.transportMode ?? "—";
-  const stageTitle = (code: E2eStageCode) => t.stageTitles[code].replace(`${code} · `, "");
   const selected = (code: E2eStageCode) => code === stage.stage ? " is-selected" : "";
   const accumulatedStage = view === "reached" && stage.stage ? stage.stage : null;
   const totalPages = result ? Math.ceil(result.totalCount / pageSize) : 0;
   const p = m.productLines;
   const e = m.e2e;
 
-  return <main className="shell e2e-flow" data-side={current === null ? undefined : stagePhases[current].side}>
+  return <main className="shell e2e-flow" data-side={current === null ? undefined : model.phases[current].side}>
     <PageHeader eyebrow={t.eyebrow} title={t.title}><p>{t.intro}</p></PageHeader>
-    <E2eTabs current="lines" />
+    <E2eTabs current="model" />
 
     <section className="e2e-toolbar" aria-label={flow.label}>
+      <div className="e2e-group">
+        <span className="e2e-label" id="e2e-product-label">{e.product}</span>
+        <div className="e2e-segmented" role="group" aria-labelledby="e2e-product-label">
+          <button type="button" aria-pressed={!mts} onClick={() => setMts(false)}>{e.notMtsOption(DEFAULT_E2E_FLOW_CONFIG.prodNaoMts)}</button>
+          <button type="button" aria-pressed={mts} onClick={() => setMts(true)}>{e.mtsOption(DEFAULT_E2E_FLOW_CONFIG.prodMts)}</button>
+        </div>
+      </div>
+      <div className="e2e-group">
+        <span className="e2e-label" id="e2e-modal-label">{e.modal}</span>
+        <div className="e2e-segmented" role="group" aria-labelledby="e2e-modal-label">
+          <button type="button" aria-pressed={!air} onClick={() => setAir(false)}>{e.seaOption(DEFAULT_E2E_FLOW_CONFIG.maritimo)}</button>
+          <button type="button" aria-pressed={air} onClick={() => setAir(true)}>{e.airOption(DEFAULT_E2E_FLOW_CONFIG.aereo)}</button>
+        </div>
+      </div>
       <div className="e2e-group">
         <span className="e2e-label" id="e2e-view-label">{flow.view}</span>
         <div className="e2e-segmented" role="group" aria-labelledby="e2e-view-label">
@@ -162,20 +177,28 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
       {counts && counts.delivered > 0 && <> · {flow.delivered(counts.delivered)}</>}</p>
     {summaryError && <p className="notice error" role="alert">{summaryError}</p>}
 
-    <E2eFlowRail phases={stagePhases} current={current} />
+    <E2eModelSummary flow={model} current={current} />
+    <E2eFlowRail phases={model.phases} current={current} />
     <div className="e2e-grid6 e2e-phases">
-      {stagePhases.map((phase, k) => {
-        const count = counts?.stages[phase.code];
+      {model.phases.map((phase, k) => {
+        const count = counts?.stages[E2E_STAGE_CODES[k]];
         const total = count ? (view === "current" ? count.current : count.reached) : null;
         const lateCount = count ? (view === "current" ? count.currentLate : count.reachedLate) : null;
+        const status = current === null ? null : k === current ? e.statusCurrent : k < current ? e.statusDone : e.statusNext;
         return <button type="button" key={phase.code} onClick={() => select(k === current ? null : k)}
           aria-pressed={k === current}
-          className={`e2e-phase e2e-stage-card side-${phase.side}${k === current ? " is-current" : ""}`}>
+          className={`e2e-phase side-${phase.side}${k === current ? " is-current" : ""}${current !== null && k < current ? " is-done" : ""}`}>
           <span className="e2e-phase-bar" />
-          <span className="e2e-phase-top"><span className="e2e-phase-code">{phase.code}</span></span>
+          <span className="e2e-phase-top"><span className="e2e-phase-code">{phase.code}</span>
+            {status && <span className="e2e-label">{status}</span>}</span>
           <span className="e2e-phase-head"><span className="e2e-phase-icon"><Icon name={phase.icon} /></span>
-            <strong>{stageTitle(phase.code)}</strong></span>
-          <span className="e2e-phase-foot">
+            <strong>{phase.name}</strong></span>
+          <span className="e2e-phase-route">
+            <span><span className="e2e-label">{e.from}</span><span>{phase.from}</span></span>
+            <span><span className="e2e-label">{e.to}</span><span>{phase.to}</span></span>
+          </span>
+          <span className="e2e-phase-foot"><span className="e2e-label">{phase.owner}</span><b>{phase.lt}</b></span>
+          <span className="e2e-stage-count">
             <span className="e2e-label">{total === null ? "—" : view === "current" ? flow.inStage(total) : flow.passed(total)}</span>
             {lateCount !== null && <span className={`e2e-deviation${lateCount > 0 ? " is-late" : " is-ok"}`}>
               {lateCount > 0 ? flow.late(lateCount) : flow.noneLate}</span>}
@@ -183,6 +206,7 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
         </button>;
       })}
     </div>
+    <E2eModelDetails flow={model} current={current} mts={mts} air={air} />
 
     <section className="card">
       <form className="portfolio-filter product-lines-filter" onSubmit={filter}>
@@ -220,7 +244,7 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
               <th rowSpan={2}>{t.necessity}</th><th rowSpan={2}>PO</th><th rowSpan={2}>{t.sc}</th><th rowSpan={2}>IP</th>
               <th rowSpan={2}>{m.calc.status}</th><th rowSpan={2}>{t.purpose}</th><th rowSpan={2}>{t.product}</th>
               <th rowSpan={2}>{t.description}</th><th rowSpan={2}>{t.modal}</th><th rowSpan={2}>{t.group}</th><th rowSpan={2}>{t.quantity}</th>
-              {accumulatedStage && <th rowSpan={2} className={`e2e-stage-head side-${stagePhases[E2E_STAGE_CODES.indexOf(accumulatedStage)].side} is-selected`}>
+              {accumulatedStage && <th rowSpan={2} className={`e2e-stage-head ${stageSide(accumulatedStage)} is-selected`}>
                 {flow.accumulated(accumulatedStage)}</th>}
               {E2E_STAGE_CODES.map((code, index) => <th key={code} colSpan={5} scope="colgroup"
                 className={`e2e-stage-head ${index < 3 ? "side-br" : "side-cn"}${selected(code)}`}>{t.stageTitles[code]}</th>)}
@@ -247,7 +271,7 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
               <td><span className="product-lines-description" title={line.item.description}>{line.item.description}</span></td>
               <td>{modal(line)}</td><td>{line.item.group ?? "—"}</td>
               <td>{formatNumber(line.quantity)} {line.item.unit ?? ""}</td>
-              {accumulatedStage && <td className={`side-${stagePhases[E2E_STAGE_CODES.indexOf(accumulatedStage)].side} is-selected`}>
+              {accumulatedStage && <td className={`${stageSide(accumulatedStage)} is-selected`}>
                 {delay(e2e?.stages[accumulatedStage].accumulatedDelayDays)}</td>}
               {E2E_STAGE_CODES.map((code, index) => {
                 const stageData = e2e?.stages[code];

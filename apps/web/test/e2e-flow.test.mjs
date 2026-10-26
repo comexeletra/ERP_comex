@@ -6,7 +6,8 @@ import { en } from "../lib/i18n/en.ts";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
 import { zhCN } from "../lib/i18n/zh-CN.ts";
 
-const component = await readFile(new URL("../components/E2eFlowDemo.tsx", import.meta.url), "utf8");
+const view = await readFile(new URL("../components/E2eLinesView.tsx", import.meta.url), "utf8");
+const panels = await readFile(new URL("../components/E2eModelPanels.tsx", import.meta.url), "utf8");
 const page = await readFile(new URL("../app/end-to-end/model/page.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("../components/AppSidebar.tsx", import.meta.url), "utf8");
 const styles = await readFile(new URL("../app/styles/features/e2e.css", import.meta.url), "utf8");
@@ -76,14 +77,15 @@ test("rail centers align with the six-column card grid", () => {
   assert.equal(railCenter(5), "calc(91.6667% + 6.667px)");
 });
 
-test("end-to-end demo page is routed, listed in the sidebar and follows the app identity", () => {
-  assert.match(page, /<E2eFlowDemo \/>/u);
+test("the model lives on the first End to End screen, listed in the sidebar, with the app identity", () => {
+  // The old model address keeps working.
+  assert.match(page, /redirect\("\/end-to-end"\)/u);
   assert.match(sidebar, /\{ label: "endToEnd", href: "\/end-to-end", icon: "flow" \}/u);
   assert.equal(ptBR.sidebar.items.endToEnd, "End-to-end");
-  assert.match(component, /<main className="shell e2e-flow"/u);
-  assert.match(component, /<PageHeader eyebrow=\{t\.eyebrow\} title=\{t\.title\}>/u);
-  assert.match(ptBR.e2e.eyebrow, /Modelo/u);
-  assert.doesNotMatch(component, /next\/font|fonts\.googleapis/u);
+  assert.equal(ptBR.e2eTabs.model, "Modelo");
+  assert.match(view, /<main className="shell e2e-flow"/u);
+  assert.match(view, /<PageHeader eyebrow=\{t\.eyebrow\} title=\{t\.title\}>/u);
+  for (const source of [view, panels]) assert.doesNotMatch(source, /next\/font|fonts\.googleapis/u);
   assert.match(styles, /\.e2e-flow\s*\{/u);
   // Colors come only from the global tokens, so the dark theme applies without extra rules.
   assert.doesNotMatch(styles, /#[0-9a-f]{3,8}\b/iu);

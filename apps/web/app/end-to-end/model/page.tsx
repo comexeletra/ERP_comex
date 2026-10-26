@@ -1,3 +1,6 @@
-import E2eFlowDemo from "../../../components/E2eFlowDemo";
+import { redirect } from "next/navigation";
 
-export default function EndToEndModelPage() { return <E2eFlowDemo />; }
+/** The model now lives on the first End to End screen, together with the product lines. */
+export default function EndToEndModelPage() {
+  redirect("/end-to-end");
+}

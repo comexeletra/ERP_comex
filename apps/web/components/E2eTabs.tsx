@@ -4,8 +4,7 @@ import Link from "next/link";
 import { useI18n } from "./I18nProvider";
 
 const sections = [
-  { key: "lines", href: "/end-to-end" }, { key: "po", href: "/end-to-end/po" },
-  { key: "model", href: "/end-to-end/model" }, { key: "targets", href: "/end-to-end/targets" },
+  { key: "model", href: "/end-to-end" }, { key: "po", href: "/end-to-end/po" }, { key: "targets", href: "/end-to-end/targets" },
 ] as const;
 
 /** Navigation between the End to End screens. */

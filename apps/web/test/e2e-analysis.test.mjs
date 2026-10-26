@@ -92,7 +92,7 @@ test("the end-to-end screens are routed under /end-to-end and the PO links to it
     read("components/E2ePoAnalysis.tsx"), read("components/E2ePoPicker.tsx"), read("components/PurchaseOrderWorkspace.tsx")]);
   assert.match(lines, /<E2eLinesView initialQuery=\{query\.toString\(\)\} \/>/u);
   assert.match(po, /typeof id === "string" && id \? <E2ePoAnalysis id=\{id\} \/> : <E2ePoPicker \/>/u);
-  assert.match(model, /<E2eFlowDemo \/>/u);
+  assert.match(model, /redirect\("\/end-to-end"\)/u);
   assert.match(targets, /<E2eTargetsView \/>/u);
   assert.match(picker, /href=\{`\/end-to-end\/po\?id=\$\{encodeURIComponent\(order\.id\)\}`\}/u);
   // The analysis reads the same follow-up route as the PO screen (listed in the API web-route contract).

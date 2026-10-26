@@ -19,7 +19,6 @@ export type E2eFlowConfig = {
   desembaraco: number;
   /** Tempo de cada fase na animação. */
   intervaloMs: number;
-  autoplay: boolean;
 };
 
 export const DEFAULT_E2E_FLOW_CONFIG: E2eFlowConfig = {
@@ -32,10 +31,7 @@ export const DEFAULT_E2E_FLOW_CONFIG: E2eFlowConfig = {
   aereo: 10,
   desembaraco: 10,
   intervaloMs: 4000,
-  autoplay: true,
 };
-
-export const E2E_PHASE_COUNT = 6;
 
 export type E2eIconName = "plan" | "cart" | "send" | "factory" | "ship" | "plane" | "truck";
 export type E2eSide = "br" | "cn";
