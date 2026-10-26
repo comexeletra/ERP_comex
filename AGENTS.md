@@ -122,6 +122,9 @@ Se algo essencial não estiver claro, pergunte antes de supor.
 - Não copie dados de negócio de produção para homologação, exceto quando o usuário solicitar explicitamente essa operação. Nesse caso, transfira somente as entidades e os campos solicitados, mantenha o destino isolado em homologação e nunca escreva na produção.
 - Não mostre, registre em commits ou inclua em capturas de tela tokens, senhas, URLs de conexão ou outros segredos. Use variáveis de ambiente e os arquivos protegidos já provisionados.
 - Não altere variáveis da Vercel nem configurações da VPS como parte de um deploy de código sem que a tarefa peça essa mudança.
+- O banco `erp_po_totvs_test` é o de **produção**, apesar do nome; o de homologação é `erp_po_totvs_hml`. Confira o nome do banco antes de cada consulta ou escrita.
+- No Windows, gere o pacote de um release com `git -c core.autocrlf=false archive`. Sem essa opção as fontes chegam à VPS em CRLF e o SHA-256 das migrations diverge do registrado no ledger.
+- Para rodar scripts Node com o ambiente HML, use `node --env-file=/etc/import-erp/homologation-db.env`; carregar esse arquivo com `source` no shell não exporta `DATABASE_URL`.
 - O domínio do Preview fica atrás da autenticação da Vercel. Sem `gh` nem `vercel` instalados, use `npx --yes vercel@50.1.6 ls erp-comex --environment preview` para conferir o status e `MSYS_NO_PATHCONV=1 npx --yes vercel@50.1.6 curl /login --deployment <url> -- -sL` para ler uma página. No Git Bash, sem `MSYS_NO_PATHCONV=1`, o caminho iniciado por `/` é convertido e a página inicial é retornada no lugar dele.
 
 ## Idiomas da interface (pt-BR, zh-CN, en)
