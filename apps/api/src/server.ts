@@ -2,7 +2,6 @@ import Fastify from "fastify";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
-import { timingSafeEqual } from "node:crypto";
 import { Pool } from "pg";
 import { registerAuthRoutes } from "./auth.js";
 import { registerAuthorization } from "./authorization.js";
@@ -21,6 +20,7 @@ import { registerPurchaseRequestRoutes } from "./purchase-requests.js";
 import { registerExportJobRoutes } from "./export-jobs.js";
 import { registerShipmentLineRoutes } from "./shipment-lines.js";
 import { registerApiErrorHandler } from "./api-error-response.js";
+import { gatewayTokenMatches, rateLimitKey } from "./rate-limit-key.js";
 
 const gatewayToken = process.env.GATEWAY_TOKEN;
 const connectionString = process.env.DATABASE_URL;
@@ -63,20 +63,17 @@ pool.on("error", (error) => {
 });
 
 await app.register(helmet);
-await app.register(rateLimit, { max: 120, timeWindow: "1 minute" });
+await app.register(rateLimit, {
+  max: 300,
+  timeWindow: "1 minute",
+  keyGenerator: request => rateLimitKey(request, gatewayToken),
+});
 await app.register(cookie);
 
 app.addHook("onRequest", async (request, reply) => {
   if (request.url === "/health/live") return;
 
-  const supplied = request.headers["x-import-erp-gateway-token"];
-  if (typeof supplied !== "string") {
-    return reply.code(401).send({ error: "Não autorizado." });
-  }
-
-  const expectedBytes = Buffer.from(gatewayToken);
-  const suppliedBytes = Buffer.from(supplied);
-  if (expectedBytes.length !== suppliedBytes.length || !timingSafeEqual(expectedBytes, suppliedBytes)) {
+  if (!gatewayTokenMatches(request.headers["x-import-erp-gateway-token"], gatewayToken)) {
     return reply.code(401).send({ error: "Não autorizado." });
   }
 });
