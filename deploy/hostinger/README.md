@@ -1,5 +1,28 @@
 # API ERP na VPS Hostinger
 
+## Candidatos da invoice em lote no HML (2026-10-26)
+
+Os commits `353baf7` e `64ecb66` adicionam
+`POST /api/v1/purchase-orders/invoice-candidates/batch`, preservam a rota GET
+anterior e fazem a tela carregar todas as POs da invoice em uma chamada. Erros
+do limite global agora mantêm HTTP 429, `Retry-After` e o problem
+`RATE_LIMITED`. Não houve migration nem escrita de dados.
+
+A API foi compilada na VPS como
+`/opt/import-erp/apps/api/hml-release-64ecb66`, reaproveitando o `node_modules`
+do release anterior `hml-release-413fe6a`, e ativada pelo drop-in
+`zzzzzzzzzzzzzzzzzzz-release-64ecb66.conf`. O drop-in e o `ExecStart`
+anteriores estão em
+`/var/backups/import-erp/hml-invoice-batch-64ecb66-predeploy`. Para rollback,
+remova o drop-in novo, execute `systemctl daemon-reload` e reinicie
+`import-erp-hml-api`; o serviço volta ao release anterior.
+
+O serviço ficou `active` e `/health/live` respondeu 200. A validação somente
+leitura executou o código do release com `import_erp_hml_app` em
+`erp_po_totvs_hml`: a PO 030201 respondeu 200 com 215 itens ativos, exatamente
+duas consultas de dados e nenhum `sourcePoNumber` interno nos itens. Nenhum
+banco ou serviço de produção foi consultado ou alterado.
+
 ## Pós-embarque do IP nos produtos no HML (2026-10-23)
 
 O commit `413fe6a` completa o plano `docs/PLANO_POS_EMBARQUE_IP_PRODUTOS.md` sobre a M068: status do IP e das
