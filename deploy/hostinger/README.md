@@ -1,5 +1,29 @@
 # API ERP na VPS Hostinger
 
+## Etapas animadas do End to End com filtro por etapa no HML (2026-10-26)
+
+Os commits `113ec9f` (API) e `4bceceb` (web) colocam a trilha animada T0–T5 sobre a tabela de `/end-to-end`. A API
+passa a devolver, por linha, `e2e.currentStage` (etapa seguinte à última com data real; nulo para entregue ou
+cancelado), `e2e.currentStageLate` (hoje depois do prazo dessa etapa) e `accumulatedDelayDays` em cada etapa.
+`GET /api/v1/purchase-order-lines` e a exportação aceitam `stage=T0..T5`, `view=current|reached` e `late=true`; com
+esses filtros a API calcula todas as linhas filtradas antes de paginar. `GET /api/v1/purchase-order-lines/e2e-stages`
+conta, por etapa, as linhas na etapa e as que já a concluíram, com as atrasadas. Não há migration.
+
+O release `/opt/import-erp/apps/api/hml-release-4bceceb` foi montado com `git -c core.autocrlf=false archive`,
+reaproveitando o `node_modules` de `hml-release-838db2b`, e ativado pelo drop-in
+`zzzzzzzzzzzzzzzzzzzzzzz-release-4bceceb.conf`; os drop-ins anteriores (API e worker) estão em
+`/var/backups/import-erp/hml-e2e-stages-4bceceb-predeploy`. Rollback somente do código: remova o drop-in novo, execute
+`systemctl daemon-reload`, reinicie `import-erp-hml-api` (volta a `hml-release-838db2b`) e rode
+`enable-homologation-export-worker.sh 838db2b`. Após o restart, `/health/live` respondeu 200 e as rotas novas sem sessão
+responderam 401; o worker HML foi movido com `enable-homologation-export-worker.sh 4bceceb`. Produção
+(`import-erp-api` desde 2026-10-17 12:38:12, `import-erp-export-worker` desde 2026-10-19 20:38:54) e as variáveis da
+Vercel não foram alteradas. O Preview `erp-comex-c1b6vzt3e` do commit `4bceceb` ficou `Ready` no domínio estável.
+
+Conferência somente leitura (sessão `default_transaction_read_only`, funções do release) no `erp_po_totvs_hml`: 203
+linhas em aberto (225 com entregues; 22 entregues); na etapa T3 68 (todas atrasadas), T4 111 e T5 24; concluíram T3
+135 em aberto, todas com atraso em T3. A contagem de cada etapa coincide com o total do filtro correspondente. A
+consulta completa levou cerca de 100 ms com esse volume. As linhas do IP B da PO 030201 têm atraso acumulado +7 até T3.
+
 ## Metas E2E por data de necessidade (M070) e tela End to End no HML (2026-10-26)
 
 Os commits `09ea414` (API) e `838db2b` (web) passam o End to End para as regras da planilha original: um único
