@@ -1650,7 +1650,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
                 item.ordered_quantity::text AS "orderedQuantity", item.unit,
                 item.unit_price::text AS "unitPrice", item.currency_code AS currency,
                 ${purchaseOrderProductReferenceSql("item")},
-                item.necessity_date::text AS "necessityDate", item.sc_date::text AS "scDate", item.priority, item.demand,
+                item.necessity_date::text AS "necessityDate", item.sc_date::text AS "scDate", item.priority, item.demand, item.demand_type AS "demandType",
                 item.requester, item.sc_number AS "scNumber", item.sc_approval_date::text AS "scApprovalDate",
                 item.purpose, item.product_group AS "productGroup", to_jsonb(item)->>'item_group' AS "group", item.cost_center AS "costCenter",
                 item.draft_po AS "draftPo", item.po_approval_date::text AS "poApprovalDate",

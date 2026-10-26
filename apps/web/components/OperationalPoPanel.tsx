@@ -26,7 +26,7 @@ import { parseTotvsPoXlsx } from "../lib/totvs-po-xlsx";
 type Item = { id: string; lineNumber: number; externalLineReference: string | null;
   productCode: string; description: string; orderedQuantity: string; unit: string | null;
   unitPrice: string | null; currency: string | null; sourceKind: string; sourceStatus: string | null;
-  necessityDate: string | null; priority: string | null; demand: string | null; requester: string | null;
+  necessityDate: string | null; priority: string | null; demand: string | null; demandType: string | null; requester: string | null;
   scNumber: string | null; scApprovalDate: string | null; purpose: string | null; productGroup: string | null; group: string | null;
   costCenter: string | null; draftPo: string | null; poApprovalDate: string | null; poSentDate: string | null;
   category: string | null; ncm: string | null; remarks: string | null; commercialPlanReceivedDate: string | null;

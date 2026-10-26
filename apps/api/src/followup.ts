@@ -14,7 +14,7 @@ import { actorAndScopes, assertPoActive, BusinessError, checkVersion, createPo a
 type FieldType = "text" | "date" | "integer" | "money" | "boolean";
 const itemFields: Record<string, [string, FieldType, number?]> = {
   necessityDate: ["necessity_date", "date"], priority: ["priority", "text", 20],
-  demand: ["demand", "text", 160], requester: ["requester", "text", 160],
+  demand: ["demand", "text", 160], demandType: ["demand_type", "text", 40], requester: ["requester", "text", 160],
   scNumber: ["sc_number", "text", 80], scApprovalDate: ["sc_approval_date", "date"],
   scDate: ["sc_date", "date"],
   purpose: ["purpose", "text", 160], productGroup: ["product_group", "text", 120],
@@ -403,7 +403,7 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
           item.id AS item_id, item.line_number, item.external_line_reference, item.product_code,
           item.description, item.ordered_quantity::text AS ordered_quantity, item.unit,
           item.unit_price::text AS unit_price, item.currency_code, item.necessity_date,
-          item.priority AS item_priority, item.demand, item.requester, item.sc_number, item.sc_date,
+          item.priority AS item_priority, item.demand, item.demand_type, item.requester, item.sc_number, item.sc_date,
           item.sc_approval_date, item.purpose, item.product_group, item.cost_center,
           item.draft_po, item.po_approval_date, item.po_sent_date, item.category, item.ncm,
           item.remarks, item.commercial_plan_received_date, item.mrp_completed_date,
@@ -425,7 +425,7 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
           external_line_reference: row.external_line_reference, product_code: row.product_code,
           description: row.description, ordered_quantity: row.ordered_quantity, unit: row.unit,
           unit_price: row.unit_price, currency_code: row.currency_code, necessity_date: row.necessity_date,
-          priority: row.item_priority, demand: row.demand, requester: row.requester,
+          priority: row.item_priority, demand: row.demand, demand_type: row.demand_type, requester: row.requester,
           sc_number: row.sc_number, sc_date: row.sc_date,
           sc_approval_date: row.sc_approval_date, purpose: row.purpose, product_group: row.product_group,
           cost_center: row.cost_center, draft_po: row.draft_po, po_approval_date: row.po_approval_date,

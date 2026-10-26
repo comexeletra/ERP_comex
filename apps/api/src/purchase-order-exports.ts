@@ -172,6 +172,7 @@ const lineColumns: [string, (line: ShipmentLine) => Cell][] = [
   ["LT Total", line => decimal(line.calculated.leadTimeDays)], ["Rupture Risk", line => text(line.calculated.ruptureRisk)],
   ["Departure", line => text(line.process?.actualPortDepartureDate)],
   ["Factory Ship Date", line => text(line.factoryShipDate)],
+  ["Demand Type", line => text(line.item.demandType)],
   ["Line Type", line => line.lineKind === "BALANCE" ? "Saldo sem IP" : "Distribuição no IP"],
 ];
 

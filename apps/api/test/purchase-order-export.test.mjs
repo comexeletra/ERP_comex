@@ -66,7 +66,7 @@ test("product line export follows the Pré Embarque columns and repeats the IP d
     "Total Price", "Currency", "Remarks", "IP Number", "IP Date Totvs", "Mode", "Incoterm", "Broker", "POL", "POD",
     "ETD", "ETA", "Transit Time", "Invoice", "BL Number", "BL Date", "Arrival", "Duimp", "Duimp Date", "Channel",
     "Clearance", "ETE", "NF Request", "NF", "NF Issue Date", "Delivery Date", "LT Total", "Rupture Risk"]);
-  assert.deepEqual(headers.slice(51), ["Departure", "Factory Ship Date", "Line Type"]);
+  assert.deepEqual(headers.slice(51), ["Departure", "Factory Ship Date", "Demand Type", "Line Type"]);
   const cell = (row, header) => sheet.getRow(row).getCell(headers.indexOf(header) + 1).value;
   assert.equal(cell(2, "Status"), "AGUARDANDO CHEGADA");
   assert.equal(cell(2, "IP Number"), "IP-1");

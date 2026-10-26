@@ -18,8 +18,8 @@ test("formats day offsets relative to the need date", () => {
   assert.equal(formatDayOffset(-5), "D+5");
 });
 
-test("default scenario (não MTS, marítimo) fits the horizon with slack", () => {
-  const flow = buildE2eFlow(DEFAULT_E2E_FLOW_CONFIG, { mts: false, air: false }, ptBR);
+test("MTS by sea (30 days in the HQ) fits the horizon with slack", () => {
+  const flow = buildE2eFlow(DEFAULT_E2E_FLOW_CONFIG, { mts: true, air: false }, ptBR);
   assert.equal(flow.total, 110);
   assert.equal(flow.slack, 10);
   assert.equal(flow.months, 4);
@@ -37,14 +37,14 @@ test("default scenario (não MTS, marítimo) fits the horizon with slack", () =>
   assert.deepEqual(flow.ticks.map(tick => tick.label), ["D-120", "D-90", "D-60", "D-30", "D-0 · necessidade"]);
 });
 
-test("MTS by sea exceeds the horizon and marks the delay on the ruler", () => {
-  const flow = buildE2eFlow(DEFAULT_E2E_FLOW_CONFIG, { mts: true, air: false }, ptBR);
+test("não MTS by sea (45 days in the HQ) exceeds the horizon and marks the delay on the ruler", () => {
+  const flow = buildE2eFlow(DEFAULT_E2E_FLOW_CONFIG, { mts: false, air: false }, ptBR);
   assert.equal(flow.total, 125);
   assert.equal(flow.slack, -5);
   assert.equal(flow.slackPct, 0);
   assert.equal(flow.slackLabel, "");
   assert.equal(flow.overflowLeft, "96.000%");
-  assert.equal(flow.phases[3].owner, "HQ · MTS");
+  assert.equal(flow.phases[3].owner, "HQ · Não MTS");
   assert.deepEqual(flow.ticks.slice(-2), [
     { label: "D-0", left: "96.000%", transform: "translateX(-50%)", tone: "ink" },
     { label: "D+5", left: "100%", transform: "translateX(-100%)", tone: "late" },
@@ -54,8 +54,8 @@ test("MTS by sea exceeds the horizon and marks the delay on the ruler", () => {
 
 test("air freight switches the transport phase and milestone labels", () => {
   const flow = buildE2eFlow(DEFAULT_E2E_FLOW_CONFIG, { mts: true, air: true }, ptBR);
-  assert.equal(flow.total, 80);
-  assert.equal(flow.slack, 40);
+  assert.equal(flow.total, 65);
+  assert.equal(flow.slack, 55);
   assert.equal(flow.phases[4].icon, "plane");
   assert.equal(flow.phases[4].name, "Transporte aéreo");
   assert.deepEqual(flow.phases[4].docs, ["AWB", "Tracking", "Aviso de chegada"]);
@@ -64,8 +64,8 @@ test("air freight switches the transport phase and milestone labels", () => {
 
 test("config overrides change the computed deadlines", () => {
   const flow = buildE2eFlow({ ...DEFAULT_E2E_FLOW_CONFIG, horizonte: 90, sc: 5 }, { mts: false, air: true }, ptBR);
-  assert.equal(flow.total, 5 + 7 + 30 + 10 + 10);
-  assert.equal(flow.slack, 28);
+  assert.equal(flow.total, 5 + 7 + 45 + 10 + 10);
+  assert.equal(flow.slack, 13);
   assert.equal(flow.months, 3);
   assert.equal(flow.phases[0].lt, "D-90");
   assert.equal(flow.phases[1].rule, "PCM · 5 dias para aprovar a Solicitação de Compra.");

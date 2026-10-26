@@ -86,7 +86,7 @@ const linesSql = `WITH balance AS (
         'description', item.description, 'orderedQuantity', item.ordered_quantity::text, 'unit', item.unit,
         'unitPrice', item.unit_price::text, 'currencyCode', item.currency_code, 'ncm', item.ncm,
         'priority', item.priority, 'requester', item.requester, 'scNumber', item.sc_number,
-        'demand', item.demand, 'purpose', item.purpose, 'costCenter', item.cost_center, 'draftPo', item.draft_po,
+        'demand', item.demand, 'demandType', item.demand_type, 'purpose', item.purpose, 'costCenter', item.cost_center, 'draftPo', item.draft_po,
         'category', item.category, 'remarks', item.remarks,
         'necessityDate', item.necessity_date, 'scApprovalDate', item.sc_approval_date,
         'poApprovalDate', item.po_approval_date, 'poSentDate', item.po_sent_date,
