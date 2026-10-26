@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { forwardedClientIp } from "./lib/forwarded-client-ip";
 
 const gatewayHeader = "x-import-erp-gateway-token";
 const canonicalOrigin = "https://fup-comex-eletra.vercel.app";
@@ -74,6 +75,9 @@ export function proxy(request: NextRequest) {
   }
 
   const headers = new Headers(request.headers);
+  headers.delete("x-import-erp-client-ip");
+  const clientIp = forwardedClientIp(request.headers);
+  if (!localDevelopment && clientIp) headers.set("x-import-erp-client-ip", clientIp);
   headers.set(gatewayHeader, gatewayToken);
   // Keep version checks in an application header from the browser to avoid
   // Vercel treating If-Match as an edge precondition. Translate it only on
