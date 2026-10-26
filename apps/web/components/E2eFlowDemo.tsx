@@ -5,6 +5,7 @@ import {
   buildE2eFlow, DEFAULT_E2E_FLOW_CONFIG, E2E_PHASE_COUNT, E2eFlowConfig, E2eIconName, formatDayOffset, railCenter,
 } from "../lib/e2e-flow";
 import type { Messages } from "../lib/i18n/pt-BR";
+import E2ePoPicker from "./E2ePoPicker";
 import { useI18n } from "./I18nProvider";
 import PageHeader from "./PageHeader";
 
@@ -64,6 +65,7 @@ export default function E2eFlowDemo({ config }: { config?: Partial<E2eFlowConfig
 
   return <main className="shell e2e-flow" data-side={side}>
     <PageHeader eyebrow={t.eyebrow} title={t.title}><p>{t.intro}</p></PageHeader>
+    <E2ePoPicker />
 
     <section className="e2e-toolbar" aria-label={t.toolbar}>
       <div className="e2e-group">

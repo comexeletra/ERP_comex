@@ -75,7 +75,8 @@ export default function PurchaseOrderWorkspace({ id, returnPath }: { id: string;
 
   return (
     <main className="shell">
-      <PageHeader back={{ href: returnPath, label: m.common.backToPortfolio }} eyebrow={`PO TOTVS · ${data.importer}`} title={data.number}>
+      <PageHeader back={{ href: returnPath, label: m.common.backToPortfolio }} eyebrow={`PO TOTVS · ${data.importer}`} title={data.number}
+        actions={<Link className="button secondary" href={`/end-to-end?po=${encodeURIComponent(id)}`}>{t.openE2e}</Link>}>
         <p>{t.status(m.poStatus[data.lifecycleStatus] ?? m.poStatus.ACTIVE)}</p>
         <p>{t.counts(data.itemCount, data.processes.length)}</p>
         <p>{t.flowHelp}</p>

@@ -82,7 +82,7 @@ test("end-to-end demo page is routed, listed in the sidebar and follows the app 
   assert.equal(ptBR.sidebar.items.endToEnd, "End-to-end");
   assert.match(component, /<main className="shell e2e-flow"/u);
   assert.match(component, /<PageHeader eyebrow=\{t\.eyebrow\} title=\{t\.title\}>/u);
-  assert.match(ptBR.e2e.eyebrow, /Demonstração/u);
+  assert.match(ptBR.e2e.eyebrow, /Modelo/u);
   assert.doesNotMatch(component, /next\/font|fonts\.googleapis/u);
   assert.match(styles, /\.e2e-flow\s*\{/u);
   // Colors come only from the global tokens, so the dark theme applies without extra rules.
