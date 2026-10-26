@@ -740,6 +740,96 @@ test("invoice candidate lookup distinguishes an unregistered PO from an empty re
   assert.equal(empty.json().poStatus, "CLOSED");
 });
 
+async function invoiceCandidateBatchApp(t, { dataQuery, scopes = ["ELETRA MATRIZ"] } = {}) {
+  const dataQueries = [];
+  let connections = 0;
+  const pool = {
+    async query(sql, params) {
+      if (sql.includes("SELECT DISTINCT importer FROM procurement.purchase_order")) {
+        return { rows: scopes.map(importer => ({ importer })) };
+      }
+      if (sql.includes("FROM identity.erp_user")) {
+        return { rows: scopes.map(importer_code => ({ role: "Importa\u00e7\u00e3o", importer_code })) };
+      }
+      dataQueries.push({ sql, params });
+      return dataQuery?.(sql, params) ?? { rows: [], rowCount: 0 };
+    },
+    async connect() { connections += 1; throw new Error("Batch candidate lookup must not open a transaction"); },
+  };
+  const app = Fastify();
+  t.after(() => app.close());
+  app.decorateRequest("authContext", null);
+  await registerAuthorization(app, pool);
+  app.addHook("onRequest", async request => { request.authContext = {
+    issuer: "ci", subject: "writer", userId: poId, displayName: null, sessionToken: "ci",
+  }; });
+  await registerOperationalRoutes(app, pool);
+  return { app, dataQueries, connections: () => connections };
+}
+
+test("invoice candidate batch returns requested POs in order with two read queries", async t => {
+  const { app, dataQueries, connections } = await invoiceCandidateBatchApp(t, {
+    dataQuery(sql) {
+      if (sql.includes("procurement.purchase_order_item item")) return { rows: [{
+        sourcePoNumber: "PO 030201", id: poId, lineNumber: 2, productCode: "PO-CODE",
+        description: "PO item", orderedQuantity: "10", unit: "PCS", unitPrice: "2",
+        currency: "CNY", poNcmCode: "85044090", purchaseOrderId: "po-active",
+        poNumber: "030201", poStatus: "ACTIVE", supplierEntryId: null, supplierText: "Supplier",
+        supplierName: null, supplierCode: null, productId: null, productName: null,
+        productNcmCode: null, manufacturer: null, manufacturerAddress: null,
+        manufacturerCountry: null, remainingQuantity: "8",
+      }], rowCount: 1 };
+      return { rows: [
+        { sourcePoNumber: "PO 030201", purchaseOrderId: "po-active", poStatus: "ACTIVE" },
+        { sourcePoNumber: "030202", purchaseOrderId: "po-closed", poStatus: "CLOSED" },
+      ], rowCount: 2 };
+    },
+  });
+  const response = await app.inject({ method: "POST",
+    url: "/api/v1/purchase-orders/invoice-candidates/batch", headers: { "x-test-subject": "writer" },
+    payload: { importer: "ELETRA MATRIZ", revisingIpNumber: "IPH/TEST",
+      poNumbers: ["PO 030201", "030202", "MISSING", "PO 030201"] },
+  });
+
+  assert.equal(response.statusCode, 200, response.body);
+  assert.deepEqual(response.json(), { purchaseOrders: [
+    { sourcePoNumber: "PO 030201", poExists: true, purchaseOrderId: "po-active", poStatus: "ACTIVE",
+      items: [{ id: poId, lineNumber: 2, productCode: "PO-CODE", description: "PO item",
+        orderedQuantity: "10", unit: "PCS", unitPrice: "2", currency: "CNY", poNcmCode: "85044090",
+        purchaseOrderId: "po-active", poNumber: "030201", poStatus: "ACTIVE", supplierEntryId: null,
+        supplierText: "Supplier", supplierName: null, supplierCode: null, productId: null,
+        productName: null, productNcmCode: null, manufacturer: null, manufacturerAddress: null,
+        manufacturerCountry: null, remainingQuantity: "8" }] },
+    { sourcePoNumber: "030202", poExists: true, purchaseOrderId: "po-closed", poStatus: "CLOSED", items: [] },
+    { sourcePoNumber: "MISSING", poExists: false, purchaseOrderId: null, poStatus: null, items: [] },
+  ] });
+  assert.equal(dataQueries.length, 2);
+  for (const query of dataQueries) {
+    assert.deepEqual(query.params, ["ELETRA MATRIZ", ["PO 030201", "030202", "MISSING"], "IPH/TEST", ["ELETRA MATRIZ"]]);
+    assert.match(query.sql, /unnest\(\$2::text\[\]\)/u);
+    assert.match(query.sql, /requested/u);
+  }
+  assert.match(dataQueries[0].sql, /lifecycle_status = 'ACTIVE'/u);
+  assert.match(dataQueries[0].sql, /source_status/u);
+  assert.match(dataQueries[1].sql, /lifecycle_status = 'ACTIVE'.*DESC/su);
+  assert.equal(connections(), 0);
+});
+
+test("invoice candidate batch validates input and importer scope before data queries", async t => {
+  const { app, dataQueries, connections } = await invoiceCandidateBatchApp(t);
+  const call = payload => app.inject({ method: "POST", url: "/api/v1/purchase-orders/invoice-candidates/batch",
+    headers: { "x-test-subject": "writer" }, payload });
+  for (const payload of [
+    { importer: "ELETRA MATRIZ", poNumbers: [] },
+    { importer: "ELETRA MATRIZ", poNumbers: Array.from({ length: 201 }, (_, index) => `PO-${index}`) },
+    { importer: "ELETRA MATRIZ", poNumbers: ["PO-1"], extra: true },
+  ]) assert.equal((await call(payload)).statusCode, 400);
+  const outsideScope = await call({ importer: "OTHER IMPORTER", poNumbers: ["PO-1"] });
+  assert.equal(outsideScope.statusCode, 404, outsideScope.body);
+  assert.equal(dataQueries.length, 0);
+  assert.equal(connections(), 0);
+});
+
 test("invoice balance errors identify the affected invoice row", async t => {
   const { client } = invoiceImportClient({ insufficientBalance: true });
   const app = await invoiceImportApp(t, client);

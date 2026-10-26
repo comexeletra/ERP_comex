@@ -20,7 +20,7 @@ import { registerFollowupRoutes } from "./followup.js";
 import { registerPurchaseRequestRoutes } from "./purchase-requests.js";
 import { registerExportJobRoutes } from "./export-jobs.js";
 import { registerShipmentLineRoutes } from "./shipment-lines.js";
-import { apiErrorDetails } from "./api-error-details.js";
+import { registerApiErrorHandler } from "./api-error-response.js";
 
 const gatewayToken = process.env.GATEWAY_TOKEN;
 const connectionString = process.env.DATABASE_URL;
@@ -118,13 +118,7 @@ app.setNotFoundHandler(async (_request, reply) => {
   return reply.code(404).send({ error: "Recurso não encontrado." });
 });
 
-app.setErrorHandler(async (error, request, reply) => {
-  const code = typeof error === "object" && error !== null && "code" in error
-    ? String(error.code)
-    : "UNEXPECTED";
-  request.log.error({ code, ...apiErrorDetails(error) }, "Falha ao processar requisição");
-  return reply.code(500).send({ error: "Erro inesperado." });
-});
+registerApiErrorHandler(app);
 
 const shutdown = async (signal: string) => {
   app.log.info({ signal }, "Encerrando API");

@@ -176,6 +176,11 @@ const invoiceCandidateQuery = z.object({
   sourcePoNumber: z.string().trim().min(1).max(80),
   revisingIpNumber: z.string().trim().max(80).optional(),
 }).strict();
+const invoiceCandidateBatch = z.object({
+  importer: z.string().trim().min(1).max(120),
+  revisingIpNumber: z.string().trim().max(80).optional(),
+  poNumbers: z.array(z.string().trim().min(1).max(80)).min(1).max(200),
+}).strict();
 const invoiceCatalogUpdates = z.object({
   products: z.array(z.object({ productCode: z.string().trim().min(1).max(120),
     name: z.string().trim().min(1).max(2000), ncmCode: z.string().regex(/^\d{8}$/u).nullable(),
@@ -1466,6 +1471,92 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         return { id: processId, documentId, allocations: aggregated.size, ipNumber: body.process.ipNumber,
           revision: isRevision };
       }, 201);
+    });
+
+  app.post("/api/v1/purchase-orders/invoice-candidates/batch", { config: permissionConfig("purchase-orders.read") },
+    async (request, reply) => {
+      const parsed = invoiceCandidateBatch.safeParse(request.body);
+      if (!parsed.success) {
+        return problem(reply, 400, "INVALID_INVOICE_CANDIDATE_BATCH",
+          "Informe a importadora e de uma a duzentas POs da invoice.");
+      }
+      try { inScope(parsed.data.importer, request.authorizationContext?.importerScopes ?? []); }
+      catch (error) {
+        if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message);
+        throw error;
+      }
+      const poNumbers = [...new Set(parsed.data.poNumbers)];
+      const parameters = [parsed.data.importer, poNumbers, parsed.data.revisingIpNumber || null,
+        request.authorizationContext?.importerScopes ?? []];
+      const items = await pool.query<Record<string, unknown>>(
+        `WITH requested AS (
+           SELECT input.source, input.ordinal,
+             regexp_replace(regexp_replace(upper(input.source), '[^A-Z0-9]', '', 'g'), '^PO', '') AS normalized
+           FROM unnest($2::text[]) WITH ORDINALITY AS input(source, ordinal)
+         )
+         SELECT requested.source AS "sourcePoNumber",
+                item.id, item.line_number AS "lineNumber", item.product_code AS "productCode",
+                item.description, item.ordered_quantity::text AS "orderedQuantity", item.unit,
+                item.unit_price::text AS "unitPrice", item.currency_code AS currency, item.ncm AS "poNcmCode",
+                po.id AS "purchaseOrderId", po.external_number AS "poNumber",
+                po.lifecycle_status AS "poStatus",
+                po.supplier_entry_id AS "supplierEntryId", po.supplier_text AS "supplierText",
+                supplier.name AS "supplierName", supplier.code AS "supplierCode",
+                product.id AS "productId", product.name AS "productName",
+                product.product_ncm_code AS "productNcmCode", product.manufacturer,
+                product.manufacturer_address AS "manufacturerAddress",
+                product.manufacturer_country AS "manufacturerCountry",
+                (item.ordered_quantity - coalesce(sum(allocation.quantity) FILTER (WHERE allocation.status = 'ACTIVE'
+                  AND process.record_status = 'ACTIVE'
+                  AND ($3::text IS NULL OR process.normalized_ip_number <> upper(btrim($3)))), 0))::text AS "remainingQuantity"
+         FROM requested
+         JOIN procurement.purchase_order po
+           ON regexp_replace(regexp_replace(upper(po.external_number), '[^A-Z0-9]', '', 'g'), '^PO', '')
+             = requested.normalized
+         JOIN procurement.purchase_order_item item ON item.purchase_order_id = po.id
+         LEFT JOIN catalog.entry supplier ON supplier.id = po.supplier_entry_id
+         LEFT JOIN catalog.entry product ON product.kind = 'PRODUCT' AND product.importer IS NULL
+           AND product.normalized_code = upper(btrim(item.product_code))
+         LEFT JOIN procurement.po_item_allocation allocation ON allocation.purchase_order_item_id = item.id
+         LEFT JOIN imports.import_process process ON process.id = allocation.process_id
+         WHERE po.importer = $1 AND po.importer = ANY($4::text[]) AND po.lifecycle_status = 'ACTIVE'
+           AND upper(coalesce(item.source_status, '')) NOT IN ('CANCELLED','CANCELED')
+         GROUP BY requested.source, requested.ordinal, item.id, po.id, supplier.id, product.id
+         ORDER BY requested.ordinal, po.normalized_number, item.line_number`, parameters);
+      const purchaseOrders = await pool.query<{ sourcePoNumber: string; purchaseOrderId: string | null;
+        poStatus: string | null }>(
+        `WITH requested AS (
+           SELECT input.source, input.ordinal,
+             regexp_replace(regexp_replace(upper(input.source), '[^A-Z0-9]', '', 'g'), '^PO', '') AS normalized
+           FROM unnest($2::text[]) WITH ORDINALITY AS input(source, ordinal)
+         ), request_context AS (SELECT $3::text AS revising_ip_number)
+         SELECT requested.source AS "sourcePoNumber", matching.id AS "purchaseOrderId",
+                matching.lifecycle_status AS "poStatus"
+         FROM requested
+         CROSS JOIN request_context
+         LEFT JOIN LATERAL (
+           SELECT po.id, po.lifecycle_status
+           FROM procurement.purchase_order po
+           WHERE po.importer = $1 AND po.importer = ANY($4::text[])
+             AND regexp_replace(regexp_replace(upper(po.external_number), '[^A-Z0-9]', '', 'g'), '^PO', '')
+               = requested.normalized
+           ORDER BY (po.lifecycle_status = 'ACTIVE') DESC, po.created_at DESC, po.id
+           LIMIT 1
+         ) matching ON true
+         ORDER BY requested.ordinal`, parameters);
+      const itemsByPo = new Map<string, Record<string, unknown>[]>();
+      for (const row of items.rows) {
+        const { sourcePoNumber, ...item } = row;
+        const key = String(sourcePoNumber);
+        itemsByPo.set(key, [...(itemsByPo.get(key) ?? []), item]);
+      }
+      const statusByPo = new Map(purchaseOrders.rows.map(row => [row.sourcePoNumber, row]));
+      return { purchaseOrders: poNumbers.map(sourcePoNumber => {
+        const status = statusByPo.get(sourcePoNumber);
+        return { sourcePoNumber, poExists: Boolean(status?.purchaseOrderId),
+          purchaseOrderId: status?.purchaseOrderId ?? null, poStatus: status?.poStatus ?? null,
+          items: itemsByPo.get(sourcePoNumber) ?? [] };
+      }) };
     });
 
   app.get("/api/v1/purchase-orders/invoice-candidates", { config: permissionConfig("purchase-orders.read") },
