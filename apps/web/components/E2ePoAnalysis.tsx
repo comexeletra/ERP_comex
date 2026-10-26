@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { analyzePurchaseOrderE2e, E2E_STAGE_CODES, e2eToday, formatE2eDate,
-  type E2eAnalysisInput, type E2eIpAnalysis, type E2ePoint } from "../lib/e2e-analysis";
-import { DEFAULT_E2E_FLOW_CONFIG } from "../lib/e2e-flow";
+  type E2eAnalysisInput, type E2eIpAnalysis, type E2eStage } from "../lib/e2e-analysis";
 import { statusLabel } from "../lib/i18n/labels";
+import E2eTabs from "./E2eTabs";
 import { getMessages, useI18n } from "./I18nProvider";
 import PageHeader from "./PageHeader";
 
@@ -19,6 +19,7 @@ const statusBadge: Record<string, string> = {
 };
 const pct = (value: number) => `${value.toFixed(3)}%`;
 
+/** End to End of one PO, aggregated by IP from the stages the API calculates for each product line. */
 export default function E2ePoAnalysis({ id }: { id: string }) {
   const { m, locale } = useI18n();
   const t = m.e2eAnalysis;
@@ -44,9 +45,9 @@ export default function E2ePoAnalysis({ id }: { id: string }) {
     return () => controller.abort();
   }, [id, retry]);
 
-  const analysis = useMemo(() => data ? analyzePurchaseOrderE2e(data, DEFAULT_E2E_FLOW_CONFIG, e2eToday()) : undefined, [data]);
+  const analysis = useMemo(() => data ? analyzePurchaseOrderE2e(data, e2eToday()) : undefined, [data]);
   const date = (value: string | null | undefined) => formatE2eDate(value, locale);
-  const back = { href: "/end-to-end", label: t.backToModel };
+  const back = { href: "/end-to-end/po", label: t.backToModel };
 
   if (error || !data || !analysis) return <main className="shell e2e-flow">
     <PageHeader back={back} title={t.title("…")} />
@@ -56,13 +57,13 @@ export default function E2ePoAnalysis({ id }: { id: string }) {
   </main>;
 
   const { summary, timeline } = analysis;
-  const missingDemandType = analysis.ips.reduce((sum, ip) => sum + ip.missingDemandType, 0);
+  const missingDemandType = data.shipments.filter(shipment => shipment.calculated.e2e?.demandType === "unknown").length;
   const deviation = (value: number | null) => value === null ? t.noData : t.deviation(Math.round(value * 10) / 10);
-  const cell = (point: E2ePoint) => <>
-    <span className={point.source === "forecast" ? "e2e-date is-forecast" : "e2e-date"}>
-      {date(point.date)}{point.source === "forecast" && <small> · {t.forecast}</small>}
+  const cell = (stage: E2eStage) => <>
+    <span className={stage.source === "forecast" ? "e2e-date is-forecast" : "e2e-date"}>
+      {date(stage.actual)}{stage.source === "forecast" && <small> · {t.forecast}</small>}
     </span>
-    <span className="e2e-date-planned">{t.planned(date(point.planned))}</span>
+    <span className="e2e-date-planned">{t.planned(date(stage.deadline))}</span>
   </>;
 
   return <main className="shell e2e-flow">
@@ -70,6 +71,7 @@ export default function E2ePoAnalysis({ id }: { id: string }) {
       actions={<Link className="button secondary" href={`/purchase-orders/${encodeURIComponent(data.id)}`}>{t.openPo}</Link>}>
       <p>{t.intro}</p>
     </PageHeader>
+    <E2eTabs current="po" />
 
     {!analysis.necessityDate && <div className="notice warning"><p>{t.noNeed}</p></div>}
     {!analysis.ips.length && <div className="notice"><p>{t.noIps}</p></div>}
@@ -91,11 +93,9 @@ export default function E2ePoAnalysis({ id }: { id: string }) {
       <ol className="e2e-stage-list">
         {E2E_STAGE_CODES.map((code, index) => {
           const value = summary.stageDeviation[code];
-          const planned = analysis.ips[0]?.stages[index].planned;
-          return <li key={code} className={`${index < 2 ? "side-br" : "side-cn"}${code === summary.worstStage ? " is-current" : ""}`}>
+          return <li key={code} className={`${index < 3 ? "side-br" : "side-cn"}${code === summary.worstStage ? " is-current" : ""}`}>
             <span className="e2e-phase-code">{code}</span>
-            <strong>{t.stageNames[code]}</strong>
-            {planned !== undefined && <span className="e2e-label">{t.plannedDays(planned)}</span>}
+            <strong>{m.e2eLines.stageTitles[code].replace(`${code} · `, "")}</strong>
             <span className={`e2e-deviation${value !== null && value > 0 ? " is-late" : " is-ok"}`}>{deviation(value)}</span>
           </li>;
         })}
@@ -116,11 +116,11 @@ export default function E2ePoAnalysis({ id }: { id: string }) {
         {analysis.ips.map(ip => <li key={ip.processId} className="e2e-gantt-row">
           <div className="e2e-gantt-label">
             <strong>{ip.ipNumber}</strong>
-            <span className="e2e-label">{ip.air ? t.air : t.sea} · {t.demandKinds[ip.demandType]}</span>
+            <span className="e2e-label">{ip.air === null ? "—" : ip.air ? t.air : t.sea} · {t.demandKinds[ip.demandType]}</span>
           </div>
           <div className="e2e-gantt-track">
             {ip.plannedBar && <span className="e2e-gantt-planned" style={{ left: pct(ip.plannedBar.left), width: pct(ip.plannedBar.width) }} />}
-            {ip.bars.map(bar => <span key={bar.code} title={`${bar.code} · ${t.stageNames[bar.code]}`}
+            {ip.bars.map(bar => <span key={bar.code} title={m.e2eLines.stageTitles[bar.code]}
               className={`e2e-gantt-bar ${bar.code === "T1" || bar.code === "T2" ? "side-br" : "side-cn"}${bar.source === "forecast" ? " is-forecast" : ""}`}
               style={{ left: pct(bar.left), width: pct(bar.width) }} />)}
             {timeline.needPosition !== null && <span className="e2e-gantt-need" style={{ left: pct(timeline.needPosition) }} />}
@@ -140,8 +140,8 @@ export default function E2ePoAnalysis({ id }: { id: string }) {
           <th>{t.arrival}</th><th>{t.delivery}</th><th>{t.slack}</th><th>{t.status}</th></tr></thead>
         <tbody>{analysis.ips.map(ip => <tr key={ip.processId}>
           <td><strong>{ip.ipNumber}</strong></td><td>{ip.lines}</td><td>{t.demandKinds[ip.demandType]}</td>
-          <td>{ip.air ? t.air : t.sea}</td>
-          <td>{cell(ip.milestones.shipment)}</td><td>{cell(ip.milestones.arrival)}</td><td>{cell(ip.milestones.delivery)}</td>
+          <td>{ip.air === null ? "—" : ip.air ? t.air : t.sea}</td>
+          <td>{cell(ip.e2e.stages.T3)}</td><td>{cell(ip.e2e.stages.T4)}</td><td>{cell(ip.e2e.stages.T5)}</td>
           <td><SlackBadge ip={ip} /></td>
           <td><span className={statusBadge[ip.status] ?? "badge"}>{statusLabel(m, ip.status)}</span>
             {ip.currentStage && <span className="e2e-label"> · {t.stageNow(ip.currentStage)}</span>}</td>

@@ -6,8 +6,9 @@ import { apiFetch, readApiJson } from "../lib/api";
 import { formatNumber } from "../lib/format-number";
 import { statusLabel } from "../lib/i18n/labels";
 import { getMessages, useI18n } from "./I18nProvider";
+import { useProductLineExport } from "./useProductLineExport";
 import PageHeader from "./PageHeader";
-import { emptyProductLineFilters, parseProductLineFilters, productLineFilterBody, productLineQuery,
+import { emptyProductLineFilters, parseProductLineFilters, productLineQuery,
   productLineStatuses, type ProductLineFilters } from "../lib/purchase-order-lines";
 
 type Value = string | number | boolean | null | undefined;
@@ -40,9 +41,7 @@ export default function ProductLinesView({ initialQuery }: { initialQuery: strin
   const [applied, setApplied] = useState<ProductLineFilters>(initial.filters);
   const [page, setPage] = useState(initial.page);
   const [response, setResponse] = useState<{ query: string; data?: LinesPage; error?: string }>();
-  const [exporting, setExporting] = useState(false);
-  const [exportStatus, setExportStatus] = useState("");
-  const [exportError, setExportError] = useState("");
+  const { exporting, exportStatus, exportError, downloadExcel } = useProductLineExport("carteira-por-produto");
   const query = productLineQuery(applied, page, pageSize).toString();
 
   useEffect(() => {
@@ -67,47 +66,6 @@ export default function ProductLinesView({ initialQuery }: { initialQuery: strin
   function filter(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     navigate(draft, 1);
-  }
-
-  async function downloadExcel() {
-    if (exporting || !result?.totalCount) return;
-    setExporting(true); setExportError(""); setExportStatus(t.exportQueued);
-    try {
-      const created = await apiFetch("/api/v1/exports/purchase-order-lines", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify(productLineFilterBody(applied)),
-      });
-      if (!created.ok) {
-        const body = await created.json().catch(() => null) as { error?: string } | null;
-        throw new Error(body?.error ?? t.exportStartFailed);
-      }
-      const { id } = await created.json() as { id: string };
-      let complete = false;
-      while (!complete) {
-        await new Promise(resolve => window.setTimeout(resolve, 1500));
-        const statusResponse = await apiFetch(`/api/v1/exports/${id}`);
-        if (!statusResponse.ok) throw new Error(t.exportStatusFailed);
-        const status = await statusResponse.json() as { status: string; errorCode?: string | null };
-        if (status.status === "failed") {
-          throw new Error(status.errorCode === "EXPORT_TOO_LARGE" ? t.exportTooLarge : t.exportFailed);
-        }
-        if (status.status === "completed") complete = true;
-        else setExportStatus(status.status === "running" ? t.exportRunning : t.exportWaiting);
-      }
-      setExportStatus(t.downloading);
-      const file = await apiFetch(`/api/v1/exports/${id}/download`);
-      if (!file.ok) throw new Error(t.fileExpired);
-      const url = URL.createObjectURL(await file.blob());
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `carteira-por-produto-${new Date().toISOString().slice(0, 10)}.xlsx`;
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (cause) {
-      setExportError(cause instanceof Error ? cause.message : t.exportError);
-    } finally { setExporting(false); setExportStatus(""); }
   }
 
   const totalPages = result ? Math.ceil(result.totalCount / pageSize) : 0;
@@ -139,7 +97,7 @@ export default function ProductLinesView({ initialQuery }: { initialQuery: strin
       {!loading && !error && result && <>
         <p>{t.found(result.totalCount)}{result.totalCount > 0 && m.processDirectory.pageSuffix(page, totalPages)}</p>
         {result.totalCount > 0 && <p><button className="button secondary" type="button" disabled={exporting}
-          onClick={() => void downloadExcel()}>{exporting ? t.exporting : t.export}</button></p>}
+          onClick={() => void downloadExcel(applied)}>{exporting ? t.exporting : t.export}</button></p>}
         {exportStatus && <p className="muted" role="status">{exportStatus}</p>}
         {exportError && <p className="notice error" role="alert">{exportError}</p>}
         {result.lines.length === 0 && result.totalCount > 0 && <p>{t.outOfRange}<button className="button" onClick={() => navigate(applied, 1)}>{t.firstPage}</button></p>}

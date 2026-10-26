@@ -5,11 +5,15 @@ import { ptBR } from "../lib/i18n/pt-BR.ts";
 
 const view = await readFile(new URL("../components/ProductLinesView.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("../components/AppSidebar.tsx", import.meta.url), "utf8");
+const exportHook = await readFile(new URL("../components/useProductLineExport.ts", import.meta.url), "utf8");
 
 test("the product lines view reads the API lines and exports the filtered lines to Excel", () => {
   assert.match(view, /\/api\/v1\/purchase-order-lines\?/u);
-  assert.match(view, /\/api\/v1\/exports\/purchase-order-lines/u);
-  assert.match(view, /anchor\.download = `carteira-por-produto-.*\.xlsx`/u);
+  // The export (queue, wait, download) is shared with the End to End screen.
+  assert.match(view, /useProductLineExport\("carteira-por-produto"\)/u);
+  assert.match(view, /downloadExcel\(applied\)/u);
+  assert.match(exportHook, /\/api\/v1\/exports\/purchase-order-lines/u);
+  assert.match(exportHook, /anchor\.download = `\$\{filePrefix\}-.*\.xlsx`/u);
   for (const column of ["ETD", "ETA", "ETE"]) assert.match(view, new RegExp(`<th>${column}</th>`, "u"));
   for (const [key, label] of [["m.followup.departure", ptBR.followup.departure], ["m.fields.blDate", ptBR.fields.blDate],
     ["m.followup.arrival", ptBR.followup.arrival], ["m.followup.delivery", ptBR.followup.delivery]]) {

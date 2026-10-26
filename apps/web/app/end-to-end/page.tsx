@@ -1,7 +1,9 @@
-import E2eFlowDemo from "../../components/E2eFlowDemo";
-import E2ePoAnalysis from "../../components/E2ePoAnalysis";
+import E2eLinesView from "../../components/E2eLinesView";
 
-export default async function EndToEndPage({ searchParams }: { searchParams: Promise<{ po?: string | string[] }> }) {
-  const { po } = await searchParams;
-  return typeof po === "string" && po ? <E2ePoAnalysis id={po} /> : <E2eFlowDemo />;
+export default async function EndToEndPage({ searchParams }: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(await searchParams)) if (typeof value === "string") query.set(key, value);
+  return <E2eLinesView initialQuery={query.toString()} />;
 }

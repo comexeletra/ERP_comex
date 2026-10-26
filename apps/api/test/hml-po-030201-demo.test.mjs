@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateProcess, checkShipmentDates } from "../dist/followup-calculations.js";
+import { calculateFollowup, calculateProcess, checkShipmentDates } from "../dist/followup-calculations.js";
 import { processFollowupFieldKeys } from "../dist/followup.js";
 import { allocationPlan, demandTypeForLine, ipForLine, ipNumberPattern, sharedFields, simulationIps }
   from "../../../deploy/hostinger/seed-hml-po-030201-demo.mjs";
 import { analyzePurchaseOrderE2e } from "../../web/lib/e2e-analysis.ts";
-import { DEFAULT_E2E_FLOW_CONFIG } from "../../web/lib/e2e-flow.ts";
 
 const lines = Array.from({ length: 215 }, (_, index) => String(index + 1).padStart(4, "0"));
 // Two lines of each of B and C have the same large quantity, so the tie-break by line matters.
@@ -52,20 +51,28 @@ test("each IP passes the API date rules and lands on its planned status and ETA"
   }
 });
 
-test("the end-to-end analysis of the simulation shows the expected slack per IP", () => {
+test("the End to End of the simulation shows the expected slack per IP", () => {
   const plan = allocationPlan(items);
+  const invoice = [{ kind: "INVOICE", status: "ACTIVE", purchaseOrderItemId: null, number: "HX" }];
+  const ipOf = letter => simulationIps.find(ip => ip.ip === letter);
   const input = {
-    items: items.map(item => ({ id: item.id, productCode: item.line, orderedQuantity: item.quantity,
-      demandType: demandTypeForLine(item.line), ...sharedFields })),
-    processes: simulationIps.map(ip => ({ process: { id: ip.ip, ipNumber: ip.ip, ...ip.fields },
-      calculated: { status: ip.expected.status, ...calculateProcess(ip.fields, ip.invoiceDate ? [{ status: "ACTIVE", kind: "INVOICE" }] : []) } })),
-    shipments: plan.map(entry => ({ itemId: entry.itemId, allocationQuantity: entry.quantity,
-      factoryShipDate: simulationIps.find(ip => ip.ip === entry.ip).factoryShipDate, process: { id: entry.ip } })),
+    items: items.map(item => ({ id: item.id, orderedQuantity: item.quantity, necessityDate: sharedFields.necessityDate })),
+    processes: simulationIps.map(ip => ({ process: { id: ip.ip, ipNumber: ip.ip }, calculated: { status: ip.expected.status } })),
+    shipments: plan.map(entry => {
+      const ip = ipOf(entry.ip);
+      const item = { id: entry.itemId, ...sharedFields, demandType: demandTypeForLine(entry.line) ?? "MTS",
+        allocationQuantity: entry.quantity, actualFactoryShipDate: ip.factoryShipDate };
+      return { itemId: entry.itemId, allocationQuantity: entry.quantity, process: { id: entry.ip },
+        calculated: calculateFollowup(item, ip.fields, ip.invoiceDate ? invoice : [], "2026-10-26") };
+    }),
   };
-  const analysis = analyzePurchaseOrderE2e(input, DEFAULT_E2E_FLOW_CONFIG, "2026-10-26");
+  const analysis = analyzePurchaseOrderE2e(input, "2026-10-26");
   assert.deepEqual(Object.fromEntries(analysis.ips.map(ip => [ip.ipNumber, ip.slack])),
     { A: 48, B: -1, C: -11, D: 30, E: -36, F: 5, G: -52 });
   assert.equal(analysis.summary.onTimeLines, 69);
   assert.equal(analysis.summary.lateLines, 156);
   assert.equal(analysis.summary.worstIp, "G");
+  // The resistor line of B: T1 +10 (SC approved 21/08), T2 −4 (PO sent 24/08), T3 +7 (left China 30/09).
+  const resistor = input.shipments.find(shipment => shipment.process.id === "B").calculated.e2e;
+  assert.deepEqual(["T1", "T2", "T3"].map(code => resistor.stages[code].delayDays), [10, -4, 7]);
 });

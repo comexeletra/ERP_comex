@@ -4,6 +4,7 @@ import { FormEvent, Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch, readApiJson } from "../lib/api";
 import { automaticAuditReason } from "../lib/audit";
+import { E2E_STAGE_CODES, type E2eResult } from "../lib/e2e-analysis";
 import { formatNumber } from "../lib/format-number";
 import { booleanOptions, displayValue, fieldLabel, statusLabel } from "../lib/i18n/labels";
 import type { Messages } from "../lib/i18n/pt-BR";
@@ -73,14 +74,14 @@ async function read<T>(response: Response): Promise<T> {
 const calcKeys: (keyof Messages["calc"])[] = [
   "status", "alert", "ruptureRisk", "totalPrice", "eta", "ete", "transitDays", "storageDueDate", "leadTimeDays",
   "poApprovalDays", "poAfterScDays", "poOnTime", "poDeviationDays", "factoryLeadDays", "actualTransitDays", "clearanceDays",
-  "commercialDeadline", "commercialDeviationDays", "mrpTargetDate", "portTargetDate", "arrivalTargetDate",
-  "deliveryTargetDate", "billDate", "nfIssueDate", "nfHomologationDate", "billNumber", "invoiceNumbers", "nfNumber",
+  "billDate", "nfIssueDate", "nfHomologationDate", "billNumber", "invoiceNumbers", "nfNumber",
   "informedStatus", "invoiceQuantity", "quantityMatchesInvoice", "invoiceUnitPrice", "priceMatchesInvoice",
   "totalTargetDays", "totalActualDays", "totalDelayDays", "bottleneck", "arrivalYearMonth",
 ];
 const numericCalculatedFields = new Set(["totalPrice", "transitDays", "leadTimeDays", "poApprovalDays", "poAfterScDays",
   "poDeviationDays", "factoryLeadDays", "actualTransitDays", "clearanceDays", "invoiceQuantity", "invoiceUnitPrice",
-  "totalTargetDays", "totalActualDays", "totalDelayDays", "commercialDeviationDays"]);
+  "totalTargetDays", "totalActualDays", "totalDelayDays"]);
+const e2eOf = (shipment: Shipment) => (shipment.calculated as { e2e?: E2eResult | null }).e2e ?? null;
 function eventSnapshot(value: unknown, m: Messages) { return value == null ? m.events.noPrevious : JSON.stringify(value, null, 2); }
 function eventDate(value: string) { return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short",
   timeZone: "America/Sao_Paulo" }).format(new Date(value)); }
@@ -273,8 +274,12 @@ export default function FollowupPanel({ id }: { id: string }) {
                 <details><summary>{t.calculatedIndicators}</summary><dl className="followup-grid">{calcKeys.map(key =>
                   <div key={key}><dt>{m.calc[key]}</dt><dd>{numericCalculatedFields.has(key) ? formatNumber(shipment.calculated[key])
                     : key === "status" || key === "informedStatus" ? value(statusLabel(m, shipment.calculated[key])) : value(shipment.calculated[key])}</dd></div>)}</dl>
-                  {shipment.calculated.stages && <dl className="followup-grid">{Object.entries(shipment.calculated.stages as Record<string, { targetDays: number | null; actualDays: number | null; delayDays: number | null }>).map(([name, stage]) =>
-                    <div key={name}><dt>{name.toUpperCase()}</dt><dd>{t.stage(formatNumber(stage.targetDays), formatNumber(stage.actualDays), formatNumber(stage.delayDays))}</dd></div>)}</dl>}
+                  {e2eOf(shipment) && <dl className="followup-grid">{E2E_STAGE_CODES.map(code => {
+                    const stage = e2eOf(shipment)!.stages[code];
+                    return <div key={code}><dt>{m.e2eLines.stageTitles[code]}</dt><dd>{t.stage(code, value(stage.deadline),
+                      `${value(stage.actual)}${stage.source === "forecast" ? ` (${m.e2eAnalysis.forecast})` : ""}`,
+                      formatNumber(stage.targetDays), formatNumber(stage.actualDays), formatNumber(stage.delayDays))}</dd></div>;
+                  })}</dl>}
                 </details>
               </> : <p>{t.distributeFirst}</p>}
             </section></td></tr>}</Fragment>;

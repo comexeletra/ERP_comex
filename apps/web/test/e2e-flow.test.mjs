@@ -7,7 +7,7 @@ import { ptBR } from "../lib/i18n/pt-BR.ts";
 import { zhCN } from "../lib/i18n/zh-CN.ts";
 
 const component = await readFile(new URL("../components/E2eFlowDemo.tsx", import.meta.url), "utf8");
-const page = await readFile(new URL("../app/end-to-end/page.tsx", import.meta.url), "utf8");
+const page = await readFile(new URL("../app/end-to-end/model/page.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("../components/AppSidebar.tsx", import.meta.url), "utf8");
 const styles = await readFile(new URL("../app/styles/features/e2e.css", import.meta.url), "utf8");
 const tokens = await readFile(new URL("../app/styles/tokens.css", import.meta.url), "utf8");
