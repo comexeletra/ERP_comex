@@ -40,15 +40,6 @@ export function moneyProduct(quantity: unknown, price: unknown): string | null {
   const value = (q * p + 50_000_000n) / 100_000_000n;
   return `${value / 100_000_000n}.${String(value % 100_000_000n).padStart(8, "0")}`;
 }
-function numeric(value: unknown): number | null {
-  return value === null || value === undefined || value === "" ? null : Number(value);
-}
-function stage(start: unknown, end: unknown, targetDays: unknown) {
-  const actualDays = daysBetween(start, end);
-  const target = numeric(targetDays);
-  return { targetDays: target, actualDays, delayDays: actualDays === null || target === null ? null : actualDays - target };
-}
-
 function text(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -115,9 +106,86 @@ export function checkShipmentDates(current: Row, changes: Row) {
   return { errors, warnings };
 }
 
+/** Days each End to End stage may take; the administrator keeps sets valid from a necessity date. */
+export type E2eTargetSet = {
+  validFrom: string; t0Days: number; t1Days: number; t2Days: number; t3MtsDays: number; t3NotMtsDays: number;
+  t4SeaDays: number; t4AirDays: number; t5Days: number;
+};
+export const DEFAULT_E2E_TARGET_SET: E2eTargetSet = Object.freeze({
+  validFrom: "2000-01-01", t0Days: 8, t1Days: 8, t2Days: 7, t3MtsDays: 30, t3NotMtsDays: 45,
+  t4SeaDays: 55, t4AirDays: 10, t5Days: 10,
+});
+export const E2E_STAGE_CODES = ["T0", "T1", "T2", "T3", "T4", "T5"] as const;
+export type E2eStageCode = typeof E2E_STAGE_CODES[number];
+
+/** The set with the latest start on or before the line's necessity date (today when it has none). */
+export function e2eTargetSetFor(sets: readonly E2eTargetSet[], necessityDate: unknown, today: string): E2eTargetSet {
+  const reference = date(necessityDate) ?? today;
+  return [...sets].filter(set => set.validFrom <= reference).sort((a, b) => b.validFrom.localeCompare(a.validFrom))[0]
+    ?? DEFAULT_E2E_TARGET_SET;
+}
+
+function demandTypeKind(value: unknown): "mts" | "notMts" | "unknown" {
+  const normalized = (text(value) ?? "").normalize("NFD").replace(/\p{Diacritic}/gu, "").toUpperCase();
+  return normalized === "MTS" ? "mts" : normalized === "NAO MTS" ? "notMts" : "unknown";
+}
+
+/**
+ * End to End stages of the original spreadsheet for one product line. T0 is due four months
+ * before the need date; every later stage is due at the previous stage's actual end plus its
+ * target. Stages not reached yet end at the forecast (ETD, ETA, ETE) and say so in `source`.
+ * Delay = actual days − target days (T0: actual days = plan received − T0 deadline).
+ */
+export function calculateE2e(item: Row, process: Row, status: string, targets: E2eTargetSet, factoryShipDate: unknown) {
+  const demandType = demandTypeKind(item.demandType);
+  const mode = text(process.transportMode)?.toUpperCase() ?? null;
+  const air = mode === null ? null : /^(AIR|AEREO|AÉREO|COURIER)$/u.test(mode);
+  const { eta, ete } = shipmentDates(process);
+  const shipped = date(process.actualPortDepartureDate) ?? (date(process.blDate) ? date(process.etd) ?? date(process.blDate) : null);
+  const ends: [string | null, string | null][] = [
+    [date(item.commercialPlanReceivedDate), null],
+    [date(item.scApprovalDate), null],
+    [date(item.poSentDate), null],
+    [shipped, date(process.etd) ?? date(factoryShipDate)],
+    [date(process.arrivalDate), eta],
+    [date(process.deliveryDate), ete],
+  ];
+  const targetDays = [targets.t0Days, targets.t1Days, targets.t2Days,
+    demandType === "mts" ? targets.t3MtsDays : targets.t3NotMtsDays,
+    air === null ? null : air ? targets.t4AirDays : targets.t4SeaDays, targets.t5Days];
+  let previousEnd: string | null = null;
+  const stages = Object.fromEntries(E2E_STAGE_CODES.map((code, index) => {
+    const [actualEnd, forecastEnd] = ends[index];
+    const end = actualEnd ?? forecastEnd;
+    const target = targetDays[index];
+    const deadline = index === 0 ? monthShift(item.necessityDate, -4) : target === null ? null : addDays(previousEnd, target);
+    const actualDays = index === 0 ? daysBetween(deadline, end) : daysBetween(previousEnd, end);
+    const stage = { deadline, actual: end, source: actualEnd ? "actual" : forecastEnd ? "forecast" : null, targetDays: target,
+      actualDays, delayDays: actualDays === null || target === null ? null : actualDays - target };
+    previousEnd = end;
+    return [code, stage];
+  })) as Record<E2eStageCode, { deadline: string | null; actual: string | null; source: "actual" | "forecast" | null;
+    targetDays: number | null; actualDays: number | null; delayDays: number | null }>;
+  const values = Object.values(stages);
+  const totalTargetDays = values.every(stage => stage.targetDays !== null) ? values.reduce((sum, stage) => sum + stage.targetDays!, 0) : null;
+  const totalActualDays = values.every(stage => stage.actualDays !== null) ? values.reduce((sum, stage) => sum + stage.actualDays!, 0) : null;
+  const delayed = E2E_STAGE_CODES.filter(code => (stages[code].delayDays ?? 0) > 0);
+  return {
+    targetSetValidFrom: targets.validFrom, demandType, air, stages, totalTargetDays, totalActualDays,
+    totalDelayDays: totalTargetDays === null || totalActualDays === null ? null : totalActualDays - totalTargetDays,
+    bottleneck: delayed.sort((a, b) => stages[b].delayDays! - stages[a].delayDays!)[0] ?? null,
+    currentStatus: status, arrivalYearMonth: stages.T4.actual?.slice(0, 7) ?? null,
+  };
+}
+
+/** Today in Brasília (YYYY-MM-DD), the reference for alerts, forecasts and target sets. */
+export function todayInBrasilia(now = new Date()): string {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+}
+
 /** Spreadsheet rules expressed against the item and its one shipment (IP). */
-export function calculateFollowup(item: Row, process: Row, documents: Row[],
-  today = new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date())) {
+export function calculateFollowup(item: Row, process: Row, documents: Row[], today = todayInBrasilia(),
+  targetSets: readonly E2eTargetSet[] = [DEFAULT_E2E_TARGET_SET]) {
   const active = documents.filter(doc => doc.status === "ACTIVE");
   const invoices = active.filter(doc => doc.kind === "INVOICE" &&
     (doc.purchaseOrderItemId === item.id || doc.purchaseOrderItemId == null));
@@ -147,24 +215,9 @@ export function calculateFollowup(item: Row, process: Row, documents: Row[],
   const necessity = date(item.necessityDate);
   const risk = cancelled || delivered || !ete || !necessity ? null :
     daysBetween(ete, addDays(necessity, -7))! < 0 ? "RUPTURA" : "SEM RISCO";
-  const commercialDeadline = addDays(monthShift(necessity, -5), 4);
   const scApproval = date(item.scApprovalDate);
   const poSent = date(item.poSentDate);
-  const received = date(item.commercialPlanReceivedDate);
-  const mrpTarget = addDays(received, numeric(item.targetMrpDays));
-  const mrp = stage(received, item.mrpCompletedDate, item.targetMrpDays);
-  const order = stage(scApproval, item.poApprovalDate, item.targetOrderDays);
-  const shipment = stage(process.etd, firstBillDate, item.targetShipmentDays);
-  const port = stage(item.actualFactoryShipDate, process.actualPortDepartureDate, item.targetPortDays);
-  const transit = stage(process.actualPortDepartureDate ?? process.etd, process.arrivalDate, item.targetTransitDays);
-  const customs = stage(process.arrivalDate, process.deliveryDate, item.targetCustomsDays);
-  const stages = { mrp, order, shipment, port, transit, customs };
-  const targets = Object.values(stages).map(value => value.targetDays);
-  const actuals = Object.values(stages).map(value => value.actualDays);
-  const totalTargetDays = targets.every(value => value !== null) ? targets.reduce<number>((sum, value) => sum + value!, 0) : null;
-  const totalActualDays = actuals.every(value => value !== null) ? actuals.reduce<number>((sum, value) => sum + value!, 0) : null;
-  const completeDelays = Object.entries(stages).filter(([, value]) => value.delayDays !== null);
-  const bottleneck = completeDelays.length ? completeDelays.sort((a, b) => b[1].delayDays! - a[1].delayDays!)[0][0] : null;
+  const e2e = calculateE2e(item, process, shipping.status, e2eTargetSetFor(targetSets, necessity, today), item.actualFactoryShipDate);
   const invoiceLines = invoices.filter(doc => doc.purchaseOrderItemId === item.id);
   const invoiceQuantity = invoiceLines.length && invoiceLines.every(doc => fixed8(doc.quantity) !== null)
     ? invoiceLines.reduce((sum, doc) => sum + fixed8(doc.quantity)!, 0n) : null;
@@ -186,16 +239,10 @@ export function calculateFollowup(item: Row, process: Row, documents: Row[],
     factoryLeadDays: daysBetween(poSent, firstBillDate ?? today),
     actualTransitDays: daysBetween(firstBillDate, process.arrivalDate),
     clearanceDays: daysBetween(process.arrivalDate, process.deliveryDate),
-    commercialDeadline, commercialDeviationDays: daysBetween(commercialDeadline, received),
-    mrpTargetDate: mrpTarget,
-    portTargetDate: addDays(item.actualFactoryShipDate, numeric(item.targetPortDays)),
-    arrivalTargetDate: addDays(process.actualPortDepartureDate ?? process.etd, numeric(item.targetTransitDays)),
-    deliveryTargetDate: addDays(process.arrivalDate, numeric(item.targetCustomsDays)),
     billDate: firstBillDate, billNumber, invoiceNumbers, nfNumber: text(firstNf?.number), nfIssueDate: firstNfDate,
     nfHomologationDate: nfs.map(doc => date(doc.homologationDate)).filter((v): v is string => Boolean(v)).sort()[0] ?? null,
-    stages, totalTargetDays, totalActualDays,
-    totalDelayDays: totalTargetDays === null || totalActualDays === null ? null : totalActualDays - totalTargetDays,
-    bottleneck, arrivalYearMonth: date(process.arrivalDate)?.slice(0, 7) ?? null,
+    e2e, totalTargetDays: e2e.totalTargetDays, totalActualDays: e2e.totalActualDays, totalDelayDays: e2e.totalDelayDays,
+    bottleneck: e2e.bottleneck, arrivalYearMonth: e2e.arrivalYearMonth,
     invoiceQuantity: invoiceQuantity === null ? null : `${invoiceQuantity / 100_000_000n}.${String(invoiceQuantity % 100_000_000n).padStart(8, "0")}`,
     quantityMatchesInvoice: invoiceQuantity === null || allocationQuantity === null ? null : invoiceQuantity === allocationQuantity,
     invoiceUnitPrice, priceMatchesInvoice: invoiceUnitPrice === null || item.unitPrice == null ? null :

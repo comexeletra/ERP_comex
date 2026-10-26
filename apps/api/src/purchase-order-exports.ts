@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 import ExcelJS from "exceljs";
-import { moneyProduct } from "./followup-calculations.js";
+import { moneyProduct, type calculateE2e, type E2eStageCode } from "./followup-calculations.js";
 import type { ShipmentLine } from "./shipment-lines.js";
 
 export type PurchaseOrderExportFilters = {
@@ -136,6 +136,8 @@ const decimal = (value: unknown): number | null => {
   const parsed = typeof value === "string" || typeof value === "number" ? Number(value) : Number.NaN;
   return Number.isFinite(parsed) ? parsed : null;
 };
+const e2e = (line: ShipmentLine) => (line.calculated as { e2e?: ReturnType<typeof calculateE2e> }).e2e ?? null;
+const e2eStage = (line: ShipmentLine, code: E2eStageCode) => e2e(line)?.stages[code] ?? null;
 
 // Columns B:AZ of the Pré Embarque sheet, in order, so the export can replace it;
 // new data the sheet never had comes after them. IP costs are not repeated per line.
@@ -173,6 +175,24 @@ const lineColumns: [string, (line: ShipmentLine) => Cell][] = [
   ["Departure", line => text(line.process?.actualPortDepartureDate)],
   ["Factory Ship Date", line => text(line.factoryShipDate)],
   ["Demand Type", line => text(line.item.demandType)],
+  // End to End, as in the original spreadsheet; open stages use the forecast dates listed in "E2E Forecast Stages".
+  ...(["T0", "T1", "T2", "T3", "T4", "T5"] as const).flatMap(code => [
+    [`${code} Deadline`, line => text(e2eStage(line, code)?.deadline)],
+    [`${code} Actual`, line => text(e2eStage(line, code)?.actual)],
+    [`${code} Target Days`, line => decimal(e2eStage(line, code)?.targetDays)],
+    [`${code} Actual Days`, line => decimal(e2eStage(line, code)?.actualDays)],
+    [`${code} Delay Days`, line => decimal(e2eStage(line, code)?.delayDays)],
+  ] as [string, (line: ShipmentLine) => Cell][]),
+  ["Total Target Days", line => decimal(e2e(line)?.totalTargetDays)],
+  ["Total Actual Days", line => decimal(e2e(line)?.totalActualDays)],
+  ["Total Delay Days", line => decimal(e2e(line)?.totalDelayDays)],
+  ["Bottleneck Stage", line => text(e2e(line)?.bottleneck)],
+  ["Current Status", line => text(e2e(line)?.currentStatus)],
+  ["Arrival YM", line => text(e2e(line)?.arrivalYearMonth)],
+  ["E2E Forecast Stages", line => {
+    const stages = e2e(line)?.stages;
+    return stages ? Object.entries(stages).filter(([, stage]) => stage.source === "forecast").map(([code]) => code).join(", ") || null : null;
+  }],
   ["Line Type", line => line.lineKind === "BALANCE" ? "Saldo sem IP" : "Distribuição no IP"],
 ];
 

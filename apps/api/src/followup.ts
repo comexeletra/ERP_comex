@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
+import { loadE2eTargetSets } from "./e2e-targets.js";
 import { calculateFollowup, calculateProcess, checkShipmentDates, invoiceTotals } from "./followup-calculations.js";
 import { actorAndScopes, assertPoActive, BusinessError, checkVersion, createPo as createPoSchema,
   itemFields as basicItemSchema, keyFrom, lockedPo, problem, validatePurchaseRequest,
@@ -419,6 +420,7 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
       const documents = await pool.query(`SELECT * FROM imports.process_document
         WHERE process_id=$1 AND status='ACTIVE' ORDER BY kind, number, id`, [id.data]);
       const docs = documents.rows.map(camel);
+      const targetSets = await loadE2eTargetSets(pool);
       const allocationItems = allocations.rows.map(row => {
         const item = camel({
           id: row.item_id, line_number: row.line_number,
@@ -436,7 +438,7 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
           target_port_days: row.target_port_days, target_transit_days: row.target_transit_days,
           target_customs_days: row.target_customs_days, actual_factory_ship_date: row.factory_ship_date,
         });
-        const calculated = calculateFollowup({ ...item, allocationQuantity: row.allocationQuantity }, process, docs);
+        const calculated = calculateFollowup({ ...item, allocationQuantity: row.allocationQuantity }, process, docs, undefined, targetSets);
         return { id: row.id, allocationQuantity: row.allocationQuantity, notes: row.notes,
           factoryShipDate: row.factory_ship_date, legacyFactoryShipDate: row.actual_factory_ship_date,
           purchaseOrder: { id: row.po_id, number: row.po_number, importer: row.importer }, item, calculated };
@@ -545,6 +547,7 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
           aggregateLabel: processNames.get(row.aggregate_id as string) ?? "IP", relatedLabel: null })),
       ].sort((left, right) => new Date(right.occurredAt as string | Date).getTime() - new Date(left.occurredAt as string | Date).getTime());
       const itemRows = items.rows.map(camel);
+      const targetSets = await loadE2eTargetSets(pool);
       const processes = linked.rows.map(row => {
         const process = camel(row);
         const documents = docs.rows.filter(doc => doc.process_id === row.id).map(camel);
@@ -559,7 +562,8 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
           allocationVersion: process.allocationVersion, allocationNotes: process.allocationNotes,
           factoryShipDate: process.factoryShipDate, legacyFactoryShipDate: item.actualFactoryShipDate,
           itemId: process.itemId, process,
-          calculated: calculateFollowup({ ...shipmentItem, allocationQuantity: process.allocationQuantity }, process, documents) };
+          calculated: calculateFollowup({ ...shipmentItem, allocationQuantity: process.allocationQuantity }, process, documents,
+            undefined, targetSets) };
       });
       reply.header("ETag", `"${po.rows[0].version}"`);
       return { ...po.rows[0], items: itemRows, processes, shipments, events };

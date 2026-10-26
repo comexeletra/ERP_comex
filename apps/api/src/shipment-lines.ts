@@ -2,7 +2,8 @@ import type { FastifyInstance } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
-import { calculateFollowup } from "./followup-calculations.js";
+import { loadE2eTargetSets } from "./e2e-targets.js";
+import { calculateE2e, calculateFollowup, e2eTargetSetFor, todayInBrasilia } from "./followup-calculations.js";
 
 type Row = Record<string, unknown>;
 
@@ -87,7 +88,7 @@ const linesSql = `WITH balance AS (
         'unitPrice', item.unit_price::text, 'currencyCode', item.currency_code, 'ncm', item.ncm,
         'priority', item.priority, 'requester', item.requester, 'scNumber', item.sc_number,
         'demand', item.demand, 'demandType', item.demand_type, 'purpose', item.purpose, 'costCenter', item.cost_center, 'draftPo', item.draft_po,
-        'category', item.category, 'remarks', item.remarks,
+        'category', item.category, 'group', to_jsonb(item)->>'item_group', 'remarks', item.remarks,
         'necessityDate', item.necessity_date, 'scApprovalDate', item.sc_approval_date,
         'poApprovalDate', item.po_approval_date, 'poSentDate', item.po_sent_date,
         'commercialPlanReceivedDate', item.commercial_plan_received_date, 'mrpCompletedDate', item.mrp_completed_date,
@@ -143,6 +144,8 @@ export async function queryShipmentLines(pool: Pool, scopes: readonly string[], 
   const documents = processIds.length ? (await pool.query<Row>(`SELECT * FROM imports.process_document
     WHERE process_id = ANY($1::uuid[]) AND status = 'ACTIVE'`, [processIds])).rows
     .map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [camelKey(key), value]))) : [];
+  const targetSets = await loadE2eTargetSets(pool);
+  const today = todayInBrasilia();
   const lines = rows.map(row => {
     const process = processView(row.process);
     const item = row.item as Row;
@@ -150,8 +153,10 @@ export async function queryShipmentLines(pool: Pool, scopes: readonly string[], 
     const factoryShipDate = (row.factory_ship_date as string | null) ?? null;
     const calculated: Row = process
       ? calculateFollowup({ ...item, allocationQuantity: quantity, actualFactoryShipDate: factoryShipDate }, process,
-        documents.filter(document => document.processId === process.id))
-      : { status: "A DISTRIBUIR" };
+        documents.filter(document => document.processId === process.id), today, targetSets)
+      // The balance without IP still runs the stages up to the HQ shipment deadline.
+      : { status: "A DISTRIBUIR", e2e: calculateE2e(item, {}, "A DISTRIBUIR", // i18n-ignore: API status
+        e2eTargetSetFor(targetSets, item.necessityDate, today), null) };
     return {
       lineId: row.line_id, lineKind: row.line_kind, quantity, factoryShipDate,
       purchaseOrder: row.purchase_order as Row, item, process, calculated,

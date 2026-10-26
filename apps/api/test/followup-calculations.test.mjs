@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateFollowup, calculateProcess, checkShipmentDates, invoiceTotals } from "../dist/followup-calculations.js";
+import { calculateE2e, calculateFollowup, calculateProcess, checkShipmentDates, DEFAULT_E2E_TARGET_SET, e2eTargetSetFor,
+  invoiceTotals } from "../dist/followup-calculations.js";
 
 test("calculates price exactly and keeps unknown dates empty", () => {
   const result = calculateFollowup({ id: "item", orderedQuantity: "3.00000000", unitPrice: "0.10000000",
@@ -33,8 +34,6 @@ test("derives shipment dates, customs alert and invoice comparison per allocated
   assert.equal(result.invoiceQuantity, "40.00000000");
   assert.equal(result.quantityMatchesInvoice, true);
   assert.equal(result.priceMatchesInvoice, true);
-  assert.equal(result.stages.order.actualDays, 4);
-  assert.equal(result.stages.order.delayDays, 1);
 });
 
 test("one PO item split across IPs keeps each allocation quantity and delivery dates independent", () => {
@@ -53,17 +52,15 @@ test("one PO item split across IPs keeps each allocation quantity and delivery d
   assert.equal(secondIp.clearanceDays, 8);
 });
 
-test("factory departure dates and port targets stay independent for each PO allocation", () => {
+test("each allocation of a split item runs its own China departure stage", () => {
   const item = { id: "split-item", orderedQuantity: "100", unitPrice: "12.50", currencyCode: "USD",
-    targetPortDays: 7 };
+    poSentDate: "2026-08-01", demandType: "MTS" };
   const firstIp = calculateFollowup({ ...item, allocationQuantity: "40", actualFactoryShipDate: "2026-08-10" },
     { actualPortDepartureDate: "2026-08-20" }, [], "2026-08-30");
   const secondIp = calculateFollowup({ ...item, allocationQuantity: "60", actualFactoryShipDate: "2026-08-15" },
-    { actualPortDepartureDate: "2026-08-22" }, [], "2026-08-30");
-  assert.equal(firstIp.portTargetDate, "2026-08-17");
-  assert.equal(secondIp.portTargetDate, "2026-08-22");
-  assert.equal(firstIp.stages.port.actualDays, 10);
-  assert.equal(secondIp.stages.port.actualDays, 7);
+    { actualPortDepartureDate: "2026-09-05" }, [], "2026-08-30");
+  assert.deepEqual([firstIp.e2e.stages.T3.actualDays, firstIp.e2e.stages.T3.delayDays], [19, -11]);
+  assert.deepEqual([secondIp.e2e.stages.T3.actualDays, secondIp.e2e.stages.T3.delayDays], [35, 5]);
 });
 
 test("confirmed dates take precedence and delivered shipment has no alert", () => {
@@ -209,4 +206,64 @@ test("keeps historical inconsistencies as warnings so the IP can still be edited
   assert.deepEqual(checkShipmentDates(historical, { arrivalDate: "2026-09-09" }).errors, []);
   // Clearance before arrival is never blocked: it can happen with early customs registration.
   assert.deepEqual(checkShipmentDates({ arrivalDate: "2026-10-01" }, { clearanceDate: "2026-09-30" }).errors, []);
+});
+
+// End to End (planilha original): prazo = fim real da etapa anterior + meta; T0 = necessidade − 4 meses.
+const resistor = { id: "line-b", necessityDate: "2026-12-01", commercialPlanReceivedDate: "2026-08-03",
+  scApprovalDate: "2026-08-21", poSentDate: "2026-08-24", demandType: "MTS" };
+const shippedBySea = { transportMode: "SEA", etd: "2026-09-28", blDate: "2026-09-29", actualPortDepartureDate: "2026-09-30" };
+const invoice = [{ kind: "INVOICE", status: "ACTIVE", purchaseOrderItemId: null, number: "HX1" }];
+
+test("E2E stages chain each deadline on the previous actual date and use forecasts for open stages", () => {
+  const { e2e } = calculateFollowup(resistor, shippedBySea, invoice, "2026-10-26");
+  const row = code => { const stage = e2e.stages[code];
+    return [stage.deadline, stage.actual, stage.source, stage.targetDays, stage.actualDays, stage.delayDays]; };
+  assert.deepEqual(row("T0"), ["2026-08-01", "2026-08-03", "actual", 8, 2, -6]);
+  assert.deepEqual(row("T1"), ["2026-08-11", "2026-08-21", "actual", 8, 18, 10]);
+  assert.deepEqual(row("T2"), ["2026-08-28", "2026-08-24", "actual", 7, 3, -4]);
+  assert.deepEqual(row("T3"), ["2026-09-23", "2026-09-30", "actual", 30, 37, 7]);
+  assert.deepEqual(row("T4"), ["2026-11-24", "2026-11-22", "forecast", 55, 53, -2]);
+  assert.deepEqual(row("T5"), ["2026-12-02", "2026-12-02", "forecast", 10, 10, 0]);
+  assert.deepEqual([e2e.totalTargetDays, e2e.totalActualDays, e2e.totalDelayDays, e2e.bottleneck], [118, 123, 5, "T1"]);
+  assert.deepEqual([e2e.demandType, e2e.air, e2e.currentStatus, e2e.arrivalYearMonth, e2e.targetSetValidFrom],
+    ["mts", false, "AGUARDANDO CHEGADA", "2026-11", DEFAULT_E2E_TARGET_SET.validFrom]);
+});
+
+test("E2E targets follow the demand type and the transport mode", () => {
+  const notMtsByAir = calculateFollowup({ ...resistor, demandType: "Não MTS" },
+    { transportMode: "COURIER", etd: "2026-10-12" }, [], "2026-10-26").e2e;
+  assert.equal(notMtsByAir.stages.T3.targetDays, 45);
+  assert.equal(notMtsByAir.stages.T3.deadline, "2026-10-08");
+  assert.equal(notMtsByAir.stages.T4.targetDays, 10);
+  assert.equal(notMtsByAir.air, true);
+  // Without a demand type the item is planned as Não MTS; without a mode there is no transit target.
+  const unknown = calculateFollowup({ ...resistor, demandType: null }, { etd: "2026-10-12" }, [], "2026-10-26").e2e;
+  assert.equal(unknown.demandType, "unknown");
+  assert.equal(unknown.stages.T3.targetDays, 45);
+  assert.equal(unknown.stages.T4.targetDays, null);
+  assert.equal(unknown.totalTargetDays, null);
+});
+
+test("E2E target sets apply from their necessity date", () => {
+  const sets = [DEFAULT_E2E_TARGET_SET, { ...DEFAULT_E2E_TARGET_SET, validFrom: "2026-11-15", t3MtsDays: 25, t4SeaDays: 50 }];
+  assert.equal(e2eTargetSetFor(sets, "2026-12-01", "2026-10-26").validFrom, "2026-11-15");
+  assert.equal(e2eTargetSetFor(sets, "2026-11-14", "2026-10-26").validFrom, DEFAULT_E2E_TARGET_SET.validFrom);
+  assert.equal(e2eTargetSetFor(sets, null, "2026-10-26").validFrom, DEFAULT_E2E_TARGET_SET.validFrom);
+  assert.equal(e2eTargetSetFor(sets, null, "2026-11-20").validFrom, "2026-11-15");
+  const { e2e } = calculateFollowup(resistor, shippedBySea, invoice, "2026-10-26", sets);
+  assert.equal(e2e.targetSetValidFrom, "2026-11-15");
+  assert.deepEqual([e2e.stages.T3.targetDays, e2e.stages.T3.deadline], [25, "2026-09-18"]);
+  assert.equal(e2e.stages.T4.targetDays, 50);
+});
+
+test("E2E of a balance without IP plans the HQ shipment from the PO and leaves later stages empty", () => {
+  const e2e = calculateE2e(resistor, {}, "A DISTRIBUIR", DEFAULT_E2E_TARGET_SET, null);
+  assert.equal(e2e.stages.T3.deadline, "2026-09-23");
+  assert.equal(e2e.stages.T3.actual, null);
+  assert.equal(e2e.stages.T4.deadline, null);
+  assert.equal(e2e.totalActualDays, null);
+  assert.equal(e2e.bottleneck, "T1");
+  // Without the commercial plan date the chain cannot start.
+  const noPlan = calculateE2e({ ...resistor, commercialPlanReceivedDate: null }, {}, "A DISTRIBUIR", DEFAULT_E2E_TARGET_SET, null);
+  assert.deepEqual([noPlan.stages.T0.actualDays, noPlan.stages.T1.deadline, noPlan.stages.T1.actualDays], [null, null, null]);
 });

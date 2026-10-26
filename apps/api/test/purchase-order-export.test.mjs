@@ -51,7 +51,11 @@ test("product line export follows the Pré Embarque columns and repeats the IP d
         customsChannel: null, clearanceDate: null, nfRequestDate: null, deliveryDate: null },
       calculated: { status: "AGUARDANDO CHEGADA", alert: "Conferir chegada da carga", eta: "2026-10-26",
         ete: "2026-11-05", transitDays: 55, invoiceNumbers: ["INV-1", "INV-2"], nfNumber: null, nfIssueDate: null,
-        leadTimeDays: null, ruptureRisk: "SEM RISCO" } },
+        leadTimeDays: null, ruptureRisk: "SEM RISCO",
+        e2e: { totalTargetDays: 118, totalActualDays: 123, totalDelayDays: 5, bottleneck: "T1",
+          currentStatus: "AGUARDANDO CHEGADA", arrivalYearMonth: "2026-10",
+          stages: { T3: { deadline: "2026-07-12", actual: "2026-09-02", source: "actual", targetDays: 30, actualDays: 82, delayDays: 52 },
+            T4: { deadline: "2026-10-27", actual: "2026-10-26", source: "forecast", targetDays: 55, actualDays: 54, delayDays: -1 } } } } },
     { lineId: "item-1", lineKind: "BALANCE", quantity: "40.00000000", factoryShipDate: null, purchaseOrder, item,
       process: null, calculated: { status: "A DISTRIBUIR" } },
   ]);
@@ -66,7 +70,11 @@ test("product line export follows the Pré Embarque columns and repeats the IP d
     "Total Price", "Currency", "Remarks", "IP Number", "IP Date Totvs", "Mode", "Incoterm", "Broker", "POL", "POD",
     "ETD", "ETA", "Transit Time", "Invoice", "BL Number", "BL Date", "Arrival", "Duimp", "Duimp Date", "Channel",
     "Clearance", "ETE", "NF Request", "NF", "NF Issue Date", "Delivery Date", "LT Total", "Rupture Risk"]);
-  assert.deepEqual(headers.slice(51), ["Departure", "Factory Ship Date", "Demand Type", "Line Type"]);
+  const e2eHeaders = ["T0", "T1", "T2", "T3", "T4", "T5"].flatMap(code => ["Deadline", "Actual", "Target Days",
+    "Actual Days", "Delay Days"].map(name => `${code} ${name}`));
+  assert.deepEqual(headers.slice(51), ["Departure", "Factory Ship Date", "Demand Type", ...e2eHeaders,
+    "Total Target Days", "Total Actual Days", "Total Delay Days", "Bottleneck Stage", "Current Status", "Arrival YM",
+    "E2E Forecast Stages", "Line Type"]);
   const cell = (row, header) => sheet.getRow(row).getCell(headers.indexOf(header) + 1).value;
   assert.equal(cell(2, "Status"), "AGUARDANDO CHEGADA");
   assert.equal(cell(2, "IP Number"), "IP-1");
@@ -76,6 +84,13 @@ test("product line export follows the Pré Embarque columns and repeats the IP d
   assert.equal(cell(2, "Departure"), "2026-09-02");
   assert.equal(cell(2, "ETA"), "2026-10-26");
   assert.equal(cell(2, "Invoice"), "INV-1, INV-2");
+  assert.equal(cell(2, "T3 Deadline"), "2026-07-12");
+  assert.equal(cell(2, "T3 Delay Days"), 52);
+  assert.equal(cell(2, "T4 Actual"), "2026-10-26");
+  assert.equal(cell(2, "Total Delay Days"), 5);
+  assert.equal(cell(2, "Bottleneck Stage"), "T1");
+  assert.equal(cell(2, "E2E Forecast Stages"), "T4");
+  assert.equal(cell(2, "T0 Deadline"), null);
   assert.equal(cell(2, "Qty"), 60);
   assert.equal(cell(2, "Total Price"), 150);
   assert.equal(cell(2, "Remarks"), "=cmd");

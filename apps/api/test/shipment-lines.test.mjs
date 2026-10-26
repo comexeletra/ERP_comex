@@ -68,7 +68,13 @@ test("product lines repeat the IP dates on each allocation and show the remainin
   assert.equal(balance.lineKind, "BALANCE");
   assert.equal(balance.quantity, "40.00000000");
   assert.equal(balance.process, null);
-  assert.deepEqual(balance.calculated, { status: "A DISTRIBUIR" });
+  assert.deepEqual(Object.keys(balance.calculated), ["status", "e2e"]);
+  assert.equal(balance.calculated.status, "A DISTRIBUIR");
+  // The balance without IP still runs the E2E stages that do not depend on an IP.
+  assert.equal(balance.calculated.e2e.stages.T0.deadline, "2026-08-01");
+  assert.equal(balance.calculated.e2e.currentStatus, "A DISTRIBUIR");
+  assert.equal(balance.calculated.e2e.stages.T4.deadline, null);
+  assert.equal(allocation.calculated.e2e.stages.T4.targetDays, 55);
   const documents = queries.find(query => query.sql.includes("WHERE process_id = ANY($1::uuid[])"));
   assert.deepEqual(documents.params[0], [processId]);
 });

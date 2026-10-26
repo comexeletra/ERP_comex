@@ -14,6 +14,7 @@ import { registerSourceAuditRoutes } from "../dist/source-audit.js";
 import { registerAdminOutboxRoutes } from "../dist/admin-outbox.js";
 import { registerOperationalRoutes } from "../dist/operations.js";
 import { registerFollowupRoutes } from "../dist/followup.js";
+import { registerE2eTargetRoutes } from "../dist/e2e-targets.js";
 import { registerPurchaseRequestRoutes } from "../dist/purchase-requests.js";
 import { registerShipmentLineRoutes } from "../dist/shipment-lines.js";
 
@@ -80,6 +81,7 @@ const webRoutes = [
   ["GET", "/api/v1/data-issues"], ["POST", "/api/v1/data-issues/:id/resolve"],
   ["GET", "/api/v1/source-rows"], ["GET", "/api/v1/source-rows/column-values"],
   ["GET", "/api/v1/reports/summary"],
+  ["GET", "/api/v1/e2e-targets"], ["POST", "/api/v1/e2e-targets"], ["PATCH", "/api/v1/e2e-targets/:id"],
   ["GET", "/api/v1/pending-import-items"], ["GET", "/api/v1/unassigned-po-items"],
   ["GET", "/api/v1/admin/users"], ["POST", "/api/v1/admin/users"],
   ["PATCH", "/api/v1/admin/users/:id"],
@@ -117,6 +119,7 @@ test("all Next.js API calls have a registered API method and path", async t => {
   await registerAdminOutboxRoutes(app, unusedPool);
   await registerOperationalRoutes(app, unusedPool);
   await registerFollowupRoutes(app, unusedPool);
+  await registerE2eTargetRoutes(app, unusedPool);
   await registerPurchaseRequestRoutes(app, unusedPool);
   await registerShipmentLineRoutes(app, unusedPool);
   for (const [method, url] of webRoutes) {
