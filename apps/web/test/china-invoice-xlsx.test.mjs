@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ExcelJS from "exceljs";
 import { parseChinaInvoiceXlsx, parseInvoicePoAssignments } from "../lib/china-invoice-xlsx.ts";
-import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
+import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoiceCandidatesForProduct, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
   invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping.ts";
 import { en } from "../lib/i18n/en.ts";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
@@ -24,6 +24,20 @@ test("suggests only an unambiguous invoice item and reports code/supplier diverg
   assert.equal(invoicePoCodeDiffers("ABC-1", "ABC-2"), true);
   assert.equal(invoiceSupplierMatchesExporter(["SUP.001", "Exporter Ltd"], "exporter ltd"), true);
   assert.equal(invoiceSupplierMatchesExporter(["SUP.001"], "Other Ltd"), false);
+});
+
+test("orders invoice candidates by matching product and then line number", () => {
+  const candidates = [
+    { id: "other-3", lineNumber: 3, productCode: "OTHER", remainingQuantity: "10" },
+    { id: "exact-8", lineNumber: 8, productCode: " product-a ", remainingQuantity: "10" },
+    { id: "exact-2", lineNumber: 2, productCode: "PRODUCT-A", remainingQuantity: "10" },
+    { id: "other-1", lineNumber: 1, productCode: "ANOTHER", remainingQuantity: "10" },
+  ];
+  assert.deepEqual(invoiceCandidatesForProduct(candidates, "Product-A").map(candidate => candidate.id),
+    ["exact-2", "exact-8", "other-1", "other-3"]);
+  assert.deepEqual(candidates.map(candidate => candidate.id), ["other-3", "exact-8", "exact-2", "other-1"]);
+  assert.equal(suggestInvoicePoItem(invoiceCandidatesForProduct(candidates, "Product-A"), "Product-A", "5")?.id,
+    undefined);
 });
 
 test("identifies unit and CNY price differences for each PO destination", () => {

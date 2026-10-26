@@ -43,6 +43,17 @@ export function suggestInvoicePoItem<T extends InvoicePoItemCandidate>(
   return undefined;
 }
 
+export function invoiceCandidatesForProduct<T extends InvoicePoItemCandidate & { lineNumber: number }>(
+  items: readonly T[], productCode: string,
+): T[] {
+  return [...items].sort((left, right) => {
+    const leftMatches = !invoicePoCodeDiffers(left.productCode, productCode);
+    const rightMatches = !invoicePoCodeDiffers(right.productCode, productCode);
+    if (leftMatches !== rightMatches) return leftMatches ? -1 : 1;
+    return left.lineNumber - right.lineNumber;
+  });
+}
+
 export function invoicePoCodeDiffers(invoiceProductCode: string, poProductCode: string): boolean {
   return invoiceProductCode.trim().toLocaleUpperCase("en-US")
     !== poProductCode.trim().toLocaleUpperCase("en-US");

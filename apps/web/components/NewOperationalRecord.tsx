@@ -30,7 +30,7 @@ import DeletedPurchaseOrderActions, { PurchaseOrderReplacePayload } from "./Dele
 import { classifyTotvsPurchaseRequest, totvsPurchaseRequestPayload } from "../lib/totvs-purchase-request";
 import { getMessages, useI18n } from "./I18nProvider";
 import PageHeader from "./PageHeader";
-import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
+import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoiceCandidatesForProduct, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
   invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping";
 
 const poRoles = new Set(["Master", "Administrador", "Importação", "Compras"]);
@@ -100,12 +100,6 @@ function normalizePoNumber(value: string): string {
   return value.toLocaleUpperCase("en-US").replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "");
 }
 
-async function forEachInBatches<T>(items: readonly T[], size: number, action: (item: T) => Promise<void>): Promise<void> {
-  for (let offset = 0; offset < items.length; offset += size) {
-    await Promise.all(items.slice(offset, offset + size).map(action));
-  }
-}
-
 function blankPoItem(): PoItemDraft {
   return { draftId: globalThis.crypto.randomUUID(), externalLineReference: "", productCode: "", description: "", orderedQuantity: "",
     unit: "", unitPrice: "", currency: "", operational: blankPurchaseOrderItemFields() };
@@ -137,6 +131,23 @@ function isLegacyImporterOnlyDraft(draft: Partial<PoDraft>): boolean {
 
 async function readResponse<T>(response: Response): Promise<T> {
   return readApiJson<T>(response);
+}
+type InvoiceCandidatePurchaseOrder = { sourcePoNumber: string; items: InvoiceItemCandidate[]; poExists: boolean;
+  purchaseOrderId: string | null; poStatus: "ACTIVE" | "CANCELLED" | "CLOSED" | "DELETED" | null };
+async function loadInvoiceCandidates(importer: string, ipNumber: string, poNumbers: readonly string[]) {
+  const uniquePoNumbers = new Map<string, string>();
+  for (const poNumber of poNumbers) {
+    const normalized = normalizePoNumber(poNumber);
+    if (normalized && !uniquePoNumbers.has(normalized)) uniquePoNumbers.set(normalized, poNumber);
+  }
+  const result = await readResponse<{ purchaseOrders: InvoiceCandidatePurchaseOrder[] }>(await apiFetch(
+    "/api/v1/purchase-orders/invoice-candidates/batch", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ importer, revisingIpNumber: ipNumber.trim() || undefined,
+        poNumbers: [...uniquePoNumbers.values()] }),
+    }));
+  return new Map(result.purchaseOrders.map(purchaseOrder =>
+    [normalizePoNumber(purchaseOrder.sourcePoNumber), purchaseOrder]));
 }
 type InvoicePreflight = { ipNumbers: string[]; ipReferenceOtherImporter: boolean };
 type PurchaseOrderPreflight = { importerAcceptsNewPurchaseOrders: boolean; sameImporterDuplicate: boolean;
@@ -512,26 +523,12 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         poNumber: assignment.poNumber, quantity: assignment.quantity, productCode: line.productCode,
         description: line.description,
       })));
-      const candidateKey = (productCode: string, sourcePoNumber: string) =>
-        `${normalizePoNumber(sourcePoNumber)}|${productCode.trim().toLocaleUpperCase("en-US")}`;
-      const candidateRequests = new Map<string, { productCode: string; sourcePoNumber: string }>();
-      for (const assignment of assignments) candidateRequests.set(candidateKey(assignment.productCode, assignment.sourcePoNumber), {
-        productCode: assignment.productCode, sourcePoNumber: assignment.sourcePoNumber,
-      });
-      const candidatesByAssignment = new Map<string, { items: InvoiceItemCandidate[]; poExists: boolean;
-        purchaseOrderId: string | null; poStatus: "ACTIVE" | "CANCELLED" | "CLOSED" | "DELETED" | null }>();
-      if (invoiceImporter) await forEachInBatches([...candidateRequests], 8, async ([key, candidateRequest]) => {
-        const params = new URLSearchParams({ importer: invoiceImporter, productCode: candidateRequest.productCode,
-          sourcePoNumber: candidateRequest.sourcePoNumber,
-          revisingIpNumber: draft.ipNumber.trim() });
-        const result = await readResponse<{ items: InvoiceItemCandidate[]; poExists: boolean; purchaseOrderId: string | null;
-          poStatus: "ACTIVE" | "CANCELLED" | "CLOSED" | "DELETED" | null }>(
-          await apiFetch(`/api/v1/purchase-orders/invoice-candidates?${params}`, { cache: "no-store" }));
-        candidatesByAssignment.set(key, result);
-      });
+      const candidatesByPo = invoiceImporter
+        ? await loadInvoiceCandidates(invoiceImporter, draft.ipNumber, assignments.map(assignment => assignment.sourcePoNumber))
+        : new Map<string, InvoiceCandidatePurchaseOrder>();
       const matches = assignments.map(assignment => {
-        const lookup = candidatesByAssignment.get(candidateKey(assignment.productCode, assignment.sourcePoNumber));
-        const candidates = lookup?.items ?? [];
+        const lookup = candidatesByPo.get(normalizePoNumber(assignment.sourcePoNumber));
+        const candidates = invoiceCandidatesForProduct(lookup?.items ?? [], assignment.productCode);
         const suggestion = suggestInvoicePoItem(candidates, assignment.productCode, assignment.quantity);
         return { ...assignment, candidates, poExists: lookup?.poExists ?? false,
           poId: lookup?.purchaseOrderId ?? null, poStatus: lookup?.poStatus ?? null,
@@ -582,26 +579,11 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
         confirmUnitMismatch: false, confirmPriceMismatch: false,
       }));
-      const candidateKey = (productCode: string, sourcePoNumber: string) =>
-        `${normalizePoNumber(sourcePoNumber)}|${productCode.trim().toLocaleUpperCase("en-US")}`;
-      const requests = new Map<string, { productCode: string; sourcePoNumber: string }>();
-      for (const match of assignments) requests.set(candidateKey(match.productCode, match.sourcePoNumber), {
-        productCode: match.productCode, sourcePoNumber: match.sourcePoNumber,
-      });
-      const byAssignment = new Map<string, { items: InvoiceItemCandidate[]; poExists: boolean;
-        purchaseOrderId: string | null; poStatus: "ACTIVE" | "CANCELLED" | "CLOSED" | "DELETED" | null }>();
-      await forEachInBatches([...requests], 8, async ([key, candidateRequest]) => {
-        const params = new URLSearchParams({ importer, productCode: candidateRequest.productCode,
-          sourcePoNumber: candidateRequest.sourcePoNumber,
-          revisingIpNumber: invoiceDraft.ipNumber.trim() });
-        const result = await readResponse<{ items: InvoiceItemCandidate[]; poExists: boolean; purchaseOrderId: string | null;
-          poStatus: "ACTIVE" | "CANCELLED" | "CLOSED" | "DELETED" | null }>(
-          await apiFetch(`/api/v1/purchase-orders/invoice-candidates?${params}`, { cache: "no-store" }));
-        byAssignment.set(key, result);
-      });
+      const candidatesByPo = await loadInvoiceCandidates(importer, invoiceDraft.ipNumber,
+        assignments.map(match => match.sourcePoNumber));
       const refreshed = assignments.map(match => {
-        const lookup = byAssignment.get(candidateKey(match.productCode, match.sourcePoNumber));
-        const candidates = lookup?.items ?? [];
+        const lookup = candidatesByPo.get(normalizePoNumber(match.sourcePoNumber));
+        const candidates = invoiceCandidatesForProduct(lookup?.items ?? [], match.productCode);
         const suggestion = suggestInvoicePoItem(candidates, match.productCode, match.quantity);
         const previous = candidates.find(item => item.id === match.itemId
           && normalizePoNumber(item.poNumber) === normalizePoNumber(match.sourcePoNumber)
