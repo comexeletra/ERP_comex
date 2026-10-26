@@ -5,7 +5,7 @@
 | Data | 2026-10-26 |
 | Branch de trabalho | `homologacao` |
 | Ambiente de validação | Preview Vercel da `homologacao` (somente web; a API não muda) |
-| Status | **Implementado e verificado localmente (testes, lint, type-check e build); validação no Preview pendente** |
+| Status | **Publicado no Preview da `homologacao` (commit `6e2494a`); conferência visual com login pendente** |
 
 ## 1. Resumo
 
@@ -86,3 +86,14 @@ Ver na mesma tela o fluxo de referência (prazos, régua, etapa ativa e marcos) 
 - **Nomes diferentes:** os cards usam o nome da fase do Modelo (por exemplo, "Produção HQ"), enquanto o cabeçalho da tabela continua com o título da etapa da API ("T3 · Até a saída da China"). O código da etapa liga os dois.
 - **Tela mais longa:** a tabela fica abaixo dos painéis do Modelo.
 - **Favoritos de `/end-to-end/model`:** continuam funcionando pelo redirecionamento.
+
+## 6. Resultado da execução
+
+- **Verificação local em `apps/web`:**
+  - `npm test`: 173 testes, todos passando;
+  - `npx tsc --noEmit`: sem erros;
+  - `npm run lint`: sem erros. Os 40 avisos são de outras telas, e os arquivos alterados não geram nenhum;
+  - `npm run build`: concluído.
+- **Commit `6e2494a`:** publicado com `git push production homologacao`. O status do commit no GitHub mostra o deploy da Vercel como `success` ("Deployment has completed").
+- **Redirecionamento:** no build local (`next start`), `/end-to-end/model` responde com `NEXT_REDIRECT;replace;/end-to-end;307`, o mesmo mecanismo de `/reports`.
+- **Pendente:** conferir a tela no domínio do Preview com login. Nesta máquina, a CLI da Vercel está autenticada numa conta sem acesso ao time `eletra-comex`, e o domínio exige SSO da Vercel. O HTML do servidor só traz a casca do layout até a sessão ser validada no navegador.
