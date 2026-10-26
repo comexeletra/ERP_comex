@@ -1,19 +1,58 @@
 # API ERP na VPS Hostinger
 
-## Dados de demonstração da PO 030201 no HML (2026-10-26)
+## Tipo de demanda (M069), análise E2E e simulação da PO 030201 no HML (2026-10-26)
 
-A pedido do usuário, `seed-hml-po-030201-demo.mjs` dividiu os 215 itens da PO 030201 ativa
-(importador ELETRA INDUSTRIA…, fornecedor EX000135) em sete IPs `DEMO-030201-IP01`…`IP07`, cada um numa
-etapa: entregue, desembaraço, aguardando chegada, aguardando embarque e três aguardando produção. Cada item
-foi alocado inteiro a um IP, com a data de fim de produção na alocação. A carga usou as rotas da API do release
-`hml-release-443b927` com a role `import_erp_hml_app` em `erp_po_totvs_hml` (run `B8297002A4C2`), portanto com
-auditoria e outbox. A conferência em SQL encontrou 215/215 itens totalmente alocados e 12 IPs no HML. A PO
-excluída de mesmo número (Eletra Cwb) não foi alterada.
+O commit `738c954` cria a lista `DEMAND_TYPE` (MTS / Não MTS) e o campo `demand_type` do item da PO, separado da
+origem da demanda (`DEMAND`), e corrige os prazos do modelo E2E: MTS 30 dias e Não MTS 45 dias na HQ. O commit
+`1a4592a` transforma `/end-to-end?po=<id>` numa análise da PO (planejado pelo modelo × datas reais e previstas por IP).
 
-O script fica também em `/root/hml-demo/`. Execute-o com
+Antes da migration, o HML `erp_po_totvs_hml` estava em M001–M068, com 12 IPs, 10.475 linhas de auditoria, 8.971
+mensagens outbox, 310 valores operacionais e 448 itens de PO. O backup custom pré-M069 foi validado com
+`pg_restore --list` (416 entradas): `/var/backups/import-erp/erp_po_totvs_hml_m069_20261026T180942Z.dump`,
+466.563.175 bytes, SHA-256 `bf4b120a04f580f5adc3a4722c5ef5391c02461bf58386790e13526787ede2aa`. A M069 foi aplicada
+na cópia restaurada `erp_po_hml_m069_check_20261026T181211Z`: ledger M069, 2 valores `DEMAND_TYPE`, os 40 valores
+`DEMAND` e os 448 itens preservados e entidade desconhecida rejeitada; a cópia foi removida. A M069 foi aplicada
+somente no HML, como `postgres` dentro do container, com checksum
+`dfb58f9bfe5142e31981863ac69d58e97a05045f316dcef0a33253d738c8a05f`; ledger 69/69, contagens inalteradas e +2 valores
+operacionais.
+
+O release foi montado na VPS como `/opt/import-erp/apps/api/hml-release-1a4592a` com
+`git -c core.autocrlf=false archive` (no Windows, sem essa opção as fontes chegam em CRLF e o checksum da migration
+diverge), reaproveitando o `node_modules` de `hml-release-443b927` (dependências inalteradas), e ativado pelo drop-in
+`zzzzzzzzzzzzzzzzzzzzz-release-1a4592a.conf`. O drop-in e o `ExecStart` anteriores estão em
+`/var/backups/import-erp/hml-e2e-1a4592a-predeploy`. Para rollback somente do código, remova o drop-in novo, execute
+`systemctl daemon-reload` e reinicie `import-erp-hml-api` (volta a `hml-release-443b927`); a M069 deve permanecer.
+A API HML escuta em `172.18.0.1:4001`: `/health/live` respondeu 200 e `GET /api/v1/purchase-orders/:id/followup` sem
+sessão respondeu 401. O worker `import-erp-hml-export-worker` foi movido para o mesmo release com
+`enable-homologation-export-worker.sh 1a4592a`; o worker de produção manteve o `ActiveEnterTimestamp`. O Preview
+`erp-comex-8r3pcsap8` do commit `1a4592a` ficou `Ready` no domínio estável.
+
+A pedido do usuário, `seed-hml-po-030201-demo.mjs` reverteu os IPs `DEMO-030201-IP01`…`IP07` da primeira simulação
+(215 alocações e 4 invoices cancelados pela API) e montou uma simulação realista da PO 030201 ativa (importador
+ELETRA INDUSTRIA…, fornecedor EX000135), run `290556F4F1C1`, com as datas reais do Follow Up: necessidade 01/12/2026,
+plano comercial 03/08, SC 020028 aprovada em 21/08 (sincronizada pela API), PO enviada em 24/08, solicitante
+"PCM - JOSIVAN" e finalidade "Estoque Insumos (Componente)". Cada linha recebeu o tipo de demanda pela família do
+produto, e as 215 linhas foram distribuídas em sete IPs `030201-A/2026`…`G/2026` (225 alocações; G recebe 30% das
+cinco maiores linhas de B e de C):
+
+| IP | Linhas | Tipo | Modal | Status em 26/10 | Folga contra 01/12 |
+|---|---|---|---|---|---|
+| A | 22 (CIs e dispositivos) | MTS | Aéreo | ENTREGUE (14/10) | +48 |
+| B | 58 (resistores) | MTS | Marítimo | AGUARDANDO CHEGADA | -1 |
+| C | 53 (capacitores, bobinas, LEDs) | MTS | Marítimo | AGUARDANDO CHEGADA (ETA 02/12, como no Follow Up) | -11 |
+| D | 24 (eletrônicos sob encomenda) | Não MTS | Aéreo | DESEMBARAÇO | +30 |
+| E | 35 (mecânicos e cobre) | Não MTS | Marítimo | AGUARDANDO EMBARQUE | -36 |
+| F | 23 (diodos) | MTS | Aéreo | AGUARDANDO PRODUÇÃO | +5 |
+| G | 10 (saldo parcial) | MTS | Marítimo | AGUARDANDO PRODUÇÃO | -52 |
+
+A análise E2E sobre a resposta real da rota de followup da API HML encontrou 69 de 225 linhas no prazo, maior atraso
+no IP G e a etapa T3 (produção HQ até o embarque) com o maior desvio médio (+22,7 dias). A data da PO (`order_date`,
+21/10) não foi alterada: a API não permite editá-la e a simulação não grava fora dela. A PO excluída de mesmo número
+(Eletra Cwb) não foi alterada. O script fica também em `/root/hml-demo/`. Execute-o com
 `MIGRATION_ENV=isolated ERP_API_RELEASE_DIR=/opt/import-erp/apps/api/hml-release-<sha> /opt/node-v24/bin/node --env-file=/etc/import-erp/homologation-db.env seed-hml-po-030201-demo.mjs apply|revert`.
-Use `--env-file`: `source` do arquivo no shell não exporta `DATABASE_URL`. `revert` cancela as alocações e
-invoices demo e exclui os IPs pela API; `apply` recusa rodar enquanto existirem IPs demo ou alocações ativas na PO.
+Use `--env-file`: `source` do arquivo no shell não exporta `DATABASE_URL`. `revert` cancela as alocações e invoices
+da simulação e exclui os IPs pela API (os campos de pré-embarque e o tipo de demanda das linhas permanecem); `apply`
+recusa rodar enquanto existirem IPs da simulação ou alocações ativas na PO.
 
 ## Rate limit por cliente real no HML (2026-10-26)
 
@@ -223,7 +262,8 @@ remova o drop-in novo, execute `systemctl daemon-reload` e reinicie
 Correção do registro anterior: o release `hml-release-1104ee1` foi compilado com
 fontes em CRLF, porque o `git archive` desta máquina aplica a conversão de fim de
 linha. O funcionamento não foi afetado, e a validação daquele release passou.
-Daqui em diante, normalize as fontes para LF (`sed -i 's/$//'`) antes do build.
+Daqui em diante, normalize as fontes para LF (`sed -i 's/
+$//'`) antes do build.
 
 O teste opt-in `apps/api/test/purchase-order-sc-sync-hml.integration.mjs`
 (`npm run test:po-sc-sync:hml`) foi executado com a role `import_erp_hml_app`.

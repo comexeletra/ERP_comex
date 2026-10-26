@@ -3,7 +3,7 @@
 Every ERP database must receive the migrations required by the code deployed to
 it. As of 2026-10-21, `erp_po_totvs_test` and
 `erp_po_totvs_gatewayflow_20261010_test` are at M001–M034, while
-`erp_po_totvs_hml` is at M001–M068 (2026-10-23). HML contains business data and is no longer
+`erp_po_totvs_hml` is at M001–M069 (2026-10-26). HML contains business data and is no longer
 empty; the 2026-10-15 setup below records its initial state. See
 `deploy/hostinger/README.md` for M063 backup and validation evidence.
 
@@ -256,4 +256,4 @@ API/UI.
 
 `M068_ip_bill_of_lading_fields.sql` adds `bl_number` and `bl_date` to the IP. An IP is one shipment, so the BL is typed on the IP beside ETD/ETA and every PO item allocated to it reads the same values. The migration refuses to run while any IP has more than one active BL with different numbers or dates; otherwise it copies the active BL number and date only into empty IP fields and records a `HISTORICAL_BACKFILL` audit row per IP. BL documents are not changed and remain as history; the API stops creating or editing BL documents. On 2026-10-22, the operational database had 190 active BLs, none sharing an IP. On 2026-10-23, M068 passed restored-copy checks and was applied only to `erp_po_totvs_hml`; the ledger is M001–M068 and the SHA-256 is `e254213045a7af05748afda34b9e1adecc4954e0e9d3503a9499387ff9aabbf5`. Backup and release evidence is in `deploy/hostinger/README.md`. Production was not changed.
 
-`M069_purchase_order_item_demand_type.sql` adds the `DEMAND_TYPE` operational list, seeded with `MTS` and `Não MTS`, and the PO item column `demand_type`. The demand type sets the HQ production lead time planned by the end-to-end analysis (MTS 30 days, Não MTS 45 days). It is separate from `DEMAND`, which keeps recording where the demand came from (commercial plan, after sales, projects); no existing value is changed. Apply M069 only to HML, after backup, before releasing the API that reads and writes `demandType`.
+`M069_purchase_order_item_demand_type.sql` adds the `DEMAND_TYPE` operational list, seeded with `MTS` and `Não MTS`, and the PO item column `demand_type`. The demand type sets the HQ production lead time planned by the end-to-end analysis (MTS 30 days, Não MTS 45 days). It is separate from `DEMAND`, which keeps recording where the demand came from (commercial plan, after sales, projects); no existing value is changed. Apply M069 only to HML, after backup, before releasing the API that reads and writes `demandType`. On 2026-10-26, M069 passed a restored-copy check and was applied only to `erp_po_totvs_hml` with SHA-256 `dfb58f9bfe5142e31981863ac69d58e97a05045f316dcef0a33253d738c8a05f`; the ledger is M001–M069. Evidence is in `deploy/hostinger/README.md`. Production was not changed.
