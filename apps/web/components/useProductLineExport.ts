@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { apiFetch } from "../lib/api";
-import { productLineFilterBody, type ProductLineFilters } from "../lib/purchase-order-lines";
+import { emptyE2eStageFilter, productLineFilterBody, type E2eStageFilter, type ProductLineFilters } from "../lib/purchase-order-lines";
 import { getMessages } from "./I18nProvider";
 
 /** Queues the product line Excel export (with the E2E columns), waits for the worker and downloads the file. */
@@ -11,14 +11,14 @@ export function useProductLineExport(filePrefix: string) {
   const [exportStatus, setExportStatus] = useState("");
   const [exportError, setExportError] = useState("");
 
-  async function downloadExcel(filters: ProductLineFilters) {
+  async function downloadExcel(filters: ProductLineFilters, stage: E2eStageFilter = emptyE2eStageFilter) {
     if (exporting) return;
     const t = getMessages().productLines;
     setExporting(true); setExportError(""); setExportStatus(t.exportQueued);
     try {
       const created = await apiFetch("/api/v1/exports/purchase-order-lines", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify(productLineFilterBody(filters)),
+        body: JSON.stringify(productLineFilterBody(filters, stage)),
       });
       if (!created.ok) {
         const body = await created.json().catch(() => null) as { error?: string } | null;

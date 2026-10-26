@@ -1,3 +1,5 @@
+import type { E2eStageCode } from "./e2e-analysis";
+
 /** Status of a product line, as calculated by the API from the dates of its IP. */
 export const productLineStatuses = ["A DISTRIBUIR", "AGUARDANDO PRODUÇÃO", "AGUARDANDO EMBARQUE",
   "AGUARDANDO CHEGADA", "DESEMBARAÇO", "ENTREGUE", "CANCELADO"] as const;
@@ -26,18 +28,45 @@ export function parseProductLineFilters(params: URLSearchParams): ProductLineFil
   };
 }
 
+/** End to End stages, in the order of the flow (the same codes as the API). */
+export const e2eStageCodes = ["T0", "T1", "T2", "T3", "T4", "T5"] as const satisfies readonly E2eStageCode[];
+
+/**
+ * End to End stage filter: the lines now in the stage (`current`) or those that already have its
+ * actual date (`reached`); `late` keeps the late ones, as the API defines for each view.
+ */
+export type E2eStageFilter = { stage: "" | E2eStageCode; view: "current" | "reached"; late: boolean };
+export const emptyE2eStageFilter: E2eStageFilter = { stage: "", view: "current", late: false };
+
+export function parseE2eStageFilter(params: URLSearchParams): E2eStageFilter {
+  const stage = params.get("stage") ?? "";
+  return {
+    stage: (e2eStageCodes as readonly string[]).includes(stage) ? stage as E2eStageCode : "",
+    view: params.get("view") === "reached" ? "reached" : "current", late: params.get("late") === "true",
+  };
+}
+
+export function e2eStageFilterBody(filter: E2eStageFilter): Record<string, string> {
+  const body: Record<string, string> = {};
+  if (filter.stage) body.stage = filter.stage;
+  if (filter.view === "reached") body.view = filter.view;
+  if (filter.late) body.late = "true";
+  return body;
+}
+
 /** Filters sent to GET /api/v1/purchase-order-lines and to the product line export. */
-export function productLineFilterBody(filters: ProductLineFilters): Record<string, string> {
+export function productLineFilterBody(filters: ProductLineFilters, stage = emptyE2eStageFilter): Record<string, string> {
   const body: Record<string, string> = { situation: filters.situation };
   for (const key of textKeys) if (filters[key].trim()) body[key] = filters[key].trim();
   if (filters.status) body.status = filters.status;
   if (filters.etaFrom) body.etaFrom = filters.etaFrom;
   if (filters.etaTo) body.etaTo = filters.etaTo;
-  return body;
+  return { ...body, ...e2eStageFilterBody(stage) };
 }
 
-export function productLineQuery(filters: ProductLineFilters, page: number, pageSize: number): URLSearchParams {
-  const query = new URLSearchParams(productLineFilterBody(filters));
+export function productLineQuery(filters: ProductLineFilters, page: number, pageSize: number,
+  stage = emptyE2eStageFilter): URLSearchParams {
+  const query = new URLSearchParams(productLineFilterBody(filters, stage));
   query.set("page", String(page));
   query.set("pageSize", String(pageSize));
   return query;

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { emptyProductLineFilters, itemShipmentSummary, parseProductLineFilters, productLineFilterBody,
+import { e2eStageCodes, e2eStageFilterBody, emptyE2eStageFilter, emptyProductLineFilters, itemShipmentSummary,
+  parseE2eStageFilter, parseProductLineFilters, productLineFilterBody,
   productLineQuery } from "../lib/purchase-order-lines.ts";
 
 test("product line filters round-trip through the URL and ignore invalid values", () => {
@@ -34,4 +35,20 @@ test("an item split across IPs shows how much is in each status and what is left
   assert.equal(summary.nextEta, "2026-10-30");
   assert.equal(itemShipmentSummary("10", true, []).toDistribute, "0");
   assert.equal(itemShipmentSummary("10", false, []).nextEta, null);
+});
+
+test("the End to End stage filter round-trips through the URL and joins the line filters", () => {
+  const filter = parseE2eStageFilter(new URLSearchParams("stage=T3&view=reached&late=true&ipNumber=IP-1"));
+  assert.deepEqual(filter, { stage: "T3", view: "reached", late: true });
+  assert.deepEqual(parseE2eStageFilter(new URLSearchParams("stage=T9&view=all&late=1")), emptyE2eStageFilter);
+  assert.deepEqual(emptyE2eStageFilter, { stage: "", view: "current", late: false });
+  assert.deepEqual(e2eStageFilterBody(filter), { stage: "T3", view: "reached", late: "true" });
+  // The default view is not sent, so the API default applies.
+  assert.deepEqual(e2eStageFilterBody({ stage: "T0", view: "current", late: false }), { stage: "T0" });
+  assert.deepEqual(e2eStageFilterBody(emptyE2eStageFilter), {});
+  const query = productLineQuery(emptyProductLineFilters, 1, 50, filter);
+  assert.deepEqual([query.get("stage"), query.get("view"), query.get("late"), query.get("situation")], ["T3", "reached", "true", "open"]);
+  assert.deepEqual(productLineFilterBody(emptyProductLineFilters, { stage: "T5", view: "current", late: true }),
+    { situation: "open", stage: "T5", late: "true" });
+  assert.deepEqual([...e2eStageCodes], ["T0", "T1", "T2", "T3", "T4", "T5"]);
 });

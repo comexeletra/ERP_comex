@@ -115,6 +115,9 @@ test("the web status lists match the statuses the API calculates", async () => {
   const { processCalculatedStatuses } = await import("../../web/lib/ip-lifecycle.ts");
   assert.deepEqual([...productLineStatuses], [...shipmentLineStatuses]);
   assert.deepEqual([...processCalculatedStatuses], [...processStatuses]);
+  const { e2eStageCodes } = await import("../../web/lib/purchase-order-lines.ts");
+  const { E2E_STAGE_CODES } = await import("../dist/followup-calculations.js");
+  assert.deepEqual([...e2eStageCodes], [...E2E_STAGE_CODES]);
 });
 
 // E2E stage filters. Dates far in the past or future keep "late" independent of the day the test runs.

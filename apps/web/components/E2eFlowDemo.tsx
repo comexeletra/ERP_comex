@@ -1,41 +1,12 @@
 "use client";
 
-import { ReactNode, useEffect, useState } from "react";
-import {
-  buildE2eFlow, DEFAULT_E2E_FLOW_CONFIG, E2E_PHASE_COUNT, E2eFlowConfig, E2eIconName, formatDayOffset, railCenter,
-} from "../lib/e2e-flow";
+import { useState } from "react";
+import { buildE2eFlow, DEFAULT_E2E_FLOW_CONFIG, E2E_PHASE_COUNT, E2eFlowConfig, formatDayOffset } from "../lib/e2e-flow";
 import type { Messages } from "../lib/i18n/pt-BR";
+import { Arrow, E2eFlowRail, Icon, useE2eStepper } from "./E2eFlowParts";
 import E2eTabs from "./E2eTabs";
 import { useI18n } from "./I18nProvider";
 import PageHeader from "./PageHeader";
-
-type IconName = E2eIconName | "pause" | "play" | "prev" | "next";
-
-const icons: Record<IconName, ReactNode> = {
-  plan: <><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 3h6v3H9z" /><path d="M9 12h6M9 16h4" /></>,
-  cart: <><circle cx="9" cy="20" r="1.5" /><circle cx="17" cy="20" r="1.5" /><path d="M3 4h2l2.4 11h11l2-8H6.2" /></>,
-  send: <><path d="M21 3L10 14" /><path d="M21 3l-7 18-4-7-7-4z" /></>,
-  factory: <><path d="M3 21V10l6 4v-4l6 4V6l6 3v12z" /><path d="M3 21h18" /></>,
-  ship: <><path d="M3 15h18l-2.5 5h-13z" /><path d="M6 15V9h12v6" /><path d="M12 9V4" /><path d="M9 6h6" /></>,
-  plane: <path d="M2 13l8-2 4-7h2l-2 7 6 1 2-3h1.5l-1 4 1 4H22l-2-3-6 1 2 7h-2l-4-7-8-2z" />,
-  truck: <><path d="M2 6h11v10H2z" /><path d="M13 9h4l4 4v3h-8" /><circle cx="6.5" cy="18" r="1.8" /><circle cx="17" cy="18" r="1.8" /></>,
-  pause: <path d="M8 5v14M16 5v14" />,
-  play: <path d="M7 4l13 8-13 8z" />,
-  prev: <path d="M15 18l-6-6 6-6" />,
-  next: <path d="M9 18l6-6-6-6" />,
-};
-
-function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
-    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icons[name]}</svg>;
-}
-
-function Arrow({ w = 34, h = 14 }: { w?: number; h?: number }) {
-  return <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} fill="none" stroke="currentColor" strokeWidth="2.2"
-    strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d={`M2 ${h / 2}h${w - 6}M${w - 10} 2l6 ${h / 2 - 2}-6 ${h / 2 - 2}`} />
-  </svg>;
-}
 
 function phaseStatus(k: number, current: number, m: Messages) {
   return k === current ? m.e2e.statusCurrent : k < current ? m.e2e.statusDone : m.e2e.statusNext;
@@ -45,18 +16,11 @@ export default function E2eFlowDemo({ config }: { config?: Partial<E2eFlowConfig
   const { m } = useI18n();
   const t = m.e2e;
   const cfg = { ...DEFAULT_E2E_FLOW_CONFIG, ...config };
-  const [current, setCurrent] = useState(0);
-  const [playing, setPlaying] = useState(cfg.autoplay);
+  const stepper = useE2eStepper(E2E_PHASE_COUNT, cfg.intervaloMs, cfg.autoplay);
+  const { playing, goTo } = stepper;
+  const current = stepper.current ?? 0;
   const [mts, setMts] = useState(false);
   const [air, setAir] = useState(false);
-
-  useEffect(() => {
-    if (!playing) return undefined;
-    const timer = setInterval(() => setCurrent(value => (value + 1) % E2E_PHASE_COUNT), cfg.intervaloMs);
-    return () => clearInterval(timer);
-  }, [playing, cfg.intervaloMs]);
-
-  function goTo(k: number) { setCurrent(k); setPlaying(false); }
 
   const flow = buildE2eFlow(cfg, { mts, air }, m);
   const phase = flow.phases[current];
@@ -87,7 +51,7 @@ export default function E2eFlowDemo({ config }: { config?: Partial<E2eFlowConfig
         <button type="button" className="e2e-icon-button" aria-label={t.previousPhase}
           onClick={() => goTo((current + E2E_PHASE_COUNT - 1) % E2E_PHASE_COUNT)}><Icon name="prev" size={18} /></button>
         <button type="button" className="button e2e-play" aria-label={playing ? t.pauseAnimation : t.startAnimation}
-          onClick={() => setPlaying(value => !value)}>
+          onClick={stepper.toggle}>
           <Icon name={playing ? "pause" : "play"} size={16} /><span>{playing ? t.pause : t.animate}</span>
         </button>
         <button type="button" className="e2e-icon-button" aria-label={t.nextPhase}
@@ -115,19 +79,7 @@ export default function E2eFlowDemo({ config }: { config?: Partial<E2eFlowConfig
       </div>
     </div>
 
-    <div className="e2e-rail" aria-hidden="true">
-      <div className="e2e-rail-base" style={{ left: railCenter(0), right: `calc(100% - ${railCenter(5)})` }} />
-      <div className="e2e-rail-progress" style={{ left: railCenter(0), width: `calc(${railCenter(current)} - ${railCenter(0)})` }} />
-      <div className="e2e-grid6 e2e-rail-dots">
-        {flow.phases.map((item, k) => <div key={item.code}>
-          <span className={`e2e-rail-dot side-${item.side}${k <= current ? " is-reached" : ""}${k < current ? " is-done" : ""}`} />
-        </div>)}
-      </div>
-      <div className="e2e-marker" style={{ left: railCenter(current) }}>
-        <span className="e2e-marker-ring" />
-        <span className="e2e-marker-disc"><Icon name={phase.icon} size={24} /></span>
-      </div>
-    </div>
+    <E2eFlowRail phases={flow.phases} current={current} />
 
     <div className="e2e-grid6 e2e-phases">
       {flow.phases.map((item, k) => <button type="button" key={item.code} onClick={() => goTo(k)}

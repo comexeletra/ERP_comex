@@ -181,6 +181,10 @@
 .e2e-lines-table .e2e-deviation { font-size: var(--fs-xs); padding: 2px 8px; }
 .e2e-lines-table .product-lines-description { display: inline-block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
 .e2e-stage-head { background: var(--e2e-side-soft, var(--color-surface-sunken)); border-bottom: 3px solid var(--e2e-side, var(--color-border-strong)); color: var(--e2e-side-text, var(--color-text-strong)); text-align: center; }
+/* Stage selected on the animated flow above the table (components/E2eLinesView.tsx) */
+.e2e-phase.e2e-stage-card { gap: 10px; min-height: 0; }
+.e2e-lines-table .is-selected { background: var(--e2e-side-tint); }
+.e2e-lines-table .e2e-stage-head.is-selected { background: var(--e2e-side); color: var(--e2e-side-on); }
 .e2e-targets-form { align-items: end; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
 .e2e-targets-form label { color: var(--color-text-muted); display: grid; font-size: var(--fs-md); font-weight: 700; gap: 6px; }
 .e2e-targets-form .e2e-targets-reason { grid-column: 1 / -1; }

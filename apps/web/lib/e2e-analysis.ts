@@ -11,11 +11,15 @@ export type E2eDemandKind = "mts" | "notMts" | "unknown";
 export type E2eStage = {
   deadline: string | null; actual: string | null; source: E2eSource | null;
   targetDays: number | null; actualDays: number | null; delayDays: number | null;
+  /** Sum of the stage delays from T0 up to this stage; null once one of them is unknown. */
+  accumulatedDelayDays?: number | null;
 };
 export type E2eResult = {
   targetSetValidFrom: string; demandType: E2eDemandKind; air: boolean | null; stages: Record<E2eStageCode, E2eStage>;
   totalTargetDays: number | null; totalActualDays: number | null; totalDelayDays: number | null;
   bottleneck: E2eStageCode | null; currentStatus: string; arrivalYearMonth: string | null;
+  /** Stage after the last actual date (null when delivered or cancelled) and whether its deadline has passed. */
+  currentStage?: E2eStageCode | null; currentStageLate?: boolean;
 };
 
 export type E2eAnalysisInput = {

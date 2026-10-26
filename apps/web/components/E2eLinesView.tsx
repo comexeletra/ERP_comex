@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, readApiJson } from "../lib/api";
-import { E2E_STAGE_CODES, formatE2eDate, type E2eResult } from "../lib/e2e-analysis";
+import { E2E_STAGE_CODES, formatE2eDate, type E2eResult, type E2eStageCode } from "../lib/e2e-analysis";
+import { DEFAULT_E2E_FLOW_CONFIG, type E2eIconName, type E2eSide } from "../lib/e2e-flow";
 import { formatNumber } from "../lib/format-number";
 import { statusLabel } from "../lib/i18n/labels";
-import { emptyProductLineFilters, parseProductLineFilters, productLineQuery, productLineStatuses,
-  type ProductLineFilters } from "../lib/purchase-order-lines";
+import { emptyProductLineFilters, parseE2eStageFilter, parseProductLineFilters, productLineFilterBody, productLineQuery,
+  productLineStatuses, type E2eStageFilter, type ProductLineFilters } from "../lib/purchase-order-lines";
+import { E2eFlowRail, Icon, useE2eStepper } from "./E2eFlowParts";
 import E2eTabs from "./E2eTabs";
 import { getMessages, useI18n } from "./I18nProvider";
 import PageHeader from "./PageHeader";
@@ -22,44 +24,97 @@ type E2eLine = {
   calculated: { status: string; e2e?: E2eResult | null };
 };
 type LinesPage = { page: number; pageSize: number; totalCount: number; lines: E2eLine[] };
+type LinesEntry = { data?: LinesPage; error?: string };
+type StageCount = { current: number; currentLate: number; reached: number; reachedLate: number };
+type StageSummary = { totalCount: number; delivered: number; stages: Record<E2eStageCode, StageCount> };
 const pageSize = 50;
 
-/** The End to End spreadsheet: one row per PO product line and IP with T0–T5 and the totals. */
+const stageIcons: E2eIconName[] = ["plan", "cart", "send", "factory", "ship", "truck"];
+const stagePhases: { code: E2eStageCode; side: E2eSide; icon: E2eIconName }[] = E2E_STAGE_CODES.map((code, index) =>
+  ({ code, side: index < 3 ? "br" : "cn", icon: stageIcons[index] }));
+
+/**
+ * The End to End spreadsheet: one row per PO product line and IP with T0–T5 and the totals,
+ * under the animated stages. Selecting a stage (or letting the animation run) keeps only the
+ * lines now in it, or, in the accumulated view, those that already completed it.
+ */
 export default function E2eLinesView({ initialQuery }: { initialQuery: string }) {
   const { m, locale } = useI18n();
   const t = m.e2eLines;
+  const flow = t.flow;
   const [initial] = useState(() => {
     const query = new URLSearchParams(initialQuery);
     const requestedPage = Number(query.get("page"));
-    return { filters: parseProductLineFilters(query),
+    const stage = parseE2eStageFilter(query);
+    return { filters: parseProductLineFilters(query), stage,
       page: Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1 };
   });
   const [draft, setDraft] = useState<ProductLineFilters>(initial.filters);
   const [applied, setApplied] = useState<ProductLineFilters>(initial.filters);
-  const [page, setPage] = useState(initial.page);
-  const [response, setResponse] = useState<{ query: string; data?: LinesPage; error?: string }>();
+  const stepper = useE2eStepper(E2E_STAGE_CODES.length, DEFAULT_E2E_FLOW_CONFIG.intervaloMs, false,
+    initial.stage.stage ? E2E_STAGE_CODES.indexOf(initial.stage.stage) : null);
+  const current = stepper.current;
+  const [view, setView] = useState(initial.stage.view);
+  const [late, setLate] = useState(initial.stage.late);
+  const stage: E2eStageFilter = { stage: current === null ? "" : E2E_STAGE_CODES[current], view, late };
+  // The page belongs to one stage filter: a new stage (also from the animation) starts on page 1.
+  const stageKey = `${stage.stage}|${view}|${late}`;
+  const [paging, setPaging] = useState({ key: stageKey, page: initial.page });
+  const page = paging.key === stageKey ? paging.page : 1;
+  // Each stage loaded stays while the filters do not change, so the animation does not reload it.
+  const [cache, setCache] = useState<Record<string, LinesEntry>>({});
+  const [summary, setSummary] = useState<{ query: string; data?: StageSummary; error?: string }>();
+  const [refresh, setRefresh] = useState(0);
   const { exporting, exportStatus, exportError, downloadExcel } = useProductLineExport("end-to-end");
-  const query = productLineQuery(applied, page, pageSize).toString();
+  const query = productLineQuery(applied, page, pageSize, stage).toString();
+  const summaryQuery = new URLSearchParams(productLineFilterBody(applied)).toString();
+  const cached = query in cache;
 
   useEffect(() => {
+    if (cached) return undefined;
     const controller = new AbortController();
     apiFetch(`/api/v1/purchase-order-lines?${query}`, { signal: controller.signal })
       .then(result => readApiJson<LinesPage>(result))
-      .then(data => { if (!controller.signal.aborted) setResponse({ query, data }); })
+      .then(data => { if (!controller.signal.aborted) setCache(entries => ({ ...entries, [query]: { data } })); })
       .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setResponse({ query, error: reason instanceof Error ? reason.message : getMessages().common.unexpectedError });
+        if (!controller.signal.aborted) setCache(entries => ({ ...entries,
+          [query]: { error: reason instanceof Error ? reason.message : getMessages().common.unexpectedError } }));
       });
     return () => controller.abort();
-  }, [query]);
-  const current = response?.query === query ? response : undefined;
-  const result = current?.data;
-  const error = current?.error ?? "";
+  }, [query, cached]);
 
-  function navigate(filters: ProductLineFilters, nextPage: number) {
-    setApplied(filters); setPage(nextPage);
-    window.history.replaceState(null, "", `/end-to-end?${productLineQuery(filters, nextPage, pageSize)}`);
+  useEffect(() => {
+    const controller = new AbortController();
+    apiFetch(`/api/v1/purchase-order-lines/e2e-stages?${summaryQuery}`, { signal: controller.signal })
+      .then(result => readApiJson<StageSummary>(result))
+      .then(data => { if (!controller.signal.aborted) setSummary({ query: summaryQuery, data }); })
+      .catch(() => {
+        if (!controller.signal.aborted) setSummary({ query: summaryQuery, error: getMessages().e2eLines.flow.summaryFailed });
+      });
+    return () => controller.abort();
+  }, [summaryQuery, refresh]);
+
+  const entry = cache[query];
+  const result = entry?.data;
+  const error = entry?.error ?? "";
+  const counts = summary?.query === summaryQuery ? summary.data : undefined;
+  const summaryError = summary?.query === summaryQuery ? summary.error : undefined;
+
+  function syncUrl(filters: ProductLineFilters, nextStage: E2eStageFilter, nextPage: number) {
+    window.history.replaceState(null, "", `/end-to-end?${productLineQuery(filters, nextPage, pageSize, nextStage)}`);
   }
-  function filter(event: FormEvent<HTMLFormElement>) { event.preventDefault(); navigate(draft, 1); }
+  function applyFilters(filters: ProductLineFilters) {
+    setApplied(filters); setCache({}); setRefresh(value => value + 1);
+    setPaging({ key: stageKey, page: 1 }); syncUrl(filters, stage, 1);
+  }
+  function filter(event: FormEvent<HTMLFormElement>) { event.preventDefault(); applyFilters(draft); }
+  function select(k: number | null) {
+    stepper.goTo(k);
+    syncUrl(applied, { ...stage, stage: k === null ? "" : E2E_STAGE_CODES[k] }, 1);
+  }
+  function changeView(next: E2eStageFilter["view"]) { setView(next); syncUrl(applied, { ...stage, view: next }, 1); }
+  function toggleLate() { setLate(!late); syncUrl(applied, { ...stage, late: !late }, 1); }
+  function goToPage(next: number) { setPaging({ key: stageKey, page: next }); syncUrl(applied, stage, next); }
 
   const date = (value: string | null | undefined) => formatE2eDate(value, locale);
   const days = (value: number | null | undefined) => value === null || value === undefined ? "—" : String(value);
@@ -67,12 +122,68 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
     : <span className={`e2e-deviation${value > 0 ? " is-late" : " is-ok"}`}>{value > 0 ? `+${value}` : value}</span>;
   const modal = (line: E2eLine) => line.calculated.e2e?.air === true ? m.e2eAnalysis.air
     : line.calculated.e2e?.air === false ? m.e2eAnalysis.sea : line.process?.transportMode ?? "—";
+  const stageTitle = (code: E2eStageCode) => t.stageTitles[code].replace(`${code} · `, "");
+  const selected = (code: E2eStageCode) => code === stage.stage ? " is-selected" : "";
+  const accumulatedStage = view === "reached" && stage.stage ? stage.stage : null;
   const totalPages = result ? Math.ceil(result.totalCount / pageSize) : 0;
   const p = m.productLines;
+  const e = m.e2e;
 
-  return <main className="shell e2e-flow">
+  return <main className="shell e2e-flow" data-side={current === null ? undefined : stagePhases[current].side}>
     <PageHeader eyebrow={t.eyebrow} title={t.title}><p>{t.intro}</p></PageHeader>
     <E2eTabs current="lines" />
+
+    <section className="e2e-toolbar" aria-label={flow.label}>
+      <div className="e2e-group">
+        <span className="e2e-label" id="e2e-view-label">{flow.view}</span>
+        <div className="e2e-segmented" role="group" aria-labelledby="e2e-view-label">
+          <button type="button" aria-pressed={view === "current"} onClick={() => changeView("current")}>{flow.viewCurrent}</button>
+          <button type="button" aria-pressed={view === "reached"} onClick={() => changeView("reached")}>{flow.viewReached}</button>
+        </div>
+        <div className="e2e-segmented">
+          <button type="button" aria-pressed={late} onClick={toggleLate}>{flow.lateOnly}</button>
+        </div>
+      </div>
+      <div className="e2e-controls">
+        <button type="button" className="button secondary" disabled={current === null} onClick={() => select(null)}>{flow.allStages}</button>
+        {current !== null && <span className="e2e-counter" aria-live="polite">
+          {e.phaseBefore}<b>{current + 1}</b>{e.phaseAfter(E2E_STAGE_CODES.length)}</span>}
+        <button type="button" className="e2e-icon-button" aria-label={e.previousPhase}
+          onClick={() => select(((current ?? 0) + E2E_STAGE_CODES.length - 1) % E2E_STAGE_CODES.length)}><Icon name="prev" size={18} /></button>
+        <button type="button" className="button e2e-play" aria-label={stepper.playing ? e.pauseAnimation : e.startAnimation}
+          onClick={stepper.toggle}>
+          <Icon name={stepper.playing ? "pause" : "play"} size={16} /><span>{stepper.playing ? e.pause : e.animate}</span>
+        </button>
+        <button type="button" className="e2e-icon-button" aria-label={e.nextPhase}
+          onClick={() => select(current === null ? 0 : (current + 1) % E2E_STAGE_CODES.length)}><Icon name="next" size={18} /></button>
+      </div>
+    </section>
+    <p className="muted">{view === "current" ? flow.currentHelp : flow.reachedHelp}
+      {counts && counts.delivered > 0 && <> · {flow.delivered(counts.delivered)}</>}</p>
+    {summaryError && <p className="notice error" role="alert">{summaryError}</p>}
+
+    <E2eFlowRail phases={stagePhases} current={current} />
+    <div className="e2e-grid6 e2e-phases">
+      {stagePhases.map((phase, k) => {
+        const count = counts?.stages[phase.code];
+        const total = count ? (view === "current" ? count.current : count.reached) : null;
+        const lateCount = count ? (view === "current" ? count.currentLate : count.reachedLate) : null;
+        return <button type="button" key={phase.code} onClick={() => select(k === current ? null : k)}
+          aria-pressed={k === current}
+          className={`e2e-phase e2e-stage-card side-${phase.side}${k === current ? " is-current" : ""}`}>
+          <span className="e2e-phase-bar" />
+          <span className="e2e-phase-top"><span className="e2e-phase-code">{phase.code}</span></span>
+          <span className="e2e-phase-head"><span className="e2e-phase-icon"><Icon name={phase.icon} /></span>
+            <strong>{stageTitle(phase.code)}</strong></span>
+          <span className="e2e-phase-foot">
+            <span className="e2e-label">{total === null ? "—" : view === "current" ? flow.inStage(total) : flow.passed(total)}</span>
+            {lateCount !== null && <span className={`e2e-deviation${lateCount > 0 ? " is-late" : " is-ok"}`}>
+              {lateCount > 0 ? flow.late(lateCount) : flow.noneLate}</span>}
+          </span>
+        </button>;
+      })}
+    </div>
+
     <section className="card">
       <form className="portfolio-filter product-lines-filter" onSubmit={filter}>
         <label>{p.poNumber}<input value={draft.purchaseOrder} onChange={event => setDraft({ ...draft, purchaseOrder: event.target.value })} /></label>
@@ -90,16 +201,16 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
           <option value="all">{p.all}</option>
         </select></label>
         <div className="button-row product-lines-filter-actions"><button className="button" type="submit">{p.apply}</button>
-          <button className="button secondary" type="button" onClick={() => { setDraft(emptyProductLineFilters); navigate(emptyProductLineFilters, 1); }}>{m.processDirectory.clear}</button></div>
+          <button className="button secondary" type="button" onClick={() => { setDraft(emptyProductLineFilters); applyFilters(emptyProductLineFilters); }}>{m.processDirectory.clear}</button></div>
       </form>
     </section>
     <section className="card" aria-live="polite">
-      {!current && <p role="status">{p.loading}</p>}
+      {!entry && <p role="status">{p.loading}</p>}
       {error && <p className="notice error" role="alert">{error}</p>}
       {result && <>
         <p>{p.found(result.totalCount)}{result.totalCount > 0 && m.processDirectory.pageSuffix(page, totalPages)}</p>
         {result.totalCount > 0 && <p><button className="button secondary" type="button" disabled={exporting}
-          onClick={() => void downloadExcel(applied)}>{exporting ? p.exporting : t.export}</button></p>}
+          onClick={() => void downloadExcel(applied, stage)}>{exporting ? p.exporting : t.export}</button></p>}
         {exportStatus && <p className="muted" role="status">{exportStatus}</p>}
         {exportError && <p className="notice error" role="alert">{exportError}</p>}
         {result.totalCount === 0 && <p>{p.none}</p>}
@@ -109,8 +220,10 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
               <th rowSpan={2}>{t.necessity}</th><th rowSpan={2}>PO</th><th rowSpan={2}>{t.sc}</th><th rowSpan={2}>IP</th>
               <th rowSpan={2}>{m.calc.status}</th><th rowSpan={2}>{t.purpose}</th><th rowSpan={2}>{t.product}</th>
               <th rowSpan={2}>{t.description}</th><th rowSpan={2}>{t.modal}</th><th rowSpan={2}>{t.group}</th><th rowSpan={2}>{t.quantity}</th>
+              {accumulatedStage && <th rowSpan={2} className={`e2e-stage-head side-${stagePhases[E2E_STAGE_CODES.indexOf(accumulatedStage)].side} is-selected`}>
+                {flow.accumulated(accumulatedStage)}</th>}
               {E2E_STAGE_CODES.map((code, index) => <th key={code} colSpan={5} scope="colgroup"
-                className={index < 3 ? "e2e-stage-head side-br" : "e2e-stage-head side-cn"}>{t.stageTitles[code]}</th>)}
+                className={`e2e-stage-head ${index < 3 ? "side-br" : "side-cn"}${selected(code)}`}>{t.stageTitles[code]}</th>)}
               <th colSpan={3} scope="colgroup" className="e2e-stage-head">{t.totals}</th>
               <th rowSpan={2}>{t.bottleneck}</th><th rowSpan={2}>{t.currentStatus}</th><th rowSpan={2}>{t.arrivalMonth}</th>
             </tr>
@@ -134,15 +247,18 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
               <td><span className="product-lines-description" title={line.item.description}>{line.item.description}</span></td>
               <td>{modal(line)}</td><td>{line.item.group ?? "—"}</td>
               <td>{formatNumber(line.quantity)} {line.item.unit ?? ""}</td>
-              {E2E_STAGE_CODES.map(code => {
-                const stage = e2e?.stages[code];
+              {accumulatedStage && <td className={`side-${stagePhases[E2E_STAGE_CODES.indexOf(accumulatedStage)].side} is-selected`}>
+                {delay(e2e?.stages[accumulatedStage].accumulatedDelayDays)}</td>}
+              {E2E_STAGE_CODES.map((code, index) => {
+                const stageData = e2e?.stages[code];
+                const cell = code === stage.stage ? `${index < 3 ? "side-br" : "side-cn"} is-selected` : undefined;
                 return [
-                  <td key={`${code}-deadline`}>{date(stage?.deadline)}</td>,
-                  <td key={`${code}-actual`}><span className={stage?.source === "forecast" ? "e2e-date is-forecast" : "e2e-date"}
-                    title={stage?.source === "forecast" ? t.forecast : undefined}>{date(stage?.actual)}</span></td>,
-                  <td key={`${code}-target`}>{days(stage?.targetDays)}</td>,
-                  <td key={`${code}-days`}>{days(stage?.actualDays)}</td>,
-                  <td key={`${code}-delay`}>{delay(stage?.delayDays)}</td>,
+                  <td key={`${code}-deadline`} className={cell}>{date(stageData?.deadline)}</td>,
+                  <td key={`${code}-actual`} className={cell}><span className={stageData?.source === "forecast" ? "e2e-date is-forecast" : "e2e-date"}
+                    title={stageData?.source === "forecast" ? t.forecast : undefined}>{date(stageData?.actual)}</span></td>,
+                  <td key={`${code}-target`} className={cell}>{days(stageData?.targetDays)}</td>,
+                  <td key={`${code}-days`} className={cell}>{days(stageData?.actualDays)}</td>,
+                  <td key={`${code}-delay`} className={cell}>{delay(stageData?.delayDays)}</td>,
                 ];
               })}
               <td>{days(e2e?.totalTargetDays)}</td><td>{days(e2e?.totalActualDays)}</td><td>{delay(e2e?.totalDelayDays)}</td>
@@ -153,9 +269,9 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
           })}</tbody>
         </table></div>}
         {totalPages > 1 && <nav className="pagination" aria-label={p.pages}>
-          <button className="button secondary" disabled={page <= 1} onClick={() => navigate(applied, page - 1)}>{m.common.previous}</button>
+          <button className="button secondary" disabled={page <= 1} onClick={() => goToPage(page - 1)}>{m.common.previous}</button>
           <span>{m.common.pageOf(page, totalPages)}</span>
-          <button className="button" disabled={page >= totalPages} onClick={() => navigate(applied, page + 1)}>{m.common.next}</button>
+          <button className="button" disabled={page >= totalPages} onClick={() => goToPage(page + 1)}>{m.common.next}</button>
         </nav>}
       </>}
     </section>
