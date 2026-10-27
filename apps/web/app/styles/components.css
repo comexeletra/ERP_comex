@@ -100,6 +100,9 @@ details[open] > summary::before { transform: rotate(45deg); }
 .table-scroll .button { white-space: nowrap; }
 .table-scroll summary { border-radius: var(--radius-xs); padding: 5px 8px; width: fit-content; }
 .table-scroll summary:hover { background: var(--color-primary-soft); }
+/* Drag to scroll (components/TableDragScroll.tsx): fields keep their own cursor, and a drag shows the closed hand without selecting text. */
+table :is(input, select, textarea, [contenteditable]) { cursor: auto; }
+.table-drag-scrolling, .table-drag-scrolling * { cursor: grabbing; user-select: none; }
 .pagination { align-items: center; color: var(--color-text-muted); display: flex; font-size: var(--fs-md); font-variant-numeric: tabular-nums; gap: 12px; justify-content: flex-end; margin: 18px 0 0; }
 .field-list { display: grid; gap: 8px 20px; grid-template-columns: minmax(140px, 1fr) 2fr; margin: 22px 0 0; }
 .field-list dt { font-weight: 700; }

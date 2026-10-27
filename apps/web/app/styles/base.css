@@ -46,7 +46,7 @@ input[readonly] { background-color: var(--color-field-readonly); color: var(--co
 input[type="checkbox"], input[type="radio"] { accent-color: var(--color-primary); }
 
 /* Tables */
-table { border-collapse: collapse; min-width: 100%; table-layout: auto; width: max-content; }
+table { border-collapse: collapse; cursor: grab; min-width: 100%; table-layout: auto; width: max-content; }
 th { color: var(--color-text-muted); font-size: var(--fs-xs); letter-spacing: .04em; text-align: left; text-transform: uppercase; white-space: nowrap; }
 th, td { border-bottom: 1px solid var(--color-divider); padding: 12px 14px; vertical-align: top; }
 td { white-space: nowrap; }
