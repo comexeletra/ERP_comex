@@ -187,9 +187,6 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
     <p className="muted">{view === "current" ? flow.currentHelp : flow.reachedHelp}
       {counts && counts.delivered > 0 && <> · {flow.delivered(counts.delivered)}</>}</p>
     {summaryError && <p className="notice error" role="alert">{summaryError}</p>}
-    {!summaryError && summary?.query !== summaryQuery && <p role="status">{t.overview.loading}</p>}
-    {counts?.overview && <E2eOverviewCharts overview={counts.overview} locale={locale} selectedStatus={applied.status}
-      selectedDeadline={deadline} onStatusSelect={filterByStatus} onDeadlineSelect={selectDeadline} />}
 
     <E2eModelSummary flow={model} current={current} />
     <E2eFlowRail phases={model.phases} current={current} />
@@ -221,6 +218,10 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
       })}
     </div>
     <E2eModelDetails flow={model} current={current} mts={mts} air={air} />
+
+    {!summaryError && summary?.query !== summaryQuery && <p role="status">{t.overview.loading}</p>}
+    {counts?.overview && <E2eOverviewCharts overview={counts.overview} locale={locale} selectedStatus={applied.status}
+      selectedDeadline={deadline} onStatusSelect={filterByStatus} onDeadlineSelect={selectDeadline} />}
 
     <section className="card">
       <form className="portfolio-filter product-lines-filter" onSubmit={filter}>

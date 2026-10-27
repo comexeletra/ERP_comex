@@ -275,4 +275,5 @@ As chaves da primeira entrega continuam valendo. Chave que ficar sem uso sai dos
   - **Ajustes feitos depois das capturas:** a legenda de status passou a 1 coluna abaixo de 760 px, porque em 500 px os nomes ficavam cortados. A legenda da pizza ficou limitada a 420 px de largura.
 - **A11:** aprovado; números no `deploy/hostinger/README.md`, seção de 2026-10-27. A pizza de prazo no HML continua com 100% "Atrasado".
 - **Preview:** `erp-comex-700fh5j8o` (commit `c8a9c6c`) `Ready` no alias estável; `/login` respondeu `200`, e o CSS publicado contém as regras novas.
+- **Posição (pedido do usuário depois da publicação):** os gráficos saíram do topo e ficaram logo acima do card de filtros da tabela de produtos, depois dos painéis do Modelo (régua, etapa ativa e marcos). Isso substitui a D5 da primeira entrega. O aviso de carregamento do resumo foi junto; o aviso de erro do resumo continua no topo, porque também vale para os cards das etapas.
 - **Pendente (A12):** conferência com login: clique nos dois gráficos, limpeza da seleção, exportação com prazo, larguras, temas e idiomas.

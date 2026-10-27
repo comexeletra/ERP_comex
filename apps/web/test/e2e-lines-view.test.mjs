@@ -16,7 +16,10 @@ const [view, overview, panels, parts, tabs, page, modelPage, styles, flowLib] = 
 test("the optional overview precedes the model and cross-filters by status and deadline", () => {
   assert.match(view, /overview\?: E2eOverview/u);
   assert.match(view, /\{counts\?\.overview && <E2eOverviewCharts/u);
-  assert.ok(view.indexOf("<E2eOverviewCharts") < view.indexOf("<E2eModelSummary"));
+  // The charts sit right above the product line filters, below the model panels.
+  assert.ok(view.indexOf("<E2eModelDetails") < view.indexOf("<E2eOverviewCharts"));
+  assert.ok(view.indexOf("<E2eOverviewCharts") < view.indexOf('<form className="portfolio-filter product-lines-filter"'));
+  assert.ok(view.indexOf("t.overview.loading") > view.indexOf("<E2eModelDetails"));
   // Clicking the selected category again clears it.
   assert.match(view, /const filters: ProductLineFilters = \{ \.\.\.applied, status: applied\.status === status \? "" : status \};/u);
   assert.match(view, /setDraft\(filters\); applyFilters\(filters\);/u);
