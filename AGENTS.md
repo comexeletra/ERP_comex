@@ -143,6 +143,14 @@ Se algo essencial não estiver claro, pergunte antes de supor.
 - Use os componentes padrão: `PageHeader` (link "voltar" só em telas de detalhe), `ConfirmDialog`/`useConfirmDialog` em vez de `window.confirm`, `.notice` com `warning`, `error` ou `success` (sem variante é informativo), `.badge` com `badge-success|warning|danger|info` e `.tabs`/`.tab`.
 - `test/layout-consistency.test.mjs` verifica essas regras e o contraste AA dos tokens nos dois temas.
 
+## Exportações Excel
+
+- Exportações existentes: Carteira de POs (`/`), Carteira por produto (`/purchase-orders/lines`) e End to End (`/end-to-end`). Todas passam pela fila `jobs.export_job` e pelo worker. Mapeamento e decisões em `docs/PLANO_EXPORTACAO_COLUNAS.md`.
+- Cada exportação oferece somente as colunas de dado da tabela da sua tela, na ordem da tabela. A pessoa escolhe quais delas entram no arquivo; as obrigatórias (identificação da PO e do produto) sempre entram.
+- **A exportação acompanha a tabela.** Ao acrescentar, remover, renomear ou mover uma coluna de dado numa dessas tabelas, atualize no mesmo commit o catálogo do contexto na API (`apps/api/src/export-columns.ts`), o espelho do web (`apps/web/lib/export-columns.ts`) e os rótulos nos três dicionários. Se o valor ainda não vier da API, leve-o para a API na mesma tarefa. Colunas de ação (botões, links sem dado próprio) não entram.
+- Uma tela nova com exportação segue o mesmo modelo, com catálogo próprio igual à sua tabela.
+- Os testes de cada tela comparam a tabela com o catálogo e falham quando eles divergem. Não ajuste o teste para passar: ajuste o catálogo ou a tabela.
+
 ## Acesso SSH da VPS de homologação
 
 - No notebook da empresa, use o alias SSH `erp-validation-vps` definido em `%USERPROFILE%\.ssh\Host erp-validation-vps.txt`. A chave privada dessa máquina fica em `.local-keys/rf06_ed25519`, relativa à raiz do repositório.
