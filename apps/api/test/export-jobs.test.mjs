@@ -63,10 +63,12 @@ test("product line exports are queued with the carteira filters", async t => {
 test("product line exports keep the End to End deadline status filter", async t => {
   const { app, queries } = await exportApp(t);
   const queued = await app.inject({ method: "POST", url: "/api/v1/exports/purchase-order-lines",
-    payload: { status: "AGUARDANDO CHEGADA", deadline: "late", delayRange: "upTo30" } });
+    payload: { status: "AGUARDANDO CHEGADA", deadline: "late", delayRange: "upTo30", demandType: "mts", modal: "air" } });
   assert.equal(queued.statusCode, 202, queued.body);
   const stored = JSON.parse(queries.filter(query => query.sql.includes("INSERT INTO jobs.export_job")).at(-1).params[4]);
-  assert.deepEqual(stored, { status: "AGUARDANDO CHEGADA", deadline: "late", delayRange: "upTo30", situation: "open" });
+  assert.deepEqual(stored, { status: "AGUARDANDO CHEGADA", deadline: "late", delayRange: "upTo30", demandType: "mts",
+    modal: "air", situation: "open" });
+  assert.equal(shipmentLineQuery.safeParse(stored).data.modal, "air");
   assert.equal(shipmentLineQuery.safeParse(stored).data.deadline, "late");
   assert.equal(shipmentLineQuery.safeParse(stored).data.delayRange, "upTo30");
   const invalid = await app.inject({ method: "POST", url: "/api/v1/exports/purchase-order-lines",

@@ -207,7 +207,8 @@ test("the E2E stage summary counts stages and exact item quantities by status an
   assert.equal(Object.values(body.overview.byStatus).reduce((sum, part) => sum + part.lines, 0), body.totalCount);
   assert.equal(Object.values(body.overview.byDeadline).reduce((sum, part) => sum + part.lines, 0), body.totalCount);
   assert.ok(queries.filter(query => query.sql.includes("line_kind")).at(-1).params.includes("IP"));
-  const invalid = await app.inject({ method: "GET", url: "/api/v1/purchase-order-lines/e2e-stages?stage=T3" });
+  // The charts follow the table, so the summary takes the stage filters too; an unknown stage is refused.
+  const invalid = await app.inject({ method: "GET", url: "/api/v1/purchase-order-lines/e2e-stages?stage=T9" });
   assert.equal(invalid.statusCode, 400, invalid.body);
 });
 
@@ -278,6 +279,56 @@ test("the delay range chart cross-filters with the status and deadline charts", 
 
   const invalid = await app.inject({ method: "GET", url: "/api/v1/purchase-order-lines/e2e-stages?delayRange=late" });
   assert.equal(invalid.statusCode, 400, invalid.body);
+});
+
+test("product lines filter by demand type and transport mode after the calculation", async t => {
+  const { app, queries } = await linesApp(t, stageRows, stageDocuments);
+  const get = async query => {
+    const response = await app.inject({ method: "GET", url: `/api/v1/purchase-order-lines?situation=all&${query}` });
+    assert.equal(response.statusCode, 200, response.body);
+    return response.json();
+  };
+  // The IPs are MTS and by sea; the balance has no demand type and no transport mode; the cancelled line never shows.
+  assert.deepEqual(ips(await get("demandType=mts")), ["IP-SEA", "IP-DONE"]);
+  assert.deepEqual(ips(await get("demandType=notMts")), []);
+  assert.deepEqual(ips(await get("modal=sea")), ["IP-SEA", "IP-DONE"]);
+  assert.deepEqual(ips(await get("modal=air")), []);
+  assert.deepEqual(ips(await get("demandType=mts&modal=sea&stage=T4")), ["IP-SEA"]);
+  assert.deepEqual(queries.filter(query => query.sql.includes("line_kind")).at(-1).params.slice(-2), [null, 0]);
+  for (const query of ["demandType=MTS", "modal=SEA", "modal=road"]) {
+    const invalid = await app.inject({ method: "GET", url: `/api/v1/purchase-order-lines?${query}` });
+    assert.equal(invalid.statusCode, 400, query);
+  }
+});
+
+test("the charts follow the table filters while the stage cards keep every stage", async t => {
+  const { app } = await linesApp(t, stageRows, stageDocuments);
+  const get = async query => {
+    const response = await app.inject({ method: "GET", url: `/api/v1/purchase-order-lines/e2e-stages?situation=all&${query}` });
+    assert.equal(response.statusCode, 200, response.body);
+    return response.json();
+  };
+  const all = await get("");
+  // Demand type and transport mode filter everything, the stage cards included.
+  const sea = await get("modal=sea");
+  assert.deepEqual([sea.totalCount, sea.delivered, sea.stages.T0.current, sea.stages.T4.current], [2, 1, 0, 1]);
+  assert.deepEqual(sea.overview.byStatus["A DISTRIBUIR"], { quantity: "0", lines: 0 });
+  assert.deepEqual(sea.overview.byStatus["AGUARDANDO CHEGADA"], { quantity: "1", lines: 1 });
+  const notMts = await get("demandType=notMts");
+  assert.deepEqual([notMts.totalCount, notMts.overview.byDeadline.late.lines], [0, 0]);
+
+  // The stage, the view and the late toggle filter the charts like the table, but not the stage cards.
+  const t4 = await get("stage=T4");
+  assert.deepEqual(t4.stages, all.stages);
+  assert.deepEqual([t4.totalCount, t4.delivered], [all.totalCount, all.delivered]);
+  assert.deepEqual(t4.overview.byStatus["AGUARDANDO CHEGADA"], { quantity: "1", lines: 1 });
+  assert.equal(Object.values(t4.overview.byStatus).reduce((sum, part) => sum + part.lines, 0), 1);
+  const reachedT3 = await get("stage=T3&view=reached");
+  assert.equal(Object.values(reachedT3.overview.byStatus).reduce((sum, part) => sum + part.lines, 0), 2);
+  assert.deepEqual(reachedT3.overview.byStatus.ENTREGUE, { quantity: "1", lines: 1 });
+  const lateNow = await get("late=true");
+  assert.deepEqual(lateNow.overview.byDelayRange.upTo30, { quantity: "1", lines: 1 });
+  assert.deepEqual(lateNow.overview.byDelayRange.noData, { quantity: "0", lines: 0 });
 });
 
 test("each summary chart ignores its own filter and follows the other one", async t => {
