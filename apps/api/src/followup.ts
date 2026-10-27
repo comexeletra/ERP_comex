@@ -15,7 +15,7 @@ import { actorAndScopes, assertPoActive, BusinessError, checkVersion, createPo a
 type FieldType = "text" | "date" | "integer" | "money" | "boolean";
 const itemFields: Record<string, [string, FieldType, number?]> = {
   necessityDate: ["necessity_date", "date"], priority: ["priority", "text", 20],
-  demand: ["demand", "text", 160], demandType: ["demand_type", "text", 40], requester: ["requester", "text", 160],
+  demand: ["demand", "text", 160], requester: ["requester", "text", 160],
   scNumber: ["sc_number", "text", 80], scApprovalDate: ["sc_approval_date", "date"],
   scDate: ["sc_date", "date"],
   purpose: ["purpose", "text", 160], productGroup: ["product_group", "text", 120],
@@ -170,11 +170,12 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
         await setPurchaseOrderObservationActor(client, auth.actor);
         const createdPo = await client.query<{ orderDate: string }>(`INSERT INTO procurement.purchase_order
           (id,importer,external_number,normalized_number,identity_status,source_kind,version,
-           supplier_text,order_date,notes,purchase_request_id)
+           supplier_text,order_date,notes,purchase_request_id,demand_type)
           VALUES ($1,$2,$3::text,upper($3::text),'MANUAL_UNVERIFIED','MANUAL_TOTVS_REFERENCE',1,$4,
-            (now() AT TIME ZONE 'America/Sao_Paulo')::date,$5,$6)
+            (now() AT TIME ZONE 'America/Sao_Paulo')::date,$5,$6,$7)
           RETURNING order_date::text AS "orderDate"`,
-          [poId, header.importer, header.number, header.supplierText, header.notes, purchaseRequestId]);
+          [poId, header.importer, header.number, header.supplierText, header.notes, purchaseRequestId,
+            header.demandType || null]);
         await record(client, "PURCHASE_ORDER", poId, "PURCHASE_ORDER", poId, "CREATE",
           null, { ...header, orderDate: createdPo.rows[0].orderDate }, auth.actor, header.reason);
         const itemIds: string[] = [];
@@ -358,10 +359,12 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
                     OR upper(btrim(supplier.name))=upper(btrim($3::text))))
               ELSE po.supplier_entry_id END,
             notes=$4,purchase_request_id=CASE WHEN $5::boolean THEN $6::uuid ELSE purchase_request_id END,
-            importer=$7,
+            demand_type=CASE WHEN $7::boolean THEN $8::text ELSE demand_type END,
+            importer=$9,
             version=version+1,updated_at=now() WHERE id=$1 RETURNING version::text`,
           [poId.data, header.number, header.supplierText, header.notes,
-            header.purchaseRequestId !== undefined, header.purchaseRequestId ?? null, destinationImporter]);
+            header.purchaseRequestId !== undefined, header.purchaseRequestId ?? null,
+            header.demandType !== undefined, header.demandType || null, destinationImporter]);
         await record(client, "PURCHASE_ORDER", poId.data, "PURCHASE_ORDER", poId.data, "UPDATE",
           po, { ...header, orderDate: po.order_date ?? null }, auth.actor, header.reason);
         const keys = Object.keys(fieldsToSave);
@@ -404,7 +407,7 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
           item.id AS item_id, item.line_number, item.external_line_reference, item.product_code,
           item.description, item.ordered_quantity::text AS ordered_quantity, item.unit,
           item.unit_price::text AS unit_price, item.currency_code, item.necessity_date,
-          item.priority AS item_priority, item.demand, item.demand_type, item.requester, item.sc_number, item.sc_date,
+          item.priority AS item_priority, item.demand, po.demand_type, item.requester, item.sc_number, item.sc_date,
           item.sc_approval_date, item.purpose, item.product_group, item.cost_center,
           item.draft_po, item.po_approval_date, item.po_sent_date, item.category, item.ncm,
           item.remarks, item.commercial_plan_received_date, item.mrp_completed_date,
@@ -479,7 +482,7 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
       if (!id.success) return problem(reply, 400, "INVALID_ID", "PO inválida.");
       const scopes = request.authorizationContext?.importerScopes ?? [];
         const po = await pool.query(`SELECT po.id, po.importer, po.external_number AS number, po.version::text,
-          po.supplier_entry_id AS "supplierEntryId",
+          po.demand_type AS "demandType", po.supplier_entry_id AS "supplierEntryId",
           coalesce(supplier.code, po.supplier_text) AS "supplierText", supplier.name AS "supplierName",
           coalesce(order_date, CASE WHEN source_kind = 'MANUAL_TOTVS_REFERENCE'
             THEN (po.created_at AT TIME ZONE 'America/Sao_Paulo')::date END)::text AS "orderDate"
@@ -487,9 +490,11 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
         LEFT JOIN catalog.entry supplier ON supplier.id = po.supplier_entry_id
         WHERE po.id=$1 AND po.importer=ANY($2::text[])`, [id.data, scopes]);
       if (!po.rows[0]) return problem(reply, 404, "RESOURCE_NOT_FOUND", "PO não encontrada.");
-      const items = await pool.query(`SELECT item.*, to_jsonb(item)->>'item_group' AS "group",
+      // Every product inherits the demand type of its PO.
+      const items = await pool.query(`SELECT item.*, to_jsonb(item)->>'item_group' AS "group", po.demand_type,
         ${purchaseOrderProductReferenceSql("item")}
-        FROM procurement.purchase_order_item item WHERE item.purchase_order_id=$1 ORDER BY item.line_number`, [id.data]);
+        FROM procurement.purchase_order_item item JOIN procurement.purchase_order po ON po.id=item.purchase_order_id
+        WHERE item.purchase_order_id=$1 ORDER BY item.line_number`, [id.data]);
       const links = await pool.query(`SELECT a.id AS allocation_id, a.purchase_order_item_id AS item_id,
         a.quantity::text AS allocation_quantity, a.notes AS allocation_notes,
         a.factory_ship_date::text AS factory_ship_date, a.version::text AS allocation_version, p.*

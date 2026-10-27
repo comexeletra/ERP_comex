@@ -24,6 +24,8 @@ const poFields = z.object({
   number: z.string().trim().min(1).max(80),
   purchaseRequestId: z.uuid().nullable().optional(),
   supplierText: nullableText(240), orderDate: z.iso.date().nullable(), notes: z.string().trim().max(4000),
+  // MTS / Não MTS: kept only on the PO and inherited by every product. Absent keeps the saved value.
+  demandType: nullableText(40).optional(),
   confirmDuplicateNumber: z.boolean().optional(),
   duplicateNumberJustification: z.string().trim().min(3).max(1000).optional(),
   reason: z.string().trim().min(3).max(1000),
@@ -1622,7 +1624,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
                 coalesce(supplier.code, po.supplier_text) AS "supplierText", supplier.name AS "supplierName",
                 coalesce(po.order_date, CASE WHEN po.source_kind = 'MANUAL_TOTVS_REFERENCE'
                   THEN (po.created_at AT TIME ZONE 'America/Sao_Paulo')::date END)::text AS "orderDate",
-                po.notes, po.source_kind AS "sourceKind", po.version::text,
+                po.notes, po.demand_type AS "demandType", po.source_kind AS "sourceKind", po.version::text,
                 po.created_at AS "createdAt", last_restore.event AS "lastRestore",
                 po.purchase_request_id AS "purchaseRequestId",
                 CASE WHEN sc.id IS NULL THEN NULL ELSE jsonb_build_object(
@@ -1650,7 +1652,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
                 item.ordered_quantity::text AS "orderedQuantity", item.unit,
                 item.unit_price::text AS "unitPrice", item.currency_code AS currency,
                 ${purchaseOrderProductReferenceSql("item")},
-                item.necessity_date::text AS "necessityDate", item.sc_date::text AS "scDate", item.priority, item.demand, item.demand_type AS "demandType",
+                item.necessity_date::text AS "necessityDate", item.sc_date::text AS "scDate", item.priority, item.demand,
                 item.requester, item.sc_number AS "scNumber", item.sc_approval_date::text AS "scApprovalDate",
                 item.purpose, item.product_group AS "productGroup", to_jsonb(item)->>'item_group' AS "group", item.cost_center AS "costCenter",
                 item.draft_po AS "draftPo", item.po_approval_date::text AS "poApprovalDate",
@@ -1702,11 +1704,12 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const result = await client.query<Record<string, unknown>>(
           `INSERT INTO procurement.purchase_order
            (id,importer,external_number,normalized_number,identity_status,source_kind,version,
-            supplier_text,order_date,notes,purchase_request_id)
+            supplier_text,order_date,notes,purchase_request_id,demand_type)
            VALUES ($1,$2,$3::text,upper($3::text),'MANUAL_UNVERIFIED','MANUAL_TOTVS_REFERENCE',1,$4,
-             (now() AT TIME ZONE 'America/Sao_Paulo')::date,$5,$6)
+             (now() AT TIME ZONE 'America/Sao_Paulo')::date,$5,$6,$7)
            RETURNING id, importer, external_number AS number, order_date::text AS "orderDate", version::text`,
-          [id, body.importer, body.number, body.supplierText, body.notes, body.purchaseRequestId ?? null]);
+          [id, body.importer, body.number, body.supplierText, body.notes, body.purchaseRequestId ?? null,
+            body.demandType || null]);
         await saveReceipt(client, auth.actor.userId, key, claim.hash, "PO", id);
         await record(client, "PURCHASE_ORDER", id, "PURCHASE_ORDER", id, "CREATE", null,
           { ...body, orderDate: result.rows[0].orderDate }, auth.actor, body.reason);
@@ -1963,10 +1966,12 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
               ELSE po.supplier_entry_id END,
             notes = $3, external_number = $4::text, normalized_number = upper($4::text),
             purchase_request_id = CASE WHEN $5::boolean THEN $6::uuid ELSE purchase_request_id END,
-            importer = $7, version = version + 1, updated_at = now()
+            demand_type = CASE WHEN $7::boolean THEN $8::text ELSE demand_type END,
+            importer = $9, version = version + 1, updated_at = now()
            WHERE id = $1 RETURNING id, version::text`,
           [id.data, parsed.data.supplierText, parsed.data.notes, parsed.data.number,
-            parsed.data.purchaseRequestId !== undefined, parsed.data.purchaseRequestId ?? null, destinationImporter]);
+            parsed.data.purchaseRequestId !== undefined, parsed.data.purchaseRequestId ?? null,
+            parsed.data.demandType !== undefined, parsed.data.demandType || null, destinationImporter]);
         await record(client, "PURCHASE_ORDER", id.data, "PURCHASE_ORDER", id.data, "UPDATE",
           before, { ...parsed.data, orderDate: before.order_date ?? null }, auth.actor, parsed.data.reason);
         const scFields = purchaseRequestOperationalFields(purchaseRequest);
