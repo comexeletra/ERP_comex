@@ -117,6 +117,15 @@ export const DEFAULT_E2E_TARGET_SET: E2eTargetSet = Object.freeze({
 });
 export const E2E_STAGE_CODES = ["T0", "T1", "T2", "T3", "T4", "T5"] as const;
 export type E2eStageCode = typeof E2E_STAGE_CODES[number];
+export type E2eDeadlineStatus = "onTime" | "onLimit" | "late" | "noData";
+
+/** Power BI's in_time_late rule, applied to the total End to End delay. */
+export function e2eDeadlineStatus(e2e: { totalDelayDays: number | null } | null): E2eDeadlineStatus {
+  if (e2e?.totalDelayDays === null || e2e === null) return "noData";
+  if (e2e.totalDelayDays > 0) return "late";
+  if (e2e.totalDelayDays === 0) return "onLimit";
+  return "onTime";
+}
 
 /** The set with the latest start on or before the line's necessity date (today when it has none). */
 export function e2eTargetSetFor(sets: readonly E2eTargetSet[], necessityDate: unknown, today: string): E2eTargetSet {

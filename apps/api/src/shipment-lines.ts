@@ -3,8 +3,8 @@ import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
 import { loadE2eTargetSets } from "./e2e-targets.js";
-import { calculateE2e, calculateFollowup, E2E_STAGE_CODES, e2eTargetSetFor, todayInBrasilia,
-  type E2eStageCode } from "./followup-calculations.js";
+import { calculateE2e, calculateFollowup, E2E_STAGE_CODES, e2eDeadlineStatus, e2eTargetSetFor, todayInBrasilia,
+  type E2eDeadlineStatus, type E2eStageCode } from "./followup-calculations.js";
 
 type Row = Record<string, unknown>;
 
@@ -138,6 +138,20 @@ type LineE2e = ReturnType<typeof calculateE2e>;
 
 const lineE2e = (line: ShipmentLine) => (line.calculated as { e2e?: LineE2e | null }).e2e ?? null;
 const inFlow = (line: ShipmentLine) => (line.calculated as { status?: unknown }).status !== "CANCELADO";
+const overviewStatuses = shipmentLineStatuses.slice(0, -1) as readonly Exclude<(typeof shipmentLineStatuses)[number], "CANCELADO">[];
+const deadlineStatuses: readonly E2eDeadlineStatus[] = ["onTime", "onLimit", "late", "noData"];
+const quantityScale = 100_000_000n; // procurement quantities are numeric(24,8)
+
+function scaledQuantity(value: string): bigint {
+  const match = /^(\d+)(?:\.(\d{1,8}))?$/.exec(value);
+  if (!match) throw new Error("Quantidade inválida no resumo End to End.");
+  return BigInt(match[1]) * quantityScale + BigInt((match[2] ?? "").padEnd(8, "0"));
+}
+
+function decimalQuantity(value: bigint): string {
+  const fraction = String(value % quantityScale).padStart(8, "0").replace(/0+$/u, "");
+  return `${value / quantityScale}${fraction ? `.${fraction}` : ""}`;
+}
 
 /**
  * Whether a line passes the E2E stage filters. `current`: the line is now in the stage (and
@@ -162,7 +176,26 @@ export function summarizeE2eStages(lines: ShipmentLine[]) {
       reached: count("reached"), reachedLate: count("reached", "true") }];
   })) as Record<E2eStageCode, { current: number; currentLate: number; reached: number; reachedLate: number }>;
   const delivered = flow.filter(line => { const e2e = lineE2e(line); return e2e !== null && e2e.currentStage === null; }).length;
-  return { totalCount: flow.length, delivered, stages };
+  const emptyParts = <Key extends string>(keys: readonly Key[]) => Object.fromEntries(keys.map(key =>
+    [key, { quantity: 0n, lines: 0 }])) as Record<Key, { quantity: bigint; lines: number }>;
+  const byStatus = emptyParts(overviewStatuses);
+  const byDeadline = emptyParts(deadlineStatuses);
+  for (const line of flow) {
+    const quantity = scaledQuantity(line.quantity);
+    const status = (line.calculated as { status: keyof typeof byStatus }).status;
+    byStatus[status].quantity += quantity;
+    byStatus[status].lines += 1;
+    const deadline = e2eDeadlineStatus(lineE2e(line));
+    byDeadline[deadline].quantity += quantity;
+    byDeadline[deadline].lines += 1;
+  }
+  const serialize = <Key extends string>(parts: Record<Key, { quantity: bigint; lines: number }>) => {
+    const result = Object.fromEntries(Object.entries(parts).map(([key, part]) => [key,
+      { quantity: decimalQuantity((part as { quantity: bigint }).quantity), lines: (part as { lines: number }).lines }]));
+    return result as Record<Key, { quantity: string; lines: number }>;
+  };
+  return { totalCount: flow.length, delivered, stages,
+    overview: { byStatus: serialize(byStatus), byDeadline: serialize(byDeadline) } };
 }
 
 async function queryLineRows(pool: Pool, scopes: readonly string[], filters: ShipmentLineFilters,
