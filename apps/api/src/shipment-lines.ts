@@ -21,6 +21,8 @@ export type ShipmentLineFilters = {
   deadline?: E2eDeadlineStatus;
   /** Range of the total End to End delay (Power BI "Faixa de atraso total") of the line. */
   delayRange?: E2eDelayRange;
+  /** Demand type and transport mode of the End to End scenario; lines without them pass only when unset. */
+  demandType?: "mts" | "notMts"; modal?: "sea" | "air";
 };
 
 // IP columns repeated on every product line. Costs stay on the IP: repeating them per
@@ -175,6 +177,14 @@ function matchesDeadline(line: ShipmentLine, deadline: E2eDeadlineStatus | undef
   return !deadline || (inFlow(line) && e2eDeadlineStatus(lineE2e(line)) === deadline);
 }
 
+/** Whether a line has the demand type and transport mode of the chosen scenario. */
+function matchesScenario(line: ShipmentLine, { demandType, modal }: Pick<ShipmentLineFilters, "demandType" | "modal">): boolean {
+  if (!demandType && !modal) return true;
+  const e2e = lineE2e(line);
+  if (!e2e || !inFlow(line)) return false;
+  return (!demandType || e2e.demandType === demandType) && (!modal || e2e.air === (modal === "air"));
+}
+
 /** Whether a line has the requested total delay range. Cancelled lines never pass a delay range filter. */
 function matchesDelayRange(line: ShipmentLine, delayRange: E2eDelayRange | undefined): boolean {
   return !delayRange || (inFlow(line) && e2eDelayRange(lineE2e(line)) === delayRange);
@@ -198,13 +208,18 @@ function quantityTotals<Key extends string>(keys: readonly Key[], lines: Shipmen
 
 /**
  * Lines in each E2E stage and lines that already passed it, with the late ones, for the animated flow,
- * and the item quantities by line status, by total deadline status and by total delay range. The
- * charts cross-filter: each one ignores its own filter (status, deadline or delay range) and follows
- * the others; the stages follow all of them.
+ * and the item quantities by line status, by total deadline status and by total delay range.
+ * - The demand type and transport mode filter everything.
+ * - The charts show the lines of the table: they follow the stage, the view and the late toggle,
+ *   which the stage cards ignore so that they keep the count of every stage.
+ * - The charts cross-filter: each one ignores its own filter (status, deadline or delay range) and
+ *   follows the others; the stage cards follow all of them.
  */
-export function summarizeE2eStages(lines: ShipmentLine[],
-  { status, deadline, delayRange }: Pick<ShipmentLineFilters, "status" | "deadline" | "delayRange"> = {}) {
-  const flow = lines.filter(inFlow);
+export function summarizeE2eStages(lines: ShipmentLine[], filters: Partial<ShipmentLineFilters> = {}) {
+  const { status, deadline, delayRange, stage, view, late } = filters;
+  const flow = lines.filter(line => inFlow(line) && matchesScenario(line, filters));
+  const ofTable = (line: ShipmentLine) => (!stage && !late) || matchesE2eStage(line, { situation: "all", stage, view, late });
+  const charts = flow.filter(ofTable);
   const ofStatus = (line: ShipmentLine) => !status || lineStatus(line) === status;
   const ofDeadline = (line: ShipmentLine) => matchesDeadline(line, deadline);
   const ofDelayRange = (line: ShipmentLine) => matchesDelayRange(line, delayRange);
@@ -217,11 +232,11 @@ export function summarizeE2eStages(lines: ShipmentLine[],
   })) as Record<E2eStageCode, { current: number; currentLate: number; reached: number; reachedLate: number }>;
   const delivered = selected.filter(line => { const e2e = lineE2e(line); return e2e !== null && e2e.currentStage === null; }).length;
   return { totalCount: selected.length, delivered, stages, overview: {
-    byStatus: quantityTotals(overviewStatuses, flow.filter(line => ofDeadline(line) && ofDelayRange(line)),
+    byStatus: quantityTotals(overviewStatuses, charts.filter(line => ofDeadline(line) && ofDelayRange(line)),
       line => lineStatus(line) as typeof overviewStatuses[number]),
-    byDeadline: quantityTotals(deadlineStatuses, flow.filter(line => ofStatus(line) && ofDelayRange(line)),
+    byDeadline: quantityTotals(deadlineStatuses, charts.filter(line => ofStatus(line) && ofDelayRange(line)),
       line => e2eDeadlineStatus(lineE2e(line))),
-    byDelayRange: quantityTotals(E2E_DELAY_RANGES, flow.filter(line => ofStatus(line) && ofDeadline(line)),
+    byDelayRange: quantityTotals(E2E_DELAY_RANGES, charts.filter(line => ofStatus(line) && ofDeadline(line)),
       line => e2eDelayRange(lineE2e(line))),
   } };
 }
@@ -236,19 +251,19 @@ async function queryLineRows(pool: Pool, scopes: readonly string[], filters: Shi
 
 /**
  * Product lines (one per active allocation plus the balance without IP) with their IP data.
- * The E2E stage, deadline and delay range filters depend on the calculation, so with them every
- * line is calculated before paging.
+ * The E2E stage, deadline, delay range and scenario filters depend on the calculation, so with
+ * them every line is calculated before paging.
  */
 export async function queryShipmentLines(pool: Pool, scopes: readonly string[], filters: ShipmentLineFilters,
   limit: number, offset: number) {
-  if (!filters.stage && !filters.late && !filters.deadline && !filters.delayRange) {
+  if (!filters.stage && !filters.late && !filters.deadline && !filters.delayRange && !filters.demandType && !filters.modal) {
     const { totalCount, rows } = await queryLineRows(pool, scopes, filters, limit, offset);
     return { totalCount, lines: await calculateLines(pool, rows) };
   }
   const { rows } = await queryLineRows(pool, scopes, filters, null, 0);
   const lines = (await calculateLines(pool, rows))
     .filter(line => matchesE2eStage(line, filters) && matchesDeadline(line, filters.deadline)
-      && matchesDelayRange(line, filters.delayRange));
+      && matchesDelayRange(line, filters.delayRange) && matchesScenario(line, filters));
   return { totalCount: lines.length, lines: lines.slice(offset, offset + limit) };
 }
 
@@ -293,6 +308,7 @@ const lineFilterQuery = z.object({
   status: z.enum(shipmentLineStatuses).optional(), etaFrom: z.iso.date().optional(), etaTo: z.iso.date().optional(),
   situation: z.enum(["open", "all"]).default("open"), deadline: z.enum(deadlineStatuses).optional(),
   delayRange: z.enum(E2E_DELAY_RANGES).optional(),
+  demandType: z.enum(["mts", "notMts"]).optional(), modal: z.enum(["sea", "air"]).optional(),
 });
 export const shipmentLineQuery = lineFilterQuery.extend({
   stage: z.enum(E2E_STAGE_CODES).optional(), view: z.enum(["current", "reached"]).optional(),
@@ -321,7 +337,7 @@ export async function registerShipmentLineRoutes(app: FastifyInstance, pool: Poo
 
   app.get("/api/v1/purchase-order-lines/e2e-stages", { config: permissionConfig("purchase-orders.read") },
     async (request, reply) => {
-      const parsed = lineFilterQuery.strict().safeParse(request.query);
+      const parsed = shipmentLineQuery.strict().safeParse(request.query);
       if (!parsed.success) return invalidQuery(request, reply, parsed.error);
       const result = await queryE2eStageSummary(pool, request.authorizationContext?.importerScopes ?? [], parsed.data);
       reply.header("Cache-Control", "no-store");
