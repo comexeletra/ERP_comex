@@ -17,6 +17,8 @@ export type ShipmentLineFilters = {
   status?: (typeof shipmentLineStatuses)[number]; etaFrom?: string; etaTo?: string; situation: "open" | "all";
   /** E2E stage: the lines now in it (`current`) or those that already have its actual date (`reached`). */
   stage?: E2eStageCode; view?: "current" | "reached"; late?: "true";
+  /** Total End to End delay status (Power BI in_time_late) of the line. */
+  deadline?: E2eDeadlineStatus;
 };
 
 // IP columns repeated on every product line. Costs stay on the IP: repeating them per
@@ -139,7 +141,7 @@ type LineE2e = ReturnType<typeof calculateE2e>;
 const lineE2e = (line: ShipmentLine) => (line.calculated as { e2e?: LineE2e | null }).e2e ?? null;
 const inFlow = (line: ShipmentLine) => (line.calculated as { status?: unknown }).status !== "CANCELADO";
 const overviewStatuses = shipmentLineStatuses.slice(0, -1) as readonly Exclude<(typeof shipmentLineStatuses)[number], "CANCELADO">[];
-const deadlineStatuses: readonly E2eDeadlineStatus[] = ["onTime", "onLimit", "late", "noData"];
+const deadlineStatuses = ["onTime", "onLimit", "late", "noData"] as const satisfies readonly E2eDeadlineStatus[];
 const quantityScale = 100_000_000n; // procurement quantities are numeric(24,8)
 
 function scaledQuantity(value: string): bigint {
@@ -166,36 +168,49 @@ export function matchesE2eStage(line: ShipmentLine, { stage, view = "current", l
   return e2e.stages[stage].source === "actual" && (!late || (e2e.stages[stage].delayDays ?? 0) > 0);
 }
 
-/** Lines in each E2E stage and lines that already passed it, with the late ones, for the animated flow. */
-export function summarizeE2eStages(lines: ShipmentLine[]) {
+/** Whether a line has the requested total deadline status. Cancelled lines never pass a deadline filter. */
+function matchesDeadline(line: ShipmentLine, deadline: E2eDeadlineStatus | undefined): boolean {
+  return !deadline || (inFlow(line) && e2eDeadlineStatus(lineE2e(line)) === deadline);
+}
+
+const lineStatus = (line: ShipmentLine) => (line.calculated as { status: string }).status;
+
+/** Exact item quantity and line count per key, every key present in the given order. */
+function quantityTotals<Key extends string>(keys: readonly Key[], lines: ShipmentLine[], keyOf: (line: ShipmentLine) => Key) {
+  const totals = new Map(keys.map(key => [key, { quantity: 0n, lines: 0 }]));
+  for (const line of lines) {
+    const part = totals.get(keyOf(line))!;
+    part.quantity += scaledQuantity(line.quantity);
+    part.lines += 1;
+  }
+  return Object.fromEntries(keys.map(key => {
+    const part = totals.get(key)!;
+    return [key, { quantity: decimalQuantity(part.quantity), lines: part.lines }];
+  })) as Record<Key, { quantity: string; lines: number }>;
+}
+
+/**
+ * Lines in each E2E stage and lines that already passed it, with the late ones, for the animated flow,
+ * and the item quantities by line status and by total deadline status. The two charts cross-filter:
+ * each one ignores its own filter (status or deadline) and follows the other; the stages follow both.
+ */
+export function summarizeE2eStages(lines: ShipmentLine[],
+  { status, deadline }: Pick<ShipmentLineFilters, "status" | "deadline"> = {}) {
   const flow = lines.filter(inFlow);
+  const ofStatus = (line: ShipmentLine) => !status || lineStatus(line) === status;
+  const ofDeadline = (line: ShipmentLine) => matchesDeadline(line, deadline);
+  const selected = flow.filter(line => ofStatus(line) && ofDeadline(line));
   const stages = Object.fromEntries(E2E_STAGE_CODES.map(stage => {
     const count = (view: "current" | "reached", late?: "true") =>
-      flow.filter(line => matchesE2eStage(line, { situation: "all", stage, view, late })).length;
+      selected.filter(line => matchesE2eStage(line, { situation: "all", stage, view, late })).length;
     return [stage, { current: count("current"), currentLate: count("current", "true"),
       reached: count("reached"), reachedLate: count("reached", "true") }];
   })) as Record<E2eStageCode, { current: number; currentLate: number; reached: number; reachedLate: number }>;
-  const delivered = flow.filter(line => { const e2e = lineE2e(line); return e2e !== null && e2e.currentStage === null; }).length;
-  const emptyParts = <Key extends string>(keys: readonly Key[]) => Object.fromEntries(keys.map(key =>
-    [key, { quantity: 0n, lines: 0 }])) as Record<Key, { quantity: bigint; lines: number }>;
-  const byStatus = emptyParts(overviewStatuses);
-  const byDeadline = emptyParts(deadlineStatuses);
-  for (const line of flow) {
-    const quantity = scaledQuantity(line.quantity);
-    const status = (line.calculated as { status: keyof typeof byStatus }).status;
-    byStatus[status].quantity += quantity;
-    byStatus[status].lines += 1;
-    const deadline = e2eDeadlineStatus(lineE2e(line));
-    byDeadline[deadline].quantity += quantity;
-    byDeadline[deadline].lines += 1;
-  }
-  const serialize = <Key extends string>(parts: Record<Key, { quantity: bigint; lines: number }>) => {
-    const result = Object.fromEntries(Object.entries(parts).map(([key, part]) => [key,
-      { quantity: decimalQuantity((part as { quantity: bigint }).quantity), lines: (part as { lines: number }).lines }]));
-    return result as Record<Key, { quantity: string; lines: number }>;
-  };
-  return { totalCount: flow.length, delivered, stages,
-    overview: { byStatus: serialize(byStatus), byDeadline: serialize(byDeadline) } };
+  const delivered = selected.filter(line => { const e2e = lineE2e(line); return e2e !== null && e2e.currentStage === null; }).length;
+  return { totalCount: selected.length, delivered, stages, overview: {
+    byStatus: quantityTotals(overviewStatuses, flow.filter(ofDeadline), line => lineStatus(line) as typeof overviewStatuses[number]),
+    byDeadline: quantityTotals(deadlineStatuses, flow.filter(ofStatus), line => e2eDeadlineStatus(lineE2e(line))),
+  } };
 }
 
 async function queryLineRows(pool: Pool, scopes: readonly string[], filters: ShipmentLineFilters,
@@ -208,24 +223,28 @@ async function queryLineRows(pool: Pool, scopes: readonly string[], filters: Shi
 
 /**
  * Product lines (one per active allocation plus the balance without IP) with their IP data.
- * The E2E stage filters depend on the calculation, so with them every line is calculated
- * before paging.
+ * The E2E stage and deadline filters depend on the calculation, so with them every line is
+ * calculated before paging.
  */
 export async function queryShipmentLines(pool: Pool, scopes: readonly string[], filters: ShipmentLineFilters,
   limit: number, offset: number) {
-  if (!filters.stage && !filters.late) {
+  if (!filters.stage && !filters.late && !filters.deadline) {
     const { totalCount, rows } = await queryLineRows(pool, scopes, filters, limit, offset);
     return { totalCount, lines: await calculateLines(pool, rows) };
   }
   const { rows } = await queryLineRows(pool, scopes, filters, null, 0);
-  const lines = (await calculateLines(pool, rows)).filter(line => matchesE2eStage(line, filters));
+  const lines = (await calculateLines(pool, rows))
+    .filter(line => matchesE2eStage(line, filters) && matchesDeadline(line, filters.deadline));
   return { totalCount: lines.length, lines: lines.slice(offset, offset + limit) };
 }
 
-/** Every line matching the filters, summarized by E2E stage. */
+/**
+ * Every line matching the filters, summarized by E2E stage. The status chart ignores the status
+ * filter, so the database returns every status and the summary applies it to the calculated status.
+ */
 export async function queryE2eStageSummary(pool: Pool, scopes: readonly string[], filters: ShipmentLineFilters) {
-  const { rows } = await queryLineRows(pool, scopes, filters, null, 0);
-  return summarizeE2eStages(await calculateLines(pool, rows));
+  const { rows } = await queryLineRows(pool, scopes, { ...filters, status: undefined }, null, 0);
+  return summarizeE2eStages(await calculateLines(pool, rows), filters);
 }
 
 async function calculateLines(pool: Pool, rows: Row[]) {
@@ -258,7 +277,7 @@ const optionalText = (max: number) => z.string().trim().max(max).optional();
 const lineFilterQuery = z.object({
   importer: optionalText(120), purchaseOrder: optionalText(80), ipNumber: optionalText(80), product: optionalText(200),
   status: z.enum(shipmentLineStatuses).optional(), etaFrom: z.iso.date().optional(), etaTo: z.iso.date().optional(),
-  situation: z.enum(["open", "all"]).default("open"),
+  situation: z.enum(["open", "all"]).default("open"), deadline: z.enum(deadlineStatuses).optional(),
 });
 export const shipmentLineQuery = lineFilterQuery.extend({
   stage: z.enum(E2E_STAGE_CODES).optional(), view: z.enum(["current", "reached"]).optional(),
