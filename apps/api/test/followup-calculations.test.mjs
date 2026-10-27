@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { calculateE2e, calculateFollowup, calculateProcess, checkShipmentDates, DEFAULT_E2E_TARGET_SET, e2eTargetSetFor,
-  e2eDeadlineStatus, invoiceTotals } from "../dist/followup-calculations.js";
+  e2eDeadlineStatus, e2eDelayRange, E2E_DELAY_RANGES, invoiceTotals } from "../dist/followup-calculations.js";
+
+test("classifies the total delay in the Power BI delay ranges", () => {
+  assert.deepEqual([...E2E_DELAY_RANGES], ["inAdvance", "onTime", "upTo30", "days30To45", "days45To60", "days60To90",
+    "days90To120", "days120Plus", "noData"]);
+  const range = days => e2eDelayRange({ totalDelayDays: days });
+  assert.equal(e2eDelayRange(null), "noData");
+  assert.equal(range(null), "noData");
+  assert.deepEqual([-1, 0, 1, 30].map(range), ["inAdvance", "onTime", "upTo30", "upTo30"]);
+  assert.deepEqual([31, 45, 46, 60, 61, 90].map(range), ["days30To45", "days30To45", "days45To60", "days45To60",
+    "days60To90", "days60To90"]);
+  assert.deepEqual([91, 120, 121, 400].map(range), ["days90To120", "days90To120", "days120Plus", "days120Plus"]);
+});
 
 test("classifies the End to End total deadline status", () => {
   assert.equal(e2eDeadlineStatus(null), "noData");

@@ -226,6 +226,57 @@ test("product lines filter by the total deadline status after the calculation", 
   assert.equal(invalid.statusCode, 400, invalid.body);
 });
 
+test("product lines filter by the total delay range after the calculation", async t => {
+  const { app, queries } = await linesApp(t, stageRows, stageDocuments);
+  const get = async query => {
+    const response = await app.inject({ method: "GET", url: `/api/v1/purchase-order-lines?situation=all&${query}` });
+    assert.equal(response.statusCode, 200, response.body);
+    return response.json();
+  };
+  // IP-SEA is 5 days late in total and IP-DONE 1 day; the balance has no total delay; the cancelled line never shows.
+  assert.deepEqual(ips(await get("delayRange=upTo30")), ["IP-SEA", "IP-DONE"]);
+  assert.deepEqual(ips(await get("delayRange=noData")), ["saldo"]);
+  assert.deepEqual(ips(await get("delayRange=inAdvance")), []);
+  assert.deepEqual(ips(await get("delayRange=upTo30&deadline=late&stage=T4")), ["IP-SEA"]);
+  assert.deepEqual(queries.filter(query => query.sql.includes("line_kind")).at(-1).params.slice(-2), [null, 0]);
+  const invalid = await app.inject({ method: "GET", url: "/api/v1/purchase-order-lines?delayRange=late" });
+  assert.equal(invalid.statusCode, 400, invalid.body);
+});
+
+test("the delay range chart cross-filters with the status and deadline charts", async t => {
+  const { app } = await linesApp(t, stageRows, stageDocuments);
+  const get = async query => {
+    const response = await app.inject({ method: "GET", url: `/api/v1/purchase-order-lines/e2e-stages?situation=all&${query}` });
+    assert.equal(response.statusCode, 200, response.body);
+    return response.json();
+  };
+  const all = await get("");
+  assert.deepEqual(Object.keys(all.overview.byDelayRange), ["inAdvance", "onTime", "upTo30", "days30To45", "days45To60",
+    "days60To90", "days90To120", "days120Plus", "noData"]);
+  assert.deepEqual(all.overview.byDelayRange.upTo30, { quantity: "2", lines: 2 });
+  assert.deepEqual(all.overview.byDelayRange.noData, { quantity: "5", lines: 1 });
+  assert.deepEqual(all.overview.byDelayRange.inAdvance, { quantity: "0", lines: 0 });
+
+  const upTo30 = await get("delayRange=upTo30");
+  assert.deepEqual(upTo30.overview.byDelayRange, all.overview.byDelayRange);
+  assert.deepEqual(upTo30.overview.byStatus["A DISTRIBUIR"], { quantity: "0", lines: 0 });
+  assert.deepEqual(upTo30.overview.byStatus["AGUARDANDO CHEGADA"], { quantity: "1", lines: 1 });
+  assert.deepEqual(upTo30.overview.byDeadline.late, { quantity: "2", lines: 2 });
+  assert.deepEqual([upTo30.totalCount, upTo30.delivered], [2, 1]);
+
+  const balance = await get("status=A%20DISTRIBUIR");
+  assert.deepEqual(balance.overview.byDelayRange.noData, { quantity: "5", lines: 1 });
+  assert.deepEqual(balance.overview.byDelayRange.upTo30, { quantity: "0", lines: 0 });
+
+  const late = await get("deadline=late&delayRange=noData");
+  assert.deepEqual(late.overview.byDelayRange.upTo30, { quantity: "2", lines: 2 });
+  assert.deepEqual(late.overview.byDeadline.noData, { quantity: "5", lines: 1 });
+  assert.equal(late.totalCount, 0);
+
+  const invalid = await app.inject({ method: "GET", url: "/api/v1/purchase-order-lines/e2e-stages?delayRange=late" });
+  assert.equal(invalid.statusCode, 400, invalid.body);
+});
+
 test("each summary chart ignores its own filter and follows the other one", async t => {
   const decimalRow = { ...stageRows[0], line_id: "00000000-0000-4000-8000-000000000064", line_quantity: "0.20000000" };
   const summaryRows = [{ ...stageRows[0], line_quantity: "0.10000000" }, ...stageRows.slice(1), decimalRow];
