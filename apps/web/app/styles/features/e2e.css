@@ -187,6 +187,7 @@
 .e2e-lines-table .is-selected { background: var(--e2e-side-tint); }
 .e2e-lines-table .e2e-stage-head.is-selected { background: var(--e2e-side); color: var(--e2e-side-on); }
 .e2e-targets-form { align-items: end; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.e2e-targets-form :is(input, textarea) { min-width: 0; width: 100%; }
 .e2e-targets-form label { color: var(--color-text-muted); display: grid; font-size: var(--fs-md); font-weight: 700; gap: 6px; }
 .e2e-targets-form .e2e-targets-reason { grid-column: 1 / -1; }
 .e2e-targets-form .button-row { grid-column: 1 / -1; }

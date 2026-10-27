@@ -25,7 +25,8 @@
 .po-header-fields > label { align-content: start; display: grid; gap: 6px; }
 .po-header-fields .po-field-hint { color: var(--color-text-muted); font-size: var(--fs-xs); font-weight: 400; line-height: 1.25; }
 .operational-search { align-items: end; display: flex; flex-wrap: wrap; gap: 12px; }
-.operational-search label { min-width: min(100%, 240px); }
+.operational-search input, .allocation-search-row input { min-width: 0; width: 100%; }
+.operational-search label { color: var(--color-text-muted); display: grid; font-size: var(--fs-md); font-weight: 700; gap: 6px; min-width: min(100%, 240px); }
 
 /* PO entry */
 .po-entry-section { display: grid; gap: 20px; }
@@ -135,7 +136,8 @@
 .followup-grid dd { margin: 4px 0 0; overflow-wrap: anywhere; }
 .followup-document { border-bottom: 1px solid var(--color-border); padding: 10px 0; }
 .shipment-date-form { align-items: end; display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
-.shipment-date-form label { color: var(--color-text-secondary); display: grid; font-size: var(--fs-sm); gap: 5px; max-width: 260px; }
+.shipment-date-form input { min-width: 0; width: 100%; }
+.shipment-date-form label { color: var(--color-text-secondary); display: grid; font-size: var(--fs-sm); font-weight: 700; gap: 5px; max-width: 260px; }
 .inline-ip-form { background: var(--color-surface-muted); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 16px; }
 .inline-ip-form h5 { margin: 0; }
 .po-linked-ip-summary > summary { color: var(--color-text-strong); }
@@ -180,7 +182,7 @@
 .allocation-step-title h4 { margin: 2px 0 0; }
 .allocation-po-search { display: grid; gap: 14px; max-width: var(--width-narrow); }
 .allocation-search-row { align-items: end; display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
-.allocation-search-row label { max-width: 520px; }
+.allocation-search-row label { color: var(--color-text-muted); display: grid; font-size: var(--fs-md); font-weight: 700; gap: 6px; max-width: 520px; }
 .allocation-search-row .button { display: none; }
 .allocation-po-choices { max-width: 520px; }
 .allocation-po-choices h5 { color: var(--color-text-secondary); font-size: var(--fs-sm); margin: 0; }

@@ -22,7 +22,7 @@
 
 /* Selectable values */
 .entity-values-card { display: grid; gap: 12px; max-width: var(--width-form); }
-.entity-values-card label { color: var(--color-text-secondary); display: grid; font-size: var(--fs-sm); gap: 7px; max-width: 420px; }
+.entity-values-card label { color: var(--color-text-secondary); display: grid; font-size: var(--fs-sm); font-weight: 700; gap: 7px; max-width: 420px; }
 .entity-values-card label.supplier-search { max-width: var(--width-narrow); }
 .entity-values-card h3 { color: var(--color-text-muted); font-size: var(--fs-md); margin: 12px 0 0; }
 .entity-values-card > .muted { margin: 0; }
@@ -44,6 +44,7 @@
 .supplier-catalog-details { align-items: center; display: grid; gap: 7px 14px; grid-template-columns: minmax(100px, auto) minmax(0, 1fr) auto; min-width: 0; }
 .supplier-catalog-details > span:nth-child(2) { overflow-wrap: anywhere; }
 .supplier-edit-form { display: grid; gap: 12px; grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); min-width: 0; }
+.supplier-edit-form input { min-width: 0; width: 100%; }
 .supplier-edit-form > label { max-width: none; }
 .supplier-edit-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; grid-column: 1 / -1; }
 .supplier-search input { width: 100%; }
@@ -87,7 +88,8 @@
 .ncm-attribute-technical { color: var(--color-text-muted); font-size: var(--fs-xs); margin-top: 10px; }
 .ncm-attribute-technical code { color: var(--color-text-muted); white-space: normal; }
 .ncm-tax-form { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-top: 12px; }
-.ncm-tax-form label { display: grid; font-size: var(--fs-sm); gap: 4px; }
+.ncm-tax-form input { min-width: 0; width: 100%; }
+.ncm-tax-form label { display: grid; font-size: var(--fs-sm); font-weight: 700; gap: 4px; }
 .ncm-tax-form button { align-self: end; }
 .ncm-tax-result { margin-top: 12px; }
 .ncm-tax-list > li { border-top: 1px solid var(--color-border); padding-top: 10px; }
