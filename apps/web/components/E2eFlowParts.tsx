@@ -3,7 +3,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import { E2eIconName, E2eSide, railCenter } from "../lib/e2e-flow";
 
-export type E2eFlowIconName = E2eIconName | "pause" | "play" | "prev" | "next";
+export type E2eFlowIconName = E2eIconName | "pause" | "play" | "prev" | "next" | "chart" | "filter";
 
 const icons: Record<E2eFlowIconName, ReactNode> = {
   plan: <><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 3h6v3H9z" /><path d="M9 12h6M9 16h4" /></>,
@@ -17,6 +17,8 @@ const icons: Record<E2eFlowIconName, ReactNode> = {
   play: <path d="M7 4l13 8-13 8z" />,
   prev: <path d="M15 18l-6-6 6-6" />,
   next: <path d="M9 18l6-6-6-6" />,
+  chart: <><path d="M21 12a9 9 0 1 1-9-9v9z" /><path d="M15 3.5A9 9 0 0 1 20.5 9H15z" /></>,
+  filter: <path d="M3 5h18l-7 8v6l-4 2v-8z" />,
 };
 
 export function Icon({ name, size = 20 }: { name: E2eFlowIconName; size?: number }) {

@@ -12,7 +12,7 @@ import { activeProductLineFilterCount, e2eSummaryQuery, emptyProductLineFilters,
 import E2eCollapsible from "./E2eCollapsible";
 import { E2eFlowRail, Icon, useE2eStepper } from "./E2eFlowParts";
 import { E2eModelDetails, E2eModelSummary } from "./E2eModelPanels";
-import E2eOverviewCharts, { type E2eOverview, type E2eOverviewStatus } from "./E2eOverviewCharts";
+import E2eOverviewCharts, { E2eOverviewMini, type E2eOverview, type E2eOverviewStatus } from "./E2eOverviewCharts";
 import E2eTabs from "./E2eTabs";
 import { getMessages, useI18n } from "./I18nProvider";
 import PageHeader from "./PageHeader";
@@ -221,13 +221,14 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
     <E2eModelDetails flow={model} current={current} mts={mts} air={air} />
 
     {!summaryError && summary?.query !== summaryQuery && <p role="status">{t.overview.loading}</p>}
-    {counts?.overview && <E2eCollapsible title={t.overview.label} storageKey="erp-comex-e2e-charts-collapsed"
-      activeCount={(applied.status ? 1 : 0) + (deadline ? 1 : 0)}>
+    {counts?.overview && <E2eCollapsible title={t.overview.label} storageKey="erp-comex-e2e-charts-collapsed" icon="chart"
+      activeCount={(applied.status ? 1 : 0) + (deadline ? 1 : 0)}
+      collapsedSummary={<E2eOverviewMini overview={counts.overview} locale={locale} />}>
       <E2eOverviewCharts overview={counts.overview} locale={locale} selectedStatus={applied.status}
         selectedDeadline={deadline} onStatusSelect={filterByStatus} onDeadlineSelect={selectDeadline} />
     </E2eCollapsible>}
 
-    <E2eCollapsible className="card" title={t.panels.filtersTitle} storageKey="erp-comex-e2e-filters-collapsed"
+    <E2eCollapsible className="card" title={t.panels.filtersTitle} storageKey="erp-comex-e2e-filters-collapsed" icon="filter"
       activeCount={activeProductLineFilterCount(applied)}>
       <form className="portfolio-filter product-lines-filter" onSubmit={filter}>
         <label>{p.poNumber}<input value={draft.purchaseOrder} onChange={event => setDraft({ ...draft, purchaseOrder: event.target.value })} /></label>

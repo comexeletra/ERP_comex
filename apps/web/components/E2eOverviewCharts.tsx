@@ -62,6 +62,21 @@ function entriesOf<Key extends string>(keys: readonly Key[], parts: Record<Key, 
   return keys.map((key, index) => ({ key, label: label(key), color: color(key, index), part: parts[key], share: shares[index] }));
 }
 
+/** Picture of the status chart kept while the charts are collapsed: a mini bar and the total in items. */
+export function E2eOverviewMini({ overview, locale }: { overview: E2eOverview; locale: string }) {
+  const { m } = useI18n();
+  const o = m.e2eLines.overview;
+  const entries = entriesOf(statusKeys, overview.byStatus, locale, key => key, (_, index) => statusColors[index]);
+  const total = overviewTotal(statusKeys.map(key => overview.byStatus[key].quantity), locale);
+  return <span className="e2e-overview-mini">
+    <span className="e2e-distribution e2e-distribution-mini" aria-hidden="true">
+      {entries.filter(entry => entry.share.value > 0).map(entry => <span key={entry.key} className="e2e-distribution-segment"
+        style={{ background: `var(${entry.color})`, flexGrow: entry.share.value }} />)}
+    </span>
+    <span>{o.chartsHidden(total)}</span>
+  </span>;
+}
+
 /**
  * Item quantities of the filtered lines by line status (distribution bar) and by total deadline
  * status (compact pie). The two cross-filter: clicking a category filters the other chart, the

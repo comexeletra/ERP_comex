@@ -1574,6 +1574,7 @@ export const ptBR = {
       filterByDeadline: (label: string) => `Filtrar por ${label}`,
       totalItems: (total: string) => `${total} itens`,
       clearSelection: "Limpar seleção",
+      chartsHidden: (total: string) => `2 gráficos ocultos · ${total} itens`,
       chartLabel: (title: string, total: string) => `${title}: ${total} itens no total`,
       sliceTitle: (quantity: string, lines: number) => `${quantity} itens em ${lines} linhas`,
     },

@@ -280,4 +280,5 @@ As chaves da primeira entrega continuam valendo. Chave que ficar sem uso sai dos
   - Fechado, o bloco mostra só o título, o botão e, se houver, um selo com quantos filtros continuam aplicados: seleções dos gráficos ou campos do formulário.
   - A escolha de cada pessoa fica no `localStorage` do navegador (`erp-comex-e2e-charts-collapsed` e `erp-comex-e2e-filters-collapsed`). Ela é lida com `useSyncExternalStore`, então a renderização do servidor sai aberta, sem divergência na hidratação. Com o armazenamento bloqueado, a escolha vale só para a página aberta.
   - O resumo continua sendo carregado com o bloco fechado, porque os cards das etapas dependem dele.
+  - **Identificação (pedido do usuário):** cada bloco tem um ícone (gráfico ou funil) ao lado do título. Minimizado, o bloco dos gráficos vira uma faixa no formato de card com o ícone, o título, uma minibarra nas cores dos status (só ilustrativa, `aria-hidden`), o texto "2 gráficos ocultos · total em itens", o selo de filtros ativos e o botão "Mostrar".
 - **Pendente (A12):** conferência com login: clique nos dois gráficos, limpeza da seleção, exportação com prazo, larguras, temas e idiomas.

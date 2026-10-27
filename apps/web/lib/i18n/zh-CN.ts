@@ -1571,6 +1571,7 @@ export const zhCN: Messages = {
       filterByDeadline: (label: string) => `按${label}筛选`,
       totalItems: (total: string) => `共 ${total} 件`,
       clearSelection: "清除选择",
+      chartsHidden: (total: string) => `已收起 2 个图表 · 共 ${total} 件`,
       chartLabel: (title: string, total: string) => `${title}：共 ${total} 件`,
       sliceTitle: (quantity: string, lines: number) => `${lines} 行共 ${quantity} 件`,
     },

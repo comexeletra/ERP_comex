@@ -1571,6 +1571,7 @@ export const en: Messages = {
       filterByDeadline: (label: string) => `Filter by ${label}`,
       totalItems: (total: string) => `${total} items`,
       clearSelection: "Clear selection",
+      chartsHidden: (total: string) => `2 charts hidden · ${total} items`,
       chartLabel: (title: string, total: string) => `${title}: ${total} items in total`,
       sliceTitle: (quantity: string, lines: number) => `${quantity} items in ${lines} lines`,
     },

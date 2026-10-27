@@ -102,6 +102,8 @@
 
 /* Blocks the viewer can hide (overview charts and table filters) */
 .e2e-collapsible { display: grid; gap: 12px; }
+.e2e-collapsible.is-collapsed:not(.card) { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 12px 20px; }
+.e2e-collapsible-icon { align-items: center; background: var(--color-primary-soft); border-radius: var(--radius-sm); color: var(--color-primary-strong); display: inline-flex; flex: none; height: 28px; justify-content: center; width: 28px; }
 .e2e-collapsible-head { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 10px; }
 .e2e-collapsible-head h2 { font-size: var(--fs-xs); letter-spacing: .055em; margin: 0; }
 .e2e-collapsible-toggle { align-items: center; background: transparent; border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text-secondary); cursor: pointer; display: inline-flex; font: inherit; font-size: var(--fs-sm); font-weight: 700; gap: 4px; margin-left: auto; padding: 4px 10px 4px 6px; }
@@ -120,6 +122,9 @@
 .e2e-overview .is-dimmed { opacity: .35; }
 .e2e-distribution { border-radius: var(--radius-sm); display: flex; gap: 2px; height: 14px; overflow: hidden; }
 .e2e-distribution-segment { cursor: pointer; flex-basis: 0; min-width: 3px; transition: opacity .2s; }
+.e2e-overview-mini { align-items: center; color: var(--color-text-muted); display: inline-flex; flex-wrap: wrap; font-size: var(--fs-sm); gap: 6px 10px; }
+.e2e-distribution.e2e-distribution-mini { height: 8px; width: 120px; }
+.e2e-distribution-mini .e2e-distribution-segment { cursor: default; }
 .e2e-chart-legend { display: grid; gap: 2px 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); list-style: none; margin: 0; padding: 0; }
 .e2e-chart-legend.e2e-chart-legend-stacked { grid-template-columns: minmax(0, 1fr); max-width: 420px; }
 .e2e-chart-legend li { min-width: 0; }
