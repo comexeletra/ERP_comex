@@ -1767,6 +1767,7 @@ export const en: Messages = {
     statusDone: "Done",
     statusNext: "Next",
     product: "Product",
+    allOption: "All",
     notMtsOption: (days: number) => `Non-MTS · ${days} d`,
     mtsOption: (days: number) => `MTS · ${days} d`,
     modal: "Transport mode",

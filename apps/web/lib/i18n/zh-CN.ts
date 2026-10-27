@@ -1767,6 +1767,7 @@ export const zhCN: Messages = {
     statusDone: "已完成",
     statusNext: "下一步",
     product: "产品",
+    allOption: "全部",
     notMtsOption: (days: number) => `非 MTS · ${days} 天`,
     mtsOption: (days: number) => `MTS · ${days} 天`,
     modal: "运输方式",

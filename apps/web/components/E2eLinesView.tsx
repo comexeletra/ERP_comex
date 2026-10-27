@@ -38,7 +38,8 @@ const stageSide = (code: E2eStageCode) => E2E_STAGE_CODES.indexOf(code) < 3 ? "s
  * The End to End screen: the reference model of the six stages above the spreadsheet with one row
  * per PO product line and IP, T0–T5 and the totals. Selecting a stage (or letting the animation run)
  * shows it on the model and keeps only the lines now in it, or, in the accumulated view, those that
- * already completed it. The MTS and transport toggles change only the model.
+ * already completed it. The product and transport toggles filter the lines, the cards and the charts, and
+ * set the scenario of the model; the charts show the lines of the table.
  */
 export default function E2eLinesView({ initialQuery }: { initialQuery: string }) {
   const { m, locale } = useI18n();
@@ -60,23 +61,28 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   const [late, setLate] = useState(initial.stage.late);
   const [deadline, setDeadline] = useState(initial.stage.deadline);
   const [delayRange, setDelayRange] = useState(initial.stage.delayRange);
-  const [mts, setMts] = useState(false);
-  const [air, setAir] = useState(false);
+  // The product and transport toggles filter the lines; "All" keeps the default scenario of the model.
+  const [demandType, setDemandType] = useState(initial.stage.demandType);
+  const [modal, setModal] = useState(initial.stage.modal);
+  const mts = demandType === "mts";
+  const air = modal === "air";
   const model = buildE2eFlow(DEFAULT_E2E_FLOW_CONFIG, { mts, air }, m);
   const stage: E2eStageFilter = { stage: current === null ? "" : E2E_STAGE_CODES[current], view, late, deadline,
-    delayRange };
+    delayRange, demandType, modal };
   // The page belongs to one stage filter: a new stage (also from the animation) starts on page 1.
-  const stageKey = `${stage.stage}|${view}|${late}|${deadline}|${delayRange}`;
+  const stageKey = `${stage.stage}|${view}|${late}|${deadline}|${delayRange}|${demandType}|${modal}`;
   const [paging, setPaging] = useState({ key: stageKey, page: initial.page });
   const page = paging.key === stageKey ? paging.page : 1;
   // Each stage loaded stays while the filters do not change, so the animation does not reload it.
   const [cache, setCache] = useState<Record<string, LinesEntry>>({});
-  const [summary, setSummary] = useState<{ query: string; data?: StageSummary; error?: string }>();
-  const [refresh, setRefresh] = useState(0);
+  // The same for the summaries: the charts follow the stage, and the animation does not reload them.
+  const [summaries, setSummaries] = useState<Record<string, { data?: StageSummary; error?: string }>>({});
+  const [lastSummary, setLastSummary] = useState<StageSummary>();
   const { exporting, exportStatus, exportError, downloadExcel } = useProductLineExport("end-to-end");
   const query = productLineQuery(applied, page, pageSize, stage).toString();
-  const summaryQuery = e2eSummaryQuery(applied, deadline, delayRange).toString();
+  const summaryQuery = e2eSummaryQuery(applied, stage).toString();
   const cached = query in cache;
+  const summaryCached = summaryQuery in summaries;
 
   useEffect(() => {
     if (cached) return undefined;
@@ -92,27 +98,33 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   }, [query, cached]);
 
   useEffect(() => {
+    if (summaryCached) return undefined;
     const controller = new AbortController();
     apiFetch(`/api/v1/purchase-order-lines/e2e-stages?${summaryQuery}`, { signal: controller.signal })
       .then(result => readApiJson<StageSummary>(result))
-      .then(data => { if (!controller.signal.aborted) setSummary({ query: summaryQuery, data }); })
+      .then(data => {
+        if (!controller.signal.aborted) { setSummaries(entries => ({ ...entries, [summaryQuery]: { data } })); setLastSummary(data); }
+      })
       .catch(() => {
-        if (!controller.signal.aborted) setSummary({ query: summaryQuery, error: getMessages().e2eLines.flow.summaryFailed });
+        if (!controller.signal.aborted) setSummaries(entries => ({ ...entries,
+          [summaryQuery]: { error: getMessages().e2eLines.flow.summaryFailed } }));
       });
     return () => controller.abort();
-  }, [summaryQuery, refresh]);
+  }, [summaryQuery, summaryCached]);
 
   const entry = cache[query];
   const result = entry?.data;
   const error = entry?.error ?? "";
-  const counts = summary?.query === summaryQuery ? summary.data : undefined;
-  const summaryError = summary?.query === summaryQuery ? summary.error : undefined;
+  const summaryEntry = summaries[summaryQuery];
+  // While a new stage loads, the last summary stays on screen instead of emptying the cards and charts.
+  const counts = summaryEntry ? summaryEntry.data : lastSummary;
+  const summaryError = summaryEntry?.error;
 
   function syncUrl(filters: ProductLineFilters, nextStage: E2eStageFilter, nextPage: number) {
     window.history.replaceState(null, "", `/end-to-end?${productLineQuery(filters, nextPage, pageSize, nextStage)}`);
   }
   function applyFilters(filters: ProductLineFilters, nextStage = stage) {
-    setApplied(filters); setCache({}); setRefresh(value => value + 1);
+    setApplied(filters); setCache({}); setSummaries({});
     setPaging({ key: stageKey, page: 1 }); syncUrl(filters, nextStage, 1);
   }
   function filter(event: FormEvent<HTMLFormElement>) { event.preventDefault(); applyFilters(draft); }
@@ -124,6 +136,12 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   function selectDeadline(selected: E2eDeadlineStatus) {
     const next = deadline === selected ? "" : selected;
     setDeadline(next); syncUrl(applied, { ...stage, deadline: next }, 1);
+  }
+  function changeDemandType(next: E2eStageFilter["demandType"]) {
+    setDemandType(next); syncUrl(applied, { ...stage, demandType: next }, 1);
+  }
+  function changeModal(next: E2eStageFilter["modal"]) {
+    setModal(next); syncUrl(applied, { ...stage, modal: next }, 1);
   }
   function selectDelayRange(selected: E2eDelayRange) {
     const next = delayRange === selected ? "" : selected;
@@ -141,7 +159,7 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   const days = (value: number | null | undefined) => value === null || value === undefined ? "—" : String(value);
   const delay = (value: number | null | undefined) => value === null || value === undefined ? <span>—</span>
     : <span className={`e2e-deviation${value > 0 ? " is-late" : " is-ok"}`}>{value > 0 ? `+${value}` : value}</span>;
-  const modal = (line: E2eLine) => line.calculated.e2e?.air === true ? m.e2eAnalysis.air
+  const modalLabel = (line: E2eLine) => line.calculated.e2e?.air === true ? m.e2eAnalysis.air
     : line.calculated.e2e?.air === false ? m.e2eAnalysis.sea : line.process?.transportMode ?? "—";
   const selected = (code: E2eStageCode) => code === stage.stage ? " is-selected" : "";
   const accumulatedStage = view === "reached" && stage.stage ? stage.stage : null;
@@ -157,15 +175,18 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
       <div className="e2e-group">
         <span className="e2e-label" id="e2e-product-label">{e.product}</span>
         <div className="e2e-segmented" role="group" aria-labelledby="e2e-product-label">
-          <button type="button" aria-pressed={!mts} onClick={() => setMts(false)}>{e.notMtsOption(DEFAULT_E2E_FLOW_CONFIG.prodNaoMts)}</button>
-          <button type="button" aria-pressed={mts} onClick={() => setMts(true)}>{e.mtsOption(DEFAULT_E2E_FLOW_CONFIG.prodMts)}</button>
+          <button type="button" aria-pressed={demandType === ""} onClick={() => changeDemandType("")}>{e.allOption}</button>
+          <button type="button" aria-pressed={demandType === "notMts"} onClick={() => changeDemandType("notMts")}>
+            {e.notMtsOption(DEFAULT_E2E_FLOW_CONFIG.prodNaoMts)}</button>
+          <button type="button" aria-pressed={mts} onClick={() => changeDemandType("mts")}>{e.mtsOption(DEFAULT_E2E_FLOW_CONFIG.prodMts)}</button>
         </div>
       </div>
       <div className="e2e-group">
         <span className="e2e-label" id="e2e-modal-label">{e.modal}</span>
         <div className="e2e-segmented" role="group" aria-labelledby="e2e-modal-label">
-          <button type="button" aria-pressed={!air} onClick={() => setAir(false)}>{e.seaOption(DEFAULT_E2E_FLOW_CONFIG.maritimo)}</button>
-          <button type="button" aria-pressed={air} onClick={() => setAir(true)}>{e.airOption(DEFAULT_E2E_FLOW_CONFIG.aereo)}</button>
+          <button type="button" aria-pressed={modal === ""} onClick={() => changeModal("")}>{e.allOption}</button>
+          <button type="button" aria-pressed={modal === "sea"} onClick={() => changeModal("sea")}>{e.seaOption(DEFAULT_E2E_FLOW_CONFIG.maritimo)}</button>
+          <button type="button" aria-pressed={air} onClick={() => changeModal("air")}>{e.airOption(DEFAULT_E2E_FLOW_CONFIG.aereo)}</button>
         </div>
       </div>
       <div className="e2e-group">
@@ -227,7 +248,7 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
     </div>
     <E2eModelDetails flow={model} current={current} mts={mts} air={air} />
 
-    {!summaryError && summary?.query !== summaryQuery && <p role="status">{t.overview.loading}</p>}
+    {!counts && !summaryError && <p role="status">{t.overview.loading}</p>}
     {counts?.overview && <E2eCollapsible title={t.overview.label} storageKey="erp-comex-e2e-charts-collapsed" icon="chart"
       activeCount={(applied.status ? 1 : 0) + (deadline ? 1 : 0) + (delayRange ? 1 : 0)}
       collapsedSummary={<E2eOverviewMini overview={counts.overview} locale={locale} />}>
@@ -301,7 +322,7 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
               <td>{line.item.purpose ?? "—"}</td>
               <td><strong>{line.item.productCode}</strong></td>
               <td><span className="product-lines-description" title={line.item.description}>{line.item.description}</span></td>
-              <td>{modal(line)}</td><td>{line.item.group ?? "—"}</td>
+              <td>{modalLabel(line)}</td><td>{line.item.group ?? "—"}</td>
               <td>{formatNumber(line.quantity)} {line.item.unit ?? ""}</td>
               {accumulatedStage && <td className={`${stageSide(accumulatedStage)} is-selected`}>
                 {delay(e2e?.stages[accumulatedStage].accumulatedDelayDays)}</td>}

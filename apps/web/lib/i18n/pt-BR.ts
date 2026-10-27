@@ -1770,6 +1770,7 @@ export const ptBR = {
     statusDone: "Concluída",
     statusNext: "Próxima",
     product: "Produto",
+    allOption: "Todos",
     notMtsOption: (days: number) => `Não MTS · ${days} d`,
     mtsOption: (days: number) => `MTS · ${days} d`,
     modal: "Modal",

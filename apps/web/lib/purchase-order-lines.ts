@@ -43,21 +43,27 @@ export type E2eDelayRange = typeof e2eDelayRanges[number];
 /**
  * End to End stage filter: the lines now in the stage (`current`) or those that already have its
  * actual date (`reached`); `late` keeps the late ones, as the API defines for each view.
- * `deadline` and `delayRange` are the total deadline status and delay range chosen on the overview charts.
+ * `deadline` and `delayRange` are the total deadline status and delay range chosen on the overview charts;
+ * `demandType` and `modal` the scenario of the toolbar ("" for all).
  */
 export type E2eStageFilter = { stage: "" | E2eStageCode; view: "current" | "reached"; late: boolean;
-  deadline: "" | E2eDeadlineStatus; delayRange: "" | E2eDelayRange };
-export const emptyE2eStageFilter: E2eStageFilter = { stage: "", view: "current", late: false, deadline: "", delayRange: "" };
+  deadline: "" | E2eDeadlineStatus; delayRange: "" | E2eDelayRange; demandType: "" | "mts" | "notMts"; modal: "" | "sea" | "air" };
+export const emptyE2eStageFilter: E2eStageFilter = { stage: "", view: "current", late: false, deadline: "", delayRange: "",
+  demandType: "", modal: "" };
 
 export function parseE2eStageFilter(params: URLSearchParams): E2eStageFilter {
   const stage = params.get("stage") ?? "";
   const deadline = params.get("deadline") ?? "";
   const delayRange = params.get("delayRange") ?? "";
+  const demandType = params.get("demandType") ?? "";
+  const modal = params.get("modal") ?? "";
   return {
     stage: (e2eStageCodes as readonly string[]).includes(stage) ? stage as E2eStageCode : "",
     view: params.get("view") === "reached" ? "reached" : "current", late: params.get("late") === "true",
     deadline: (e2eDeadlineStatuses as readonly string[]).includes(deadline) ? deadline as E2eDeadlineStatus : "",
     delayRange: (e2eDelayRanges as readonly string[]).includes(delayRange) ? delayRange as E2eDelayRange : "",
+    demandType: demandType === "mts" || demandType === "notMts" ? demandType : "",
+    modal: modal === "sea" || modal === "air" ? modal : "",
   };
 }
 
@@ -68,6 +74,8 @@ export function e2eStageFilterBody(filter: E2eStageFilter): Record<string, strin
   if (filter.late) body.late = "true";
   if (filter.deadline) body.deadline = filter.deadline;
   if (filter.delayRange) body.delayRange = filter.delayRange;
+  if (filter.demandType) body.demandType = filter.demandType;
+  if (filter.modal) body.modal = filter.modal;
   return body;
 }
 
@@ -88,15 +96,11 @@ export function activeProductLineFilterCount(filters: ProductLineFilters): numbe
 }
 
 /**
- * Filters sent to GET /api/v1/purchase-order-lines/e2e-stages: the line filters and the deadline and
- * delay range chosen on the overview. The stage, the view and the late toggle filter only the table.
+ * Filters sent to GET /api/v1/purchase-order-lines/e2e-stages: the same as the table, without the
+ * page, so the charts show the lines of the table. The API keeps the stage cards for every stage.
  */
-export function e2eSummaryQuery(filters: ProductLineFilters, deadline: E2eStageFilter["deadline"],
-  delayRange: E2eStageFilter["delayRange"] = ""): URLSearchParams {
-  const query = new URLSearchParams(productLineFilterBody(filters));
-  if (deadline) query.set("deadline", deadline);
-  if (delayRange) query.set("delayRange", delayRange);
-  return query;
+export function e2eSummaryQuery(filters: ProductLineFilters, stage: E2eStageFilter): URLSearchParams {
+  return new URLSearchParams(productLineFilterBody(filters, stage));
 }
 
 export function productLineQuery(filters: ProductLineFilters, page: number, pageSize: number,
