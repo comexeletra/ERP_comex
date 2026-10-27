@@ -127,3 +127,13 @@ test("exports store the chosen screen columns with their context and reject inva
   assert.equal(legacy.statusCode, 202, legacy.body);
   assert.deepEqual(stored(), { number: "18751" });
 });
+
+test("the worker types the failure status once, so a failed job does not crash it", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const worker = await readFile(new URL("../src/worker.ts", import.meta.url), "utf8");
+  const failJob = worker.slice(worker.indexOf("async function failJob"), worker.indexOf("async function processJob"));
+  // `status` is varchar and the CASE compares with text: an untyped $3 fails with 42P08.
+  assert.match(failJob, /SET status = \$3::text,/u);
+  assert.match(failJob, /CASE WHEN \$3::text = 'queued'/u);
+  assert.match(failJob, /CASE WHEN \$3::text = 'failed'/u);
+});

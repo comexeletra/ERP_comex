@@ -92,11 +92,11 @@ async function failJob(job: ExportJob, error: unknown): Promise<void> {
   const delaySeconds = Math.min(60, 5 * (2 ** Math.max(0, job.attempt_count - 1)));
   await pool.query(
     `UPDATE jobs.export_job
-     SET status = $3,
-         available_at = CASE WHEN $3 = 'queued' THEN now() + make_interval(secs => $4) ELSE available_at END,
+     SET status = $3::text,
+         available_at = CASE WHEN $3::text = 'queued' THEN now() + make_interval(secs => $4) ELSE available_at END,
          error_code = $5,
-         completed_at = CASE WHEN $3 = 'failed' THEN now() ELSE NULL END,
-         expires_at = CASE WHEN $3 = 'failed' THEN now() + interval '7 days' ELSE NULL END,
+         completed_at = CASE WHEN $3::text = 'failed' THEN now() ELSE NULL END,
+         expires_at = CASE WHEN $3::text = 'failed' THEN now() + interval '7 days' ELSE NULL END,
          lease_owner = NULL, lease_expires_at = NULL
      WHERE id = $1 AND status = 'running' AND lease_owner = $2`,
     [job.id, workerId, terminal ? "failed" : "queued", delaySeconds, errorCode],
