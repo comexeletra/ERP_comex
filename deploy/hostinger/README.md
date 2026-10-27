@@ -1,5 +1,15 @@
 # API ERP na VPS Hostinger
 
+## Gráficos de quantidade por status e prazo no End to End HML (2026-10-27)
+
+Os commits `b938588` (API) e `4362a3c` (web) acrescentam ao resumo End to End as quantidades exatas por status da linha e por situação do prazo, e exibem os dois gráficos SVG no topo de `/end-to-end`. A mudança é aditiva, não inclui migration e não altera os filtros, a exportação ou as contagens existentes.
+
+O release `/opt/import-erp/apps/api/hml-release-4362a3c` foi montado com `git -c core.autocrlf=false archive`, reaproveitando o `node_modules` de `hml-release-4bceceb`, e ativado pelo drop-in `zzzzzzzzzzzzzzzzzzzzzzzz-release-4362a3c.conf`. Os drop-ins e `ExecStart` anteriores da API e do worker estão em `/var/backups/import-erp/hml-e2e-overview-4362a3c-predeploy`. Rollback somente do código: remova o drop-in novo da API, restaure o diretório de drop-ins do worker a partir desse backup, execute `systemctl daemon-reload` e reinicie `import-erp-hml-api` e `import-erp-hml-export-worker`; a API volta a `hml-release-4bceceb`. Não há migration para reverter.
+
+Após a troca, API e worker HML ficaram ativos no release `4362a3c`; `/health/live` respondeu `200` e `GET /api/v1/purchase-order-lines/e2e-stages` sem sessão respondeu `401`. A conferência somente leitura usou a role `import_erp_hml_app` e confirmou `current_database() = 'erp_po_totvs_hml'`: 225 linhas, 22 entregues, soma das linhas de cada agrupamento igual a 225, `byStatus.ENTREGUE.lines = 22` e soma das quantidades igual a `29.227.463` nos dois agrupamentos. Na fotografia de 2026-10-27, as 225 linhas tinham atraso total positivo.
+
+O Preview do commit `4362a3c` ficou `Ready` no deployment `dpl_Hf26dWD2MHF2Hpitqjs1WKoJdcUF`, com o alias estável da branch `homologacao`. `/login` respondeu com a página do TMS e os três idiomas. A validação visual autenticada dos gráficos ficou pendente porque não havia sessão válida da aplicação neste ambiente; nenhuma senha foi alterada e nenhuma conta foi exposta ou bloqueada. Produção, `main` e variáveis da Vercel não foram alteradas.
+
 ## Etapas animadas do End to End com filtro por etapa no HML (2026-10-26)
 
 Os commits `113ec9f` (API) e `4bceceb` (web) colocam a trilha animada T0–T5 sobre a tabela de `/end-to-end`. A API
