@@ -48,6 +48,17 @@ test("the overview charts and the product line filters can be collapsed", () => 
   }
 });
 
+test("a collapsed chart block still says it holds charts and shows their shape", () => {
+  assert.match(view, /storageKey="erp-comex-e2e-charts-collapsed"[\s\S]*?icon="chart"/u);
+  assert.match(view, /storageKey="erp-comex-e2e-filters-collapsed"[\s\S]*?icon="filter"/u);
+  assert.match(view, /collapsedSummary=\{<E2eOverviewMini overview=\{counts\.overview\} locale=\{locale\} \/>\}/u);
+  // The mini bar repeats the status colours but is only a picture: the full charts hold the filters.
+  assert.match(overview, /export function E2eOverviewMini/u);
+  assert.match(overview, /className="e2e-distribution e2e-distribution-mini" aria-hidden="true"/u);
+  assert.match(overview, /o\.chartsHidden\(/u);
+  for (const messages of [ptBR, en, zhCN]) assert.equal(typeof messages.e2eLines.overview.chartsHidden("1"), "string");
+});
+
 test("both overview charts are clickable through their legends and keep the keyboard out of the images", () => {
   assert.equal((overview.match(/role="img"/gu) ?? []).length, 2);
   assert.doesNotMatch(overview, /tabIndex|role="button"|formatNumber|e2e-pie-label|e2e-pie-guide/u);

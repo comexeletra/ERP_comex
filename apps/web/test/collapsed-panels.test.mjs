@@ -34,4 +34,8 @@ test("the collapsible panel reads the choice without a hydration mismatch", asyn
   assert.match(source, /aria-controls=\{bodyId\}/u);
   assert.match(source, /hidden=\{collapsed\}/u);
   assert.doesNotMatch(source, /useEffect/u);
+  // An icon identifies the block, and a collapsed block keeps a summary and a card-like strip.
+  assert.match(source, /\{icon && <span className="e2e-collapsible-icon"><Icon name=\{icon\}/u);
+  assert.match(source, /\{collapsed && collapsedSummary\}/u);
+  assert.match(source, /collapsed \? " is-collapsed" : ""/u);
 });
