@@ -288,4 +288,9 @@ As chaves da primeira entrega continuam valendo. Chave que ficar sem uso sai dos
   - **Visual:** segue a identidade da aplicação, não a do Power BI: linhas no formato das legendas, com medidor arredondado sobre trilho, quantidade e percentual. Usa o token `--color-chart-range` (azul da marca) e o cinza de "Sem dados".
   - **Filtro cruzado:** o clique numa faixa funciona como nos outros gráficos, e o gráfico de faixas ignora o próprio filtro.
   - **Layout:** a barra de status passou a ocupar a linha inteira, com a legenda em 3 colunas. A pizza de prazo e as faixas ficam lado a lado embaixo. A faixa minimizada diz "3 gráficos ocultos".
+- **Produto, Modal, Visão e Só atrasados nos gráficos (pedido do usuário):** substitui a regra da seção 4.1 de que a etapa, a visão e "Só atrasados" valiam só para a tabela.
+  - **Produto e Modal:** ganharam "Todos", que vem marcado ao abrir, e passaram a filtrar os gráficos, os cards das etapas, a tabela e a exportação. Os parâmetros são `demandType=mts|notMts` e `modal=sea|air`, que vão também para a URL. Com "Todos", o Modelo usa o cenário padrão (Não MTS e Marítimo). Linhas sem tipo de demanda ou sem modal só aparecem em "Todos".
+  - **Etapa, Visão e Só atrasados:** os gráficos seguem a etapa selecionada, a visão e "Só atrasados", e mostram exatamente as linhas da tabela. Os cards das etapas continuam com a contagem de todas as etapas.
+  - **Animação:** cada resumo carregado fica guardado enquanto os filtros não mudam, e o último resumo fica na tela enquanto o próximo carrega. Assim os gráficos acompanham a animação sem piscar.
+  - **Teste antigo que mudou:** o teste que exigia `400` para `e2e-stages?stage=T3` passou a usar uma etapa inválida (`T9`), porque a rota agora aceita a etapa.
 - **Pendente (A12):** conferência com login: clique nos dois gráficos, limpeza da seleção, exportação com prazo, larguras, temas e idiomas.

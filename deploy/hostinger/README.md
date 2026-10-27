@@ -1,5 +1,21 @@
 # API ERP na VPS Hostinger
 
+## Produto e modal filtram o End to End; gráficos seguem a tabela no HML (2026-10-27)
+
+Os commits `3562aa4` (API) e `65c3681` (web) acrescentam os filtros `demandType=mts|notMts` e `modal=sea|air` a `GET /api/v1/purchase-order-lines`, à rota `e2e-stages`, à exportação e ao worker. Eles comparam o `demandType` e o `air` calculados da linha; linhas sem tipo de demanda ou sem modal só aparecem sem esses filtros. A rota `e2e-stages` passa a aceitar também `stage`, `view` e `late`:
+- os gráficos (`overview`) seguem esses filtros e mostram as linhas da tabela;
+- os cards das etapas (`stages`, `totalCount`, `delivered`) seguem o cenário e os filtros dos gráficos, mas não a etapa.
+
+Não há migration. O web novo envia esses parâmetros ao resumo, e a API anterior os recusa com 400; por isso a API foi publicada antes do web.
+
+O release `/opt/import-erp/apps/api/hml-release-65c3681` foi montado com `git -c core.autocrlf=false archive` (fontes conferidas sem CR), reaproveitando o `node_modules` de `hml-release-2ba6b5a`, compilado na VPS e ativado pelo drop-in `zzzzzzzzzzzzzzzzzzzzzzzzzzz-release-65c3681.conf`; o worker foi movido com `enable-homologation-export-worker.sh 65c3681`. Backup: `/var/backups/import-erp/hml-e2e-scenario-65c3681-predeploy`. Rollback somente do código: remova o drop-in novo, execute `systemctl daemon-reload`, reinicie `import-erp-hml-api` (volta a `hml-release-2ba6b5a`) e rode `enable-homologation-export-worker.sh 2ba6b5a`.
+
+Após a troca, `/health/live` respondeu `200` e `e2e-stages?modal=sea&stage=T4` sem sessão respondeu `401`. Conferência somente leitura (`import_erp_hml_app`, `default_transaction_read_only=on`, `erp_po_totvs_hml`), com as funções do release, sobre as 225 linhas com `situation=all`:
+- **Cenário:** MTS 166 e Não MTS 59; marítimo 156 e aéreo 69. Em cada caso, os cards, os gráficos e a tabela tiveram o mesmo total.
+- **Etapa:** com `stage=T3` (68), `stage=T4` (111), `stage=T3&view=reached` (157), `late=true` (68) e `stage=T4&late=true&modal=sea` (0), os gráficos tiveram as mesmas linhas da tabela, e os cards das etapas não mudaram.
+
+Produção (`import-erp-api` desde 2026-10-17 12:38:12, `import-erp-export-worker` desde 2026-10-19 20:38:54), `main` e as variáveis da Vercel não foram alteradas. O Preview `erp-comex-fdf88irdb` do commit `65c3681` ficou `Ready` no alias estável da `homologacao`.
+
 ## Faixa de atraso total no End to End HML (2026-10-27)
 
 Os commits `b3d2fdd` (API) e `2ba6b5a`/`489cfcf` (web) acrescentam a faixa do atraso total (regra "Faixa de atraso total" do Power BI: adiantado, no prazo, até 30, 30–45, 45–60, 60–90, 90–120, 120 dias ou mais e sem dados) ao resumo `e2e-stages` (`overview.byDelayRange`) e o filtro `delayRange` a `GET /api/v1/purchase-order-lines`, à rota `e2e-stages`, à exportação e ao worker. O resumo continua com filtro cruzado entre os três gráficos. Não há migration. O web novo envia `delayRange`, que a API anterior recusa com 400; por isso a API foi publicada antes do web.
