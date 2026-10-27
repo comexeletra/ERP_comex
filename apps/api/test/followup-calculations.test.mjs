@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { calculateE2e, calculateFollowup, calculateProcess, checkShipmentDates, DEFAULT_E2E_TARGET_SET, e2eTargetSetFor,
-  invoiceTotals } from "../dist/followup-calculations.js";
+  e2eDeadlineStatus, invoiceTotals } from "../dist/followup-calculations.js";
+
+test("classifies the End to End total deadline status", () => {
+  assert.equal(e2eDeadlineStatus(null), "noData");
+  assert.equal(e2eDeadlineStatus({ totalDelayDays: null }), "noData");
+  assert.equal(e2eDeadlineStatus({ totalDelayDays: 1 }), "late");
+  assert.equal(e2eDeadlineStatus({ totalDelayDays: 0 }), "onLimit");
+  assert.equal(e2eDeadlineStatus({ totalDelayDays: -1 }), "onTime");
+});
 
 test("calculates price exactly and keeps unknown dates empty", () => {
   const result = calculateFollowup({ id: "item", orderedQuantity: "3.00000000", unitPrice: "0.10000000",

@@ -180,16 +180,29 @@ test("product lines filter by the current E2E stage or by the stages already rea
   }
 });
 
-test("the E2E stage summary counts the lines in each stage and those that already passed it", async t => {
-  const { app, queries } = await linesApp(t, stageRows, stageDocuments);
+test("the E2E stage summary counts stages and exact item quantities by status and deadline", async t => {
+  const decimalRow = { ...stageRows[0], line_id: "00000000-0000-4000-8000-000000000064", line_quantity: "0.20000000" };
+  const summaryRows = [{ ...stageRows[0], line_quantity: "0.10000000" }, ...stageRows.slice(1), decimalRow];
+  const { app, queries } = await linesApp(t, summaryRows, stageDocuments);
   const response = await app.inject({ method: "GET", url: "/api/v1/purchase-order-lines/e2e-stages?situation=all&ipNumber=IP" });
   assert.equal(response.statusCode, 200, response.body);
   const body = response.json();
-  assert.deepEqual([body.totalCount, body.delivered], [3, 1]);
-  assert.deepEqual(body.stages.T0, { current: 1, currentLate: 0, reached: 2, reachedLate: 0 });
-  assert.deepEqual(body.stages.T3, { current: 0, currentLate: 0, reached: 2, reachedLate: 2 });
-  assert.deepEqual(body.stages.T4, { current: 1, currentLate: 1, reached: 1, reachedLate: 0 });
+  assert.deepEqual([body.totalCount, body.delivered], [4, 1]);
+  assert.deepEqual(body.stages.T0, { current: 1, currentLate: 0, reached: 3, reachedLate: 0 });
+  assert.deepEqual(body.stages.T3, { current: 0, currentLate: 0, reached: 3, reachedLate: 3 });
+  assert.deepEqual(body.stages.T4, { current: 2, currentLate: 2, reached: 1, reachedLate: 0 });
   assert.deepEqual(body.stages.T5, { current: 0, currentLate: 0, reached: 1, reachedLate: 0 });
+  assert.deepEqual(Object.keys(body.overview.byStatus), ["A DISTRIBUIR", "AGUARDANDO PRODUÇÃO",
+    "AGUARDANDO EMBARQUE", "AGUARDANDO CHEGADA", "DESEMBARAÇO", "ENTREGUE"]);
+  assert.deepEqual(Object.keys(body.overview.byDeadline), ["onTime", "onLimit", "late", "noData"]);
+  assert.deepEqual(body.overview.byStatus["A DISTRIBUIR"], { quantity: "5", lines: 1 });
+  assert.deepEqual(body.overview.byStatus["AGUARDANDO CHEGADA"], { quantity: "0.3", lines: 2 });
+  assert.deepEqual(body.overview.byStatus.ENTREGUE, { quantity: "1", lines: 1 });
+  assert.deepEqual(body.overview.byStatus["AGUARDANDO PRODUÇÃO"], { quantity: "0", lines: 0 });
+  assert.deepEqual(body.overview.byDeadline.noData, { quantity: "5", lines: 1 });
+  assert.deepEqual(body.overview.byDeadline.late, { quantity: "1.3", lines: 3 });
+  assert.equal(Object.values(body.overview.byStatus).reduce((sum, part) => sum + part.lines, 0), body.totalCount);
+  assert.equal(Object.values(body.overview.byDeadline).reduce((sum, part) => sum + part.lines, 0), body.totalCount);
   assert.ok(queries.filter(query => query.sql.includes("line_kind")).at(-1).params.includes("IP"));
   const invalid = await app.inject({ method: "GET", url: "/api/v1/purchase-order-lines/e2e-stages?stage=T3" });
   assert.equal(invalid.statusCode, 400, invalid.body);
