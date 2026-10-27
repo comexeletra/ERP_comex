@@ -5,7 +5,7 @@
 | Data | 2026-10-27 |
 | Branch de trabalho | `homologacao` (base: `5f2d4af`) |
 | Ambiente de validação | API e worker HML na VPS (`import-erp-hml-api`, `import-erp-hml-export-worker`) e Preview Vercel da `homologacao` |
-| Status | **Decisões fechadas em 2026-10-27; implementação em andamento** |
+| Status | **Implementado; API e worker publicados em HML (`b56ee55`); Preview da `homologacao` e validação autenticada A11 pendentes** |
 
 ## 1. Resumo
 
@@ -97,8 +97,8 @@ Na tela de escolha, as 30 colunas das etapas aparecem numa grade de 6 etapas × 
 |---|---|---|
 | D1 | Ordem do arquivo **fixa, igual à da tabela da tela**. Cada tela oferece **só as colunas da sua tabela** (seção 2.2), para não sobrecarregar a escolha. | fechada (2026-10-27) |
 | D2 | Obrigatórias: E1 `PO TOTVS`; E2 `PO` e `Produto`; E3 `PO` e `Produto`. | fechada |
-| D3 | Seleção inicial e "Restaurar padrão": **todas as colunas da tela**. | fechada |
-| D4 | Atalhos: "Marcar todas", "Desmarcar todas" e "Restaurar padrão" nas três telas, e a marcação por grupo. Os atalhos "Pré Embarque" e "Resumo End to End" da primeira versão deixam de fazer sentido com o catálogo reduzido e saem. | fechada; ajustada por D1 |
+| D3 | Seleção inicial: **todas as colunas da tela**. | fechada |
+| D4 | Atalhos: "Marcar todas" e "Desmarcar todas" nas três telas, e a marcação por etapa e por medida na grade do End to End. "Restaurar padrão" saiu na implementação: como o padrão é "todas" (D3), ele repetia "Marcar todas". Os atalhos "Pré Embarque" e "Resumo End to End" da primeira versão deixam de fazer sentido com o catálogo reduzido e saem. | fechada; ajustada por D1 |
 | D5 | E2 não oferece mais as colunas do End to End: elas não estão na tabela dela. | substituída por D1 |
 | D6 | A tela de escolha mostra os nomes das colunas **no idioma selecionado na interface**, com os mesmos textos da tabela. | fechada |
 | D7 | A escolha fica salva **no navegador, por tela**. | fechada |
@@ -153,7 +153,7 @@ Cada exportação Excel passa a conter só as colunas da tabela da sua tela, na 
 9. Os rótulos vêm dos dicionários, de preferência reaproveitando as chaves que a tabela já usa (`m.followup.product`, `m.e2eLines.necessity` e outras), para a tela e o arquivo terem o mesmo texto. O mapa `key → rótulo` fica numa função de `lib/` que recebe `m: Messages`.
 10. Componente `ExportColumnsDialog` sobre o `ConfirmDialog` (`<dialog>` nativo):
     - Título "Escolher colunas da exportação" e uma linha dizendo que os filtros aplicados na tela continuam valendo.
-    - Ações "Marcar todas", "Desmarcar todas" e "Restaurar padrão".
+    - Ações "Marcar todas" e "Desmarcar todas".
     - Colunas na ordem da tabela. Em E3, as 11 primeiras ficam em lista, as etapas na grade 6 × 5 e os totais em seguida. A coluna condicional só aparece quando está disponível.
     - Obrigatórias marcadas e desabilitadas, com a indicação "obrigatória".
     - Contador "12 de 15 colunas" e botão "Exportar Excel". Esc e "Cancelar" fecham sem exportar.
@@ -235,3 +235,18 @@ Cada exportação Excel passa a conter só as colunas da tabela da sua tela, na 
 - **Cabeçalhos enviados pelo cliente (D8).** São texto limitado, validado e gravado como string, então uma fórmula nunca é executada; o teste existente de `=cmd` cobre o tipo da célula. As chaves continuam validadas pela API.
 - **Tarefas antigas na fila** não têm `columns` e saem no layout `legacy`, como hoje.
 - **HML somente.** A validação do worker grava e apaga tarefas em `jobs.export_job` do `erp_po_totvs_hml`. Confira `current_database()` e o papel `import_erp_hml_app` antes. Nunca use o `erp_po_totvs_test`, que é produção.
+
+## 8. Registro da execução (2026-10-27)
+
+| Commit | Conteúdo |
+|---|---|
+| `5890965` | Plano e regra D10 no `AGENTS.md` |
+| `078582e` | Testes da API (catálogos, rotas, geradores, contrato com o web, integração HML) |
+| `e21fa04` | API: `export-columns.ts`, rotas com `context`, `columns` e `lifecycle`, geradores e worker; espelho `apps/web/lib/export-columns.ts` |
+| `b56ee55` | Correção do worker: o `failJob` usava `$3` como `varchar` e como `text`, o PostgreSQL recusava (42P08) e o worker caía em qualquer tarefa com falha, inclusive `EXPORT_TOO_LARGE`. A integração HML desta tarefa encontrou o problema |
+| `441fcd1` | Testes do web (seleção, corpo, armazenamento e comparação dos cabeçalhos das três tabelas com os catálogos) |
+| `06c5eac` | Web: `ExportColumnsDialog`, as três telas, estilos e textos nos três idiomas |
+
+Verificações locais: API `pnpm build` e `pnpm test` passando; web `pnpm test` (214 testes), `pnpm lint` (0 erros; os avisos já existiam), `tsc --noEmit` e `pnpm build` passando.
+
+HML: release `hml-release-b56ee55` na API e no worker. `/health/live` respondeu 200 e a rota de exportação sem sessão respondeu 401. `test/export-worker-hml.integration.mjs`, executado na VPS contra `erp_po_totvs_hml` com o papel `import_erp_hml_app`, passou: os layouts antigos (8 e 92 colunas), a carteira com `lifecycle=all` e colunas escolhidas, o End to End com o atraso acumulado em T3 e a falha `INVALID_EXPORT_COLUMNS` sem derrubar o worker. Detalhes e rollback em `deploy/hostinger/README.md`.
