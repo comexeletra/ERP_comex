@@ -32,6 +32,22 @@ test("the optional overview precedes the model and cross-filters by status and d
   assert.match(view, /setDeadline\(""\); applyFilters\(emptyProductLineFilters, \{ \.\.\.stage, deadline: "" \}\);/u);
 });
 
+test("the overview charts and the product line filters can be collapsed", () => {
+  assert.match(view, /<E2eCollapsible title=\{t\.overview\.label\} storageKey="erp-comex-e2e-charts-collapsed"/u);
+  assert.match(view, /activeCount=\{\(applied\.status \? 1 : 0\) \+ \(deadline \? 1 : 0\)\}/u);
+  assert.match(view, /<E2eCollapsible className="card" title=\{t\.panels\.filtersTitle\} storageKey="erp-comex-e2e-filters-collapsed"/u);
+  assert.match(view, /activeCount=\{activeProductLineFilterCount\(applied\)\}/u);
+  // The charts stay inside their panel, and the filter form inside the other one.
+  const charts = view.indexOf("storageKey=\"erp-comex-e2e-charts-collapsed\"");
+  const filters = view.indexOf("storageKey=\"erp-comex-e2e-filters-collapsed\"");
+  assert.ok(charts < view.indexOf("<E2eOverviewCharts") && view.indexOf("<E2eOverviewCharts") < filters);
+  assert.ok(filters < view.indexOf('<form className="portfolio-filter product-lines-filter"'));
+  for (const messages of [ptBR, en, zhCN]) {
+    assert.equal(typeof messages.e2eLines.panels.active(2), "string");
+    for (const key of ["filtersTitle", "show", "hide"]) assert.ok(messages.e2eLines.panels[key], key);
+  }
+});
+
 test("both overview charts are clickable through their legends and keep the keyboard out of the images", () => {
   assert.equal((overview.match(/role="img"/gu) ?? []).length, 2);
   assert.doesNotMatch(overview, /tabIndex|role="button"|formatNumber|e2e-pie-label|e2e-pie-guide/u);

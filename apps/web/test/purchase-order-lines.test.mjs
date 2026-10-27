@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { e2eDeadlineStatuses, e2eStageCodes, e2eStageFilterBody, e2eSummaryQuery, emptyE2eStageFilter,
+import { activeProductLineFilterCount, e2eDeadlineStatuses, e2eStageCodes, e2eStageFilterBody, e2eSummaryQuery, emptyE2eStageFilter,
   emptyProductLineFilters, itemShipmentSummary, parseE2eStageFilter, parseProductLineFilters, productLineFilterBody,
   productLineQuery } from "../lib/purchase-order-lines.ts";
 
@@ -67,4 +67,11 @@ test("the End to End deadline filter goes to the lines, the export and the summa
   assert.deepEqual(Object.fromEntries(e2eSummaryQuery(emptyProductLineFilters, "")), { situation: "open" });
   // The product line filters shared with the Linhas de produto screen do not change.
   assert.equal("deadline" in emptyProductLineFilters, false);
+});
+
+test("the collapsed filter bar counts the filters that change the table", () => {
+  assert.equal(activeProductLineFilterCount(emptyProductLineFilters), 0);
+  assert.equal(activeProductLineFilterCount({ ...emptyProductLineFilters, ipNumber: "  " }), 0);
+  assert.equal(activeProductLineFilterCount({ ...emptyProductLineFilters, ipNumber: "IP-1", status: "ENTREGUE",
+    etaFrom: "2026-10-01", situation: "all" }), 4);
 });
