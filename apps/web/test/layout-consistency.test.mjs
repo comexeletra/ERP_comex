@@ -273,6 +273,7 @@ test("text and controls meet WCAG AA contrast in both themes", () => {
     ["--color-danger-text", "--color-danger-bg", 4.5], ["--color-info-text", "--color-info-bg", 4.5],
     ["--sidebar-text", "--sidebar-bg", 4.5], ["--sidebar-muted", "--sidebar-bg", 4.5],
     ["--sidebar-text-strong", "--sidebar-active", 4.5], ["--focus-ring", "--color-page", 2.5],
+    ["--color-tooltip-text", "--color-tooltip-bg", 4.5], ["--color-tooltip-muted", "--color-tooltip-bg", 4.5],
   ];
   for (const [theme, values] of [["light", light], ["dark", dark]]) {
     for (const [foreground, background, minimum] of pairs) {

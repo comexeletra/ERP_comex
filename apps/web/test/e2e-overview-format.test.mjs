@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { overviewShares, overviewTotal, rankedIndexes } from "../lib/e2e-overview-format.ts";
+import { overviewShares, overviewTip, overviewTotal, rankedIndexes } from "../lib/e2e-overview-format.ts";
+import { en } from "../lib/i18n/en.ts";
+import { ptBR } from "../lib/i18n/pt-BR.ts";
+import { zhCN } from "../lib/i18n/zh-CN.ts";
 
 // Intl may separate the number and the unit with a no-break space.
 const plain = value => value.replace(/ | /gu, " ");
@@ -48,4 +51,18 @@ test("delay range bars go from the largest quantity down and skip empty ranges",
   // The selected range stays visible even when the other charts leave it empty.
   assert.deepEqual(rankedIndexes([5, 0, 2], 1), [0, 2, 1]);
   assert.deepEqual(rankedIndexes([0, 0], -1), []);
+});
+
+test("the chart tooltip card shows the full quantity, the share, the lines and what a click does", () => {
+  const [share] = overviewShares(["729050", "205000"], "pt-BR");
+  assert.deepEqual(overviewTip(share, 1234, false, "pt-BR", ptBR).rows.map(([label, value]) => [label, plain(value)]),
+    [["Quantidade de itens", "729.050"], ["Participação", "78%"], ["Linhas", "1.234"]]);
+  assert.equal(overviewTip(share, 1, false, "pt-BR", ptBR).hint, "Clique para filtrar");
+  assert.equal(overviewTip(share, 1, true, "pt-BR", ptBR).hint, "Clique para limpar o filtro");
+  const [english] = overviewShares(["729050", "205000"], "en");
+  assert.deepEqual(overviewTip(english, 1234, true, "en", en),
+    { rows: [["Item quantity", "729,050"], ["Share", "78%"], ["Lines", "1,234"]], hint: "Click to clear the filter" });
+  const [chinese] = overviewShares(["729050", "205000"], "zh-CN");
+  assert.deepEqual(overviewTip(chinese, 1234, false, "zh-CN", zhCN),
+    { rows: [["物料数量", "729,050"], ["占比", "78%"], ["行数", "1,234"]], hint: "点击筛选" });
 });

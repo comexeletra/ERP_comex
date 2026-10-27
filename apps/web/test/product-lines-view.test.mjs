@@ -26,8 +26,8 @@ test("the product lines show the importer in its own column and truncate long na
   const styles = await readFile(new URL("../app/styles/features/operations.css", import.meta.url), "utf8");
   assert.match(view, /<th>PO<\/th><th>\{m\.followup\.importer\}<\/th><th>\{m\.followup\.product\}<\/th>/u);
   assert.equal(ptBR.followup.importer, "Importadora");
-  assert.match(view, /className="product-lines-importer" title=\{line\.purchaseOrder\.importer\}/u);
-  assert.match(view, /className="product-lines-description" title=\{line\.item\.description\}/u);
+  assert.match(view, /<Tooltip content=\{line\.purchaseOrder\.importer\}><span className="product-lines-importer">/u);
+  assert.match(view, /<Tooltip content=\{line\.item\.description\}><td><strong>\{line\.item\.productCode\}<\/strong>\s*<small className="product-lines-description">/u);
   for (const name of ["product-lines-importer", "product-lines-description"]) {
     const rule = styles.match(new RegExp(`\\.${name} \\{([^}]*)\\}`, "u"))?.[1] ?? "";
     for (const declaration of ["display: block", "max-width:", "overflow: hidden", "text-overflow: ellipsis"]) {
