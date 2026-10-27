@@ -84,3 +84,46 @@ test("recent exports list both PO and product line exports with their type", asy
   const list = queries.find(query => query.sql.includes("FROM jobs.export_job"));
   assert.match(list.sql, /job_type IN \('purchase-order-xlsx', 'purchase-order-lines-xlsx'\)/u);
 });
+
+test("exports store the chosen screen columns with their context and reject invalid choices", async t => {
+  const { app, queries } = await exportApp(t);
+  const stored = () => JSON.parse(queries.filter(query => query.sql.includes("INSERT INTO jobs.export_job")).at(-1).params[4]);
+  const post = (url, payload) => app.inject({ method: "POST", url, payload });
+
+  const portfolio = await post("/api/v1/exports/purchase-orders", { number: "18751", lifecycle: "closed",
+    context: "portfolio", columns: [{ key: "importer", header: "Importer" }] });
+  assert.equal(portfolio.statusCode, 202, portfolio.body);
+  assert.deepEqual(stored(), { number: "18751", lifecycle: "closed", context: "portfolio",
+    columns: [{ key: "importer", header: "Importer" }] });
+
+  const e2e = await post("/api/v1/exports/purchase-order-lines", { stage: "T3", view: "reached", context: "end-to-end",
+    columns: [{ key: "accumulatedDelay", header: "Acumulado até T3" }, { key: "t3Delay", header: "T3 Atraso" }] });
+  assert.equal(e2e.statusCode, 202, e2e.body);
+  assert.deepEqual(stored().columns.map(column => column.key), ["accumulatedDelay", "t3Delay"]);
+  assert.equal(stored().context, "end-to-end");
+  // The worker parses the stored filters without the columns.
+  const { context, columns, ...filters } = stored();
+  assert.equal(shipmentLineQuery.strict().safeParse(filters).success, true, JSON.stringify({ context, columns }));
+
+  const invalid = [
+    ["/api/v1/exports/purchase-orders", { context: "portfolio", columns: [] }],
+    ["/api/v1/exports/purchase-orders", { context: "portfolio", columns: [{ key: "eta", header: "ETA" }] }],
+    ["/api/v1/exports/purchase-orders", { context: "end-to-end", columns: [{ key: "importer", header: "I" }] }],
+    ["/api/v1/exports/purchase-orders", { columns: [{ key: "importer", header: "I" }] }],
+    ["/api/v1/exports/purchase-orders", { context: "portfolio", columns: [{ key: "importer", header: "" }] }],
+    ["/api/v1/exports/purchase-orders", { context: "portfolio", columns: [{ key: "importer", header: "x".repeat(81) }] }],
+    ["/api/v1/exports/purchase-orders", { context: "portfolio", columns: [{ key: "importer", header: "a\u0007b" }] }],
+    ["/api/v1/exports/purchase-orders", { lifecycle: "archived" }],
+    ["/api/v1/exports/purchase-order-lines", { context: "portfolio", columns: [{ key: "importer", header: "I" }] }],
+    ["/api/v1/exports/purchase-order-lines", { context: "product-lines", columns: [{ key: "t0Deadline", header: "T0" }] }],
+    ["/api/v1/exports/purchase-order-lines", { context: "end-to-end",
+      columns: Array.from({ length: 49 }, () => ({ key: "status", header: "Status" })) }],
+  ];
+  for (const [url, payload] of invalid) {
+    const response = await post(url, payload);
+    assert.equal(response.statusCode, 400, `${url} ${JSON.stringify(payload).slice(0, 120)}: ${response.body}`);
+  }
+  const legacy = await post("/api/v1/exports/purchase-orders", { number: "18751" });
+  assert.equal(legacy.statusCode, 202, legacy.body);
+  assert.deepEqual(stored(), { number: "18751" });
+});

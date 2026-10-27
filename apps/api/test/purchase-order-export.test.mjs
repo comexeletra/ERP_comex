@@ -102,3 +102,69 @@ test("product line export follows the Pré Embarque columns and repeats the IP d
   assert.equal(cell(3, "Line Type"), "Saldo sem IP");
   for (const header of headers) assert.ok(!/freight|tax|demurrage|frete|imposto/iu.test(String(header)), header);
 });
+
+test("PO export follows the screen lifecycle filter and table columns when columns are chosen", async () => {
+  const { resolveExportColumns } = await import("../dist/export-columns.js");
+  let sql = "";
+  let params = [];
+  await queryPurchaseOrderExport({
+    async query(statement, values) { sql = statement; params = values; return { rows: [], rowCount: 0 }; },
+  }, ["ELETRA MATRIZ"], { lifecycle: "closed" });
+  assert.match(sql, /po\.lifecycle_status/u);
+  assert.match(sql, /lower\(po\.lifecycle_status\) = \$6::text/u);
+  assert.equal(params[5], "closed");
+
+  const columns = resolveExportColumns("portfolio", [{ key: "lifecycleStatus", header: "Status" },
+    { key: "itemCount", header: "Items" }], {});
+  const bytes = await purchaseOrderExportXlsx([{ id: "po-1", number: "PO-1", importer: "Eletra", lifecycleStatus: "CLOSED",
+    itemCount: 3, linkedProcessCount: 2, itemsWithIp: 1, itemsWithoutIp: 2, unresolvedIssueCount: 0 }], columns);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(bytes);
+  const sheet = workbook.getWorksheet("Carteira de POs");
+  assert.deepEqual(sheet.getRow(1).values.slice(1), ["PO TOTVS", "Status", "Items"]);
+  assert.deepEqual(sheet.getRow(2).values.slice(1), ["PO-1", "Encerrada", 3]);
+  assert.deepEqual(sheet.autoFilter, { from: { row: 1, column: 1 }, to: { row: 1, column: 3 } });
+});
+
+test("product line exports write only the chosen table columns, in the table order", async () => {
+  const { purchaseOrderLinesXlsx } = await import("../dist/purchase-order-exports.js");
+  const { resolveExportColumns } = await import("../dist/export-columns.js");
+  const line = { lineId: "a-1", lineKind: "ALLOCATION", quantity: "60.00000000", factoryShipDate: "2026-08-20",
+    purchaseOrder: { id: "po-1", number: "PO-1", importer: "ELETRA MATRIZ" },
+    item: { productCode: "P-1", description: "Produto 1", necessityDate: "2026-12-01", scNumber: "123", purpose: "Estoque",
+      group: "G-1" },
+    process: { ipNumber: "IP-1", transportMode: "SEA", etd: "2026-09-01", actualPortDepartureDate: "2026-09-02",
+      blDate: "2026-09-03", arrivalDate: null, deliveryDate: null },
+    calculated: { status: "AGUARDANDO CHEGADA", eta: "2026-10-26", ete: "2026-11-05", invoiceNumbers: ["INV-1", "INV-2"],
+      e2e: { air: false, totalTargetDays: 118, totalActualDays: 123, totalDelayDays: 5, bottleneck: "T3",
+        currentStatus: "AGUARDANDO CHEGADA", arrivalYearMonth: "2026-10",
+        stages: { T3: { deadline: "2026-07-12", actual: "2026-09-02", source: "actual", targetDays: 30, actualDays: 82,
+          delayDays: 52, accumulatedDelayDays: 40 },
+        T4: { deadline: "2026-10-27", actual: "2026-10-26", source: "forecast", targetDays: 55, actualDays: 54,
+          delayDays: -1, accumulatedDelayDays: 39 } } } } };
+  const load = async bytes => {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(bytes);
+    return workbook.getWorksheet("Carteira por produto");
+  };
+
+  const lines = await load(await purchaseOrderLinesXlsx([line], resolveExportColumns("product-lines", [
+    { key: "invoice", header: "Invoice" }, { key: "quantity", header: "Qty" }, { key: "product", header: "Product" },
+    { key: "productDescription", header: "Description" }], {})));
+  assert.deepEqual(lines.getRow(1).values.slice(1), ["PO", "Product", "Description", "Qty", "Invoice"]);
+  assert.deepEqual(lines.getRow(2).values.slice(1), ["PO-1", "P-1", "Produto 1", 60, "INV-1, INV-2"]);
+  assert.deepEqual(lines.autoFilter, { from: { row: 1, column: 1 }, to: { row: 1, column: 5 } });
+
+  const filters = { stage: "T3", view: "reached" };
+  const e2e = await load(await purchaseOrderLinesXlsx([line], resolveExportColumns("end-to-end", [
+    { key: "modal", header: "Modal" }, { key: "group", header: "Grupo" }, { key: "accumulatedDelay", header: "Acumulado até T3" },
+    { key: "t3Delay", header: "T3 Atraso" }, { key: "t4Actual", header: "T4 Real" }, { key: "totalDelay", header: "Atraso" },
+    { key: "currentStatus", header: "Status atual" }], filters)));
+  assert.deepEqual(e2e.getRow(1).values.slice(1), ["PO", "Produto", "Modal", "Grupo", "Acumulado até T3", "T3 Atraso",
+    "T4 Real", "Atraso", "Status atual"]);
+  assert.deepEqual(e2e.getRow(2).values.slice(1), ["PO-1", "P-1", "Marítimo", "G-1", 40, 52, "2026-10-26", 5,
+    "AGUARDANDO CHEGADA"]);
+  // Forecast dates are shown in italics, as on the screen.
+  assert.equal(e2e.getRow(2).getCell(7).font?.italic, true);
+  assert.notEqual(e2e.getRow(2).getCell(6).font?.italic, true);
+});
