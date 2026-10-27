@@ -1,5 +1,13 @@
 # API ERP na VPS Hostinger
 
+## Faixa de atraso total no End to End HML (2026-10-27)
+
+Os commits `b3d2fdd` (API) e `2ba6b5a`/`489cfcf` (web) acrescentam a faixa do atraso total (regra "Faixa de atraso total" do Power BI: adiantado, no prazo, até 30, 30–45, 45–60, 60–90, 90–120, 120 dias ou mais e sem dados) ao resumo `e2e-stages` (`overview.byDelayRange`) e o filtro `delayRange` a `GET /api/v1/purchase-order-lines`, à rota `e2e-stages`, à exportação e ao worker. O resumo continua com filtro cruzado entre os três gráficos. Não há migration. O web novo envia `delayRange`, que a API anterior recusa com 400; por isso a API foi publicada antes do web.
+
+O release `/opt/import-erp/apps/api/hml-release-2ba6b5a` foi montado com `git -c core.autocrlf=false archive` (fontes conferidas sem CR), reaproveitando o `node_modules` de `hml-release-c8a9c6c`, compilado na VPS e ativado pelo drop-in `zzzzzzzzzzzzzzzzzzzzzzzzzz-release-2ba6b5a.conf`; o worker foi movido com `enable-homologation-export-worker.sh 2ba6b5a`. Backup dos drop-ins e `ExecStart` anteriores: `/var/backups/import-erp/hml-e2e-delay-range-2ba6b5a-predeploy`. Rollback somente do código: remova o drop-in novo da API, execute `systemctl daemon-reload`, reinicie `import-erp-hml-api` (volta a `hml-release-c8a9c6c`) e rode `enable-homologation-export-worker.sh c8a9c6c`.
+
+Após a troca, `/health/live` respondeu `200` e `e2e-stages?delayRange=upTo30` sem sessão respondeu `401`. Conferência somente leitura (`import_erp_hml_app`, `default_transaction_read_only=on`, `erp_po_totvs_hml`) com as funções do release, sobre as 225 linhas com `situation=all`: até 30 dias `24668563` itens em 192 linhas, 30 a 45 dias `2671000` em 23 e 45 a 60 dias `1887900` em 10, somando 225; com `delayRange=upTo30`, as faixas ficaram iguais e a barra de status, o total e a tabela ficaram com as 192 linhas. Os números de status e prazo da seção abaixo não mudaram. Produção (`import-erp-api` desde 2026-10-17 12:38:12, `import-erp-export-worker` desde 2026-10-19 20:38:54), `main` e as variáveis da Vercel não foram alteradas.
+
 ## Resumo compacto e filtro cruzado no End to End HML (2026-10-27)
 
 Os commits `3c65cce` (API) e `c8a9c6c` (web) acrescentam o filtro `deadline=onTime|onLimit|late|noData` a `GET /api/v1/purchase-order-lines`, à rota `e2e-stages`, à exportação e ao worker. O resumo passa a usar filtro cruzado: a barra de status ignora o filtro de status, a pizza de prazo ignora o filtro de prazo, e os cards das etapas e a tabela seguem os dois. Não há migration. O web novo envia `deadline`, que a API anterior recusa com 400; por isso a API foi publicada antes do web.

@@ -281,4 +281,11 @@ As chaves da primeira entrega continuam valendo. Chave que ficar sem uso sai dos
   - A escolha de cada pessoa fica no `localStorage` do navegador (`erp-comex-e2e-charts-collapsed` e `erp-comex-e2e-filters-collapsed`). Ela é lida com `useSyncExternalStore`, então a renderização do servidor sai aberta, sem divergência na hidratação. Com o armazenamento bloqueado, a escolha vale só para a página aberta.
   - O resumo continua sendo carregado com o bloco fechado, porque os cards das etapas dependem dele.
   - **Identificação (pedido do usuário):** cada bloco tem um ícone (gráfico ou funil) ao lado do título. Minimizado, o bloco dos gráficos vira uma faixa no formato de card com o ícone, o título, uma minibarra nas cores dos status (só ilustrativa, `aria-hidden`), o texto "2 gráficos ocultos · total em itens", o selo de filtros ativos e o botão "Mostrar".
+- **Terceiro gráfico, "Quantidade por faixa de atraso" (pedido do usuário):**
+  - **Regra:** a "Faixa de atraso total" do Power BI aplicada ao `totalDelayDays`. As faixas são adiantado (< 0), no prazo (0), até 30, 30 a 45, 45 a 60, 60 a 90, 90 a 120 e 120 dias ou mais, com os limites superiores inclusivos. "Sem dados" quando não há atraso total.
+  - **Implementação:** `e2eDelayRange` e `E2E_DELAY_RANGES` em `followup-calculations.ts`; `overview.byDelayRange` e o filtro `delayRange` na API, na exportação e no worker.
+  - **Ordem e faixas vazias:** decididas com o usuário, as barras vão da maior quantidade para a menor, como no Power BI. Faixas vazias, inclusive "Sem dados", não aparecem; a faixa selecionada continua visível.
+  - **Visual:** segue a identidade da aplicação, não a do Power BI: linhas no formato das legendas, com medidor arredondado sobre trilho, quantidade e percentual. Usa o token `--color-chart-range` (azul da marca) e o cinza de "Sem dados".
+  - **Filtro cruzado:** o clique numa faixa funciona como nos outros gráficos, e o gráfico de faixas ignora o próprio filtro.
+  - **Layout:** a barra de status passou a ocupar a linha inteira, com a legenda em 3 colunas. A pizza de prazo e as faixas ficam lado a lado embaixo. A faixa minimizada diz "3 gráficos ocultos".
 - **Pendente (A12):** conferência com login: clique nos dois gráficos, limpeza da seleção, exportação com prazo, larguras, temas e idiomas.
