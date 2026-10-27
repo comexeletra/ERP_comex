@@ -140,12 +140,12 @@
 .e2e-pie { display: block; height: 120px; width: 120px; }
 .e2e-pie path { cursor: pointer; stroke: var(--color-surface); stroke-width: 2px; transition: opacity .2s; }
 .e2e-range-bars { display: grid; gap: 2px; list-style: none; margin: 0; padding: 0; }
-.e2e-range-row { align-items: center; background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--color-text); cursor: pointer; display: grid; font: inherit; font-size: var(--fs-sm); gap: 10px; grid-template-columns: minmax(0, 9em) minmax(0, 1fr); padding: 3px 6px; text-align: left; transition: opacity .2s; width: 100%; }
+.e2e-range-row { align-items: center; background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--color-text); cursor: pointer; display: grid; font: inherit; font-size: var(--fs-sm); gap: 10px; grid-template-columns: minmax(0, 9em) minmax(0, 1fr) 6.5em 3.5em; padding: 4px 6px; text-align: left; transition: opacity .2s; width: 100%; }
 .e2e-range-row:hover, .e2e-range-row[aria-pressed="true"] { background: var(--color-surface-sunken); }
-.e2e-range-label { overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
-.e2e-range-track { align-items: center; display: flex; gap: 8px; min-width: 0; }
-.e2e-range-fill { border-radius: var(--radius-xs); flex: none; height: 14px; min-width: 2px; }
-.e2e-range-track strong { color: var(--color-text-strong); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.e2e-range-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.e2e-range-track { background: var(--color-border); border-radius: var(--radius-sm); display: block; height: 10px; min-width: 0; overflow: hidden; }
+.e2e-range-fill { border-radius: var(--radius-sm); display: block; height: 100%; min-width: 3px; }
+.e2e-range-row strong { color: var(--color-text-strong); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 
 /* Lead-time ruler */
 .e2e-panel-heading { align-items: baseline; display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: space-between; }

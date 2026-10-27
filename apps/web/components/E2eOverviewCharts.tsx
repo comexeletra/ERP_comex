@@ -66,8 +66,9 @@ function entriesOf<Key extends string>(keys: readonly Key[], parts: Record<Key, 
 }
 
 /**
- * Horizontal bars of the item quantity by total delay range, from the largest down as in Power BI.
- * Empty ranges are left out; each row filters by its range.
+ * Item quantity by total delay range as rows in the style of the chart legends, each with a meter
+ * scaled to the largest range; from the largest down, as in Power BI. Empty ranges are left out,
+ * and each row filters by its range.
  */
 function DelayRangeBars({ entries, selected, onSelect, filterLabel, rowTitle }: {
   entries: ChartEntry<E2eDelayRange>[]; selected: string; onSelect: (key: E2eDelayRange) => void;
@@ -85,9 +86,10 @@ function DelayRangeBars({ entries, selected, onSelect, filterLabel, rowTitle }: 
           aria-label={`${filterLabel(entry.label)} (${entry.share.compact}, ${entry.share.percent})`}>
           <span className="e2e-range-label">{entry.label}</span>
           <span className="e2e-range-track">
-            <span className="e2e-range-fill" style={{ background: `var(${entry.color})`, width: `calc((100% - 5.5em) * ${ratio})` }} />
-            <strong>{entry.share.compact}</strong>
+            <span className="e2e-range-fill" style={{ background: `var(${entry.color})`, width: `${ratio * 100}%` }} />
           </span>
+          <strong>{entry.share.compact}</strong>
+          <span className="e2e-chart-legend-share">{entry.share.percent}</span>
         </button>
       </li>;
     })}
