@@ -163,6 +163,29 @@ test("brand colors come from the Eletra logo", () => {
   assert.equal(light["--sidebar-indicator"], light["--brand-green"]);
 });
 
+test("End to End charts define the approved palette in both themes", () => {
+  const light = tokenValues(":root");
+  const dark = tokenValues(':root[data-theme="dark"]');
+  const expected = {
+    "--color-chart-status-1": ["#b0457f", "#c0609a"],
+    "--color-chart-status-2": ["#b97400", "#bb8524"],
+    "--color-chart-status-3": ["#037599", "#2f96c2"],
+    "--color-chart-status-4": ["#d0603a", "#d27650"],
+    "--color-chart-status-5": ["#7c5cc4", "#8f76d2"],
+    "--color-chart-status-6": ["#5f8f12", "#72a22a"],
+    "--color-chart-on-time": ["#1a9478", "#2ea88a"],
+    "--color-chart-on-limit": ["#a87300", "#b8841a"],
+    "--color-chart-late": ["#b02a3a", "#d0384f"],
+    "--color-chart-no-data": ["#4f5d65", "#b4c1c8"],
+  };
+  for (const [token, [lightValue, darkValue]] of Object.entries(expected)) {
+    assert.equal(light[token], lightValue, token);
+    assert.equal(dark[token], darkValue, token);
+    assert.ok(contrast(lightValue, light["--color-surface"]) >= 3, `${token} light contrast`);
+    assert.ok(contrast(darkValue, dark["--color-surface"]) >= 3, `${token} dark contrast`);
+  }
+});
+
 test("font sizes, radii and layers use the token scales", () => {
   for (const [path, css] of featureStyles) {
     for (const value of declarations(css, "font-size")) assert.match(value, /^(var\(--fs-[\w-]+\)|inherit)$/u, `${path}: font-size ${value}`);

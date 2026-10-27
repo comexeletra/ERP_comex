@@ -7,10 +7,21 @@ import { ptBR } from "../lib/i18n/pt-BR.ts";
 import { zhCN } from "../lib/i18n/zh-CN.ts";
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
-const [view, panels, parts, tabs, page, modelPage, styles, flowLib] = await Promise.all([
-  read("components/E2eLinesView.tsx"), read("components/E2eModelPanels.tsx"), read("components/E2eFlowParts.tsx"),
+const [view, overview, panels, parts, tabs, page, modelPage, styles, flowLib] = await Promise.all([
+  read("components/E2eLinesView.tsx"), read("components/E2eOverviewCharts.tsx"),
+  read("components/E2eModelPanels.tsx"), read("components/E2eFlowParts.tsx"),
   read("components/E2eTabs.tsx"), read("app/end-to-end/page.tsx"), read("app/end-to-end/model/page.tsx"),
   read("app/styles/features/e2e.css"), read("lib/e2e-flow.ts")]);
+
+test("the optional overview precedes the model and filters the table by line status", () => {
+  assert.match(view, /overview\?: E2eOverview/u);
+  assert.match(view, /\{counts\?\.overview && <E2eOverviewCharts/u);
+  assert.ok(view.indexOf("<E2eOverviewCharts") < view.indexOf("<E2eModelSummary"));
+  assert.match(view, /const filters = \{ \.\.\.applied, status \}; setDraft\(filters\); applyFilters\(filters\);/u);
+  assert.match(view, /onStatusSelect=\{filterByStatus\}/u);
+  assert.match(overview, /onClick=\{\(\) => onStatusSelect\(entry\.key\)\}/u);
+  assert.match(overview, /aria-pressed=\{selectedStatus === entry\.key\}/u);
+});
 
 test("the first End to End screen shows the model and the product lines together", async () => {
   assert.match(page, /<E2eLinesView initialQuery=\{query\.toString\(\)\} \/>/u);
