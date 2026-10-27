@@ -79,6 +79,20 @@ test("the delay range bars are clickable rows sorted by quantity, with no image 
   }
 });
 
+test("the product and transport toggles have All and filter the data as well as the model", () => {
+  // "All" (the default) keeps the default scenario of the model: not MTS and by sea.
+  assert.match(view, /const mts = demandType === "mts";/u);
+  assert.match(view, /const air = modal === "air";/u);
+  assert.equal((view.match(/\{e\.allOption\}/gu) ?? []).length, 2);
+  assert.match(view, /aria-pressed=\{demandType === ""\}/u);
+  assert.match(view, /aria-pressed=\{modal === ""\}/u);
+  assert.match(view, /setDemandType\(next\); syncUrl\(applied, \{ \.\.\.stage, demandType: next \}, 1\);/u);
+  assert.match(view, /setModal\(next\); syncUrl\(applied, \{ \.\.\.stage, modal: next \}, 1\);/u);
+  // Each summary loaded is kept, so the animation does not reload the charts at every stage.
+  assert.match(view, /if \(summaryCached\) return undefined;/u);
+  for (const messages of [ptBR, en, zhCN]) assert.ok(messages.e2e.allOption);
+});
+
 test("both overview charts are clickable through their legends and keep the keyboard out of the images", () => {
   assert.equal((overview.match(/role="img"/gu) ?? []).length, 2);
   assert.doesNotMatch(overview, /tabIndex|role="button"|formatNumber|e2e-pie-label|e2e-pie-guide/u);
@@ -132,8 +146,8 @@ test("the lines follow the selected stage, view and late filter on the API route
   assert.match(view, /apiFetch\(`\/api\/v1\/purchase-order-lines\?\$\{query\}`/u);
   assert.match(view, /productLineQuery\(applied, page, pageSize, stage\)/u);
   assert.match(view, /apiFetch\(`\/api\/v1\/purchase-order-lines\/e2e-stages\?\$\{summaryQuery\}`/u);
-  assert.match(view, /const summaryQuery = e2eSummaryQuery\(applied, deadline, delayRange\)\.toString\(\);/u);
-  assert.match(view, /const stage: E2eStageFilter = \{ stage: current === null \? "" : E2E_STAGE_CODES\[current\], view, late, deadline,\s+delayRange \};/u);
+  assert.match(view, /const summaryQuery = e2eSummaryQuery\(applied, stage\)\.toString\(\);/u);
+  assert.match(view, /const stage: E2eStageFilter = \{ stage: current === null \? "" : E2E_STAGE_CODES\[current\], view, late, deadline,\s+delayRange, demandType, modal \};/u);
   // The export downloads what the table shows.
   assert.match(view, /downloadExcel\(applied, stage\)/u);
   // Loaded stages are kept, so the animation does not reload them on every pass.

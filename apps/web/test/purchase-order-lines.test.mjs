@@ -39,16 +39,16 @@ test("an item split across IPs shows how much is in each status and what is left
 
 test("the End to End stage filter round-trips through the URL and joins the line filters", () => {
   const filter = parseE2eStageFilter(new URLSearchParams("stage=T3&view=reached&late=true&ipNumber=IP-1"));
-  assert.deepEqual(filter, { stage: "T3", view: "reached", late: true, deadline: "", delayRange: "" });
+  assert.deepEqual(filter, { stage: "T3", view: "reached", late: true, deadline: "", delayRange: "", demandType: "", modal: "" });
   assert.deepEqual(parseE2eStageFilter(new URLSearchParams("stage=T9&view=all&late=1")), emptyE2eStageFilter);
-  assert.deepEqual(emptyE2eStageFilter, { stage: "", view: "current", late: false, deadline: "", delayRange: "" });
+  assert.deepEqual(emptyE2eStageFilter, { stage: "", view: "current", late: false, deadline: "", delayRange: "", demandType: "", modal: "" });
   assert.deepEqual(e2eStageFilterBody(filter), { stage: "T3", view: "reached", late: "true" });
   // The default view is not sent, so the API default applies.
-  assert.deepEqual(e2eStageFilterBody({ stage: "T0", view: "current", late: false, deadline: "", delayRange: "" }), { stage: "T0" });
+  assert.deepEqual(e2eStageFilterBody({ stage: "T0", view: "current", late: false, deadline: "", delayRange: "", demandType: "", modal: "" }), { stage: "T0" });
   assert.deepEqual(e2eStageFilterBody(emptyE2eStageFilter), {});
   const query = productLineQuery(emptyProductLineFilters, 1, 50, filter);
   assert.deepEqual([query.get("stage"), query.get("view"), query.get("late"), query.get("situation")], ["T3", "reached", "true", "open"]);
-  assert.deepEqual(productLineFilterBody(emptyProductLineFilters, { stage: "T5", view: "current", late: true, deadline: "", delayRange: "" }),
+  assert.deepEqual(productLineFilterBody(emptyProductLineFilters, { stage: "T5", view: "current", late: true, deadline: "", delayRange: "", demandType: "", modal: "" }),
     { situation: "open", stage: "T5", late: "true" });
   assert.deepEqual([...e2eStageCodes], ["T0", "T1", "T2", "T3", "T4", "T5"]);
 });
@@ -60,11 +60,11 @@ test("the End to End deadline filter goes to the lines, the export and the summa
   assert.equal(parseE2eStageFilter(new URLSearchParams("deadline=atrasado")).deadline, "");
   assert.deepEqual(e2eStageFilterBody(filter), { stage: "T4", late: "true", deadline: "late" });
   assert.equal(productLineQuery(emptyProductLineFilters, 1, 50, filter).get("deadline"), "late");
-  // The summary takes the line filters and the deadline, never the stage, the view or the late toggle.
+  // The summary takes the same filters as the table, without the page.
   const filters = { ...emptyProductLineFilters, status: "AGUARDANDO CHEGADA", ipNumber: " IP-1 " };
-  assert.deepEqual(Object.fromEntries(e2eSummaryQuery(filters, "noData")),
+  assert.deepEqual(Object.fromEntries(e2eSummaryQuery(filters, { ...emptyE2eStageFilter, deadline: "noData" })),
     { situation: "open", ipNumber: "IP-1", status: "AGUARDANDO CHEGADA", deadline: "noData" });
-  assert.deepEqual(Object.fromEntries(e2eSummaryQuery(emptyProductLineFilters, "")), { situation: "open" });
+  assert.deepEqual(Object.fromEntries(e2eSummaryQuery(emptyProductLineFilters, emptyE2eStageFilter)), { situation: "open" });
   // The product line filters shared with the Linhas de produto screen do not change.
   assert.equal("deadline" in emptyProductLineFilters, false);
 });
@@ -84,8 +84,20 @@ test("the End to End delay range filter goes to the lines, the export and the su
   assert.equal(parseE2eStageFilter(new URLSearchParams("delayRange=30-45")).delayRange, "");
   assert.deepEqual(e2eStageFilterBody(filter), { deadline: "late", delayRange: "days30To45" });
   assert.equal(productLineQuery(emptyProductLineFilters, 1, 50, filter).get("delayRange"), "days30To45");
-  assert.deepEqual(Object.fromEntries(e2eSummaryQuery(emptyProductLineFilters, "late", "upTo30")),
+  assert.deepEqual(Object.fromEntries(e2eSummaryQuery(emptyProductLineFilters,
+    { ...emptyE2eStageFilter, deadline: "late", delayRange: "upTo30" })),
     { situation: "open", deadline: "late", delayRange: "upTo30" });
-  assert.deepEqual(Object.fromEntries(e2eSummaryQuery(emptyProductLineFilters, "", "noData")),
+  assert.deepEqual(Object.fromEntries(e2eSummaryQuery(emptyProductLineFilters, { ...emptyE2eStageFilter, delayRange: "noData" })),
     { situation: "open", delayRange: "noData" });
+});
+
+test("the End to End scenario filters the lines and the summary takes the same filters as the table", () => {
+  const filter = parseE2eStageFilter(new URLSearchParams("demandType=mts&modal=air&stage=T4&late=true"));
+  assert.deepEqual([filter.demandType, filter.modal], ["mts", "air"]);
+  const invalid = parseE2eStageFilter(new URLSearchParams("demandType=MTS&modal=road"));
+  assert.deepEqual([invalid.demandType, invalid.modal], ["", ""]);
+  assert.deepEqual(e2eStageFilterBody(filter), { stage: "T4", late: "true", demandType: "mts", modal: "air" });
+  const summary = e2eSummaryQuery(emptyProductLineFilters, filter);
+  assert.deepEqual(Object.fromEntries(summary), { situation: "open", stage: "T4", late: "true", demandType: "mts", modal: "air" });
+  assert.equal(summary.has("page"), false);
 });
