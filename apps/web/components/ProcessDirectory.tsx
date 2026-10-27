@@ -96,7 +96,7 @@ export default function ProcessDirectory() {
         <option value="cancelled">{t.cancelled}</option><option value="deleted">{t.deleted}</option>
         <option value="all">{t.all}</option>
       </select></label>
-      <button className="button">{t.filter}</button><button type="button" className="button secondary" onClick={() => { setDraft(empty); navigate(empty, 1); }}>{t.clear}</button>
+      <div className="button-row portfolio-filter-actions"><button className="button">{t.filter}</button><button type="button" className="button secondary" onClick={() => { setDraft(empty); navigate(empty, 1); }}>{t.clear}</button></div>
     </form></section>
     <section className="card" aria-live="polite">
       {loading && <p role="status">{t.loading}</p>}

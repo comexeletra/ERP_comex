@@ -215,8 +215,8 @@ export default function PortfolioPage() {
           <option value="deleted">{t.cycleDeleted}</option>
           <option value="all">{t.cycleAll}</option>
         </select></label>
-        <button className="button" type="submit">{m.productLines.apply}</button>
-        <button className="button secondary" type="button" onClick={() => { setDraft(emptyFilters); navigate(emptyFilters, 1); }}>{m.processDirectory.clear}</button>
+        <div className="button-row portfolio-filter-actions"><button className="button" type="submit">{m.productLines.apply}</button>
+          <button className="button secondary" type="button" onClick={() => { setDraft(emptyFilters); navigate(emptyFilters, 1); }}>{m.processDirectory.clear}</button></div>
       </form>
       <p className="muted">{t.filterHelp}</p>
     </section>
