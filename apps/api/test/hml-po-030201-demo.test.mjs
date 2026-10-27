@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { calculateFollowup, calculateProcess, checkShipmentDates } from "../dist/followup-calculations.js";
 import { processFollowupFieldKeys } from "../dist/followup.js";
-import { allocationPlan, demandTypeForLine, ipForLine, ipNumberPattern, sharedFields, simulationIps }
+import { allocationPlan, demandType, ipForLine, ipNumberPattern, sharedFields, simulationIps }
   from "../../../deploy/hostinger/seed-hml-po-030201-demo.mjs";
 import { analyzePurchaseOrderE2e } from "../../web/lib/e2e-analysis.ts";
 
@@ -16,10 +16,9 @@ test("PO 030201 simulation sends every line to one IP by product family", () => 
   const counts = Object.fromEntries(simulationIps.map(ip => [ip.ip, lines.filter(line => ipForLine(line) === ip.ip).length]));
   assert.deepEqual(counts, { A: 22, B: 58, C: 53, D: 24, E: 35, F: 23, G: 0 });
   assert.equal(ipForLine("0216"), null);
-  // MTS (30 days in the HQ) for stock components, Não MTS (45 days) for made-to-order parts.
-  assert.equal(demandTypeForLine("0001"), "MTS");
-  assert.equal(demandTypeForLine("0160"), "Não MTS");
-  assert.equal(demandTypeForLine("0200"), "Não MTS");
+  // The demand type is the PO's: every line of 030201 is planned as MTS (30 days in the HQ).
+  assert.equal(demandType, "MTS");
+  assert.ok(simulationIps.every(ip => !("demandType" in ip)));
   assert.equal(sharedFields.necessityDate, "2026-12-01");
   assert.equal(sharedFields.poSentDate, "2026-08-24");
 });
@@ -60,7 +59,7 @@ test("the End to End of the simulation shows the expected slack per IP", () => {
     processes: simulationIps.map(ip => ({ process: { id: ip.ip, ipNumber: ip.ip }, calculated: { status: ip.expected.status } })),
     shipments: plan.map(entry => {
       const ip = ipOf(entry.ip);
-      const item = { id: entry.itemId, ...sharedFields, demandType: demandTypeForLine(entry.line) ?? "MTS",
+      const item = { id: entry.itemId, ...sharedFields, demandType,
         allocationQuantity: entry.quantity, actualFactoryShipDate: ip.factoryShipDate };
       return { itemId: entry.itemId, allocationQuantity: entry.quantity, process: { id: entry.ip },
         calculated: calculateFollowup(item, ip.fields, ip.invoiceDate ? invoice : [], "2026-10-26") };
@@ -72,6 +71,9 @@ test("the End to End of the simulation shows the expected slack per IP", () => {
   assert.equal(analysis.summary.onTimeLines, 69);
   assert.equal(analysis.summary.lateLines, 156);
   assert.equal(analysis.summary.worstIp, "G");
+  // One PO, one demand type: every line, D and E included, plans 30 days in the HQ.
+  assert.deepEqual([...new Set(input.shipments.map(shipment => shipment.calculated.e2e.stages.T3.targetDays))], [30]);
+  assert.deepEqual([...new Set(analysis.ips.map(ip => ip.demandType))], ["mts"]);
   // The resistor line of B: T1 +10 (SC approved 21/08), T2 −4 (PO sent 24/08), T3 +7 (left China 30/09).
   const resistor = input.shipments.find(shipment => shipment.process.id === "B").calculated.e2e;
   assert.deepEqual(["T1", "T2", "T3"].map(code => resistor.stages[code].delayDays), [10, -4, 7]);

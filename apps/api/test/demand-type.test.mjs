@@ -25,10 +25,39 @@ test("M069 adds the demand type list (MTS / Não MTS) and its own PO item field"
   assert.doesNotMatch(migration, /DELETE FROM/u);
 });
 
-test("the API accepts the demand type as a PO item field and as an operational entity", async () => {
-  const [followup, catalog, exports] = await Promise.all([source("followup.ts"), source("catalog.ts"), source("purchase-order-exports.ts")]);
-  assert.match(followup, /demandType: \["demand_type", "text", 40\]/u);
+test("M071 moves the demand type to the PO, keeping only the values its products agree on", async () => {
+  const migration = await readFile(new URL("M071_purchase_order_demand_type.sql", migrationsUrl), "utf8");
+  const sql = migration.replace(/--.*$/gmu, "");
+
+  assert.match(sql, /ALTER TABLE procurement\.purchase_order\s+ADD COLUMN demand_type varchar\(40\)/u);
+  assert.match(sql, /CHECK \(demand_type IS NULL OR length\(btrim\(demand_type\)\) > 0\)/u);
+  // Only POs whose typed products all agree get a type; mixed POs stay empty. Inactive POs are frozen (M063).
+  assert.match(sql, /HAVING count\(DISTINCT item\.demand_type\) = 1/u);
+  assert.match(sql, /po\.lifecycle_status = 'ACTIVE'/u);
+  // The copy runs before the product column goes away.
+  const copy = sql.indexOf("UPDATE procurement.purchase_order AS po");
+  const drop = sql.indexOf("ALTER TABLE procurement.purchase_order_item DROP COLUMN demand_type");
+  assert.ok(copy > 0 && drop > copy);
+  // Nothing else is touched: the DEMAND_TYPE list and the demand origin stay as they are.
+  assert.doesNotMatch(sql, /operational_value|DELETE FROM|INSERT INTO|\bdemand\b(?!_type)/u);
+  assert.equal([...sql.matchAll(/\b(?:ALTER TABLE|UPDATE)\s+([a-z_.]+)/gu)].map(match => match[1]).sort().join(","),
+    "procurement.purchase_order,procurement.purchase_order,procurement.purchase_order_item");
+});
+
+test("the demand type is a PO header field and no longer a product field", async () => {
+  const [operations, followup, catalog, exports] = await Promise.all([
+    source("operations.ts"), source("followup.ts"), source("catalog.ts"), source("purchase-order-exports.ts")]);
+  assert.match(operations, /demandType: nullableText\(40\)\.optional\(\)/u);
+  assert.doesNotMatch(followup, /demandType: \["demand_type"/u);
   assert.match(catalog, /"DEMAND_TYPE"/u);
   assert.match(catalog, /DEMAND_TYPE: 40/u);
   assert.match(exports, /\["Demand Type", line => text\(line\.item\.demandType\)\]/u);
+});
+
+test("every product reader takes the demand type from its PO", async () => {
+  for (const name of ["operations.ts", "followup.ts", "shipment-lines.ts"]) {
+    const code = await source(name);
+    assert.doesNotMatch(code, /item\.demand_type/u, name);
+    assert.match(code, /po\.demand_type/u, name);
+  }
 });

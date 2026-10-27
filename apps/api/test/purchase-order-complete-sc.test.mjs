@@ -159,3 +159,20 @@ test("replaying the same idempotency key returns the same PO and SC id", async t
   assert.equal(second.json().purchaseRequestId, generatedScId);
   assert.equal(fixture.purchaseRequestInsertCount, 1);
 });
+
+test("the complete PO keeps its demand type on the PO and never on the products", async t => {
+  const fixture = await createFixture(t);
+  const response = await fixture.app.inject({ method: "POST", url: "/api/v1/purchase-orders/complete",
+    headers: { "content-type": "application/json", "idempotency-key": "complete-demand-type" },
+    payload: { ...payload, header: { ...payload.header, demandType: "Não MTS" } } });
+  assert.equal(response.statusCode, 201, response.body);
+  const insert = fixture.queries.find(query => query.sql.includes("INSERT INTO procurement.purchase_order\n"));
+  assert.match(insert.sql, /demand_type/u);
+  assert.equal(insert.params.at(-1), "Não MTS");
+
+  const productType = await (await createFixture(t)).app.inject({ method: "POST", url: "/api/v1/purchase-orders/complete",
+    headers: { "content-type": "application/json", "idempotency-key": "complete-product-type" },
+    payload: { ...payload, items: [{ ...payload.items[0], fields: { demandType: "MTS" } }] } });
+  assert.equal(productType.statusCode, 400, productType.body);
+  assert.equal(productType.json().code, "INVALID_FOLLOWUP");
+});

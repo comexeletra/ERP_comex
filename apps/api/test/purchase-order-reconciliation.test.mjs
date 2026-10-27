@@ -44,6 +44,12 @@ async function appWithState(t, { role = "Master", activeAllocations = false, des
       state.po.version = String(Number(state.po.version) + 1);
       return { rows: [{ version: state.po.version }], rowCount: 1 };
     }
+    if (sql.includes("INSERT INTO procurement.purchase_order\n")) {
+      return { rows: [{ id: params[0], importer: params[1], number: params[2], orderDate: "2026-10-27", version: "1" }], rowCount: 1 };
+    }
+    if (sql.includes("FROM catalog.entry WHERE kind='SUPPLIER'")) {
+      return { rows: [{ id: "supplier-id", code: "SUP-1", name: "Fornecedor" }], rowCount: 1 };
+    }
     if (sql.includes("normalized_number") && sql.includes("purchase_order")) {
       return { rows: duplicateDestination ? [{ id: "duplicate-po" }] : [], rowCount: duplicateDestination ? 1 : 0 };
     }
@@ -174,4 +180,51 @@ test("the complete PO save applies an approved importer change with its shared f
   assert.ok(queries.some(query => query.sql === "COMMIT"));
   assert.ok(queries.some(query => query.sql.includes("UPDATE procurement.purchase_order AS po")
     && query.sql.includes("SET external_number=$2") && query.params.at(-1) === "ELETRA MANAUS"));
+});
+
+test("the demand type (MTS / Não MTS) is saved on the PO and kept when a save leaves it out", async t => {
+  const header = { number: "PO-030201", supplierText: "SUP-1", orderDate: null, notes: "", purchaseRequestId: null,
+    reason: "Tipo de demanda da PO" };
+  const demandParams = query => query.params.slice(-3, -1);
+
+  const created = await appWithState(t);
+  const post = await created.app.inject({ method: "POST", url: "/api/v1/purchase-orders",
+    headers: { "idempotency-key": "po-demand-type" },
+    payload: { ...header, number: "PO-NOVA", importer: "ELETRA MATRIZ", demandType: "Não MTS" } });
+  assert.equal(post.statusCode, 201, post.body);
+  const insert = created.queries.find(query => query.sql.includes("INSERT INTO procurement.purchase_order\n"));
+  assert.match(insert.sql, /demand_type/u);
+  assert.equal(insert.params.at(-1), "Não MTS");
+
+  for (const [demandType, expected] of [["MTS", [true, "MTS"]], [null, [true, null]], [undefined, [false, null]]]) {
+    const { app, queries } = await appWithState(t);
+    const patch = await app.inject({ method: "PATCH", url: `/api/v1/purchase-orders/${poId}`,
+      headers: { "x-record-version": "3" }, payload: { ...header, ...(demandType === undefined ? {} : { demandType }) } });
+    assert.equal(patch.statusCode, 200, patch.body);
+    const update = queries.find(query => query.sql.includes("UPDATE procurement.purchase_order AS po SET supplier_text"));
+    assert.match(update.sql, /demand_type = CASE WHEN \$7::boolean THEN \$8::text ELSE demand_type END/u);
+    assert.deepEqual(demandParams(update), expected);
+  }
+
+  const { app, queries } = await appWithState(t);
+  const complete = await app.inject({ method: "PATCH", url: `/api/v1/purchase-orders/${poId}/complete`,
+    headers: { "x-record-version": "3" }, payload: { header: { ...header, demandType: "MTS" }, itemIds: [], fields: {} } });
+  assert.equal(complete.statusCode, 200, complete.body);
+  const update = queries.find(query => query.sql.includes("UPDATE procurement.purchase_order AS po")
+    && query.sql.includes("SET external_number=$2"));
+  assert.match(update.sql, /demand_type=CASE WHEN \$7::boolean THEN \$8::text ELSE demand_type END/u);
+  assert.deepEqual(demandParams(update), [true, "MTS"]);
+  assert.equal(queries.some(query => query.sql.includes("UPDATE procurement.purchase_order_item")), false);
+});
+
+test("a product never gets a demand type of its own", async t => {
+  const { app, queries } = await appWithState(t);
+  for (const [url, body] of [[`/api/v1/purchase-orders/${poId}/items/${itemId}/followup`, {}],
+    [`/api/v1/purchase-orders/${poId}/items/followup`, { itemIds: [itemId] }]]) {
+    const response = await app.inject({ method: "PATCH", url, headers: { "x-record-version": "3" },
+      payload: { ...body, fields: { demandType: "MTS" }, reason: "Tipo no produto" } });
+    assert.equal(response.statusCode, 400, response.body);
+    assert.equal(response.json().code, "INVALID_FOLLOWUP");
+  }
+  assert.equal(queries.some(query => query.sql.includes("UPDATE procurement.purchase_order_item")), false);
 });
