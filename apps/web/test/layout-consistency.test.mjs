@@ -186,6 +186,18 @@ test("End to End charts define the approved palette in both themes", () => {
   }
 });
 
+test("the End to End overview is a compact 3:2 row that stacks below 1100 px", () => {
+  const css = styles["app/styles/features/e2e.css"];
+  assert.match(css, /\.e2e-overview \{[^}]*grid-template-columns:\s*minmax\(0, 3fr\) minmax\(0, 2fr\);/u);
+  assert.match(css, /@media \(max-width: 1100px\) \{[^@]*\.e2e-overview \{ grid-template-columns: 1fr; \}/u);
+  for (const rule of [".e2e-distribution {", ".e2e-distribution-segment {", ".e2e-chart-legend-item {", ".e2e-pie-layout {"]) {
+    assert.ok(css.includes(rule), rule);
+  }
+  // No Excel-like external labels or guide lines, and a pie no larger than the legend beside it.
+  for (const rule of [".e2e-pie-guide", ".e2e-pie-label", ".e2e-pie-action"]) assert.ok(!css.includes(rule), rule);
+  assert.match(css, /\.e2e-pie \{[^}]*height:\s*120px;[^}]*width:\s*120px;/u);
+});
+
 test("font sizes, radii and layers use the token scales", () => {
   for (const [path, css] of featureStyles) {
     for (const value of declarations(css, "font-size")) assert.match(value, /^(var\(--fs-[\w-]+\)|inherit)$/u, `${path}: font-size ${value}`);

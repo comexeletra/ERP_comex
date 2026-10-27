@@ -13,14 +13,33 @@ const [view, overview, panels, parts, tabs, page, modelPage, styles, flowLib] = 
   read("components/E2eTabs.tsx"), read("app/end-to-end/page.tsx"), read("app/end-to-end/model/page.tsx"),
   read("app/styles/features/e2e.css"), read("lib/e2e-flow.ts")]);
 
-test("the optional overview precedes the model and filters the table by line status", () => {
+test("the optional overview precedes the model and cross-filters by status and deadline", () => {
   assert.match(view, /overview\?: E2eOverview/u);
   assert.match(view, /\{counts\?\.overview && <E2eOverviewCharts/u);
   assert.ok(view.indexOf("<E2eOverviewCharts") < view.indexOf("<E2eModelSummary"));
-  assert.match(view, /const filters = \{ \.\.\.applied, status \}; setDraft\(filters\); applyFilters\(filters\);/u);
+  // Clicking the selected category again clears it.
+  assert.match(view, /const filters = \{ \.\.\.applied, status: applied\.status === status \? "" : status \};/u);
+  assert.match(view, /setDraft\(filters\); applyFilters\(filters\);/u);
+  assert.match(view, /const next = deadline === selected \? "" : selected;/u);
+  assert.match(view, /setDeadline\(next\); syncUrl\(applied, \{ \.\.\.stage, deadline: next \}, 1\);/u);
   assert.match(view, /onStatusSelect=\{filterByStatus\}/u);
-  assert.match(overview, /onClick=\{\(\) => onStatusSelect\(entry\.key\)\}/u);
-  assert.match(overview, /aria-pressed=\{selectedStatus === entry\.key\}/u);
+  assert.match(view, /onDeadlineSelect=\{selectDeadline\}/u);
+  assert.match(view, /selectedDeadline=\{deadline\}/u);
+  // Clear also removes the deadline chosen on the chart.
+  assert.match(view, /setDeadline\(""\); applyFilters\(emptyProductLineFilters, \{ \.\.\.stage, deadline: "" \}\);/u);
+});
+
+test("both overview charts are clickable through their legends and keep the keyboard out of the images", () => {
+  assert.equal((overview.match(/role="img"/gu) ?? []).length, 2);
+  assert.doesNotMatch(overview, /tabIndex|role="button"|formatNumber|e2e-pie-label|e2e-pie-guide/u);
+  assert.match(overview, /<button type="button" className=\{`e2e-chart-legend-item/u);
+  assert.match(overview, /aria-pressed=\{entry\.key === selected\}/u);
+  assert.match(overview, /selected=\{selectedStatus\} onSelect=\{onStatusSelect\}/u);
+  assert.match(overview, /selected=\{selectedDeadline\} onSelect=\{onDeadlineSelect\}/u);
+  // Mouse shortcuts on the marks; the legend is the keyboard path.
+  assert.match(overview, /className=\{`e2e-distribution-segment/u);
+  assert.match(overview, /aria-hidden="true"/u);
+  assert.match(overview, /m\.e2eLines\.overview\.clearSelection/u);
 });
 
 test("the first End to End screen shows the model and the product lines together", async () => {
@@ -63,8 +82,8 @@ test("the lines follow the selected stage, view and late filter on the API route
   assert.match(view, /apiFetch\(`\/api\/v1\/purchase-order-lines\?\$\{query\}`/u);
   assert.match(view, /productLineQuery\(applied, page, pageSize, stage\)/u);
   assert.match(view, /apiFetch\(`\/api\/v1\/purchase-order-lines\/e2e-stages\?\$\{summaryQuery\}`/u);
-  assert.match(view, /new URLSearchParams\(productLineFilterBody\(applied\)\)/u);
-  assert.match(view, /const stage: E2eStageFilter = \{ stage: current === null \? "" : E2E_STAGE_CODES\[current\], view, late \};/u);
+  assert.match(view, /const summaryQuery = e2eSummaryQuery\(applied, deadline\)\.toString\(\);/u);
+  assert.match(view, /const stage: E2eStageFilter = \{ stage: current === null \? "" : E2E_STAGE_CODES\[current\], view, late, deadline \};/u);
   // The export downloads what the table shows.
   assert.match(view, /downloadExcel\(applied, stage\)/u);
   // Loaded stages are kept, so the animation does not reload them on every pass.
