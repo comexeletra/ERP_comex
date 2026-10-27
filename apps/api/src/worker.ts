@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
+import { exportColumnsSchema, resolveExportColumns } from "./export-columns.js";
 import { queryPurchaseOrderExport, purchaseOrderExportXlsx, purchaseOrderLinesXlsx,
   type PurchaseOrderExportFilters } from "./purchase-order-exports.js";
 import { queryShipmentLines, shipmentLineQuery } from "./shipment-lines.js";
@@ -104,23 +105,37 @@ async function failJob(job: ExportJob, error: unknown): Promise<void> {
     attempt: job.attempt_count, retrying: !terminal }));
 }
 
+/** Columns chosen on the screen; undefined keeps the layout from before the choice. */
+function chosenColumns<C extends "portfolio" | "product-lines" | "end-to-end">(parameters: Record<string, unknown>,
+  contexts: readonly C[], filters: Parameters<typeof resolveExportColumns>[2]) {
+  if (parameters.columns === undefined && parameters.context === undefined) return undefined;
+  const columns = exportColumnsSchema.safeParse(parameters.columns);
+  const context = contexts.find(value => value === parameters.context);
+  const resolved = columns.success && context ? resolveExportColumns(context, columns.data, filters) : null;
+  if (!resolved) throw new PermanentJobError("INVALID_EXPORT_COLUMNS");
+  return resolved;
+}
+
 async function processJob(job: ExportJob): Promise<void> {
   try {
+    const { context, columns, ...parameters } = job.parameters as Record<string, unknown>;
     if (job.job_type === "purchase-order-lines-xlsx") {
-      const filters = shipmentLineQuery.safeParse(job.parameters);
+      const filters = shipmentLineQuery.safeParse(parameters);
       if (!filters.success) throw new PermanentJobError("INVALID_EXPORT_FILTERS");
+      const chosen = chosenColumns({ context, columns }, ["product-lines", "end-to-end"], filters.data);
       const result = await queryShipmentLines(pool, job.importer_scopes, filters.data, 5001, 0);
       if (result.totalCount > 5000) throw new PermanentJobError("EXPORT_TOO_LARGE");
-      await completeJob(job, await purchaseOrderLinesXlsx(result.lines));
+      await completeJob(job, await purchaseOrderLinesXlsx(result.lines, chosen));
       console.info(JSON.stringify({ event: "export_job_completed", jobId: job.id, rowCount: result.lines.length }));
       return;
     }
     if (job.job_type !== "purchase-order-xlsx" && job.job_type !== "purchase-order-csv") {
       throw new PermanentJobError("UNSUPPORTED_JOB_TYPE");
     }
-    const result = await queryPurchaseOrderExport(pool, job.importer_scopes, job.parameters as PurchaseOrderExportFilters);
+    const chosen = chosenColumns({ context, columns }, ["portfolio"], {});
+    const result = await queryPurchaseOrderExport(pool, job.importer_scopes, parameters as PurchaseOrderExportFilters);
     if (result.totalCount > 5000) throw new PermanentJobError("EXPORT_TOO_LARGE");
-    await completeJob(job, await purchaseOrderExportXlsx(result.rows));
+    await completeJob(job, await purchaseOrderExportXlsx(result.rows, chosen));
     console.info(JSON.stringify({ event: "export_job_completed", jobId: job.id, rowCount: result.rows.length }));
   } catch (error) {
     await failJob(job, error);

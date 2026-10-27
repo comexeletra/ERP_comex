@@ -123,7 +123,7 @@ test("PO export follows the screen lifecycle filter and table columns when colum
   const sheet = workbook.getWorksheet("Carteira de POs");
   assert.deepEqual(sheet.getRow(1).values.slice(1), ["PO TOTVS", "Status", "Items"]);
   assert.deepEqual(sheet.getRow(2).values.slice(1), ["PO-1", "Encerrada", 3]);
-  assert.deepEqual(sheet.autoFilter, { from: { row: 1, column: 1 }, to: { row: 1, column: 3 } });
+  assert.equal(sheet.autoFilter, "A1:C1");
 });
 
 test("product line exports write only the chosen table columns, in the table order", async () => {
@@ -153,7 +153,7 @@ test("product line exports write only the chosen table columns, in the table ord
     { key: "productDescription", header: "Description" }], {})));
   assert.deepEqual(lines.getRow(1).values.slice(1), ["PO", "Product", "Description", "Qty", "Invoice"]);
   assert.deepEqual(lines.getRow(2).values.slice(1), ["PO-1", "P-1", "Produto 1", 60, "INV-1, INV-2"]);
-  assert.deepEqual(lines.autoFilter, { from: { row: 1, column: 1 }, to: { row: 1, column: 5 } });
+  assert.equal(lines.autoFilter, "A1:E1");
 
   const filters = { stage: "T3", view: "reached" };
   const e2e = await load(await purchaseOrderLinesXlsx([line], resolveExportColumns("end-to-end", [

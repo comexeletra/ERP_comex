@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 import ExcelJS from "exceljs";
 import { moneyProduct, type calculateE2e, type E2eStageCode } from "./followup-calculations.js";
+import type { ResolvedExportColumn } from "./export-columns.js";
 import type { ShipmentLine } from "./shipment-lines.js";
 
 export type PurchaseOrderExportFilters = {
@@ -8,12 +9,15 @@ export type PurchaseOrderExportFilters = {
   importer?: string;
   product?: string;
   ipNumber?: string;
+  /** Lifecycle filter of the carteira screen; unset leaves out only the deleted POs. */
+  lifecycle?: "active" | "cancelled" | "closed" | "deleted" | "all";
 };
 
 export type PurchaseOrderExportRow = {
   id: string;
   number: string;
   importer: string;
+  lifecycleStatus: string;
   itemCount: number;
   linkedProcessCount: number;
   itemsWithIp: number;
@@ -31,6 +35,7 @@ export async function queryPurchaseOrderExport(
     id: string;
     number: string;
     importer: string;
+    lifecycle_status: string;
     item_count: number;
     linked_process_count: number;
     items_with_ip: number;
@@ -38,7 +43,7 @@ export async function queryPurchaseOrderExport(
     unresolved_issue_count: number;
   }>(
     `SELECT count(*) OVER ()::int AS total_count,
-            po.id, po.external_number AS number, po.importer,
+            po.id, po.external_number AS number, po.importer, po.lifecycle_status,
             (SELECT count(*)::int FROM procurement.purchase_order_item AS item
              WHERE item.purchase_order_id = po.id) AS item_count,
             (SELECT count(*)::int FROM procurement.process_purchase_order AS link
@@ -65,7 +70,10 @@ export async function queryPurchaseOrderExport(
               AS unresolved_issue_count
      FROM procurement.purchase_order AS po
      WHERE po.importer = ANY($1::text[])
-       AND po.lifecycle_status <> 'DELETED'
+       -- The same lifecycle filter as portfolioWhere() in purchase-orders.ts.
+       AND ($6::text IS NULL AND po.lifecycle_status <> 'DELETED'
+         OR $6::text = 'all'
+         OR lower(po.lifecycle_status) = $6::text)
        AND ($2::text IS NULL OR strpos(po.normalized_number, upper($2)) > 0)
        AND ($3::text IS NULL OR strpos(lower(po.importer), lower($3)) > 0)
        AND ($4::text IS NULL OR EXISTS (
@@ -89,7 +97,7 @@ export async function queryPurchaseOrderExport(
      ORDER BY po.normalized_number, po.id
      LIMIT 5001`,
     [importerScopes, filters.number || null, filters.importer || null,
-      filters.product || null, filters.ipNumber || null],
+      filters.product || null, filters.ipNumber || null, filters.lifecycle ?? null],
   );
 
   return {
@@ -98,6 +106,7 @@ export async function queryPurchaseOrderExport(
       id: row.id,
       number: row.number,
       importer: row.importer,
+      lifecycleStatus: row.lifecycle_status,
       itemCount: Number(row.item_count),
       linkedProcessCount: Number(row.linked_process_count),
       itemsWithIp: Number(row.items_with_ip),
@@ -107,7 +116,29 @@ export async function queryPurchaseOrderExport(
   };
 }
 
-export async function purchaseOrderExportXlsx(rows: readonly PurchaseOrderExportRow[]): Promise<Buffer> {
+/** Writes a sheet with the columns chosen on the screen; forecast values in italics, as on the screen. */
+async function chosenColumnsXlsx<Row>(sheetName: string, columns: readonly ResolvedExportColumn<Row>[],
+  rows: readonly Row[]): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "ERP Comex";
+  workbook.created = new Date();
+  const sheet = workbook.addWorksheet(sheetName, { views: [{ state: "frozen", ySplit: 1 }] });
+  sheet.columns = columns.map(column => ({ header: column.header, key: column.key, width: column.width }));
+  sheet.getRow(1).font = { bold: true };
+  sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: columns.length } };
+  for (const row of rows) {
+    const added = sheet.addRow(columns.map(column => column.value(row)));
+    columns.forEach((column, index) => {
+      if (column.forecast?.(row)) added.getCell(index + 1).font = { italic: true, color: { argb: "FF6B7280" } };
+    });
+  }
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+/** Without chosen columns, the layout from before the column choice (8 columns). */
+export async function purchaseOrderExportXlsx(rows: readonly PurchaseOrderExportRow[],
+  columns?: readonly ResolvedExportColumn<PurchaseOrderExportRow>[]): Promise<Buffer> {
+  if (columns) return chosenColumnsXlsx("Carteira de POs", columns, rows);
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "ERP Comex";
   workbook.created = new Date();
@@ -139,6 +170,7 @@ const decimal = (value: unknown): number | null => {
 const e2e = (line: ShipmentLine) => (line.calculated as { e2e?: ReturnType<typeof calculateE2e> }).e2e ?? null;
 const e2eStage = (line: ShipmentLine, code: E2eStageCode) => e2e(line)?.stages[code] ?? null;
 
+// Layout from before the column choice, used when a job has no chosen columns.
 // Columns B:AZ of the Pré Embarque sheet, in order, so the export can replace it;
 // new data the sheet never had comes after them. IP costs are not repeated per line.
 const lineColumns: [string, (line: ShipmentLine) => Cell][] = [
@@ -196,7 +228,9 @@ const lineColumns: [string, (line: ShipmentLine) => Cell][] = [
   ["Line Type", line => line.lineKind === "BALANCE" ? "Saldo sem IP" : "Distribuição no IP"],
 ];
 
-export async function purchaseOrderLinesXlsx(lines: readonly ShipmentLine[]): Promise<Buffer> {
+export async function purchaseOrderLinesXlsx(lines: readonly ShipmentLine[],
+  columns?: readonly ResolvedExportColumn<ShipmentLine>[]): Promise<Buffer> {
+  if (columns) return chosenColumnsXlsx("Carteira por produto", columns, lines);
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "ERP Comex";
   workbook.created = new Date();

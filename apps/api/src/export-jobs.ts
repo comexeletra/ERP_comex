@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
+import { exportColumnsSchema, resolveExportColumns } from "./export-columns.js";
 import { shipmentLineQuery } from "./shipment-lines.js";
 
 const filtersSchema = z.object({
@@ -10,6 +11,13 @@ const filtersSchema = z.object({
   importer: z.string().trim().max(120).optional(),
   product: z.string().trim().max(200).optional(),
   ipNumber: z.string().trim().max(80).optional(),
+  lifecycle: z.enum(["active", "cancelled", "closed", "deleted", "all"]).optional(),
+}).strict();
+// Columns chosen on the screen; a job without them keeps the layout from before the choice.
+const columnChoice = { columns: exportColumnsSchema.optional() };
+const purchaseOrderExportBody = filtersSchema.extend({ context: z.literal("portfolio").optional(), ...columnChoice }).strict();
+const lineExportBody = shipmentLineQuery.extend({
+  context: z.enum(["product-lines", "end-to-end"]).optional(), ...columnChoice,
 }).strict();
 const jobIdSchema = z.string().uuid();
 const exportFileNames: Record<string, string> = {
@@ -55,14 +63,22 @@ export async function registerExportJobRoutes(app: FastifyInstance, pool: Pool):
   });
 
   for (const [path, jobType, schema] of [
-    ["/api/v1/exports/purchase-orders", "purchase-order-xlsx", filtersSchema],
-    ["/api/v1/exports/purchase-order-lines", "purchase-order-lines-xlsx", shipmentLineQuery.strict()],
+    ["/api/v1/exports/purchase-orders", "purchase-order-xlsx", purchaseOrderExportBody],
+    ["/api/v1/exports/purchase-order-lines", "purchase-order-lines-xlsx", lineExportBody],
   ] as const) app.post(path, {
     config: permissionConfig("purchase-orders.read"),
   }, async (request, reply) => {
     const parsed = schema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.code(400).send({ error: "Filtros inválidos para a exportação." });
+      const columnsInvalid = parsed.error.issues.some(issue => issue.path[0] === "columns" || issue.path[0] === "context");
+      return reply.code(400).send({ error: columnsInvalid
+        ? "Colunas inválidas para a exportação." : "Filtros inválidos para a exportação." });
+    }
+    const { context, columns } = parsed.data;
+    // Only the line filters (with the default `situation`) carry the stage that conditional columns follow.
+    const columnFilters = "situation" in parsed.data ? parsed.data : {};
+    if ((columns || context) && (!columns || !context || !resolveExportColumns(context, columns, columnFilters))) {
+      return reply.code(400).send({ error: "Colunas inválidas para a exportação." });
     }
 
     const id = randomUUID();
