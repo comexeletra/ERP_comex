@@ -29,6 +29,7 @@ import { purchaseOrderNumberBlockMessage } from "../lib/po-lifecycle";
 import DeletedPurchaseOrderActions, { PurchaseOrderReplacePayload } from "./DeletedPurchaseOrderActions";
 import { classifyTotvsPurchaseRequest, totvsPurchaseRequestPayload } from "../lib/totvs-purchase-request";
 import { getMessages, useI18n } from "./I18nProvider";
+import { fieldLabel } from "../lib/i18n/labels";
 import PageHeader from "./PageHeader";
 import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoiceAuditPoints, InvoiceAuditPointKind, invoiceAuditProgress,
   invoiceCandidatesForProduct, invoiceComparisonRows, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
@@ -54,6 +55,7 @@ type PoDraft = {
   number: string;
   supplier: string;
   notes: string;
+  demandType?: string;
   items: PoItemDraft[];
   commonItemFields: OperationalFieldDraft;
   purchaseRequestId: string;
@@ -127,6 +129,7 @@ function isLegacyImporterOnlyDraft(draft: Partial<PoDraft>): boolean {
     && !hasDraftValue(draft.number)
     && !hasDraftValue(draft.supplier)
     && !hasDraftValue(draft.notes)
+    && !hasDraftValue(draft.demandType)
     && !hasDraftValue(draft.purchaseRequestId)
     && !hasDraftValue(draft.createdPoId)
     && !hasDraftValue(draft.commonItemFields)
@@ -198,6 +201,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
   const [notes, setNotes] = useState("");
+  const [demandType, setDemandType] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -260,6 +264,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           setNumber(typeof draft.number === "string" ? draft.number : "");
           setSupplier(typeof draft.supplier === "string" ? draft.supplier : "");
           setNotes(typeof draft.notes === "string" ? draft.notes : "");
+          setDemandType(typeof draft.demandType === "string" ? draft.demandType : "");
           setItems(draft.items.map((item, index) => ({ ...item,
             draftId: typeof item.draftId === "string" && item.draftId ? item.draftId : `restored:${index}` })));
           setCommonItemFields(draft.commonItemFields ?? blankPurchaseOrderItemFields);
@@ -275,14 +280,14 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
 
   useEffect(() => {
     if (kind !== "po" || !draftReady) return;
-    const draft: PoDraft = { importer, number, supplier, notes, items, commonItemFields, purchaseRequestId, createdPoId };
+    const draft: PoDraft = { importer, number, supplier, notes, demandType, items, commonItemFields, purchaseRequestId, createdPoId };
     const compact = { ...draft, items: items.map(item => ({ ...item, operational: blankPurchaseOrderItemFields() })) };
     try {
       setDraftStorageWarning(persistSessionDraft(sessionStorage, poDraftKey, draft, compact, getMessages()));
     } catch {
       setDraftStorageWarning(getMessages().poDraft.failed);
     }
-  }, [kind, draftReady, importer, number, supplier, notes, items, commonItemFields, purchaseRequestId, createdPoId]);
+  }, [kind, draftReady, importer, number, supplier, notes, demandType, items, commonItemFields, purchaseRequestId, createdPoId]);
 
   useEffect(() => {
     Promise.all([apiFetch("/auth/me"), apiFetch("/api/v1/importers", { cache: "no-store" }), loadOperationalCatalog()])
@@ -703,7 +708,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       ...(preflight ? { sourceFile: totvsApplied && totvsFileName && totvsImportHash
         ? { fileName: totvsFileName, fileSha256: totvsImportHash } : null } : {}),
       ...(preflight ? { confirmDuplicateNumber, duplicateNumberJustification: duplicateNumberJustification.trim() || undefined } : {}),
-      orderDate: null, notes, reason: automaticAuditReason }, items: completeItems });
+      orderDate: null, notes, demandType: demandType || null, reason: automaticAuditReason }, items: completeItems });
     let previousCommand: { payload: string; key: string } | null = null;
     try { previousCommand = JSON.parse(sessionStorage.getItem(poCommandKey) ?? "null"); } catch { /* Recria a chave. */ }
     const commandKey = previousCommand?.payload === completePayload && previousCommand.key
@@ -724,12 +729,13 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         items: ({ id: string } & Record<string, unknown>)[] }>(
         await apiFetch(`/api/v1/purchase-orders/${created.id}/followup`, { cache: "no-store" }));
       const savedHeader = await readResponse<{ supplierText: string | null; orderDate: string | null; notes: string;
-        purchaseRequestId: string | null }>(
+        demandType: string | null; purchaseRequestId: string | null }>(
         await apiFetch(`/api/v1/purchase-orders/${created.id}/operational`, { cache: "no-store" }));
       if (!Array.isArray(created.itemIds) || created.itemIds.length !== completeItems.length ||
           !Array.isArray(followup.items) || followup.number !== number.trim() ||
           followup.importer !== importer.trim() || savedHeader.supplierText !== (supplier.trim() || null) ||
           !savedHeader.orderDate || savedHeader.notes !== notes.trim() ||
+          savedHeader.demandType !== (demandType || null) ||
           savedHeader.purchaseRequestId !== (created.purchaseRequestId ?? null) ||
           completeItems.some((item, index) => {
             const saved = followup.items.find(row => row.id === created.itemIds[index]);
@@ -760,7 +766,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       method: "POST",
       headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
       body: JSON.stringify({ importer, number, supplierText: supplier || null,
-        orderDate: null, notes, purchaseRequestId: purchaseRequestId || null,
+        orderDate: null, notes, demandType: demandType || null, purchaseRequestId: purchaseRequestId || null,
         ...(preflight ? { confirmDuplicateNumber, duplicateNumberJustification: duplicateNumberJustification.trim() || undefined } : {}),
         reason: automaticAuditReason }),
     }));
@@ -985,6 +991,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
               {purchaseRequestId ? <small className="po-field-hint">{m.poPanel.fromSc}</small> : null}</label>
             <label>{m.poPanel.poDate}<input type="text" value={t.poDateAuto} readOnly aria-readonly="true" /></label>
           </div>
+          <label>{fieldLabel(m, { key: "demandType" })}<OperationalOptionSelect entity="demand_type" value={demandType} values={options}
+            onChange={setDemandType} /><small className="po-field-hint">{m.poPanel.demandTypeHint}</small></label>
           <label>{t.orderNotes}<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
           <h3>{t.sharedAll}</h3>
           <OperationalFieldsEditor fields={purchaseOrderCommonItemFields} values={commonItemFields}

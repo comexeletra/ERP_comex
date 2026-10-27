@@ -23,7 +23,6 @@ export const purchaseOrderItemFields: OperationalField[] = [
   { key: "commercialPlanReceivedDate", type: "date" },
   { key: "priority", type: "select", entity: "priority" },
   { key: "demand", type: "select", entity: "demand" },
-  { key: "demandType", type: "select", entity: "demand_type" },
   { key: "requester", type: "select", entity: "requester" },
   { key: "purpose", type: "select", entity: "purpose" },
   { key: "costCenter", type: "select", entity: "cost_center" },

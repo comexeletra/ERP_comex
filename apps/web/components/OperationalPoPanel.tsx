@@ -20,13 +20,14 @@ import { formatNumber } from "../lib/format-number";
 import type { Messages } from "../lib/i18n/pt-BR";
 import { useConfirmDialog } from "./ConfirmDialog";
 import { getMessages, useI18n } from "./I18nProvider";
+import { fieldLabel } from "../lib/i18n/labels";
 import { estimatedProductTotal, productPriceReferenceForCurrency, type ProductPriceReference } from "../lib/product-price-reference";
 import { parseTotvsPoXlsx } from "../lib/totvs-po-xlsx";
 
 type Item = { id: string; lineNumber: number; externalLineReference: string | null;
   productCode: string; description: string; orderedQuantity: string; unit: string | null;
   unitPrice: string | null; currency: string | null; sourceKind: string; sourceStatus: string | null;
-  necessityDate: string | null; priority: string | null; demand: string | null; demandType: string | null; requester: string | null;
+  necessityDate: string | null; priority: string | null; demand: string | null; requester: string | null;
   scNumber: string | null; scApprovalDate: string | null; purpose: string | null; productGroup: string | null; group: string | null;
   costCenter: string | null; draftPo: string | null; poApprovalDate: string | null; poSentDate: string | null;
   category: string | null; ncm: string | null; remarks: string | null; commercialPlanReceivedDate: string | null;
@@ -39,7 +40,7 @@ type Item = { id: string; lineNumber: number; externalLineReference: string | nu
 type Allocation = { id: string; itemId: string; processId: string; ipNumber: string;
   quantity: string; notes: string; factoryShipDate: string | null; version: string; processShipped?: boolean };
 type OperationalPo = { id: string; importer: string; number: string; supplierText: string | null;
-  orderDate: string | null; notes: string; sourceKind: string; version: string;
+  orderDate: string | null; notes: string; demandType: string | null; sourceKind: string; version: string;
   lifecycleStatus?: PurchaseOrderLifecycleStatus;
   lifecycleChangedAt: string | null; lifecycleChangedBy: string | null; lifecycleReason: string | null;
   createdAt?: string | null; lastRestore?: { at: string; by: string; reason: string | null } | null;
@@ -162,6 +163,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   const [orderDate, setOrderDate] = useState("");
   const [purchaseRequestId, setPurchaseRequestId] = useState("");
   const [notes, setNotes] = useState("");
+  const [demandType, setDemandType] = useState("");
   const [itemDraft, setItemDraft] = useState<ItemDraft>(blankItem);
   const [itemDrafts, setItemDrafts] = useState<Record<string, ItemDraft>>({});
   const [commonOperationalDraft, setCommonOperationalDraft] = useState<OperationalFieldDraft>(blankPurchaseOrderItemFields);
@@ -229,6 +231,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       setPurchaseRequests(requestChoices); setPurchaseRequestId(po.purchaseRequestId ?? "");
       setNumber(po.number);
       setSupplier(po.supplierText ?? ""); setOrderDate(po.orderDate ?? ""); setNotes(po.notes);
+      setDemandType(po.demandType ?? "");
       const drafts = Object.fromEntries(po.items.map(item => [item.id, {
         externalLineReference: item.externalLineReference ?? "", productCode: item.productCode,
         description: item.description, orderedQuantity: item.orderedQuantity, unit: item.unit ?? "",
@@ -380,7 +383,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     event.preventDefault(); if (!data) return;
     await save(async () => {
       const header = { number, supplierText: supplier || null, orderDate: orderDate || null, notes,
-        purchaseRequestId: purchaseRequestId || null, reason: automaticAuditReason,
+        demandType: demandType || null, purchaseRequestId: purchaseRequestId || null, reason: automaticAuditReason,
         ...(importer !== data.importer ? { importer } : {}) };
       if (commonFieldsTouched.size && data.items.length) {
         const fieldsToSave = purchaseOrderCommonItemFields.filter(field => commonFieldsTouched.has(field.key));
@@ -689,6 +692,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             <label>{t.poDate}<input type="date" value={orderDate} readOnly aria-readonly="true" /></label>
             <PurchaseRequestSelect importer={data.importer} value={purchaseRequestId} choices={purchaseRequests}
               onChange={selectPurchaseRequest} />
+            <label>{fieldLabel(m, { key: "demandType" })}<OperationalOptionSelect entity="demand_type" value={demandType} values={options}
+              onChange={setDemandType} /><small className="po-field-hint">{t.demandTypeHint}</small></label>
             <label>{t.notes}<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
             <button className="button" disabled={saving}>{t.savePo}</button>
           </form>

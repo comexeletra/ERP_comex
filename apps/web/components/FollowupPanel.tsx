@@ -39,7 +39,7 @@ type EventRecord = { id: string; aggregateType: "PURCHASE_ORDER" | "IMPORT_PROCE
   entityType: string; operation: string; oldValue: unknown; newValue: unknown; actorId: string;
   occurredAt: string; reason: string | null };
 type Followup = { id: string; importer: string; number: string; version: string;
-  supplierText?: string | null; orderDate?: string | null;
+  supplierText?: string | null; orderDate?: string | null; demandType?: string | null;
   items: (DataRow & { id: string; productCode: string; lineNumber: number; orderedQuantity: string; unitPrice: string | null; currencyCode: string | null })[];
   processes: ProcessDetail[]; shipments: Shipment[]; events: EventRecord[] };
 type Draft = Record<string, string>;
@@ -247,6 +247,7 @@ export default function FollowupPanel({ id }: { id: string }) {
               <h4>{t.preShipmentPo(data.number)}</h4>
               <dl className="followup-grid">
                 {([[t.importer, data.importer], [t.supplier, data.supplierText], [t.poDate, data.orderDate],
+                  [fieldLabel(m, { key: "demandType" }), data.demandType],
                   [t.product, item.productCode], [t.description, item.description], [t.orderedQuantity, formatNumber(item.orderedQuantity)],
                   [t.unitPrice, item.unitPrice ? formatNumber(item.unitPrice) : null], [t.totalValue, item.unitPrice ? calculatedTotal(item.orderedQuantity, item.unitPrice, m) : null],
                   [t.currency, item.currencyCode]] as [string, unknown][]).map(([label, fieldValue]) =>
