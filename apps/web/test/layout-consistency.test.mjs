@@ -97,6 +97,57 @@ function contrast(first, second) {
   return (light + .05) / (dark + .05);
 }
 
+test("form controls stay inside their grid columns", () => {
+  const base = styles["app/styles/base.css"];
+  const controls = base.match(/input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\):not\(\[type="file"\]\), select, textarea \{([^}]*)\}/u)?.[1] ?? "";
+  assert.match(controls, /max-width:\s*100%/u);
+  assert.match(controls, /min-width:\s*0/u);
+});
+
+test("portfolio filter inputs and selects fill their columns", () => {
+  const css = styles["app/styles/components.css"];
+  assert.match(css, /\.portfolio-filter :is\(input, select\)[^{]*\{[^}]*min-width:\s*0;[^}]*width:\s*100%;/u);
+});
+
+test("product line filters use four, two and one columns at the approved breakpoints", () => {
+  const css = styles["app/styles/features/operations.css"];
+  assert.match(css, /\.product-lines-filter \{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\);/u);
+  assert.match(css, /@media \(max-width: 1100px\) \{[\s\S]*?\.product-lines-filter \{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/u);
+  assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*?\.product-lines-filter \{[^}]*grid-template-columns:\s*1fr;/u);
+});
+
+test("portfolio filters use five columns and keep actions on their own row", () => {
+  const componentsCss = styles["app/styles/components.css"];
+  const operationsCss = styles["app/styles/features/operations.css"];
+  const portfolio = componentsCss.match(/\.portfolio-filter \{([^}]*)\}/u)?.[1] ?? "";
+  assert.match(portfolio, /gap:\s*16px/u);
+  assert.match(portfolio, /grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\)/u);
+  assert.match(components["app/page.tsx"], /<div className="button-row portfolio-filter-actions"><button className="button" type="submit">/u);
+  assert.match(components["components/ProcessDirectory.tsx"], /<div className="button-row portfolio-filter-actions"><button className="button">/u);
+  assert.match(operationsCss, /\.portfolio-filter-actions,[^}]*\.product-lines-filter-actions \{[^}]*grid-column:\s*1 \/ -1;/u);
+});
+
+test("allocation search labels stack their bold labels above their fields", () => {
+  const css = styles["app/styles/features/operations.css"];
+  for (const selector of ["operational-search", "allocation-search-row"]) {
+    const body = css.match(new RegExp(`\\.${selector} label \\{([^}]*)\\}`, "u"))?.[1] ?? "";
+    assert.match(body, /display:\s*grid/u, selector);
+    assert.match(body, /font-weight:\s*700/u, selector);
+  }
+});
+
+test("catalog and shipment form labels use the standard bold weight", () => {
+  const selectors = [
+    [styles["app/styles/features/catalog.css"], "entity-values-card"],
+    [styles["app/styles/features/catalog.css"], "ncm-tax-form"],
+    [styles["app/styles/features/operations.css"], "shipment-date-form"],
+  ];
+  for (const [css, selector] of selectors) {
+    const body = css.match(new RegExp(`\\.${selector} label \\{([^}]*)\\}`, "u"))?.[1] ?? "";
+    assert.match(body, /font-weight:\s*700/u, selector);
+  }
+});
+
 test("literal colors exist only in the token file", () => {
   for (const [path, css] of featureStyles) {
     for (const body of bodies(css)) {
