@@ -35,22 +35,29 @@ export const e2eStageCodes = ["T0", "T1", "T2", "T3", "T4", "T5"] as const satis
 export const e2eDeadlineStatuses = ["onTime", "onLimit", "late", "noData"] as const;
 export type E2eDeadlineStatus = typeof e2eDeadlineStatuses[number];
 
+/** Ranges of the total End to End delay (Power BI "Faixa de atraso total"), in the API order. */
+export const e2eDelayRanges = ["inAdvance", "onTime", "upTo30", "days30To45", "days45To60", "days60To90",
+  "days90To120", "days120Plus", "noData"] as const;
+export type E2eDelayRange = typeof e2eDelayRanges[number];
+
 /**
  * End to End stage filter: the lines now in the stage (`current`) or those that already have its
  * actual date (`reached`); `late` keeps the late ones, as the API defines for each view.
- * `deadline` is the total deadline status chosen on the overview chart.
+ * `deadline` and `delayRange` are the total deadline status and delay range chosen on the overview charts.
  */
 export type E2eStageFilter = { stage: "" | E2eStageCode; view: "current" | "reached"; late: boolean;
-  deadline: "" | E2eDeadlineStatus };
-export const emptyE2eStageFilter: E2eStageFilter = { stage: "", view: "current", late: false, deadline: "" };
+  deadline: "" | E2eDeadlineStatus; delayRange: "" | E2eDelayRange };
+export const emptyE2eStageFilter: E2eStageFilter = { stage: "", view: "current", late: false, deadline: "", delayRange: "" };
 
 export function parseE2eStageFilter(params: URLSearchParams): E2eStageFilter {
   const stage = params.get("stage") ?? "";
   const deadline = params.get("deadline") ?? "";
+  const delayRange = params.get("delayRange") ?? "";
   return {
     stage: (e2eStageCodes as readonly string[]).includes(stage) ? stage as E2eStageCode : "",
     view: params.get("view") === "reached" ? "reached" : "current", late: params.get("late") === "true",
     deadline: (e2eDeadlineStatuses as readonly string[]).includes(deadline) ? deadline as E2eDeadlineStatus : "",
+    delayRange: (e2eDelayRanges as readonly string[]).includes(delayRange) ? delayRange as E2eDelayRange : "",
   };
 }
 
@@ -60,6 +67,7 @@ export function e2eStageFilterBody(filter: E2eStageFilter): Record<string, strin
   if (filter.view === "reached") body.view = filter.view;
   if (filter.late) body.late = "true";
   if (filter.deadline) body.deadline = filter.deadline;
+  if (filter.delayRange) body.delayRange = filter.delayRange;
   return body;
 }
 
@@ -80,12 +88,14 @@ export function activeProductLineFilterCount(filters: ProductLineFilters): numbe
 }
 
 /**
- * Filters sent to GET /api/v1/purchase-order-lines/e2e-stages: the line filters and the deadline
- * chosen on the overview. The stage, the view and the late toggle filter only the table.
+ * Filters sent to GET /api/v1/purchase-order-lines/e2e-stages: the line filters and the deadline and
+ * delay range chosen on the overview. The stage, the view and the late toggle filter only the table.
  */
-export function e2eSummaryQuery(filters: ProductLineFilters, deadline: E2eStageFilter["deadline"]): URLSearchParams {
+export function e2eSummaryQuery(filters: ProductLineFilters, deadline: E2eStageFilter["deadline"],
+  delayRange: E2eStageFilter["delayRange"] = ""): URLSearchParams {
   const query = new URLSearchParams(productLineFilterBody(filters));
   if (deadline) query.set("deadline", deadline);
+  if (delayRange) query.set("delayRange", delayRange);
   return query;
 }
 

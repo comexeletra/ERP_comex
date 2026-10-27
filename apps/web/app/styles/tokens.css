@@ -82,6 +82,7 @@
   --color-chart-on-limit: #a87300;
   --color-chart-late: #b02a3a;
   --color-chart-no-data: #4f5d65;
+  --color-chart-range: #037599;
 
   /* Navigation */
   --sidebar-bg: #0b2a37;
@@ -211,6 +212,7 @@
   --color-chart-on-limit: #b8841a;
   --color-chart-late: #d0384f;
   --color-chart-no-data: #b4c1c8;
+  --color-chart-range: #2f96c2;
 
   --sidebar-bg: #0a222d;
   --sidebar-hover: #12394a;

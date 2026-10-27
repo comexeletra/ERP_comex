@@ -8,7 +8,8 @@ import { buildE2eFlow, DEFAULT_E2E_FLOW_CONFIG } from "../lib/e2e-flow";
 import { formatNumber } from "../lib/format-number";
 import { statusLabel } from "../lib/i18n/labels";
 import { activeProductLineFilterCount, e2eSummaryQuery, emptyProductLineFilters, parseE2eStageFilter, parseProductLineFilters, productLineQuery,
-  productLineStatuses, type E2eDeadlineStatus, type E2eStageFilter, type ProductLineFilters } from "../lib/purchase-order-lines";
+  productLineStatuses, type E2eDeadlineStatus, type E2eDelayRange, type E2eStageFilter,
+  type ProductLineFilters } from "../lib/purchase-order-lines";
 import E2eCollapsible from "./E2eCollapsible";
 import { E2eFlowRail, Icon, useE2eStepper } from "./E2eFlowParts";
 import { E2eModelDetails, E2eModelSummary } from "./E2eModelPanels";
@@ -58,12 +59,14 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   const [view, setView] = useState(initial.stage.view);
   const [late, setLate] = useState(initial.stage.late);
   const [deadline, setDeadline] = useState(initial.stage.deadline);
+  const [delayRange, setDelayRange] = useState(initial.stage.delayRange);
   const [mts, setMts] = useState(false);
   const [air, setAir] = useState(false);
   const model = buildE2eFlow(DEFAULT_E2E_FLOW_CONFIG, { mts, air }, m);
-  const stage: E2eStageFilter = { stage: current === null ? "" : E2E_STAGE_CODES[current], view, late, deadline };
+  const stage: E2eStageFilter = { stage: current === null ? "" : E2E_STAGE_CODES[current], view, late, deadline,
+    delayRange };
   // The page belongs to one stage filter: a new stage (also from the animation) starts on page 1.
-  const stageKey = `${stage.stage}|${view}|${late}|${deadline}`;
+  const stageKey = `${stage.stage}|${view}|${late}|${deadline}|${delayRange}`;
   const [paging, setPaging] = useState({ key: stageKey, page: initial.page });
   const page = paging.key === stageKey ? paging.page : 1;
   // Each stage loaded stays while the filters do not change, so the animation does not reload it.
@@ -72,7 +75,7 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   const [refresh, setRefresh] = useState(0);
   const { exporting, exportStatus, exportError, downloadExcel } = useProductLineExport("end-to-end");
   const query = productLineQuery(applied, page, pageSize, stage).toString();
-  const summaryQuery = e2eSummaryQuery(applied, deadline).toString();
+  const summaryQuery = e2eSummaryQuery(applied, deadline, delayRange).toString();
   const cached = query in cache;
 
   useEffect(() => {
@@ -121,6 +124,10 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   function selectDeadline(selected: E2eDeadlineStatus) {
     const next = deadline === selected ? "" : selected;
     setDeadline(next); syncUrl(applied, { ...stage, deadline: next }, 1);
+  }
+  function selectDelayRange(selected: E2eDelayRange) {
+    const next = delayRange === selected ? "" : selected;
+    setDelayRange(next); syncUrl(applied, { ...stage, delayRange: next }, 1);
   }
   function select(k: number | null) {
     stepper.goTo(k);
@@ -222,10 +229,11 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
 
     {!summaryError && summary?.query !== summaryQuery && <p role="status">{t.overview.loading}</p>}
     {counts?.overview && <E2eCollapsible title={t.overview.label} storageKey="erp-comex-e2e-charts-collapsed" icon="chart"
-      activeCount={(applied.status ? 1 : 0) + (deadline ? 1 : 0)}
+      activeCount={(applied.status ? 1 : 0) + (deadline ? 1 : 0) + (delayRange ? 1 : 0)}
       collapsedSummary={<E2eOverviewMini overview={counts.overview} locale={locale} />}>
       <E2eOverviewCharts overview={counts.overview} locale={locale} selectedStatus={applied.status}
-        selectedDeadline={deadline} onStatusSelect={filterByStatus} onDeadlineSelect={selectDeadline} />
+        selectedDeadline={deadline} onStatusSelect={filterByStatus} onDeadlineSelect={selectDeadline}
+        selectedDelayRange={delayRange} onDelayRangeSelect={selectDelayRange} />
     </E2eCollapsible>}
 
     <E2eCollapsible className="card" title={t.panels.filtersTitle} storageKey="erp-comex-e2e-filters-collapsed" icon="filter"
@@ -247,7 +255,8 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
         </select></label>
         <div className="button-row product-lines-filter-actions"><button className="button" type="submit">{p.apply}</button>
           <button className="button secondary" type="button" onClick={() => {
-            setDraft(emptyProductLineFilters); setDeadline(""); applyFilters(emptyProductLineFilters, { ...stage, deadline: "" });
+            setDraft(emptyProductLineFilters); setDeadline(""); setDelayRange("");
+            applyFilters(emptyProductLineFilters, { ...stage, deadline: "", delayRange: "" });
           }}>{m.processDirectory.clear}</button></div>
       </form>
     </E2eCollapsible>

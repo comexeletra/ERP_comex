@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
-import { overviewShares, overviewTotal, type OverviewShare } from "../lib/e2e-overview-format";
+import { overviewShares, overviewTotal, rankedIndexes, type OverviewShare } from "../lib/e2e-overview-format";
 import { statusLabel } from "../lib/i18n/labels";
 import { pieSlices } from "../lib/pie-chart";
-import { e2eDeadlineStatuses, productLineStatuses, type E2eDeadlineStatus } from "../lib/purchase-order-lines";
+import { e2eDeadlineStatuses, e2eDelayRanges, productLineStatuses, type E2eDeadlineStatus,
+  type E2eDelayRange } from "../lib/purchase-order-lines";
 import { useI18n } from "./I18nProvider";
 
 type OverviewPart = { quantity: string; lines: number };
@@ -10,6 +11,8 @@ export type E2eOverviewStatus = Exclude<(typeof productLineStatuses)[number], "C
 export type E2eOverview = {
   byStatus: Record<E2eOverviewStatus, OverviewPart>;
   byDeadline: Record<E2eDeadlineStatus, OverviewPart>;
+  /** Absent in an API older than the delay range chart. */
+  byDelayRange?: Record<E2eDelayRange, OverviewPart>;
 };
 
 type ChartEntry<Key extends string> = { key: Key; label: string; color: string; part: OverviewPart; share: OverviewShare };
@@ -23,11 +26,11 @@ const deadlineColors: Record<E2eDeadlineStatus, string> = {
 const dimmed = (key: string, selected: string) => selected && key !== selected ? " is-dimmed" : "";
 
 /** Card in the style of the model indicators: label, total in items and the selection reset. */
-function OverviewCard({ title, total, selected, onClear, children }: {
-  title: string; total: string; selected: boolean; onClear: () => void; children: ReactNode;
+function OverviewCard({ title, total, selected, onClear, wide, children }: {
+  title: string; total: string; selected: boolean; onClear: () => void; wide?: boolean; children: ReactNode;
 }) {
   const { m } = useI18n();
-  return <section className="e2e-overview-card">
+  return <section className={wide ? "e2e-overview-card e2e-overview-card-wide" : "e2e-overview-card"}>
     <div className="e2e-overview-head">
       <div><span className="e2e-label">{title}</span><strong>{m.e2eLines.overview.totalItems(total)}</strong></div>
       {selected && <button type="button" className="e2e-overview-clear" onClick={onClear}>
@@ -62,6 +65,35 @@ function entriesOf<Key extends string>(keys: readonly Key[], parts: Record<Key, 
   return keys.map((key, index) => ({ key, label: label(key), color: color(key, index), part: parts[key], share: shares[index] }));
 }
 
+/**
+ * Horizontal bars of the item quantity by total delay range, from the largest down as in Power BI.
+ * Empty ranges are left out; each row filters by its range.
+ */
+function DelayRangeBars({ entries, selected, onSelect, filterLabel, rowTitle }: {
+  entries: ChartEntry<E2eDelayRange>[]; selected: string; onSelect: (key: E2eDelayRange) => void;
+  filterLabel: (label: string) => string; rowTitle: (entry: ChartEntry<E2eDelayRange>) => string;
+}) {
+  const values = entries.map(entry => entry.share.value);
+  const max = Math.max(0, ...values);
+  return <ul className="e2e-range-bars">
+    {rankedIndexes(values, entries.findIndex(entry => entry.key === selected)).map(index => {
+      const entry = entries[index];
+      const ratio = max > 0 ? entry.share.value / max : 0;
+      return <li key={entry.key}>
+        <button type="button" className={`e2e-range-row${dimmed(entry.key, selected)}`} aria-pressed={entry.key === selected}
+          onClick={() => onSelect(entry.key)} title={`${entry.label}: ${rowTitle(entry)}`}
+          aria-label={`${filterLabel(entry.label)} (${entry.share.compact}, ${entry.share.percent})`}>
+          <span className="e2e-range-label">{entry.label}</span>
+          <span className="e2e-range-track">
+            <span className="e2e-range-fill" style={{ background: `var(${entry.color})`, width: `calc((100% - 5.5em) * ${ratio})` }} />
+            <strong>{entry.share.compact}</strong>
+          </span>
+        </button>
+      </li>;
+    })}
+  </ul>;
+}
+
 /** Picture of the status chart kept while the charts are collapsed: a mini bar and the total in items. */
 export function E2eOverviewMini({ overview, locale }: { overview: E2eOverview; locale: string }) {
   const { m } = useI18n();
@@ -73,19 +105,21 @@ export function E2eOverviewMini({ overview, locale }: { overview: E2eOverview; l
       {entries.filter(entry => entry.share.value > 0).map(entry => <span key={entry.key} className="e2e-distribution-segment"
         style={{ background: `var(${entry.color})`, flexGrow: entry.share.value }} />)}
     </span>
-    <span>{o.chartsHidden(total)}</span>
+    <span>{o.chartsHidden(overview.byDelayRange ? 3 : 2, total)}</span>
   </span>;
 }
 
 /**
- * Item quantities of the filtered lines by line status (distribution bar) and by total deadline
- * status (compact pie). The two cross-filter: clicking a category filters the other chart, the
- * stage cards and the table, while its own chart keeps every category; clicking it again clears it.
+ * Item quantities of the filtered lines by line status (distribution bar), by total deadline status
+ * (compact pie) and by total delay range (bars). The charts cross-filter: clicking a category filters
+ * the other charts, the stage cards and the table, while its own chart keeps every category; clicking
+ * it again clears it.
  */
-export default function E2eOverviewCharts({ overview, locale, selectedStatus, selectedDeadline, onStatusSelect,
-  onDeadlineSelect }: {
-  overview: E2eOverview; locale: string; selectedStatus: string; selectedDeadline: string;
+export default function E2eOverviewCharts({ overview, locale, selectedStatus, selectedDeadline, selectedDelayRange,
+  onStatusSelect, onDeadlineSelect, onDelayRangeSelect }: {
+  overview: E2eOverview; locale: string; selectedStatus: string; selectedDeadline: string; selectedDelayRange: string;
   onStatusSelect: (status: E2eOverviewStatus) => void; onDeadlineSelect: (deadline: E2eDeadlineStatus) => void;
+  onDelayRangeSelect: (range: E2eDelayRange) => void;
 }) {
   const { m } = useI18n();
   const o = m.e2eLines.overview;
@@ -98,9 +132,13 @@ export default function E2eOverviewCharts({ overview, locale, selectedStatus, se
   const hasStatus = statusEntries.some(entry => entry.share.value > 0);
   const slices = pieSlices(deadlineEntries.map(entry => entry.share.value), { centerX: 60, centerY: 60, radius: 56 });
   const sliceTitle = (entry: ChartEntry<string>) => o.sliceTitle(entry.share.full, entry.part.lines);
+  const byDelayRange = overview.byDelayRange;
+  const rangeEntries = byDelayRange ? entriesOf(e2eDelayRanges, byDelayRange, locale, key => o.delayRanges[key],
+    key => key === "noData" ? "--color-chart-no-data" : "--color-chart-range") : [];
+  const rangeTotal = byDelayRange ? overviewTotal(e2eDelayRanges.map(key => byDelayRange[key].quantity), locale) : "";
 
   return <section className="e2e-overview" aria-label={o.label}>
-    <OverviewCard title={o.statusTitle} total={statusTotal} selected={selectedStatus !== ""}
+    <OverviewCard title={o.statusTitle} total={statusTotal} selected={selectedStatus !== ""} wide
       onClear={() => onStatusSelect(selectedStatus as E2eOverviewStatus)}>
       {hasStatus
         ? <div className="e2e-distribution" role="img" aria-label={o.chartLabel(o.statusTitle, statusTotal)}>
@@ -130,5 +168,12 @@ export default function E2eOverviewCharts({ overview, locale, selectedStatus, se
           filterLabel={o.filterByDeadline} stacked />
       </div>
     </OverviewCard>
+    {byDelayRange && <OverviewCard title={o.delayRangeTitle} total={rangeTotal} selected={selectedDelayRange !== ""}
+      onClear={() => onDelayRangeSelect(selectedDelayRange as E2eDelayRange)}>
+      {rangeEntries.some(entry => entry.share.value > 0) || selectedDelayRange
+        ? <DelayRangeBars entries={rangeEntries} selected={selectedDelayRange} onSelect={onDelayRangeSelect}
+          filterLabel={o.filterByDelayRange} rowTitle={sliceTitle} />
+        : <p className="muted">{o.empty}</p>}
+    </OverviewCard>}
   </section>;
 }

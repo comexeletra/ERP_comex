@@ -37,3 +37,14 @@ export function overviewTotal(quantities: readonly string[], locale: string): st
   const total = quantities.map(quantity).reduce((sum, value) => sum + value, 0);
   return new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 2 }).format(total);
 }
+
+/**
+ * Order of the delay range bars, as in Power BI: from the largest quantity down, ties in the range
+ * order. Empty ranges are not drawn, except the selected one (`keep`, -1 for none).
+ */
+export function rankedIndexes(values: readonly number[], keep: number): number[] {
+  return values.map((value, index) => ({ value, index }))
+    .filter(({ value, index }) => value > 0 || index === keep)
+    .sort((left, right) => right.value - left.value || left.index - right.index)
+    .map(({ index }) => index);
+}

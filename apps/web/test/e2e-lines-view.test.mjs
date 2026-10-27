@@ -71,7 +71,8 @@ test("the delay range bars are clickable rows sorted by quantity, with no image 
   assert.match(overview, /aria-pressed=\{entry\.key === selected\}/u);
   assert.match(overview, /filterLabel=\{o\.filterByDelayRange\}/u);
   // The status chart spans the row; the deadline pie and the delay ranges share the next one.
-  assert.match(overview, /className="e2e-overview-card e2e-overview-card-wide"/u);
+  assert.match(overview, /"e2e-overview-card e2e-overview-card-wide"/u);
+  assert.match(overview, /title=\{o\.statusTitle\} total=\{statusTotal\} selected=\{selectedStatus !== ""\} wide/u);
   for (const messages of [ptBR, en, zhCN]) {
     assert.equal(Object.keys(messages.e2eLines.overview.delayRanges).length, 9);
     assert.ok(messages.e2eLines.overview.delayRangeTitle);
