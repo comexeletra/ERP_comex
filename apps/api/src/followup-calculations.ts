@@ -127,6 +127,25 @@ export function e2eDeadlineStatus(e2e: { totalDelayDays: number | null } | null)
   return "onTime";
 }
 
+/** Power BI "Faixa de atraso total" ranges of the total End to End delay, from the earliest to the latest. */
+export const E2E_DELAY_RANGES = ["inAdvance", "onTime", "upTo30", "days30To45", "days45To60", "days60To90",
+  "days90To120", "days120Plus", "noData"] as const;
+export type E2eDelayRange = typeof E2E_DELAY_RANGES[number];
+
+/** Range of the total delay; upper bounds are inclusive, as in the Power BI rule. */
+export function e2eDelayRange(e2e: { totalDelayDays: number | null } | null): E2eDelayRange {
+  const days = e2e?.totalDelayDays ?? null;
+  if (days === null) return "noData";
+  if (days < 0) return "inAdvance";
+  if (days === 0) return "onTime";
+  if (days <= 30) return "upTo30";
+  if (days <= 45) return "days30To45";
+  if (days <= 60) return "days45To60";
+  if (days <= 90) return "days60To90";
+  if (days <= 120) return "days90To120";
+  return "days120Plus";
+}
+
 /** The set with the latest start on or before the line's necessity date (today when it has none). */
 export function e2eTargetSetFor(sets: readonly E2eTargetSet[], necessityDate: unknown, today: string): E2eTargetSet {
   const reference = date(necessityDate) ?? today;
