@@ -71,6 +71,18 @@
   --color-info-text: #0d5872;
   --color-info-border: #b5e0ef;
 
+  /* End to End charts */
+  --color-chart-status-1: #b0457f;
+  --color-chart-status-2: #b97400;
+  --color-chart-status-3: #037599;
+  --color-chart-status-4: #d0603a;
+  --color-chart-status-5: #7c5cc4;
+  --color-chart-status-6: #5f8f12;
+  --color-chart-on-time: #1a9478;
+  --color-chart-on-limit: #a87300;
+  --color-chart-late: #b02a3a;
+  --color-chart-no-data: #4f5d65;
+
   /* Navigation */
   --sidebar-bg: #0b2a37;
   --sidebar-hover: #12394a;
@@ -188,6 +200,17 @@
   --color-info-bg: #15394a;
   --color-info-text: #a8e2f6;
   --color-info-border: #2f6479;
+
+  --color-chart-status-1: #c0609a;
+  --color-chart-status-2: #bb8524;
+  --color-chart-status-3: #2f96c2;
+  --color-chart-status-4: #d27650;
+  --color-chart-status-5: #8f76d2;
+  --color-chart-status-6: #72a22a;
+  --color-chart-on-time: #2ea88a;
+  --color-chart-on-limit: #b8841a;
+  --color-chart-late: #d0384f;
+  --color-chart-no-data: #b4c1c8;
 
   --sidebar-bg: #0a222d;
   --sidebar-hover: #12394a;

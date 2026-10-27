@@ -11,6 +11,7 @@ import { emptyProductLineFilters, parseE2eStageFilter, parseProductLineFilters, 
   productLineStatuses, type E2eStageFilter, type ProductLineFilters } from "../lib/purchase-order-lines";
 import { E2eFlowRail, Icon, useE2eStepper } from "./E2eFlowParts";
 import { E2eModelDetails, E2eModelSummary } from "./E2eModelPanels";
+import E2eOverviewCharts, { type E2eOverview, type E2eOverviewStatus } from "./E2eOverviewCharts";
 import E2eTabs from "./E2eTabs";
 import { getMessages, useI18n } from "./I18nProvider";
 import PageHeader from "./PageHeader";
@@ -27,7 +28,7 @@ type E2eLine = {
 type LinesPage = { page: number; pageSize: number; totalCount: number; lines: E2eLine[] };
 type LinesEntry = { data?: LinesPage; error?: string };
 type StageCount = { current: number; currentLate: number; reached: number; reachedLate: number };
-type StageSummary = { totalCount: number; delivered: number; stages: Record<E2eStageCode, StageCount> };
+type StageSummary = { totalCount: number; delivered: number; stages: Record<E2eStageCode, StageCount>; overview?: E2eOverview };
 const pageSize = 50;
 const stageSide = (code: E2eStageCode) => E2E_STAGE_CODES.indexOf(code) < 3 ? "side-br" : "side-cn";
 
@@ -110,6 +111,9 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
     setPaging({ key: stageKey, page: 1 }); syncUrl(filters, stage, 1);
   }
   function filter(event: FormEvent<HTMLFormElement>) { event.preventDefault(); applyFilters(draft); }
+  function filterByStatus(status: E2eOverviewStatus) {
+    const filters = { ...applied, status }; setDraft(filters); applyFilters(filters);
+  }
   function select(k: number | null) {
     stepper.goTo(k);
     syncUrl(applied, { ...stage, stage: k === null ? "" : E2E_STAGE_CODES[k] }, 1);
@@ -176,6 +180,9 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
     <p className="muted">{view === "current" ? flow.currentHelp : flow.reachedHelp}
       {counts && counts.delivered > 0 && <> · {flow.delivered(counts.delivered)}</>}</p>
     {summaryError && <p className="notice error" role="alert">{summaryError}</p>}
+    {!summaryError && summary?.query !== summaryQuery && <p role="status">{t.overview.loading}</p>}
+    {counts?.overview && <E2eOverviewCharts overview={counts.overview} locale={locale} selectedStatus={applied.status ?? ""}
+      onStatusSelect={filterByStatus} />}
 
     <E2eModelSummary flow={model} current={current} />
     <E2eFlowRail phases={model.phases} current={current} />
