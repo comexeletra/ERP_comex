@@ -1599,7 +1599,11 @@ export const en: Messages = {
         noData: "No data",
       },
       chartLabel: (title: string, total: string) => `${title}: ${total} items in total`,
-      sliceTitle: (quantity: string, lines: number) => `${quantity} items in ${lines} lines`,
+      tipQuantity: "Item quantity",
+      tipShare: "Share",
+      tipLines: "Lines",
+      tipFilter: "Click to filter",
+      tipClear: "Click to clear the filter",
     },
     panels: {
       filtersTitle: "Table filters",

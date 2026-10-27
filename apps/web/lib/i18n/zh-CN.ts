@@ -1599,7 +1599,11 @@ export const zhCN: Messages = {
         noData: "无数据",
       },
       chartLabel: (title: string, total: string) => `${title}：共 ${total} 件`,
-      sliceTitle: (quantity: string, lines: number) => `${lines} 行共 ${quantity} 件`,
+      tipQuantity: "物料数量",
+      tipShare: "占比",
+      tipLines: "行数",
+      tipFilter: "点击筛选",
+      tipClear: "点击清除筛选",
     },
     panels: {
       filtersTitle: "表格筛选",

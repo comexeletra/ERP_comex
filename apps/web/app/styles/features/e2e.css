@@ -136,6 +136,14 @@
 .e2e-chart-legend-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .e2e-chart-legend-share { color: var(--color-text-muted); font-variant-numeric: tabular-nums; text-align: right; }
 .e2e-chart-swatch { border-radius: var(--radius-xs); display: block; height: 10px; width: 10px; }
+/* Tooltip card of the overview charts: category, full quantity, share, lines and what a click does. */
+.e2e-chart-tip { display: grid; gap: 6px; min-width: 190px; white-space: normal; }
+.e2e-chart-tip-name { align-items: center; display: flex; font-weight: 700; gap: 8px; }
+.e2e-chart-tip .e2e-chart-swatch { box-shadow: 0 0 0 1px var(--color-tooltip-border); flex: 0 0 10px; }
+.e2e-chart-tip dl { display: grid; gap: 2px 16px; grid-template-columns: auto auto; margin: 0; }
+.e2e-chart-tip dt { color: var(--color-tooltip-muted); }
+.e2e-chart-tip dd { font-variant-numeric: tabular-nums; font-weight: 700; margin: 0; text-align: right; }
+.e2e-chart-tip-hint { border-top: 1px solid var(--color-tooltip-border); color: var(--color-tooltip-muted); font-size: var(--fs-xs); padding-top: 6px; }
 .e2e-pie-layout { align-items: center; display: grid; gap: 16px; grid-template-columns: 120px minmax(0, 1fr); }
 .e2e-pie { display: block; height: 120px; width: 120px; }
 .e2e-pie path { cursor: pointer; stroke: var(--color-surface); stroke-width: 2px; transition: opacity .2s; }

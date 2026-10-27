@@ -1602,7 +1602,11 @@ export const ptBR = {
         noData: "Sem dados",
       },
       chartLabel: (title: string, total: string) => `${title}: ${total} itens no total`,
-      sliceTitle: (quantity: string, lines: number) => `${quantity} itens em ${lines} linhas`,
+      tipQuantity: "Quantidade de itens",
+      tipShare: "Participação",
+      tipLines: "Linhas",
+      tipFilter: "Clique para filtrar",
+      tipClear: "Clique para limpar o filtro",
     },
     panels: {
       filtersTitle: "Filtros da tabela",

@@ -1,10 +1,12 @@
+import type { Messages } from "./i18n/pt-BR";
+
 /** A category of the End to End overview: its share of the chart and its quantity as shown. */
 export type OverviewShare = {
   value: number;
   fraction: number;
   /** Compact quantity ("14,03 mi"), or a dash when the category is empty. */
   compact: string;
-  /** Full quantity for tooltips. */
+  /** Full quantity for the tooltip card. */
   full: string;
   /** Share of the chart: no decimals from 1%, up to two below it, a dash when empty. */
   percent: string;
@@ -47,4 +49,14 @@ export function rankedIndexes(values: readonly number[], keep: number): number[]
     .filter(({ value, index }) => value > 0 || index === keep)
     .sort((left, right) => right.value - left.value || left.index - right.index)
     .map(({ index }) => index);
+}
+
+/** Tooltip card of a chart category: full quantity, share and lines, and what a click on it does. */
+export function overviewTip(share: OverviewShare, lines: number, selected: boolean, locale: string, m: Messages):
+  { rows: [string, string][]; hint: string } {
+  const o = m.e2eLines.overview;
+  return {
+    rows: [[o.tipQuantity, share.full], [o.tipShare, share.percent], [o.tipLines, new Intl.NumberFormat(locale).format(lines)]],
+    hint: selected ? o.tipClear : o.tipFilter,
+  };
 }
