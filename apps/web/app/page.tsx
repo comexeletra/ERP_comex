@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
+import ExportColumnsDialog, { type ExportColumnsBody } from "../components/ExportColumnsDialog";
 import { getMessages, useI18n } from "../components/I18nProvider";
 import PageHeader from "../components/PageHeader";
 import { apiFetch } from "../lib/api";
@@ -45,6 +46,7 @@ export default function PortfolioPage() {
   const [exporting, setExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState("");
   const [exportError, setExportError] = useState("");
+  const [choosingColumns, setChoosingColumns] = useState(false);
   const [recentExports, setRecentExports] = useState<ExportJob[]>([]);
   const [summaryState, setSummaryState] = useState<PortfolioSummaryState>();
   const [summaryFailure, setSummaryFailure] = useState<PortfolioSummaryFailure>();
@@ -136,7 +138,7 @@ export default function PortfolioPage() {
       product: draft.product.trim(), ipNumber: draft.ipNumber.trim(), lifecycle: draft.lifecycle }, 1);
   }
 
-  async function downloadExcel() {
+  async function downloadExcel(columns: ExportColumnsBody) {
     if (exporting || !result?.totalCount) return;
     setExporting(true); setExportError(""); setExportStatus(m.productLines.exportQueued);
     try {
@@ -145,6 +147,7 @@ export default function PortfolioPage() {
         body: JSON.stringify({
           number: applied.number, importer: applied.importer,
           product: applied.product, ipNumber: applied.ipNumber,
+          lifecycle: applied.lifecycle || undefined, ...columns,
         }),
       });
       if (!created.ok) {
@@ -242,7 +245,9 @@ export default function PortfolioPage() {
       {!loading && !error && result && <>
         <p>{t.found(result.totalCount)}{result.totalCount > 0 && m.processDirectory.pageSuffix(page, totalPages)}</p>
         {result.totalCount > 0 && <p><button className="button secondary" type="button" disabled={exporting}
-          onClick={() => void downloadExcel()}>{exporting ? m.productLines.exporting : t.export}</button></p>}
+          onClick={() => setChoosingColumns(true)}>{exporting ? m.productLines.exporting : t.export}</button></p>}
+        {choosingColumns && <ExportColumnsDialog context="portfolio" onCancel={() => setChoosingColumns(false)}
+          onExport={columns => { setChoosingColumns(false); void downloadExcel(columns); }} />}
         {exportStatus && <p className="muted" role="status">{exportStatus}</p>}
         {recentExports.length > 0 && <details className="historical-disclosure"><summary>{t.recentExports}</summary>
           <ul>{recentExports.slice(0, 5).map(job => <li key={job.id}>

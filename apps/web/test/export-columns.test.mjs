@@ -25,7 +25,6 @@ function headerCells(jsx, scope) {
   return [...jsx.matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/gu)].map(([, content]) => {
     const text = content.trim();
     const expression = /^\{([\s\S]+)\}$/u.exec(text);
-    // eslint-disable-next-line no-new-func -- evaluates header expressions of our own JSX in the test
     return expression ? new Function(...Object.keys(scope), `return ${expression[1]};`)(...Object.values(scope)) : text;
   });
 }

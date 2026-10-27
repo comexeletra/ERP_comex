@@ -172,6 +172,15 @@ details[open] > summary::before { transform: rotate(45deg); }
 .dialog-body textarea { min-height: 92px; width: 100%; }
 .dialog-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 6px; }
 
+/* Export column choice (components/ExportColumnsDialog.tsx) */
+.export-columns { display: grid; gap: 12px; max-height: min(55vh, 480px); overflow-y: auto; padding-right: 4px; }
+.export-columns-list { display: grid; gap: 6px 16px; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+.dialog-body .export-columns-option { align-items: center; color: var(--color-text); display: flex; font-weight: 400; gap: 8px; }
+.export-columns-stages { border: 1px solid var(--color-border); border-radius: var(--radius-md); margin: 0; min-width: 0; padding: 8px 12px 12px; }
+.export-columns-stages legend { font-size: var(--fs-sm); font-weight: 700; padding: 0 4px; }
+.export-columns-grid { font-size: var(--fs-sm); }
+.export-columns-grid td { text-align: center; }
+
 /* Activity history */
 .sc-history, .ip-history { border-top: 1px solid var(--color-border); margin-top: 20px; padding-top: 14px; }
 .ip-history > h3 { margin: 0 0 12px; }

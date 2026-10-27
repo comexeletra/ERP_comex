@@ -15,6 +15,7 @@ import { E2eFlowRail, Icon, useE2eStepper } from "./E2eFlowParts";
 import { E2eModelDetails, E2eModelSummary } from "./E2eModelPanels";
 import E2eOverviewCharts, { E2eOverviewMini, type E2eOverview, type E2eOverviewStatus } from "./E2eOverviewCharts";
 import E2eTabs from "./E2eTabs";
+import ExportColumnsDialog from "./ExportColumnsDialog";
 import { getMessages, useI18n } from "./I18nProvider";
 import PageHeader from "./PageHeader";
 import { useProductLineExport } from "./useProductLineExport";
@@ -79,6 +80,7 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   const [summaries, setSummaries] = useState<Record<string, { data?: StageSummary; error?: string }>>({});
   const [lastSummary, setLastSummary] = useState<StageSummary>();
   const { exporting, exportStatus, exportError, downloadExcel } = useProductLineExport("end-to-end");
+  const [choosingColumns, setChoosingColumns] = useState(false);
   const query = productLineQuery(applied, page, pageSize, stage).toString();
   const summaryQuery = e2eSummaryQuery(applied, stage).toString();
   const cached = query in cache;
@@ -287,7 +289,10 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
       {result && <>
         <p>{p.found(result.totalCount)}{result.totalCount > 0 && m.processDirectory.pageSuffix(page, totalPages)}</p>
         {result.totalCount > 0 && <p><button className="button secondary" type="button" disabled={exporting}
-          onClick={() => void downloadExcel(applied, stage)}>{exporting ? p.exporting : t.export}</button></p>}
+          onClick={() => setChoosingColumns(true)}>{exporting ? p.exporting : t.export}</button></p>}
+        {choosingColumns && <ExportColumnsDialog context="end-to-end" filters={{ stage: stage.stage, view }}
+          onCancel={() => setChoosingColumns(false)}
+          onExport={columns => { setChoosingColumns(false); void downloadExcel(applied, stage, columns); }} />}
         {exportStatus && <p className="muted" role="status">{exportStatus}</p>}
         {exportError && <p className="notice error" role="alert">{exportError}</p>}
         {result.totalCount === 0 && <p>{p.none}</p>}

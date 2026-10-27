@@ -5,10 +5,11 @@ import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, readApiJson } from "../lib/api";
 import { formatNumber } from "../lib/format-number";
 import { statusLabel } from "../lib/i18n/labels";
+import ExportColumnsDialog from "./ExportColumnsDialog";
 import { getMessages, useI18n } from "./I18nProvider";
 import { useProductLineExport } from "./useProductLineExport";
 import PageHeader from "./PageHeader";
-import { emptyProductLineFilters, parseProductLineFilters, productLineQuery,
+import { emptyE2eStageFilter, emptyProductLineFilters, parseProductLineFilters, productLineQuery,
   productLineStatuses, type ProductLineFilters } from "../lib/purchase-order-lines";
 
 type Value = string | number | boolean | null | undefined;
@@ -42,6 +43,7 @@ export default function ProductLinesView({ initialQuery }: { initialQuery: strin
   const [page, setPage] = useState(initial.page);
   const [response, setResponse] = useState<{ query: string; data?: LinesPage; error?: string }>();
   const { exporting, exportStatus, exportError, downloadExcel } = useProductLineExport("carteira-por-produto");
+  const [choosingColumns, setChoosingColumns] = useState(false);
   const query = productLineQuery(applied, page, pageSize).toString();
 
   useEffect(() => {
@@ -97,7 +99,9 @@ export default function ProductLinesView({ initialQuery }: { initialQuery: strin
       {!loading && !error && result && <>
         <p>{t.found(result.totalCount)}{result.totalCount > 0 && m.processDirectory.pageSuffix(page, totalPages)}</p>
         {result.totalCount > 0 && <p><button className="button secondary" type="button" disabled={exporting}
-          onClick={() => void downloadExcel(applied)}>{exporting ? t.exporting : t.export}</button></p>}
+          onClick={() => setChoosingColumns(true)}>{exporting ? t.exporting : t.export}</button></p>}
+        {choosingColumns && <ExportColumnsDialog context="product-lines" onCancel={() => setChoosingColumns(false)}
+          onExport={columns => { setChoosingColumns(false); void downloadExcel(applied, emptyE2eStageFilter, columns); }} />}
         {exportStatus && <p className="muted" role="status">{exportStatus}</p>}
         {exportError && <p className="notice error" role="alert">{exportError}</p>}
         {result.lines.length === 0 && result.totalCount > 0 && <p>{t.outOfRange}<button className="button" onClick={() => navigate(applied, 1)}>{t.firstPage}</button></p>}
