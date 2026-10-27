@@ -4,16 +4,12 @@ export type PieSlice = {
   value: number;
   fraction: number;
   d: string;
-  label: PiePoint | null;
-  guide: { start: PiePoint; end: PiePoint } | null;
 };
 
 export type PieOptions = {
   centerX: number;
   centerY: number;
   radius: number;
-  labelRadius: number;
-  minimumLabelFraction?: number;
 };
 
 const clean = (value: number) => Number(value.toFixed(6));
@@ -37,13 +33,7 @@ export function pieSlices(values: number[], options: PieOptions): PieSlice[] {
     const d = fraction === 1
       ? `M ${start.x} ${start.y} A ${options.radius} ${options.radius} 0 1 1 ${options.centerX} ${options.centerY + options.radius} A ${options.radius} ${options.radius} 0 1 1 ${start.x} ${start.y} Z`
       : `M ${start.x} ${start.y} A ${options.radius} ${options.radius} 0 ${fraction > .5 ? 1 : 0} 1 ${end.x} ${end.y} L ${options.centerX} ${options.centerY} Z`;
-    const middle = angle + fraction * Math.PI;
-    const visible = fraction >= (options.minimumLabelFraction ?? .02);
-    const slice: PieSlice = { index, value, fraction, d,
-      label: visible ? point(middle, options.labelRadius, options) : null,
-      guide: visible ? { start: point(middle, options.radius + 4, options),
-        end: point(middle, options.labelRadius - 12, options) } : null };
     angle = endAngle;
-    return [slice];
+    return [{ index, value, fraction, d }];
   });
 }

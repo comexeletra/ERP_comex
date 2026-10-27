@@ -18,7 +18,7 @@ test("the optional overview precedes the model and cross-filters by status and d
   assert.match(view, /\{counts\?\.overview && <E2eOverviewCharts/u);
   assert.ok(view.indexOf("<E2eOverviewCharts") < view.indexOf("<E2eModelSummary"));
   // Clicking the selected category again clears it.
-  assert.match(view, /const filters = \{ \.\.\.applied, status: applied\.status === status \? "" : status \};/u);
+  assert.match(view, /const filters: ProductLineFilters = \{ \.\.\.applied, status: applied\.status === status \? "" : status \};/u);
   assert.match(view, /setDraft\(filters\); applyFilters\(filters\);/u);
   assert.match(view, /const next = deadline === selected \? "" : selected;/u);
   assert.match(view, /setDeadline\(next\); syncUrl\(applied, \{ \.\.\.stage, deadline: next \}, 1\);/u);

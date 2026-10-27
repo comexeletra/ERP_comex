@@ -7,8 +7,8 @@ import { E2E_STAGE_CODES, formatE2eDate, type E2eResult, type E2eStageCode } fro
 import { buildE2eFlow, DEFAULT_E2E_FLOW_CONFIG } from "../lib/e2e-flow";
 import { formatNumber } from "../lib/format-number";
 import { statusLabel } from "../lib/i18n/labels";
-import { emptyProductLineFilters, parseE2eStageFilter, parseProductLineFilters, productLineFilterBody, productLineQuery,
-  productLineStatuses, type E2eStageFilter, type ProductLineFilters } from "../lib/purchase-order-lines";
+import { e2eSummaryQuery, emptyProductLineFilters, parseE2eStageFilter, parseProductLineFilters, productLineQuery,
+  productLineStatuses, type E2eDeadlineStatus, type E2eStageFilter, type ProductLineFilters } from "../lib/purchase-order-lines";
 import { E2eFlowRail, Icon, useE2eStepper } from "./E2eFlowParts";
 import { E2eModelDetails, E2eModelSummary } from "./E2eModelPanels";
 import E2eOverviewCharts, { type E2eOverview, type E2eOverviewStatus } from "./E2eOverviewCharts";
@@ -56,12 +56,13 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   const current = stepper.current;
   const [view, setView] = useState(initial.stage.view);
   const [late, setLate] = useState(initial.stage.late);
+  const [deadline, setDeadline] = useState(initial.stage.deadline);
   const [mts, setMts] = useState(false);
   const [air, setAir] = useState(false);
   const model = buildE2eFlow(DEFAULT_E2E_FLOW_CONFIG, { mts, air }, m);
-  const stage: E2eStageFilter = { stage: current === null ? "" : E2E_STAGE_CODES[current], view, late };
+  const stage: E2eStageFilter = { stage: current === null ? "" : E2E_STAGE_CODES[current], view, late, deadline };
   // The page belongs to one stage filter: a new stage (also from the animation) starts on page 1.
-  const stageKey = `${stage.stage}|${view}|${late}`;
+  const stageKey = `${stage.stage}|${view}|${late}|${deadline}`;
   const [paging, setPaging] = useState({ key: stageKey, page: initial.page });
   const page = paging.key === stageKey ? paging.page : 1;
   // Each stage loaded stays while the filters do not change, so the animation does not reload it.
@@ -70,7 +71,7 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   const [refresh, setRefresh] = useState(0);
   const { exporting, exportStatus, exportError, downloadExcel } = useProductLineExport("end-to-end");
   const query = productLineQuery(applied, page, pageSize, stage).toString();
-  const summaryQuery = new URLSearchParams(productLineFilterBody(applied)).toString();
+  const summaryQuery = e2eSummaryQuery(applied, deadline).toString();
   const cached = query in cache;
 
   useEffect(() => {
@@ -106,13 +107,19 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   function syncUrl(filters: ProductLineFilters, nextStage: E2eStageFilter, nextPage: number) {
     window.history.replaceState(null, "", `/end-to-end?${productLineQuery(filters, nextPage, pageSize, nextStage)}`);
   }
-  function applyFilters(filters: ProductLineFilters) {
+  function applyFilters(filters: ProductLineFilters, nextStage = stage) {
     setApplied(filters); setCache({}); setRefresh(value => value + 1);
-    setPaging({ key: stageKey, page: 1 }); syncUrl(filters, stage, 1);
+    setPaging({ key: stageKey, page: 1 }); syncUrl(filters, nextStage, 1);
   }
   function filter(event: FormEvent<HTMLFormElement>) { event.preventDefault(); applyFilters(draft); }
+  // The overview charts cross-filter; clicking the selected category again clears it.
   function filterByStatus(status: E2eOverviewStatus) {
-    const filters = { ...applied, status }; setDraft(filters); applyFilters(filters);
+    const filters: ProductLineFilters = { ...applied, status: applied.status === status ? "" : status };
+    setDraft(filters); applyFilters(filters);
+  }
+  function selectDeadline(selected: E2eDeadlineStatus) {
+    const next = deadline === selected ? "" : selected;
+    setDeadline(next); syncUrl(applied, { ...stage, deadline: next }, 1);
   }
   function select(k: number | null) {
     stepper.goTo(k);
@@ -181,8 +188,8 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
       {counts && counts.delivered > 0 && <> · {flow.delivered(counts.delivered)}</>}</p>
     {summaryError && <p className="notice error" role="alert">{summaryError}</p>}
     {!summaryError && summary?.query !== summaryQuery && <p role="status">{t.overview.loading}</p>}
-    {counts?.overview && <E2eOverviewCharts overview={counts.overview} locale={locale} selectedStatus={applied.status ?? ""}
-      onStatusSelect={filterByStatus} />}
+    {counts?.overview && <E2eOverviewCharts overview={counts.overview} locale={locale} selectedStatus={applied.status}
+      selectedDeadline={deadline} onStatusSelect={filterByStatus} onDeadlineSelect={selectDeadline} />}
 
     <E2eModelSummary flow={model} current={current} />
     <E2eFlowRail phases={model.phases} current={current} />
@@ -232,7 +239,9 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
           <option value="all">{p.all}</option>
         </select></label>
         <div className="button-row product-lines-filter-actions"><button className="button" type="submit">{p.apply}</button>
-          <button className="button secondary" type="button" onClick={() => { setDraft(emptyProductLineFilters); applyFilters(emptyProductLineFilters); }}>{m.processDirectory.clear}</button></div>
+          <button className="button secondary" type="button" onClick={() => {
+            setDraft(emptyProductLineFilters); setDeadline(""); applyFilters(emptyProductLineFilters, { ...stage, deadline: "" });
+          }}>{m.processDirectory.clear}</button></div>
       </form>
     </section>
     <section className="card" aria-live="polite">

@@ -100,23 +100,29 @@
 /* Product lines now in (or past) the stage, below the model data of the card */
 .e2e-stage-count { align-items: center; border-top: 1px solid var(--color-divider); display: flex; flex-wrap: wrap; gap: 6px 8px; justify-content: space-between; padding-top: 10px; }
 
-/* Item quantities by line status and total deadline status. */
-.e2e-overview { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.e2e-overview-card { align-content: start; display: grid; gap: 14px; min-width: 0; padding: 20px 24px; }
-.e2e-overview-card h2 { font-size: var(--fs-lg); }
-.e2e-chart-legend { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
+/* Item quantities by line status (distribution bar) and total deadline status (compact pie), in the style of the model indicators. */
+.e2e-overview { display: grid; gap: 16px; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+.e2e-overview-card { align-content: start; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); display: grid; gap: 12px; min-width: 0; padding: 16px 20px; }
+.e2e-overview-head { align-items: flex-start; display: flex; gap: 12px; justify-content: space-between; }
+.e2e-overview-head > div { display: grid; gap: 4px; }
+.e2e-overview-head strong { color: var(--color-text-strong); font-size: var(--fs-xl); font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
+.e2e-overview-clear { background: transparent; border: 0; color: var(--color-link); cursor: pointer; font: inherit; font-size: var(--fs-sm); font-weight: 700; padding: 2px 0; }
+.e2e-overview-clear:hover { text-decoration: underline; }
+.e2e-overview .is-dimmed { opacity: .35; }
+.e2e-distribution { border-radius: var(--radius-sm); display: flex; gap: 2px; height: 14px; overflow: hidden; }
+.e2e-distribution-segment { cursor: pointer; flex-basis: 0; min-width: 3px; transition: opacity .2s; }
+.e2e-chart-legend { display: grid; gap: 2px 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); list-style: none; margin: 0; padding: 0; }
+.e2e-chart-legend.e2e-chart-legend-stacked { grid-template-columns: minmax(0, 1fr); max-width: 420px; }
 .e2e-chart-legend li { min-width: 0; }
-.e2e-chart-legend button, .e2e-chart-legend-item { align-items: center; background: transparent; border: 0; color: var(--color-text); display: grid; font: inherit; gap: 8px; grid-template-columns: 14px minmax(0, 1fr) auto auto; padding: 5px 6px; text-align: left; width: 100%; }
-.e2e-chart-legend button { border-radius: var(--radius-sm); cursor: pointer; }
-.e2e-chart-legend button:hover, .e2e-chart-legend button[aria-pressed="true"] { background: var(--color-surface-sunken); }
-.e2e-chart-legend strong { color: var(--color-text-strong); font-variant-numeric: tabular-nums; }
-.e2e-chart-swatch { border: 1px solid var(--color-surface); border-radius: var(--radius-xs); display: block; height: 14px; width: 14px; }
-.e2e-pie { display: block; margin: 0 auto; max-height: 310px; max-width: 520px; overflow: visible; width: 100%; }
-.e2e-pie path { stroke: var(--color-surface); stroke-width: 2px; }
-.e2e-pie-action { cursor: pointer; outline: none; }
-.e2e-pie-action:focus path { stroke: var(--focus-ring); stroke-width: 4px; }
-.e2e-pie-guide { stroke: var(--color-text-muted); stroke-width: 1px; }
-.e2e-pie-label { fill: var(--color-text); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.e2e-chart-legend-item { align-items: center; background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--color-text); cursor: pointer; display: grid; font: inherit; font-size: var(--fs-sm); gap: 8px; grid-template-columns: 10px minmax(0, 1fr) auto 3.5em; padding: 4px 6px; text-align: left; transition: opacity .2s; width: 100%; }
+.e2e-chart-legend-item:hover, .e2e-chart-legend-item[aria-pressed="true"] { background: var(--color-surface-sunken); }
+.e2e-chart-legend-item strong { color: var(--color-text-strong); font-variant-numeric: tabular-nums; }
+.e2e-chart-legend-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.e2e-chart-legend-share { color: var(--color-text-muted); font-variant-numeric: tabular-nums; text-align: right; }
+.e2e-chart-swatch { border-radius: var(--radius-xs); display: block; height: 10px; width: 10px; }
+.e2e-pie-layout { align-items: center; display: grid; gap: 16px; grid-template-columns: 120px minmax(0, 1fr); }
+.e2e-pie { display: block; height: 120px; width: 120px; }
+.e2e-pie path { cursor: pointer; stroke: var(--color-surface); stroke-width: 2px; transition: opacity .2s; }
 
 /* Lead-time ruler */
 .e2e-panel-heading { align-items: baseline; display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: space-between; }
@@ -217,10 +223,16 @@
   .e2e-controls { margin-left: 0; }
   .e2e-kpis.e2e-kpis-four, .e2e-stage-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .e2e-gantt-row { grid-template-columns: 130px minmax(0, 1fr) 110px; }
+  .e2e-overview { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
-  .e2e-flow .e2e-phases, .e2e-kpis, .e2e-kpis.e2e-kpis-four, .e2e-stage-list, .e2e-overview { grid-template-columns: 1fr; }
+  .e2e-flow .e2e-phases, .e2e-kpis, .e2e-kpis.e2e-kpis-four, .e2e-stage-list { grid-template-columns: 1fr; }
   .e2e-gantt-row { grid-template-columns: 1fr; }
   .e2e-phase { min-height: 0; }
   .e2e-detail { flex-direction: column; gap: 16px; }
+  .e2e-chart-legend { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 480px) {
+  .e2e-pie-layout { grid-template-columns: 1fr; justify-items: center; }
+  .e2e-pie-layout .e2e-chart-legend { width: 100%; }
 }

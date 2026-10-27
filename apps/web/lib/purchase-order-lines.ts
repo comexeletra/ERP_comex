@@ -31,18 +31,26 @@ export function parseProductLineFilters(params: URLSearchParams): ProductLineFil
 /** End to End stages, in the order of the flow (the same codes as the API). */
 export const e2eStageCodes = ["T0", "T1", "T2", "T3", "T4", "T5"] as const satisfies readonly E2eStageCode[];
 
+/** Total End to End delay status of a line (Power BI in_time_late), in the API order. */
+export const e2eDeadlineStatuses = ["onTime", "onLimit", "late", "noData"] as const;
+export type E2eDeadlineStatus = typeof e2eDeadlineStatuses[number];
+
 /**
  * End to End stage filter: the lines now in the stage (`current`) or those that already have its
  * actual date (`reached`); `late` keeps the late ones, as the API defines for each view.
+ * `deadline` is the total deadline status chosen on the overview chart.
  */
-export type E2eStageFilter = { stage: "" | E2eStageCode; view: "current" | "reached"; late: boolean };
-export const emptyE2eStageFilter: E2eStageFilter = { stage: "", view: "current", late: false };
+export type E2eStageFilter = { stage: "" | E2eStageCode; view: "current" | "reached"; late: boolean;
+  deadline: "" | E2eDeadlineStatus };
+export const emptyE2eStageFilter: E2eStageFilter = { stage: "", view: "current", late: false, deadline: "" };
 
 export function parseE2eStageFilter(params: URLSearchParams): E2eStageFilter {
   const stage = params.get("stage") ?? "";
+  const deadline = params.get("deadline") ?? "";
   return {
     stage: (e2eStageCodes as readonly string[]).includes(stage) ? stage as E2eStageCode : "",
     view: params.get("view") === "reached" ? "reached" : "current", late: params.get("late") === "true",
+    deadline: (e2eDeadlineStatuses as readonly string[]).includes(deadline) ? deadline as E2eDeadlineStatus : "",
   };
 }
 
@@ -51,6 +59,7 @@ export function e2eStageFilterBody(filter: E2eStageFilter): Record<string, strin
   if (filter.stage) body.stage = filter.stage;
   if (filter.view === "reached") body.view = filter.view;
   if (filter.late) body.late = "true";
+  if (filter.deadline) body.deadline = filter.deadline;
   return body;
 }
 
@@ -62,6 +71,16 @@ export function productLineFilterBody(filters: ProductLineFilters, stage = empty
   if (filters.etaFrom) body.etaFrom = filters.etaFrom;
   if (filters.etaTo) body.etaTo = filters.etaTo;
   return { ...body, ...e2eStageFilterBody(stage) };
+}
+
+/**
+ * Filters sent to GET /api/v1/purchase-order-lines/e2e-stages: the line filters and the deadline
+ * chosen on the overview. The stage, the view and the late toggle filter only the table.
+ */
+export function e2eSummaryQuery(filters: ProductLineFilters, deadline: E2eStageFilter["deadline"]): URLSearchParams {
+  const query = new URLSearchParams(productLineFilterBody(filters));
+  if (deadline) query.set("deadline", deadline);
+  return query;
 }
 
 export function productLineQuery(filters: ProductLineFilters, page: number, pageSize: number,
