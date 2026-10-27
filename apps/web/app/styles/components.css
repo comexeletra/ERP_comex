@@ -118,7 +118,7 @@ details[open] > summary::before { transform: rotate(45deg); }
 .quality-filter label, .review-form label, .portfolio-filter label, .request-line label {
   color: var(--color-text-muted); display: grid; font-size: var(--fs-md); font-weight: 700; gap: 6px;
 }
-.quality-filter :is(input, select), .review-form :is(input, select, textarea), .portfolio-filter input,
+.quality-filter :is(input, select), .review-form :is(input, select, textarea), .portfolio-filter :is(input, select),
 .request-form :is(input, select, textarea) { min-width: 0; width: 100%; }
 .review-form textarea { min-height: 92px; }
 .request-form { max-width: var(--width-form); }
