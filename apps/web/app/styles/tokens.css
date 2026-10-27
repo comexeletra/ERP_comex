@@ -99,6 +99,12 @@
   --sidebar-danger-icon: #ffb2a5;
   --sidebar-danger-hover: #59352f;
 
+  /* Tooltips (components/Tooltip.tsx) */
+  --color-tooltip-bg: #0f2a3a;
+  --color-tooltip-text: #ffffff;
+  --color-tooltip-muted: #b6c9d3;
+  --color-tooltip-border: #3a5a6b;
+
   /* Focus and overlays */
   --focus-ring: #02a0d1;
   --focus-ring-soft: #02a0d133;
@@ -138,6 +144,7 @@
   --z-sidebar: 30;
   --z-menu: 1000;
   --z-popover: 1100;
+  --z-tooltip: 1200;
 
   /* Content widths */
   --width-reading: 880px;
@@ -217,6 +224,11 @@
   --sidebar-bg: #0a222d;
   --sidebar-hover: #12394a;
   --sidebar-border: #24495a;
+
+  --color-tooltip-bg: #2f4553;
+  --color-tooltip-text: #f0f5f7;
+  --color-tooltip-muted: #c2d1d9;
+  --color-tooltip-border: #5b7584;
 
   --focus-ring: #48cdf4;
   --focus-ring-soft: #48cdf440;

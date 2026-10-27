@@ -10,6 +10,7 @@ import "./styles/features/analysis.css";
 import "./styles/features/e2e.css";
 import AuthGate from "../components/AuthGate";
 import I18nProvider from "../components/I18nProvider";
+import { TooltipProvider } from "../components/Tooltip";
 import { productName } from "../lib/brand";
 
 export const metadata = {
@@ -20,7 +21,7 @@ export const metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="pt-BR">
-      <body><I18nProvider><AuthGate>{children}</AuthGate></I18nProvider></body>
+      <body><TooltipProvider><I18nProvider><AuthGate>{children}</AuthGate></I18nProvider></TooltipProvider></body>
     </html>
   );
 }
