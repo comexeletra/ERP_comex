@@ -9,6 +9,7 @@ import { statusLabel } from "../lib/i18n/labels";
 import E2eTabs from "./E2eTabs";
 import { getMessages, useI18n } from "./I18nProvider";
 import PageHeader from "./PageHeader";
+import { Tooltip } from "./Tooltip";
 
 type PurchaseOrderFollowup = E2eAnalysisInput & { id: string; number: string; importer: string };
 
@@ -120,9 +121,10 @@ export default function E2ePoAnalysis({ id }: { id: string }) {
           </div>
           <div className="e2e-gantt-track">
             {ip.plannedBar && <span className="e2e-gantt-planned" style={{ left: pct(ip.plannedBar.left), width: pct(ip.plannedBar.width) }} />}
-            {ip.bars.map(bar => <span key={bar.code} title={m.e2eLines.stageTitles[bar.code]}
-              className={`e2e-gantt-bar ${bar.code === "T1" || bar.code === "T2" ? "side-br" : "side-cn"}${bar.source === "forecast" ? " is-forecast" : ""}`}
-              style={{ left: pct(bar.left), width: pct(bar.width) }} />)}
+            {ip.bars.map(bar => <Tooltip key={bar.code} content={m.e2eLines.stageTitles[bar.code]} followCursor>
+              <span className={`e2e-gantt-bar ${bar.code === "T1" || bar.code === "T2" ? "side-br" : "side-cn"}${bar.source === "forecast" ? " is-forecast" : ""}`}
+                style={{ left: pct(bar.left), width: pct(bar.width) }} />
+            </Tooltip>)}
             {timeline.needPosition !== null && <span className="e2e-gantt-need" style={{ left: pct(timeline.needPosition) }} />}
             {timeline.todayPosition !== null && <span className="e2e-gantt-today" style={{ left: pct(timeline.todayPosition) }} />}
           </div>

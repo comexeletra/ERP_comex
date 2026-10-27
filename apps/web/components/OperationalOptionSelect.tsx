@@ -6,6 +6,7 @@ import { apiFetch } from "../lib/api";
 import type { ProductPriceReference } from "../lib/product-price-reference";
 import { getMessages, useI18n } from "./I18nProvider";
 import { SearchableSelect } from "./SearchableSelect";
+import { Tooltip } from "./Tooltip";
 
 export type OperationalOption = { entity: string; value: string; shortName?: string | null };
 export type OperationalCatalog = { items: OperationalOption[]; purchaseOrderGroup: boolean };
@@ -101,10 +102,12 @@ export function CatalogProductSelect({ value, fallbackName, products, onChange, 
         </button>}
         {value && !selected && <button className="searchable-select-option" onClick={() => { onChange({ code: value, name: label }); setOpen(false); }}
           role="option" type="button">{m.select.currentValue(label)}</button>}
-        {filtered.map(product => <button aria-selected={product.code === value} className="searchable-select-option" key={product.code}
-          onClick={() => { onChange(product); setOpen(false); }} role="option" title={`${product.code} · ${product.name}`} type="button">
-          {product.name}
-        </button>)}
+        {filtered.map(product => <Tooltip key={product.code} content={`${product.code} · ${product.name}`}>
+          <button aria-selected={product.code === value} className="searchable-select-option"
+            onClick={() => { onChange(product); setOpen(false); }} role="option" type="button">
+            {product.name}
+          </button>
+        </Tooltip>)}
         {filtered.length === 0 && <p className="searchable-select-empty">{t.empty}</p>}
       </div>
     </div>, document.body)}

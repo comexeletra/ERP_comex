@@ -8,6 +8,7 @@ import { formatCount } from "../../lib/format-count";
 import { getMessages, useI18n } from "../../components/I18nProvider";
 import PageHeader from "../../components/PageHeader";
 import { SearchableSelect } from "../../components/SearchableSelect";
+import { Tooltip } from "../../components/Tooltip";
 import type { Messages } from "../../lib/i18n/pt-BR";
 
 // Sheet names of the historical spreadsheet, exchanged with the API as filter values.
@@ -434,10 +435,10 @@ export default function SourceAuditPage() {
                   <th className="source-pin source-pin-1" scope="col">{t.row}</th>
                   <th className="source-pin source-pin-2" scope="col">{t.sheet}</th>
                   <th className="source-pin source-pin-3" scope="col">{t.sourceSignals}</th>
-                  {columns.map(column => <th key={column} scope="col" title={t.excelColumn(column, result.columnHeaders[column] ?? "")}>
+                  {columns.map(column => <Tooltip key={column} content={t.excelColumn(column, result.columnHeaders[column] ?? "")}><th scope="col">
                     <span className="source-excel-col">{column}</span>{result.columnHeaders[column] || t.noHeader}
                     {sort?.column === column && <span className="source-sort-indicator" aria-label={sort.direction === "asc" ? t.ascending : t.descending}>{sort.direction === "asc" ? " ▲" : " ▼"}</span>}
-                  </th>)}
+                  </th></Tooltip>)}
                 </tr>
                 <tr className="source-grid-filters">
                   <th className="source-pin source-pin-1"><span className="sr-only">{t.noRowFilter}</span></th>
@@ -453,19 +454,23 @@ export default function SourceAuditPage() {
                 </tr>
               </thead>
               <tbody>{result.items.map(row => <tr key={row.id} className={row.auditFlags.anyGap ? "source-row-has-gap" : ""}>
-                <td className="source-pin source-pin-1 source-row-number" title={t.batchRow(row.batchId, row.sourceRowNumber)}>{row.sourceRowNumber}</td>
+                <Tooltip content={t.batchRow(row.batchId, row.sourceRowNumber)}>
+                  <td className="source-pin source-pin-1 source-row-number">{row.sourceRowNumber}</td></Tooltip>
                 <td className="source-pin source-pin-2">{sheetValues.includes(row.sourceSheetName as Sheet) ? sheetLabel(row.sourceSheetName as Sheet, m) : row.sourceSheetName}</td>
                 <td className="source-pin source-pin-3"><div className="source-gap-tags">
                   {row.auditFlags.withoutPurchaseOrder && <span className="badge badge-sm badge-warning">{t.withoutPoTag}</span>}
                   {row.auditFlags.withoutValidIp && <span className="badge badge-sm badge-warning">{t.withoutIp}</span>}
                   {row.auditFlags.cellErrors > 0 && <span className="badge badge-sm badge-warning">{t.calcErrors(row.auditFlags.cellErrors)}</span>}
-                  {(row.auditFlags.dataIssues ?? []).map((issue, index) => <span key={`${issue.code}-${issue.fieldName}-${index}`}
-                    className="badge badge-sm badge-warning" title={`${result.columnHeaders[issue.fieldName ?? ""] ?? ""} · ${JSON.stringify(issue.evidence)}`}>
+                  {(row.auditFlags.dataIssues ?? []).map((issue, index) => <Tooltip key={`${issue.code}-${issue.fieldName}-${index}`}
+                    content={`${result.columnHeaders[issue.fieldName ?? ""] ?? ""} · ${JSON.stringify(issue.evidence)}`}><span className="badge badge-sm badge-warning">
                     {describeIssue(issue, m)}{result.columnHeaders[issue.fieldName ?? ""] ? ` (${result.columnHeaders[issue.fieldName ?? ""]})` : ""}
-                  </span>)}
+                  </span></Tooltip>)}
                   {!row.auditFlags.anyGap && <span className="badge badge-sm badge-success">{t.noFlag}</span>}
                 </div></td>
-                {columns.map(column => <td key={column} title={displayCell(row.sourceSheetName, column, row.sourceValues[column])}>{displayCell(row.sourceSheetName, column, row.sourceValues[column])}</td>)}
+                {columns.map(column => {
+                  const value = displayCell(row.sourceSheetName, column, row.sourceValues[column]);
+                  return <Tooltip key={column} content={value}><td>{value}</td></Tooltip>;
+                })}
               </tr>)}</tbody>
             </table>
           </div>}

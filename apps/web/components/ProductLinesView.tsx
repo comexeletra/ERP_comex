@@ -9,6 +9,7 @@ import ExportColumnsDialog from "./ExportColumnsDialog";
 import { getMessages, useI18n } from "./I18nProvider";
 import { useProductLineExport } from "./useProductLineExport";
 import PageHeader from "./PageHeader";
+import { Tooltip } from "./Tooltip";
 import { emptyE2eStageFilter, emptyProductLineFilters, parseProductLineFilters, productLineQuery,
   productLineStatuses, type ProductLineFilters } from "../lib/purchase-order-lines";
 
@@ -111,9 +112,9 @@ export default function ProductLinesView({ initialQuery }: { initialQuery: strin
           <th>{m.fields.blDate}</th><th>ETA</th><th>{m.followup.arrival}</th><th>ETE</th><th>{m.followup.delivery}</th><th>{m.followup.factoryShip}</th><th>{m.postShipment.invoice}</th>
         </tr></thead><tbody>{result.lines.map(line => <tr key={`${line.lineKind}-${line.lineId}`}>
           <td><Link className="text-link" href={`/purchase-orders/${line.purchaseOrder.id}`}>{line.purchaseOrder.number}</Link></td>
-          <td><span className="product-lines-importer" title={line.purchaseOrder.importer}>{line.purchaseOrder.importer}</span></td>
-          <td><strong>{line.item.productCode}</strong>
-            <small className="product-lines-description" title={line.item.description}>{line.item.description}</small></td>
+          <td><Tooltip content={line.purchaseOrder.importer}><span className="product-lines-importer">{line.purchaseOrder.importer}</span></Tooltip></td>
+          <Tooltip content={line.item.description}><td><strong>{line.item.productCode}</strong>
+            <small className="product-lines-description">{line.item.description}</small></td></Tooltip>
           <td>{formatNumber(line.quantity)} {line.item.unit ?? ""}</td>
           <td>{line.process ? <Link className="text-link" href={`/processes/${line.process.id}`}>{line.process.ipNumber}</Link>
             : <span className="po-ip-pending">{m.followup.noIp}</span>}</td>

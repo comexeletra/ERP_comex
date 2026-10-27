@@ -9,6 +9,7 @@ import { roleLabel } from "../lib/i18n/labels";
 import type { Messages } from "../lib/i18n/pt-BR";
 import { useI18n } from "./I18nProvider";
 import LanguageSwitcher from "./LanguageSwitcher";
+import { Tooltip } from "./Tooltip";
 
 type IconName = "orders" | "ship" | "flow" | "reports" | "sheet" | "requests" | "catalog"
   | "sc" | "noIp" | "noPo" | "quality" | "audit" | "users" | "events" | "collapse" | "password" | "logout" | "sun" | "moon";
@@ -103,45 +104,52 @@ export default function AppSidebar({ collapsed, isMaster, displayName, roles, im
       <Image className="sidebar-brand-mark" src="/brand-mark.png" alt="" width={40} height={40} priority />
       <span className="sidebar-brand-copy">{productName}<small>{t.brandSubtitle}</small></span>
     </Link>
-    <button className="sidebar-toggle" type="button" onClick={onToggle}
-      aria-label={collapsed ? t.expandAria : t.collapseAria}
-      title={collapsed ? t.expandTitle : t.collapseTitle}>
-      <SidebarIcon name="collapse" />
-      <span>{collapsed ? t.expand : t.collapse}</span>
-    </button>
+    <Tooltip content={collapsed ? t.expandTitle : t.collapseTitle} placement="right">
+      <button className="sidebar-toggle" type="button" onClick={onToggle} aria-label={collapsed ? t.expandAria : t.collapseAria}>
+        <SidebarIcon name="collapse" />
+        <span>{collapsed ? t.expand : t.collapse}</span>
+      </button>
+    </Tooltip>
     <nav className="sidebar-navigation" aria-label={t.navigation}>
       {visibleGroups.map(group => <section className="sidebar-group" key={group.label}>
         <h2>{t.groups[group.label]}</h2>
         <ul>{group.items.map(item => {
           const active = isItemActive(pathname, item);
           const label = `${t.groups[group.label]}: ${t.items[item.label]}`;
-          return <li key={item.href}><Link href={item.href} className={active ? "sidebar-link active" : "sidebar-link"}
-            aria-current={active ? "page" : undefined} aria-label={collapsed ? label : undefined}
-            title={collapsed ? label : undefined}>
-            <SidebarIcon name={item.icon} /><span>{t.items[item.label]}</span>
-          </Link></li>;
+          return <li key={item.href}><Tooltip content={collapsed ? label : undefined} placement="right">
+            <Link href={item.href} className={active ? "sidebar-link active" : "sidebar-link"}
+              aria-current={active ? "page" : undefined} aria-label={collapsed ? label : undefined}>
+              <SidebarIcon name={item.icon} /><span>{t.items[item.label]}</span>
+            </Link>
+          </Tooltip></li>;
       })}</ul>
       </section>)}
     </nav>
     <section className="sidebar-account" aria-label={t.account}>
-      <div className="sidebar-user" title={collapsed ? `${userName} · ${t.role(roleText)} · ${t.importers(importerText)}` : undefined}>
-        <span className="sidebar-avatar" aria-hidden="true">{initials || "U"}</span>
-        <span className="sidebar-user-copy"><strong>{userName}</strong><small>{t.role(roleText)}</small><small>{t.importers(importerText)}</small></span>
-      </div>
+      <Tooltip content={collapsed ? `${userName} · ${t.role(roleText)} · ${t.importers(importerText)}` : undefined} placement="right">
+        <div className="sidebar-user">
+          <span className="sidebar-avatar" aria-hidden="true">{initials || "U"}</span>
+          <span className="sidebar-user-copy"><strong>{userName}</strong><small>{t.role(roleText)}</small><small>{t.importers(importerText)}</small></span>
+        </div>
+      </Tooltip>
       <LanguageSwitcher className="sidebar-language" />
-      <button className="sidebar-account-action" type="button" onClick={onToggleTheme}
-        aria-label={theme === "dark" ? t.lightThemeAria : t.darkThemeAria}
-        aria-pressed={theme === "dark"} title={collapsed ? (theme === "dark" ? t.lightThemeAria : t.darkThemeAria) : undefined}>
-        <SidebarIcon name={theme === "dark" ? "sun" : "moon"} />
-        <span>{theme === "dark" ? t.lightTheme : t.darkTheme}</span>
-      </button>
-      <Link className="sidebar-account-action" href="/change-password" title={collapsed ? t.changePassword : undefined}>
-        <SidebarIcon name="password" /><span>{t.changePassword}</span>
-      </Link>
-      <button className="sidebar-account-action is-danger" type="button" onClick={onLogout}
-        title={collapsed ? t.logout : undefined}>
-        <SidebarIcon name="logout" /><span>{t.logout}</span>
-      </button>
+      <Tooltip content={collapsed ? (theme === "dark" ? t.lightThemeAria : t.darkThemeAria) : undefined} placement="right">
+        <button className="sidebar-account-action" type="button" onClick={onToggleTheme}
+          aria-label={theme === "dark" ? t.lightThemeAria : t.darkThemeAria} aria-pressed={theme === "dark"}>
+          <SidebarIcon name={theme === "dark" ? "sun" : "moon"} />
+          <span>{theme === "dark" ? t.lightTheme : t.darkTheme}</span>
+        </button>
+      </Tooltip>
+      <Tooltip content={collapsed ? t.changePassword : undefined} placement="right">
+        <Link className="sidebar-account-action" href="/change-password">
+          <SidebarIcon name="password" /><span>{t.changePassword}</span>
+        </Link>
+      </Tooltip>
+      <Tooltip content={collapsed ? t.logout : undefined} placement="right">
+        <button className="sidebar-account-action is-danger" type="button" onClick={onLogout}>
+          <SidebarIcon name="logout" /><span>{t.logout}</span>
+        </button>
+      </Tooltip>
     </section>
   </aside>;
 }

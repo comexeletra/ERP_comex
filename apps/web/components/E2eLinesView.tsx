@@ -18,6 +18,7 @@ import E2eTabs from "./E2eTabs";
 import ExportColumnsDialog from "./ExportColumnsDialog";
 import { getMessages, useI18n } from "./I18nProvider";
 import PageHeader from "./PageHeader";
+import { Tooltip } from "./Tooltip";
 import { useProductLineExport } from "./useProductLineExport";
 
 type E2eLine = {
@@ -326,7 +327,7 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
               <td>{statusLabel(m, line.calculated.status)}</td>
               <td>{line.item.purpose ?? "—"}</td>
               <td><strong>{line.item.productCode}</strong></td>
-              <td><span className="product-lines-description" title={line.item.description}>{line.item.description}</span></td>
+              <td><Tooltip content={line.item.description}><span className="product-lines-description">{line.item.description}</span></Tooltip></td>
               <td>{modalLabel(line)}</td><td>{line.item.group ?? "—"}</td>
               <td>{formatNumber(line.quantity)} {line.item.unit ?? ""}</td>
               {accumulatedStage && <td className={`${stageSide(accumulatedStage)} is-selected`}>
@@ -336,8 +337,8 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
                 const cell = code === stage.stage ? `${index < 3 ? "side-br" : "side-cn"} is-selected` : undefined;
                 return [
                   <td key={`${code}-deadline`} className={cell}>{date(stageData?.deadline)}</td>,
-                  <td key={`${code}-actual`} className={cell}><span className={stageData?.source === "forecast" ? "e2e-date is-forecast" : "e2e-date"}
-                    title={stageData?.source === "forecast" ? t.forecast : undefined}>{date(stageData?.actual)}</span></td>,
+                  <td key={`${code}-actual`} className={cell}><Tooltip content={stageData?.source === "forecast" ? t.forecast : undefined}>
+                    <span className={stageData?.source === "forecast" ? "e2e-date is-forecast" : "e2e-date"}>{date(stageData?.actual)}</span></Tooltip></td>,
                   <td key={`${code}-target`} className={cell}>{days(stageData?.targetDays)}</td>,
                   <td key={`${code}-days`} className={cell}>{days(stageData?.actualDays)}</td>,
                   <td key={`${code}-delay`} className={cell}>{delay(stageData?.delayDays)}</td>,
