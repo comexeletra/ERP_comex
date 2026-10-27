@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { overviewShares, overviewTotal } from "../lib/e2e-overview-format.ts";
+import { overviewShares, overviewTotal, rankedIndexes } from "../lib/e2e-overview-format.ts";
 
 // Intl may separate the number and the unit with a no-break space.
 const plain = value => value.replace(/ | /gu, " ");
@@ -39,4 +39,13 @@ test("the overview format stays free of UI text and value imports", async () => 
   const source = await readFile(new URL("../lib/e2e-overview-format.ts", import.meta.url), "utf8");
   assert.doesNotMatch(source, /^import\s+(?!type\b)/mu);
   assert.doesNotMatch(source, /formatNumber/u);
+});
+
+test("delay range bars go from the largest quantity down and skip empty ranges", () => {
+  // As in Power BI: sorted by value; ties keep the range order; an empty range is not drawn.
+  assert.deepEqual(rankedIndexes([807420, 189, 126244, 0, 359, 544, 60, 1, 3], -1), [0, 2, 5, 4, 1, 6, 8, 7]);
+  assert.deepEqual(rankedIndexes([5, 0, 5, 0], -1), [0, 2]);
+  // The selected range stays visible even when the other charts leave it empty.
+  assert.deepEqual(rankedIndexes([5, 0, 2], 1), [0, 2, 1]);
+  assert.deepEqual(rankedIndexes([0, 0], -1), []);
 });

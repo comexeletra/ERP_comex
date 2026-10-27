@@ -29,12 +29,17 @@ test("the optional overview precedes the model and cross-filters by status and d
   assert.match(view, /onDeadlineSelect=\{selectDeadline\}/u);
   assert.match(view, /selectedDeadline=\{deadline\}/u);
   // Clear also removes the deadline chosen on the chart.
-  assert.match(view, /setDeadline\(""\); applyFilters\(emptyProductLineFilters, \{ \.\.\.stage, deadline: "" \}\);/u);
+  assert.match(view, /setDeadline\(""\); setDelayRange\(""\);/u);
+  assert.match(view, /applyFilters\(emptyProductLineFilters, \{ \.\.\.stage, deadline: "", delayRange: "" \}\);/u);
+  // The delay range bars cross-filter the same way.
+  assert.match(view, /const next = delayRange === selected \? "" : selected;/u);
+  assert.match(view, /setDelayRange\(next\); syncUrl\(applied, \{ \.\.\.stage, delayRange: next \}, 1\);/u);
+  assert.match(view, /selectedDelayRange=\{delayRange\} onDelayRangeSelect=\{selectDelayRange\}/u);
 });
 
 test("the overview charts and the product line filters can be collapsed", () => {
   assert.match(view, /<E2eCollapsible title=\{t\.overview\.label\} storageKey="erp-comex-e2e-charts-collapsed"/u);
-  assert.match(view, /activeCount=\{\(applied\.status \? 1 : 0\) \+ \(deadline \? 1 : 0\)\}/u);
+  assert.match(view, /activeCount=\{\(applied\.status \? 1 : 0\) \+ \(deadline \? 1 : 0\) \+ \(delayRange \? 1 : 0\)\}/u);
   assert.match(view, /<E2eCollapsible className="card" title=\{t\.panels\.filtersTitle\} storageKey="erp-comex-e2e-filters-collapsed"/u);
   assert.match(view, /activeCount=\{activeProductLineFilterCount\(applied\)\}/u);
   // The charts stay inside their panel, and the filter form inside the other one.
@@ -56,7 +61,21 @@ test("a collapsed chart block still says it holds charts and shows their shape",
   assert.match(overview, /export function E2eOverviewMini/u);
   assert.match(overview, /className="e2e-distribution e2e-distribution-mini" aria-hidden="true"/u);
   assert.match(overview, /o\.chartsHidden\(/u);
-  for (const messages of [ptBR, en, zhCN]) assert.equal(typeof messages.e2eLines.overview.chartsHidden("1"), "string");
+  for (const messages of [ptBR, en, zhCN]) assert.equal(typeof messages.e2eLines.overview.chartsHidden(3, "1"), "string");
+});
+
+test("the delay range bars are clickable rows sorted by quantity, with no image role", () => {
+  assert.match(overview, /byDelayRange\?: Record<E2eDelayRange, OverviewPart>/u);
+  assert.match(overview, /rankedIndexes\(/u);
+  assert.match(overview, /<button type="button" className=\{`e2e-range-row/u);
+  assert.match(overview, /aria-pressed=\{entry\.key === selected\}/u);
+  assert.match(overview, /filterLabel=\{o\.filterByDelayRange\}/u);
+  // The status chart spans the row; the deadline pie and the delay ranges share the next one.
+  assert.match(overview, /className="e2e-overview-card e2e-overview-card-wide"/u);
+  for (const messages of [ptBR, en, zhCN]) {
+    assert.equal(Object.keys(messages.e2eLines.overview.delayRanges).length, 9);
+    assert.ok(messages.e2eLines.overview.delayRangeTitle);
+  }
 });
 
 test("both overview charts are clickable through their legends and keep the keyboard out of the images", () => {
@@ -112,8 +131,8 @@ test("the lines follow the selected stage, view and late filter on the API route
   assert.match(view, /apiFetch\(`\/api\/v1\/purchase-order-lines\?\$\{query\}`/u);
   assert.match(view, /productLineQuery\(applied, page, pageSize, stage\)/u);
   assert.match(view, /apiFetch\(`\/api\/v1\/purchase-order-lines\/e2e-stages\?\$\{summaryQuery\}`/u);
-  assert.match(view, /const summaryQuery = e2eSummaryQuery\(applied, deadline\)\.toString\(\);/u);
-  assert.match(view, /const stage: E2eStageFilter = \{ stage: current === null \? "" : E2E_STAGE_CODES\[current\], view, late, deadline \};/u);
+  assert.match(view, /const summaryQuery = e2eSummaryQuery\(applied, deadline, delayRange\)\.toString\(\);/u);
+  assert.match(view, /const stage: E2eStageFilter = \{ stage: current === null \? "" : E2E_STAGE_CODES\[current\], view, late, deadline,\s+delayRange \};/u);
   // The export downloads what the table shows.
   assert.match(view, /downloadExcel\(applied, stage\)/u);
   // Loaded stages are kept, so the animation does not reload them on every pass.

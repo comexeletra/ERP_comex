@@ -177,6 +177,7 @@ test("End to End charts define the approved palette in both themes", () => {
     "--color-chart-on-limit": ["#a87300", "#b8841a"],
     "--color-chart-late": ["#b02a3a", "#d0384f"],
     "--color-chart-no-data": ["#4f5d65", "#b4c1c8"],
+    "--color-chart-range": ["#037599", "#2f96c2"],
   };
   for (const [token, [lightValue, darkValue]] of Object.entries(expected)) {
     assert.equal(light[token], lightValue, token);
@@ -186,9 +187,11 @@ test("End to End charts define the approved palette in both themes", () => {
   }
 });
 
-test("the End to End overview is a compact 3:2 row that stacks below 1100 px", () => {
+test("the End to End overview puts the status chart on its own row and two charts below, stacking below 1100 px", () => {
   const css = styles["app/styles/features/e2e.css"];
-  assert.match(css, /\.e2e-overview \{[^}]*grid-template-columns:\s*minmax\(0, 3fr\) minmax\(0, 2fr\);/u);
+  assert.match(css, /\.e2e-overview \{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/u);
+  assert.match(css, /\.e2e-overview-card-wide \{[^}]*grid-column:\s*1 \/ -1;/u);
+  assert.ok(css.includes(".e2e-range-row {") && css.includes(".e2e-range-fill {"));
   assert.match(css, /@media \(max-width: 1100px\) \{[^@]*\.e2e-overview \{ grid-template-columns: 1fr; \}/u);
   for (const rule of [".e2e-distribution {", ".e2e-distribution-segment {", ".e2e-chart-legend-item {", ".e2e-pie-layout {"]) {
     assert.ok(css.includes(rule), rule);
