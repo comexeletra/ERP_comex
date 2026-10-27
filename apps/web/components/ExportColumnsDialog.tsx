@@ -92,13 +92,15 @@ export default function ExportColumnsDialog({ context, filters = {}, busy = fals
     onExport(columnsBody(context, selection, m, filters));
   }
 
-  return <ConfirmDialog open title={t.title} confirmLabel={t.confirm} busy={busy} onConfirm={confirm} onCancel={onCancel}>
+  return <ConfirmDialog open title={t.title} className="export-columns-dialog" confirmLabel={t.confirm} busy={busy} onConfirm={confirm} onCancel={onCancel}>
     <p>{t.help}</p>
-    <div className="button-row">
-      <button className="button secondary" type="button" onClick={() => toggle(all, true)}>{t.selectAll}</button>
-      <button className="button secondary" type="button" onClick={() => toggle(all, false)}>{t.clearAll}</button>
+    <div className="export-columns-toolbar">
+      <div className="button-row">
+        <button className="button secondary" type="button" onClick={() => toggle(all, true)}>{t.selectAll}</button>
+        <button className="button secondary" type="button" onClick={() => toggle(all, false)}>{t.clearAll}</button>
+      </div>
+      <p className="muted" role="status">{t.count(chosenCount, columns.length)}</p>
     </div>
-    <p className="muted" role="status">{t.count(chosenCount, columns.length)}</p>
     <div className="export-columns">
       {sections(columns).map((section, index) => section.grid ? grid(section.columns)
         : <div key={index} className="export-columns-list">{section.columns.map(option)}</div>)}

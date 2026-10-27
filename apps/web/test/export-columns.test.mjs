@@ -139,3 +139,17 @@ test("each export button opens the column dialog of its screen and sends the cho
   assert.match(dialog, /<ConfirmDialog open title=\{t\.title\}/u);
   assert.match(dialog, /writeSavedColumns\(browserStorage\(\), context, selection\)/u);
 });
+
+test("the column dialog is wide and tall enough to show the choice without scrolling on a desktop screen", async () => {
+  const styles = await source("../app/styles/components.css");
+  const confirmDialog = await source("../components/ConfirmDialog.tsx");
+  assert.match(dialog, /<ConfirmDialog open title=\{t\.title\} className="export-columns-dialog"/u);
+  assert.match(confirmDialog, /className=\{className \? `dialog \$\{className\}` : "dialog"\}/u);
+  // Wider than the 560 px of the other dialogs, so the stage grid and the lists fit side by side.
+  assert.match(styles, /\.dialog\.export-columns-dialog \{[^}]*max-width: min\(1080px, calc\(100vw - 32px\)\)/u);
+  // The list takes the height left by the title, the actions and the buttons, instead of a fixed share.
+  assert.match(styles, /\.export-columns \{[^}]*max-height: calc\(100dvh - 280px\)/u);
+  // Buttons and the column count share one row, and the grid uses compact cells.
+  assert.match(dialog, /<div className="export-columns-toolbar">/u);
+  assert.match(styles, /\.export-columns-grid th, \.export-columns-grid td \{[^}]*padding: 6px 10px/u);
+});

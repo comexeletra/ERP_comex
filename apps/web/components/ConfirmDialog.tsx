@@ -8,9 +8,11 @@ import { useI18n } from "./I18nProvider";
  * Escape and the cancel button call onCancel; extra fields (such as a reason) go in children.
  */
 export default function ConfirmDialog({ open, title, children, confirmLabel, cancelLabel, danger = false, busy = false,
-  confirmDisabled = false, onConfirm, onCancel }: {
+  confirmDisabled = false, className, onConfirm, onCancel }: {
   open: boolean; title: string; children?: ReactNode; confirmLabel?: string; cancelLabel?: string; danger?: boolean;
-  busy?: boolean; confirmDisabled?: boolean; onConfirm: () => void; onCancel: () => void;
+  busy?: boolean; confirmDisabled?: boolean;
+  /** Extra class for a dialog that needs another size, such as the export column choice. */
+  className?: string; onConfirm: () => void; onCancel: () => void;
 }) {
   const { m } = useI18n();
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -28,7 +30,7 @@ export default function ConfirmDialog({ open, title, children, confirmLabel, can
     if (!busy && !confirmDisabled) onConfirm();
   }
 
-  return <dialog ref={dialogRef} className="dialog" aria-labelledby={titleId}
+  return <dialog ref={dialogRef} className={className ? `dialog ${className}` : "dialog"} aria-labelledby={titleId}
     onCancel={event => { event.preventDefault(); if (!busy) onCancel(); }}>
     {open && <form className="dialog-body" onSubmit={submit}>
       <h2 id={titleId}>{title}</h2>
