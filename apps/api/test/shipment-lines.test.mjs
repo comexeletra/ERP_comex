@@ -207,3 +207,57 @@ test("the E2E stage summary counts stages and exact item quantities by status an
   const invalid = await app.inject({ method: "GET", url: "/api/v1/purchase-order-lines/e2e-stages?stage=T3" });
   assert.equal(invalid.statusCode, 400, invalid.body);
 });
+
+test("product lines filter by the total deadline status after the calculation", async t => {
+  const { app, queries } = await linesApp(t, stageRows, stageDocuments);
+  const get = async query => {
+    const response = await app.inject({ method: "GET", url: `/api/v1/purchase-order-lines?situation=all&${query}` });
+    assert.equal(response.statusCode, 200, response.body);
+    return response.json();
+  };
+  assert.deepEqual(ips(await get("deadline=late")), ["IP-SEA", "IP-DONE"]);
+  assert.deepEqual(ips(await get("deadline=noData")), ["saldo"]);
+  assert.deepEqual(ips(await get("deadline=onTime")), []);
+  assert.deepEqual(ips(await get("deadline=late&stage=T4")), ["IP-SEA"]);
+  const paged = await get("deadline=late&page=2&pageSize=1");
+  assert.deepEqual([paged.totalCount, ips(paged)], [2, ["IP-DONE"]]);
+  assert.deepEqual(queries.filter(query => query.sql.includes("line_kind")).at(-1).params.slice(-2), [null, 0]);
+  const invalid = await app.inject({ method: "GET", url: "/api/v1/purchase-order-lines?deadline=foo" });
+  assert.equal(invalid.statusCode, 400, invalid.body);
+});
+
+test("each summary chart ignores its own filter and follows the other one", async t => {
+  const decimalRow = { ...stageRows[0], line_id: "00000000-0000-4000-8000-000000000064", line_quantity: "0.20000000" };
+  const summaryRows = [{ ...stageRows[0], line_quantity: "0.10000000" }, ...stageRows.slice(1), decimalRow];
+  const { app, queries } = await linesApp(t, summaryRows, stageDocuments);
+  const get = async query => {
+    const response = await app.inject({ method: "GET", url: `/api/v1/purchase-order-lines/e2e-stages?situation=all&${query}` });
+    assert.equal(response.statusCode, 200, response.body);
+    return response.json();
+  };
+  const all = await get("");
+  const arriving = await get("status=AGUARDANDO%20CHEGADA");
+  // The status filter is applied after the calculation, so the database returns every status.
+  assert.equal(queries.filter(query => query.sql.includes("line_kind")).at(-1).params[5], null);
+  assert.deepEqual(arriving.overview.byStatus, all.overview.byStatus);
+  assert.deepEqual(arriving.overview.byDeadline.late, { quantity: "0.3", lines: 2 });
+  assert.deepEqual(arriving.overview.byDeadline.noData, { quantity: "0", lines: 0 });
+  assert.deepEqual([arriving.totalCount, arriving.delivered, arriving.stages.T4.current], [2, 0, 2]);
+
+  const late = await get("deadline=late");
+  assert.deepEqual(late.overview.byDeadline, all.overview.byDeadline);
+  assert.deepEqual(late.overview.byStatus["A DISTRIBUIR"], { quantity: "0", lines: 0 });
+  assert.deepEqual(late.overview.byStatus["AGUARDANDO CHEGADA"], { quantity: "0.3", lines: 2 });
+  assert.deepEqual(late.overview.byStatus.ENTREGUE, { quantity: "1", lines: 1 });
+  assert.deepEqual([late.totalCount, late.delivered, late.stages.T0.current], [3, 1, 0]);
+
+  const both = await get("status=ENTREGUE&deadline=noData");
+  assert.deepEqual(both.overview.byStatus["A DISTRIBUIR"], { quantity: "5", lines: 1 });
+  assert.equal(Object.values(both.overview.byStatus).reduce((sum, part) => sum + part.lines, 0), 1);
+  assert.deepEqual(both.overview.byDeadline.late, { quantity: "1", lines: 1 });
+  assert.equal(Object.values(both.overview.byDeadline).reduce((sum, part) => sum + part.lines, 0), 1);
+  assert.deepEqual([both.totalCount, both.delivered], [0, 0]);
+
+  const invalid = await app.inject({ method: "GET", url: "/api/v1/purchase-order-lines/e2e-stages?deadline=foo" });
+  assert.equal(invalid.statusCode, 400, invalid.body);
+});
