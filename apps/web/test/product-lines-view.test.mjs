@@ -11,7 +11,7 @@ test("the product lines view reads the API lines and exports the filtered lines 
   assert.match(view, /\/api\/v1\/purchase-order-lines\?/u);
   // The export (queue, wait, download) is shared with the End to End screen.
   assert.match(view, /useProductLineExport\("carteira-por-produto"\)/u);
-  assert.match(view, /downloadExcel\(applied\)/u);
+  assert.match(view, /downloadExcel\(applied, emptyE2eStageFilter, columns\)/u);
   assert.match(exportHook, /\/api\/v1\/exports\/purchase-order-lines/u);
   assert.match(exportHook, /anchor\.download = `\$\{filePrefix\}-.*\.xlsx`/u);
   for (const column of ["ETD", "ETA", "ETE"]) assert.match(view, new RegExp(`<th>${column}</th>`, "u"));

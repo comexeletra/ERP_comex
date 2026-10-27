@@ -149,7 +149,7 @@ test("the lines follow the selected stage, view and late filter on the API route
   assert.match(view, /const summaryQuery = e2eSummaryQuery\(applied, stage\)\.toString\(\);/u);
   assert.match(view, /const stage: E2eStageFilter = \{ stage: current === null \? "" : E2E_STAGE_CODES\[current\], view, late, deadline,\s+delayRange, demandType, modal \};/u);
   // The export downloads what the table shows.
-  assert.match(view, /downloadExcel\(applied, stage\)/u);
+  assert.match(view, /downloadExcel\(applied, stage, columns\)/u);
   // Loaded stages are kept, so the animation does not reload them on every pass.
   assert.match(view, /if \(cached\) return undefined;/u);
   // The accumulated view shows the delay accumulated up to the selected stage.
