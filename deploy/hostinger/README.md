@@ -1,5 +1,13 @@
 # API ERP na VPS Hostinger
 
+## Resumo compacto e filtro cruzado no End to End HML (2026-10-27)
+
+Os commits `3c65cce` (API) e `c8a9c6c` (web) acrescentam o filtro `deadline=onTime|onLimit|late|noData` a `GET /api/v1/purchase-order-lines`, à rota `e2e-stages`, à exportação e ao worker. O resumo passa a usar filtro cruzado: a barra de status ignora o filtro de status, a pizza de prazo ignora o filtro de prazo, e os cards das etapas e a tabela seguem os dois. Não há migration. O web novo envia `deadline`, que a API anterior recusa com 400; por isso a API foi publicada antes do web.
+
+O release `/opt/import-erp/apps/api/hml-release-c8a9c6c` foi montado com `git -c core.autocrlf=false archive` (fontes conferidas sem CR), reaproveitando o `node_modules` de `hml-release-4362a3c`, compilado na VPS com o `tsc` desse `node_modules` e ativado pelo drop-in `zzzzzzzzzzzzzzzzzzzzzzzzz-release-c8a9c6c.conf`. O worker foi movido com `enable-homologation-export-worker.sh c8a9c6c`. Os drop-ins e `ExecStart` anteriores da API e do worker estão em `/var/backups/import-erp/hml-e2e-crossfilter-c8a9c6c-predeploy`. Rollback somente do código: remova o drop-in novo da API, execute `systemctl daemon-reload`, reinicie `import-erp-hml-api` (volta a `hml-release-4362a3c`) e rode `enable-homologation-export-worker.sh 4362a3c`.
+
+Após a troca, API e worker HML ficaram ativos no release `c8a9c6c`; `/health/live` respondeu `200` e `e2e-stages?deadline=late` sem sessão respondeu `401`. Conferência somente leitura com `import_erp_hml_app`, `default_transaction_read_only=on` e `current_database() = 'erp_po_totvs_hml'`, usando as funções do release: sem filtros, 225 linhas (22 entregues), com as 6 categorias de status e as 4 de prazo somando 225; com `deadline=late`, a pizza ficou igual e a barra somou as 225 atrasadas; com `status=AGUARDANDO CHEGADA`, a barra manteve as 6 categorias e a pizza ficou com as 111 linhas desse status (`14025245` itens); a tabela com `deadline=late` trouxe 225 linhas. Produção (`import-erp-api` desde 2026-10-17 12:38:12, `import-erp-export-worker` desde 2026-10-19 20:38:54), `main` e as variáveis da Vercel não foram alteradas. O Preview `erp-comex-700fh5j8o` do commit `c8a9c6c` ficou `Ready` no alias estável da `homologacao`, e o CSS publicado já contém as regras novas.
+
 ## Gráficos de quantidade por status e prazo no End to End HML (2026-10-27)
 
 Os commits `b938588` (API) e `4362a3c` (web) acrescentam ao resumo End to End as quantidades exatas por status da linha e por situação do prazo, e exibem os dois gráficos SVG no topo de `/end-to-end`. A mudança é aditiva, não inclui migration e não altera os filtros, a exportação ou as contagens existentes.

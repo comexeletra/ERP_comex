@@ -6,7 +6,7 @@
 | Branch de trabalho | `homologacao` (base: `1c9aad8`) |
 | Plano anterior | `docs/PLANO_E2E_GRAFICOS_RESUMO.md` (primeira entrega, commits `c2fe6b0`…`1c9aad8`) |
 | Ambiente de validação | API e worker HML na VPS e Preview Vercel da `homologacao` |
-| Status | **Aprovado para implementação** |
+| Status | **Implementado e publicado em HML; A12 (validação visual com login) pendente** |
 
 ## 1. Resumo
 
@@ -257,6 +257,22 @@ As chaves da primeira entrega continuam valendo. Chave que ficar sem uso sai dos
 - **Prazo depois do cálculo:** com `deadline`, a tabela calcula todas as linhas antes de paginar, como já acontece com etapa e atraso.
 - **Dados do HML:** na fotografia de 2026-10-27, as 225 linhas estavam em "Atrasado". A pizza de prazo vai aparecer como um círculo único até haver dados variados. Isso não é defeito, mas o usuário ainda vai comparar algumas linhas com o "Total DelayDays" do Power BI.
 
-### Registro da execução
+### Registro da execução (2026-10-27)
 
-(preencher na etapa 10)
+- **Commits:** `ac02964` (planos), `2d46710` (testes API), `3c65cce` (API), `63b98ef` (testes web) e `c8a9c6c` (web).
+- **Sintoma 2 (valores só depois do clique):** não houve sessão autenticada para reproduzir na tela. No código da primeira entrega, duas causas explicam o que o print mostra:
+  - o filtro de status era aplicado ao próprio gráfico, que ficava com uma fatia de 100% e as demais zeradas;
+  - os rótulos ficavam fora da pizza, com sobreposição (Desembaraço e Entregue no mesmo ponto com os dados do HML).
+
+  No componente novo, valores e percentuais ficam sempre na legenda, e o gráfico clicado mantém todas as categorias.
+- **Verificação local:**
+  - API: `npm run build` e `npm test`, sem falhas;
+  - web: 195 testes passando, `tsc --noEmit` sem erros, lint com 0 erros (40 avisos antigos, nenhum nos arquivos alterados) e `npm run build` concluído. A alteração do build em `next-env.d.ts` foi descartada.
+- **Teste que mudou nesta entrega:** o teste de `E2eLinesView` que eu tinha acabado de escrever fixava a linha do clique em status sem anotação de tipo. O type-check exigiu `const filters: ProductLineFilters`, e o teste passou a fixar a linha anotada. O comportamento verificado é o mesmo.
+- **Conferência visual sem login:**
+  - **Método:** o componente real foi renderizado com React no servidor, com os dados do HML e uma carteira variada, nos 3 idiomas e nos 2 temas. Com o CSS do app, o Chrome headless gerou capturas em 1440, 900 e 500 px.
+  - **Resultado:** cada card ficou com cerca de 210 px de altura em 1440 px.
+  - **Ajustes feitos depois das capturas:** a legenda de status passou a 1 coluna abaixo de 760 px, porque em 500 px os nomes ficavam cortados. A legenda da pizza ficou limitada a 420 px de largura.
+- **A11:** aprovado; números no `deploy/hostinger/README.md`, seção de 2026-10-27. A pizza de prazo no HML continua com 100% "Atrasado".
+- **Preview:** `erp-comex-700fh5j8o` (commit `c8a9c6c`) `Ready` no alias estável; `/login` respondeu `200`, e o CSS publicado contém as regras novas.
+- **Pendente (A12):** conferência com login: clique nos dois gráficos, limpeza da seleção, exportação com prazo, larguras, temas e idiomas.
