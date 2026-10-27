@@ -73,6 +73,12 @@ export function productLineFilterBody(filters: ProductLineFilters, stage = empty
   return { ...body, ...e2eStageFilterBody(stage) };
 }
 
+/** How many applied filters change the table, shown while the filter bar is collapsed. */
+export function activeProductLineFilterCount(filters: ProductLineFilters): number {
+  const body = productLineFilterBody(filters);
+  return Object.keys(body).length - (body.situation === "open" ? 1 : 0);
+}
+
 /**
  * Filters sent to GET /api/v1/purchase-order-lines/e2e-stages: the line filters and the deadline
  * chosen on the overview. The stage, the view and the late toggle filter only the table.

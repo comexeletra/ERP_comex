@@ -100,6 +100,15 @@
 /* Product lines now in (or past) the stage, below the model data of the card */
 .e2e-stage-count { align-items: center; border-top: 1px solid var(--color-divider); display: flex; flex-wrap: wrap; gap: 6px 8px; justify-content: space-between; padding-top: 10px; }
 
+/* Blocks the viewer can hide (overview charts and table filters) */
+.e2e-collapsible { display: grid; gap: 12px; }
+.e2e-collapsible-head { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 10px; }
+.e2e-collapsible-head h2 { font-size: var(--fs-xs); letter-spacing: .055em; margin: 0; }
+.e2e-collapsible-toggle { align-items: center; background: transparent; border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text-secondary); cursor: pointer; display: inline-flex; font: inherit; font-size: var(--fs-sm); font-weight: 700; gap: 4px; margin-left: auto; padding: 4px 10px 4px 6px; }
+.e2e-collapsible-toggle:hover { background: var(--color-surface-sunken); color: var(--color-text-strong); }
+.e2e-collapsible-toggle svg { transition: transform .2s; }
+.e2e-collapsible-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
+
 /* Item quantities by line status (distribution bar) and total deadline status (compact pie), in the style of the model indicators. */
 .e2e-overview { display: grid; gap: 16px; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
 .e2e-overview-card { align-content: start; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); display: grid; gap: 12px; min-width: 0; padding: 16px 20px; }

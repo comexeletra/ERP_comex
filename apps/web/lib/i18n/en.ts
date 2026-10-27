@@ -1574,6 +1574,12 @@ export const en: Messages = {
       chartLabel: (title: string, total: string) => `${title}: ${total} items in total`,
       sliceTitle: (quantity: string, lines: number) => `${quantity} items in ${lines} lines`,
     },
+    panels: {
+      filtersTitle: "Table filters",
+      show: "Show",
+      hide: "Hide",
+      active: (count: number) => count === 1 ? "1 active filter" : `${count} active filters`,
+    },
     flow: {
       label: "End to End stages",
       view: "View",

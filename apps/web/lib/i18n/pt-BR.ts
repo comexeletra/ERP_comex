@@ -1577,6 +1577,12 @@ export const ptBR = {
       chartLabel: (title: string, total: string) => `${title}: ${total} itens no total`,
       sliceTitle: (quantity: string, lines: number) => `${quantity} itens em ${lines} linhas`,
     },
+    panels: {
+      filtersTitle: "Filtros da tabela",
+      show: "Mostrar",
+      hide: "Ocultar",
+      active: (count: number) => count === 1 ? "1 filtro ativo" : `${count} filtros ativos`,
+    },
     flow: {
       label: "Etapas do End to End",
       view: "Visão",

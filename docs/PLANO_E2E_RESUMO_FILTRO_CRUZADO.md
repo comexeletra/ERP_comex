@@ -276,4 +276,8 @@ As chaves da primeira entrega continuam valendo. Chave que ficar sem uso sai dos
 - **A11:** aprovado; números no `deploy/hostinger/README.md`, seção de 2026-10-27. A pizza de prazo no HML continua com 100% "Atrasado".
 - **Preview:** `erp-comex-700fh5j8o` (commit `c8a9c6c`) `Ready` no alias estável; `/login` respondeu `200`, e o CSS publicado contém as regras novas.
 - **Posição (pedido do usuário depois da publicação):** os gráficos saíram do topo e ficaram logo acima do card de filtros da tabela de produtos, depois dos painéis do Modelo (régua, etapa ativa e marcos). Isso substitui a D5 da primeira entrega. O aviso de carregamento do resumo foi junto; o aviso de erro do resumo continua no topo, porque também vale para os cards das etapas.
+- **Blocos recolhíveis (pedido do usuário):** "Resumo da carteira" (os dois gráficos) e "Filtros da tabela" têm um botão Ocultar/Mostrar (`E2eCollapsible`, com `aria-expanded` e `aria-controls`).
+  - Fechado, o bloco mostra só o título, o botão e, se houver, um selo com quantos filtros continuam aplicados: seleções dos gráficos ou campos do formulário.
+  - A escolha de cada pessoa fica no `localStorage` do navegador (`erp-comex-e2e-charts-collapsed` e `erp-comex-e2e-filters-collapsed`). Ela é lida com `useSyncExternalStore`, então a renderização do servidor sai aberta, sem divergência na hidratação. Com o armazenamento bloqueado, a escolha vale só para a página aberta.
+  - O resumo continua sendo carregado com o bloco fechado, porque os cards das etapas dependem dele.
 - **Pendente (A12):** conferência com login: clique nos dois gráficos, limpeza da seleção, exportação com prazo, larguras, temas e idiomas.

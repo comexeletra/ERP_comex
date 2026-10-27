@@ -7,8 +7,9 @@ import { E2E_STAGE_CODES, formatE2eDate, type E2eResult, type E2eStageCode } fro
 import { buildE2eFlow, DEFAULT_E2E_FLOW_CONFIG } from "../lib/e2e-flow";
 import { formatNumber } from "../lib/format-number";
 import { statusLabel } from "../lib/i18n/labels";
-import { e2eSummaryQuery, emptyProductLineFilters, parseE2eStageFilter, parseProductLineFilters, productLineQuery,
+import { activeProductLineFilterCount, e2eSummaryQuery, emptyProductLineFilters, parseE2eStageFilter, parseProductLineFilters, productLineQuery,
   productLineStatuses, type E2eDeadlineStatus, type E2eStageFilter, type ProductLineFilters } from "../lib/purchase-order-lines";
+import E2eCollapsible from "./E2eCollapsible";
 import { E2eFlowRail, Icon, useE2eStepper } from "./E2eFlowParts";
 import { E2eModelDetails, E2eModelSummary } from "./E2eModelPanels";
 import E2eOverviewCharts, { type E2eOverview, type E2eOverviewStatus } from "./E2eOverviewCharts";
@@ -220,10 +221,14 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
     <E2eModelDetails flow={model} current={current} mts={mts} air={air} />
 
     {!summaryError && summary?.query !== summaryQuery && <p role="status">{t.overview.loading}</p>}
-    {counts?.overview && <E2eOverviewCharts overview={counts.overview} locale={locale} selectedStatus={applied.status}
-      selectedDeadline={deadline} onStatusSelect={filterByStatus} onDeadlineSelect={selectDeadline} />}
+    {counts?.overview && <E2eCollapsible title={t.overview.label} storageKey="erp-comex-e2e-charts-collapsed"
+      activeCount={(applied.status ? 1 : 0) + (deadline ? 1 : 0)}>
+      <E2eOverviewCharts overview={counts.overview} locale={locale} selectedStatus={applied.status}
+        selectedDeadline={deadline} onStatusSelect={filterByStatus} onDeadlineSelect={selectDeadline} />
+    </E2eCollapsible>}
 
-    <section className="card">
+    <E2eCollapsible className="card" title={t.panels.filtersTitle} storageKey="erp-comex-e2e-filters-collapsed"
+      activeCount={activeProductLineFilterCount(applied)}>
       <form className="portfolio-filter product-lines-filter" onSubmit={filter}>
         <label>{p.poNumber}<input value={draft.purchaseOrder} onChange={event => setDraft({ ...draft, purchaseOrder: event.target.value })} /></label>
         <label>{m.processDirectory.importer}<input value={draft.importer} onChange={event => setDraft({ ...draft, importer: event.target.value })} /></label>
@@ -244,7 +249,7 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
             setDraft(emptyProductLineFilters); setDeadline(""); applyFilters(emptyProductLineFilters, { ...stage, deadline: "" });
           }}>{m.processDirectory.clear}</button></div>
       </form>
-    </section>
+    </E2eCollapsible>
     <section className="card" aria-live="polite">
       {!entry && <p role="status">{p.loading}</p>}
       {error && <p className="notice error" role="alert">{error}</p>}

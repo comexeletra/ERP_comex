@@ -15,7 +15,7 @@ const [view, overview, panels, parts, tabs, page, modelPage, styles, flowLib] = 
 
 test("the optional overview precedes the model and cross-filters by status and deadline", () => {
   assert.match(view, /overview\?: E2eOverview/u);
-  assert.match(view, /\{counts\?\.overview && <E2eOverviewCharts/u);
+  assert.match(view, /\{counts\?\.overview && <E2eCollapsible title=\{t\.overview\.label\}/u);
   // The charts sit right above the product line filters, below the model panels.
   assert.ok(view.indexOf("<E2eModelDetails") < view.indexOf("<E2eOverviewCharts"));
   assert.ok(view.indexOf("<E2eOverviewCharts") < view.indexOf('<form className="portfolio-filter product-lines-filter"'));

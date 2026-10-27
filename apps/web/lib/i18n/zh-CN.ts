@@ -1574,6 +1574,12 @@ export const zhCN: Messages = {
       chartLabel: (title: string, total: string) => `${title}：共 ${total} 件`,
       sliceTitle: (quantity: string, lines: number) => `${lines} 行共 ${quantity} 件`,
     },
+    panels: {
+      filtersTitle: "表格筛选",
+      show: "展开",
+      hide: "收起",
+      active: (count: number) => `${count} 个筛选条件`,
+    },
     flow: {
       label: "端到端阶段",
       view: "视图",
