@@ -141,6 +141,7 @@ Se algo essencial não estiver claro, pergunte antes de supor.
 - Cores literais só existem em `app/styles/tokens.css`; os demais arquivos usam `var(--…)`, e o tema escuro só redefine tokens. Fonte, raio e `z-index` usam as escalas `--fs-*`, `--radius-*` e `--z-*`. Breakpoints: 480, 760 e 1100 px. Sem `!important`, exceto para `prefers-reduced-motion`.
 - Cada componente tem uma única regra própria: estenda em `components.css` ou no arquivo da área em `app/styles/features/`, nunca redefina em outro bloco. Toda classe usada no JSX precisa de regra, e regra sem uso é removida.
 - Use os componentes padrão: `PageHeader` (link "voltar" só em telas de detalhe), `ConfirmDialog`/`useConfirmDialog` em vez de `window.confirm`, `.notice` com `warning`, `error` ou `success` (sem variante é informativo), `.badge` com `badge-success|warning|danger|info` e `.tabs`/`.tab`.
+- Dicas ao passar o mouse usam `Tooltip` de `components/Tooltip.tsx` (texto ou cartão, `placement="right"` na sidebar, `followCursor` em marcas de gráfico), nunca o atributo `title` nativo nem `<title>` em SVG; `test/tooltip.test.mjs` falha se um voltar. O conteúdo é renderizado no portal do `TooltipProvider`, fora do `I18nProvider`: passe textos prontos ou `m` por prop, sem componentes que leiam contexto.
 - `test/layout-consistency.test.mjs` verifica essas regras e o contraste AA dos tokens nos dois temas.
 
 ## Exportações Excel
