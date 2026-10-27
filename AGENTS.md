@@ -125,6 +125,7 @@ Se algo essencial não estiver claro, pergunte antes de supor.
 - O banco `erp_po_totvs_test` é o de **produção**, apesar do nome; o de homologação é `erp_po_totvs_hml`. Confira o nome do banco antes de cada consulta ou escrita.
 - No Windows, gere o pacote de um release com `git -c core.autocrlf=false archive`. Sem essa opção as fontes chegam à VPS em CRLF e o SHA-256 das migrations diverge do registrado no ledger.
 - Para rodar scripts Node com o ambiente HML, use `node --env-file=/etc/import-erp/homologation-db.env`; carregar esse arquivo com `source` no shell não exporta `DATABASE_URL`.
+- Não envie um script à VPS por stdin (`ssh ... 'bash -s' < script`) se ele usa `docker exec -i`: o primeiro `docker exec -i` consome o restante do script, que para sem erro. Grave o script num arquivo na VPS e rode `bash arquivo < /dev/null`. No Git Bash, um comando `ssh` cujo argumento remoto começa com `/` precisa de `MSYS_NO_PATHCONV=1`.
 - O domínio do Preview fica atrás da autenticação da Vercel. Sem `gh` nem `vercel` instalados, use `npx --yes vercel@50.1.6 ls erp-comex --environment preview` para conferir o status e `MSYS_NO_PATHCONV=1 npx --yes vercel@50.1.6 curl /login --deployment <url> -- -sL` para ler uma página. No Git Bash, sem `MSYS_NO_PATHCONV=1`, o caminho iniciado por `/` é convertido e a página inicial é retornada no lugar dele.
 
 ## Idiomas da interface (pt-BR, zh-CN, en)
@@ -152,6 +153,11 @@ Se algo essencial não estiver claro, pergunte antes de supor.
 - **A exportação acompanha a tabela.** Ao acrescentar, remover, renomear ou mover uma coluna de dado numa dessas tabelas, atualize no mesmo commit o catálogo do contexto na API (`apps/api/src/export-columns.ts`), o espelho do web (`apps/web/lib/export-columns.ts`) e os rótulos nos três dicionários. Se o valor ainda não vier da API, leve-o para a API na mesma tarefa. Colunas de ação (botões, links sem dado próprio) não entram.
 - Uma tela nova com exportação segue o mesmo modelo, com catálogo próprio igual à sua tabela.
 - Os testes de cada tela comparam a tabela com o catálogo e falham quando eles divergem. Não ajuste o teste para passar: ajuste o catálogo ou a tabela.
+
+## Tipo de demanda (MTS / Não MTS)
+
+- O tipo de demanda é da PO, não do produto: a HQ planeja o pedido inteiro a partir do estoque (MTS, 30 dias no T3) ou sob encomenda (Não MTS, 45 dias). Ele fica só em `procurement.purchase_order.demand_type` (M071), e todo produto da PO o herda nas leituras (`po.demand_type`). Não volte a gravá-lo no produto nem a oferecê-lo como campo do produto; as rotas de produto o recusam.
+- Ele é diferente da origem da demanda (`DEMAND`: plano comercial, pós-venda, projetos), que continua sendo campo do produto.
 
 ## Acesso SSH da VPS de homologação
 
