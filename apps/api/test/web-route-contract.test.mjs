@@ -9,6 +9,7 @@ import { registerDataIssueRoutes } from "../dist/data-issues.js";
 import { registerAdminUserRoutes } from "../dist/admin-users.js";
 import { registerCatalogRoutes } from "../dist/catalog.js";
 import { registerTaxTreatmentRoutes } from "../dist/tax-treatments.js";
+import { registerTaxRateRoutes } from "../dist/tax-rates.js";
 import { registerRequestRoutes } from "../dist/requests.js";
 import { registerSourceAuditRoutes } from "../dist/source-audit.js";
 import { registerAdminOutboxRoutes } from "../dist/admin-outbox.js";
@@ -25,6 +26,9 @@ const webRoutes = [
   ["POST", "/auth/local/password"], ["POST", "/auth/logout"],
   ["GET", "/api/v1/importers"],
   ["GET", "/api/v1/ncms/:id/tax-treatments"],
+  ["GET", "/api/v1/ncm-rates"], ["GET", "/api/v1/ncm-rates/status"], ["GET", "/api/v1/ncm-rates/:code"],
+  ["POST", "/api/v1/ncm-rates/refresh"], ["POST", "/api/v1/ncm-rates/pis-cofins-exceptions"],
+  ["PATCH", "/api/v1/ncm-rates/pis-cofins-exceptions/:id"],
   ["GET", "/api/v1/purchase-orders"], ["GET", "/api/v1/purchase-orders/summary"],
   ["GET", "/api/v1/purchase-order-lines"], ["GET", "/api/v1/purchase-order-lines/e2e-stages"],
   ["GET", "/api/v1/purchase-orders/:id/overview"],
@@ -114,6 +118,7 @@ test("all Next.js API calls have a registered API method and path", async t => {
   await registerAdminUserRoutes(app, unusedPool);
   await registerCatalogRoutes(app, unusedPool);
   await registerTaxTreatmentRoutes(app, unusedPool);
+  await registerTaxRateRoutes(app, unusedPool);
   await registerRequestRoutes(app, unusedPool);
   await registerSourceAuditRoutes(app, unusedPool);
   await registerAdminOutboxRoutes(app, unusedPool);
