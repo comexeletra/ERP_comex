@@ -11,6 +11,7 @@ import { registerDataIssueRoutes } from "./data-issues.js";
 import { registerAdminUserRoutes } from "./admin-users.js";
 import { registerCatalogRoutes } from "./catalog.js";
 import { registerTaxTreatmentRoutes } from "./tax-treatments.js";
+import { registerTaxRateRoutes } from "./tax-rates.js";
 import { registerRequestRoutes } from "./requests.js";
 import { registerSourceAuditRoutes } from "./source-audit.js";
 import { registerAdminOutboxRoutes } from "./admin-outbox.js";
@@ -38,6 +39,11 @@ const ncmAutoRefreshTime = process.env.NCM_AUTO_REFRESH_TIME
   ?? (isHomologationDatabase ? "06:00,12:00" : undefined);
 if (ncmAutoRefreshTime && !isHomologationDatabase) {
   throw new Error("A sincronização automática de NCM só pode ser ativada no banco erp_po_totvs_hml.");
+}
+const ncmRatesRefreshTime = process.env.NCM_RATES_REFRESH_TIME
+  ?? (isHomologationDatabase ? "07:00" : undefined);
+if (ncmRatesRefreshTime && !isHomologationDatabase) {
+  throw new Error("A atualização automática das alíquotas por NCM só pode ser ativada no banco erp_po_totvs_hml.");
 }
 if (process.env.NODE_ENV === "production" && !loopbackHosts.has(parsedDatabaseUrl.hostname)) {
   throw new Error("A conexão PostgreSQL de produção deve permanecer local à VPS.");
@@ -92,6 +98,7 @@ await registerTaxTreatmentRoutes(app, pool, {
     ? { clientId: process.env.TTCE_CLIENT_ID, clientSecret: process.env.TTCE_CLIENT_SECRET,
       roleType: process.env.TTCE_ROLE_TYPE, origin: process.env.TTCE_ORIGIN } : undefined,
 });
+await registerTaxRateRoutes(app, pool, { refreshTime: ncmRatesRefreshTime });
 await registerRequestRoutes(app, pool);
 await registerSourceAuditRoutes(app, pool);
 await registerAdminOutboxRoutes(app, pool);

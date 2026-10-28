@@ -27,17 +27,18 @@ export type Permission =
   | "requests.read"
   | "requests.write"
   | "users.manage"
-  | "e2e-targets.manage";
+  | "e2e-targets.manage"
+  | "tax-rates.manage";
 
 type Role = "Master" | "Administrador" | "PCM" | "Importação" | "Compras" | "Fiscal" | "Logística" | "Gestor" | "Consulta";
 
 const rolePermissions: Readonly<Record<Role, ReadonlySet<Permission>>> = {
-  Master: new Set(["purchase-orders.read", "purchase-orders.write", "purchase-orders.lifecycle.manage", "processes.read", "processes.write", "processes.lifecycle.manage", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "purchase-requests.read", "purchase-requests.write", "requests.read", "requests.write", "users.manage", "e2e-targets.manage"]),
-  Administrador: new Set(["purchase-orders.read", "purchase-orders.write", "purchase-orders.lifecycle.manage", "processes.read", "processes.write", "processes.lifecycle.manage", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "purchase-requests.read", "purchase-requests.write", "requests.read", "requests.write", "e2e-targets.manage"]),
+  Master: new Set(["purchase-orders.read", "purchase-orders.write", "purchase-orders.lifecycle.manage", "processes.read", "processes.write", "processes.lifecycle.manage", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "purchase-requests.read", "purchase-requests.write", "requests.read", "requests.write", "users.manage", "e2e-targets.manage", "tax-rates.manage"]),
+  Administrador: new Set(["purchase-orders.read", "purchase-orders.write", "purchase-orders.lifecycle.manage", "processes.read", "processes.write", "processes.lifecycle.manage", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "purchase-requests.read", "purchase-requests.write", "requests.read", "requests.write", "e2e-targets.manage", "tax-rates.manage"]),
   PCM: new Set(["catalog.read", "purchase-requests.read", "purchase-requests.write"]),
   Importação: new Set(["purchase-orders.read", "purchase-orders.write", "processes.read", "processes.write", "quality.read", "quality.resolve", "catalog.read", "purchase-requests.read", "requests.read", "requests.write"]),
   Compras: new Set(["purchase-orders.read", "purchase-orders.write", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "purchase-requests.read", "requests.read"]),
-  Fiscal: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "requests.read"]),
+  Fiscal: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "requests.read", "tax-rates.manage"]),
   Logística: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "requests.read"]),
   Gestor: new Set(["purchase-orders.read", "processes.read", "quality.read", "catalog.read", "requests.read"]),
   Consulta: new Set(["purchase-orders.read", "processes.read", "quality.read", "catalog.read", "requests.read"]),
@@ -94,7 +95,8 @@ export async function registerAuthorization(app: FastifyInstance, pool: Pool): P
     const permission = request.routeOptions.config.permission;
     const scopeMode = request.routeOptions.config.scopeMode;
     const globalPermissionAllowed = permission === "users.manage"
-      || permission === "catalog.read" || permission === "catalog.write" || permission === "e2e-targets.manage";
+      || permission === "catalog.read" || permission === "catalog.write" || permission === "e2e-targets.manage"
+      || permission === "tax-rates.manage";
     if (!permission || !scopeMode || (scopeMode === "global" && !globalPermissionAllowed)) {
       return deny(reply, 403);
     }
