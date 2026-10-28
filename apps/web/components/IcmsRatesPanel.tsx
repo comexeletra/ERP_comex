@@ -185,14 +185,11 @@ export function IcmsRatesPanel({ canManage }: { canManage: boolean }) {
     <p className="muted">{t.intro}</p>
     {loadError && <p className="notice error" role="alert">{loadError}</p>}
     {!data && !loadError && <p role="status">{t.loading}</p>}
-    {data?.states.map(state => <section key={state.uf} className="ncm-rate-section" aria-label={m.importEstimate.states[state.uf]}>
-      <div className="ncm-rate-selected-header">
-        <h3>{m.importEstimate.states[state.uf]}</h3>
-        <span className={state.reviewed ? "badge badge-success" : "badge badge-warning"}>{state.reviewed ? t.reviewed : t.notReviewed}</span>
-      </div>
+    {data?.states.map(state => <section key={state.uf} className="ncm-rate-section icms-state" aria-label={m.importEstimate.states[state.uf]}>
+      <h3>{m.importEstimate.states[state.uf]}</h3>
       <p className="muted">{t.baseExpenses([state.includeSiscomexFee && t.siscomexFee, state.includeAfrmm && t.afrmm,
         state.includeOtherExpenses && t.otherExpenses].filter(Boolean).join(", ") || t.none)}</p>
-      {state.rates.length > 0 && <div className="table-scroll"><table>
+      {state.rates.length > 0 && <div className="table-scroll"><table className="icms-rates-table">
         <thead><tr><th>{t.rate}</th><th>{t.fcpRate}</th><th>{m.ncmRates.period}</th><th>{m.ncmRates.legalBasis}</th>
           <th>{m.ncmRates.situation}</th>{canManage && <th>{m.ncmRates.actions}</th>}</tr></thead>
         <tbody>{state.rates.map(row => {

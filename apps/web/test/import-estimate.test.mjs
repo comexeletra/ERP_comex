@@ -68,6 +68,15 @@ test("each form opens on the line of its edit button, not at the top of the pane
   assert.doesNotMatch(panel, /\n\s*\{form\}\n/u);
 });
 
+test("the review badge appears only in the situation column of each rate", () => {
+  assert.equal(panel.match(/t\.notReviewed/gu)?.length, 1);
+  assert.match(panel, /row\.reviewed \? t\.reviewed : t\.notReviewed/u);
+  assert.doesNotMatch(panel, /state\.reviewed \?/u);
+  // Each state is its own spaced block, with its rate table and buttons apart.
+  assert.match(panel, /className="ncm-rate-section icms-state"/u);
+  assert.match(panel, /className="icms-rates-table"/u);
+});
+
 test("a state saved in the panel reaches the simulator without reloading the page", () => {
   assert.match(panel, /window\.dispatchEvent\(new Event\(ICMS_RATES_CHANGED\)\)/u);
   assert.match(estimate, /window\.addEventListener\(ICMS_RATES_CHANGED, /u);
