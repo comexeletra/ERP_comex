@@ -17,7 +17,7 @@ type Actor = { issuer: string; subject: string };
 const systemActor: Actor = { issuer: "system", subject: "ncm-rate-scheduler" };
 const BRASILIA_OFFSET_MS = 3 * 60 * 60 * 1000; // UTC−03:00, without daylight saving since 2019.
 
-function brasiliaDate(instant: number): string {
+export function brasiliaDate(instant: number): string {
   return new Date(instant - BRASILIA_OFFSET_MS).toISOString().slice(0, 10);
 }
 
@@ -168,7 +168,7 @@ const pisCofinsColumns = `id, code, trim_scale(pis_rate)::text AS "pisRate", tri
   legal_basis AS "legalBasis", valid_from::text AS "validFrom", valid_to::text AS "validTo", version::text AS version`;
 
 /** Composes the rates of up to one page of NCMs from the current versions. */
-async function composeRates(db: Queryable, codes: string[], date: string) {
+export async function composeRates(db: Queryable, codes: string[], date: string) {
   const versions = await currentVersions(db);
   const gecex = versions.get("GECEX_272")?.id, tipi = versions.get("TIPI")?.id;
   const prefixes = [...new Set(codes.flatMap(code => [code, code.slice(0, 6), code.slice(0, 4)]))];
