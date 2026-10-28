@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import Fastify from "fastify";
 import pg from "pg";
+import { shipmentStatusSql } from "../dist/shipment-lines.js";
 import { registerSourceAuditRoutes } from "../dist/source-audit.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -38,7 +39,7 @@ try {
   const [pre, post] = await Promise.all([
     pool.query(`
       WITH scoped_po AS (
-        SELECT * FROM procurement.purchase_order WHERE importer = ANY($1::text[])
+        SELECT * FROM procurement.purchase_order WHERE importer = ANY($1::text[]) AND lifecycle_status <> 'DELETED'
       ), items AS (
         SELECT item.*, po.importer FROM procurement.purchase_order_item item
         JOIN scoped_po po ON po.id = item.purchase_order_id
@@ -50,11 +51,14 @@ try {
         (SELECT count(*)::int FROM items item WHERE EXISTS (
           SELECT 1 FROM procurement.po_item_allocation allocation
           WHERE allocation.purchase_order_item_id = item.id AND allocation.status = 'ACTIVE'
+            AND EXISTS (SELECT 1 FROM imports.import_process ip
+              WHERE ip.id = allocation.process_id AND ip.record_status = 'ACTIVE')
         ) OR EXISTS (
           SELECT 1 FROM procurement.po_line_observation observation
           JOIN imports.import_process process
             ON process.normalized_ip_number = upper(btrim(observation.source_ip_text))
            AND process.importer = item.importer
+           AND process.record_status = 'ACTIVE'
           WHERE observation.source_row_id = item.source_observation_id
             AND NULLIF(btrim(observation.source_ip_text), '') IS NOT NULL
             AND upper(btrim(observation.source_ip_text)) NOT IN ('CANCELLED', 'CANCELED')
@@ -63,12 +67,16 @@ try {
         (SELECT count(*)::int FROM items item
          WHERE upper(coalesce(item.source_status, '')) NOT IN ('CANCELLED', 'CANCELED')
            AND NOT EXISTS (SELECT 1 FROM procurement.po_item_allocation allocation
-             WHERE allocation.purchase_order_item_id = item.id AND allocation.status = 'ACTIVE')
+             WHERE allocation.purchase_order_item_id = item.id AND allocation.status = 'ACTIVE'
+               AND EXISTS (SELECT 1 FROM imports.import_process ip
+                 WHERE ip.id = allocation.process_id AND ip.record_status = 'ACTIVE'))
            AND NOT EXISTS (
              SELECT 1 FROM procurement.po_line_observation observation
              JOIN imports.import_process process
                ON process.normalized_ip_number = upper(btrim(observation.source_ip_text))
               AND process.importer = item.importer
+              AND process.record_status = 'ACTIVE'
+           AND process.record_status = 'ACTIVE'
              WHERE observation.source_row_id = item.source_observation_id
                AND NULLIF(btrim(observation.source_ip_text), '') IS NOT NULL
                AND upper(btrim(observation.source_ip_text)) NOT IN ('CANCELLED', 'CANCELED')
@@ -81,7 +89,7 @@ try {
     `, [importers]),
     pool.query(`
       WITH scoped_ip AS (
-        SELECT * FROM imports.import_process WHERE importer = ANY($1::text[])
+        SELECT * FROM imports.import_process WHERE importer = ANY($1::text[]) AND record_status <> 'DELETED'
       )
       SELECT count(*)::int AS "totalRecords",
         count(*) FILTER (WHERE source_kind = 'HISTORICAL_EXCEL')::int AS "historicalRecords",
@@ -94,8 +102,8 @@ try {
           OR coalesce(demurrage_brl, 0) > 0)::int AS "rowsWithAdditionalCosts",
         coalesce((SELECT jsonb_agg(jsonb_build_object('status', status, 'count', status_count)
           ORDER BY status_count DESC, status)
-          FROM (SELECT coalesce(nullif(btrim(logistics_status), ''), 'Sem status') AS status,
-                       count(*)::int AS status_count FROM scoped_ip GROUP BY 1) counts), '[]'::jsonb) AS statuses
+          FROM (SELECT ${shipmentStatusSql("process", null)} AS status,
+                       count(*)::int AS status_count FROM scoped_ip AS process GROUP BY 1) counts), '[]'::jsonb) AS statuses
       FROM scoped_ip
     `, [importers]),
   ]);

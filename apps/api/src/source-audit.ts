@@ -109,10 +109,15 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
     if (!parsed.success) return problem(reply, 400, "INVALID_QUERY", "Escolha Pré ou Pós Embarque.");
     const { scope } = parsed.data;
     const scopes = request.authorizationContext?.importerScopes ?? [];
+    // Deleted POs and IPs stay out, as in the operational lists; a link only counts while its IP is active.
+    const activeAllocation = `allocation.status = 'ACTIVE'
+                AND EXISTS (SELECT 1 FROM imports.import_process AS process
+                  WHERE process.id = allocation.process_id AND process.record_status = 'ACTIVE')`;
     const [pre, post] = await Promise.all([
       scope === "post" ? Promise.resolve(null) : pool.query<Record<string, unknown>>(
         `WITH scoped_po AS MATERIALIZED (
            SELECT po.* FROM procurement.purchase_order AS po WHERE po.importer = ANY($1::text[])
+             AND po.lifecycle_status <> 'DELETED'
          ), items AS (
            SELECT item.*, po.importer FROM procurement.purchase_order_item AS item
            JOIN scoped_po AS po ON po.id = item.purchase_order_id
@@ -126,21 +131,23 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
            (SELECT count(*)::int FROM items) AS operational_items,
            (SELECT count(*)::int FROM items AS item WHERE EXISTS (
              SELECT 1 FROM procurement.po_item_allocation AS allocation
-             WHERE allocation.purchase_order_item_id = item.id AND allocation.status = 'ACTIVE')
+             WHERE allocation.purchase_order_item_id = item.id AND ${activeAllocation})
              OR EXISTS (SELECT 1 FROM procurement.po_line_observation AS observation
                JOIN imports.import_process AS process
                  ON process.normalized_ip_number = upper(btrim(observation.source_ip_text))
                 AND process.importer = item.importer
+                AND process.record_status = 'ACTIVE'
                WHERE observation.source_row_id = item.source_observation_id
                  AND ${validIp("observation.source_ip_text")})) AS allocated_items,
            (SELECT count(*)::int FROM items AS item
             WHERE upper(coalesce(item.source_status, '')) NOT IN ('CANCELLED', 'CANCELED')
               AND NOT EXISTS (SELECT 1 FROM procurement.po_item_allocation AS allocation
-                WHERE allocation.purchase_order_item_id = item.id AND allocation.status = 'ACTIVE')
+                WHERE allocation.purchase_order_item_id = item.id AND ${activeAllocation})
               AND NOT EXISTS (SELECT 1 FROM procurement.po_line_observation AS observation
                 JOIN imports.import_process AS process
                   ON process.normalized_ip_number = upper(btrim(observation.source_ip_text))
                  AND process.importer = item.importer
+                 AND process.record_status = 'ACTIVE'
                 WHERE observation.source_row_id = item.source_observation_id
                   AND ${validIp("observation.source_ip_text")})) AS unallocated_items,
            (SELECT coalesce(jsonb_agg(jsonb_build_object('status', status, 'count', status_count)
@@ -149,6 +156,7 @@ export async function registerSourceAuditRoutes(app: FastifyInstance, pool: Pool
         `WITH scoped_process AS MATERIALIZED (
            SELECT process.* FROM imports.import_process AS process
            WHERE process.importer = ANY($1::text[])
+             AND process.record_status <> 'DELETED'
          ), status_counts AS (
            SELECT ${shipmentStatusSql("process", null)} AS status, count(*)::int AS status_count
            FROM scoped_process AS process GROUP BY 1
