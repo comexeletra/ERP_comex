@@ -94,11 +94,38 @@
 .ncm-tax-result { margin-top: 12px; }
 .ncm-tax-list > li { border-top: 1px solid var(--color-border); padding-top: 10px; }
 
+/* Rates by NCM (/catalog/ncm-rates) and the rate block of a registered NCM. */
+.ncm-rates-toggle { border-top: 1px solid var(--color-border); grid-column: 1 / -1; min-width: 0; padding-top: 8px; }
+.ncm-rates-toggle > summary { font-size: var(--fs-md); }
+.ncm-rate-detail { display: grid; gap: 14px; margin-top: 12px; min-width: 0; }
+.ncm-rate-section { border-top: 1px solid var(--color-border); display: grid; gap: 10px; min-width: 0; padding-top: 12px; }
+.ncm-rate-section > h3 { font-size: var(--fs-base); margin: 0; }
+.ncm-rate-values { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin: 0; }
+.ncm-rate-values dt { color: var(--color-text-muted); font-size: var(--fs-sm); font-weight: 700; }
+.ncm-rate-values dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.ncm-rate-description { max-width: 420px; min-width: 220px; white-space: normal; }
+.ncm-rate-code { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ncm-rate-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+.ncm-rate-periods, .ncm-rate-sources, .ncm-rate-source-status { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.ncm-rate-periods > li { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; }
+.ncm-rate-sources { font-size: var(--fs-sm); }
+.ncm-rate-source-status > li { display: grid; gap: 4px; }
+.ncm-rate-form { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ncm-rate-form label, .ncm-rate-filters label { display: grid; font-size: var(--fs-sm); font-weight: 700; gap: 4px; }
+.ncm-rate-form input, .ncm-rate-filters input { min-width: 0; width: 100%; }
+.ncm-rate-form-wide { grid-column: 1 / -1; }
+.ncm-rate-form-actions { display: flex; flex-wrap: wrap; gap: 8px; grid-column: 1 / -1; }
+.ncm-rate-filters { display: grid; gap: 12px; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); margin-bottom: 16px; }
+.ncm-rate-selected { background: var(--color-surface-muted); border: 1px solid var(--color-border); border-radius: var(--radius-md); margin-bottom: 16px; min-width: 0; padding: 16px; }
+.ncm-rate-selected-header { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; }
+.ncm-rate-selected-header > h3 { margin: 0; }
+
 @media (max-width: 1100px) {
-  .catalog-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .catalog-controls, .ncm-rate-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
-  .catalog-controls, .entity-value-form .stack-form, .supplier-edit-form, .catalog-validity-fields, .ncm-official-search-form { grid-template-columns: 1fr; }
+  .catalog-controls, .entity-value-form .stack-form, .supplier-edit-form, .catalog-validity-fields, .ncm-official-search-form,
+    .ncm-rate-form, .ncm-rate-filters { grid-template-columns: 1fr; }
   .catalog-links .button { flex: 1 1 100%; }
   .catalog-candidates { padding: 16px; }
   .product-catalog-item { grid-template-columns: minmax(0, 1fr); }

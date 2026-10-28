@@ -16,6 +16,7 @@ import type { Messages } from "../../../lib/i18n/pt-BR";
 import { describeNcmAttributeCondition, describeNcmCreationAct, describeNcmDomainOption,
   describeNcmFillType, type NcmCreationAct, type NcmDomainOption } from "../../../lib/catalog-ncm-attributes";
 import { NcmTaxTreatments } from "./NcmTaxTreatments";
+import { NcmRateDetail } from "../../../components/NcmRateDetail";
 
 const entities = ["importer", "incoterm", "transport_mode", "port_loading", "port_discharge", "currency", "category",
   "product_group", "group", "purpose", "demand", "demand_type", "logistics_status", "customs_channel", "container_type", "priority",
@@ -830,6 +831,7 @@ export default function OperationalValuesPage() {
             </div>
             <NcmMandatoryAttributes attributes={ncm.mandatoryImportAttributes ?? []} />
             <NcmTaxTreatments id={ncm.id} code={ncm.code} />
+            <NcmRateDetail code={ncm.code} canManage={canWriteNcm} collapsible />
           </>}
         </li>)}
       </ul> : <p className="muted">{ncmSearch.trim() ? t.noNcmMatch : t.noNcms}</p>}

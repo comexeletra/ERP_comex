@@ -165,6 +165,7 @@ export default function CatalogPage() {
       <nav className="catalog-links" aria-label={t.entryTypes}>
         <Link className="button secondary" href={canWrite ? "#catalog-create" : "#catalog-controls"}>{t.productsAndNcm}</Link>
         <Link className="button secondary" href="/catalog/values">{t.entityValues}</Link>
+        <Link className="button secondary" href="/catalog/ncm-rates">{t.ncmRates}</Link>
         {canRegisterPo && <Link className="button secondary" href="/purchase-orders/new">{t.registerPo}</Link>}
         {canRegisterIp && <Link className="button secondary" href="/processes/new?from=catalog">{t.registerIp}</Link>}
       </nav>
