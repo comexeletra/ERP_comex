@@ -58,10 +58,30 @@ test("screens call only the ICMS routes the API registers and keep management to
   for (const source of [estimate, panel]) assert.doesNotMatch(source, /refresh-official|sync-status|import-official/u);
 });
 
+test("each form opens on the line of its edit button, not at the top of the panel", () => {
+  assert.match(panel, /editing && placeOf\(editing\) === place/u);
+  assert.match(panel, /here\(`importer:\$\{item\.importer\}`\)/u);
+  assert.match(panel, /here\(`rate:\$\{row\.id\}`\)/u);
+  assert.match(panel, /here\(`benefit:\$\{row\.id\}`\)/u);
+  // New rate, new benefit and the expenses open below the state buttons.
+  assert.match(panel, /here\(`uf:\$\{state\.uf\}`\)/u);
+  assert.doesNotMatch(panel, /\n\s*\{form\}\n/u);
+});
+
+test("a state saved in the panel reaches the simulator without reloading the page", () => {
+  assert.match(panel, /window\.dispatchEvent\(new Event\(ICMS_RATES_CHANGED\)\)/u);
+  assert.match(estimate, /window\.addEventListener\(ICMS_RATES_CHANGED, /u);
+  assert.match(estimate, /window\.removeEventListener\(ICMS_RATES_CHANGED, /u);
+  // The importer already chosen takes its new state.
+  assert.match(estimate, /stateForImporter\(current, body\.importers\)/u);
+  assert.match(estimate, /t\.importerWithoutState/u);
+});
+
 test("the three dictionaries describe the estimate and the ICMS panel", () => {
   for (const messages of [ptBR, en, zhCN]) {
     assert.ok(messages.importEstimate.title.length > 3);
     assert.ok(messages.importEstimate.disclaimer.length > 20);
+    assert.ok(messages.importEstimate.importerWithoutState.length > 3);
     assert.equal(typeof messages.importEstimate.warnings.ICMS_NOT_REVIEWED, "string");
     assert.ok(messages.icmsRates.title.length > 3);
   }

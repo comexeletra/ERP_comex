@@ -1,5 +1,7 @@
 export const ICMS_STATES = ["CE", "AM", "PR"] as const;
 export type IcmsState = typeof ICMS_STATES[number];
+/** Window event sent after the ICMS panel saves, so the simulator on the same page reloads the importer states. */
+export const ICMS_RATES_CHANGED = "icms-rates-changed";
 
 export type EstimateLine = { base: string; rate: string | null; amount: string };
 export type ImportEstimate = {

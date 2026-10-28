@@ -2228,6 +2228,7 @@ export const ptBR = {
     help: "Escolha a importadora ou a UF e informe o valor aduaneiro para estimar II, IPI, PIS, COFINS e ICMS desta NCM. Nada é gravado.",
     importer: "Importadora",
     noImporter: "Escolher UF manualmente",
+    importerWithoutState: "Esta importadora ainda não tem UF no painel ICMS por UF; escolha a UF abaixo.",
     state: "UF do estabelecimento importador",
     states: { CE: "Ceará (CE)", AM: "Amazonas (AM)", PR: "Paraná (PR)" },
     foreignMode: "Informar FOB, frete e seguro em moeda estrangeira",

@@ -1,8 +1,8 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, Fragment, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
-import { ICMS_STATES, type IcmsState } from "../lib/import-estimate";
+import { ICMS_RATES_CHANGED, ICMS_STATES, type IcmsState } from "../lib/import-estimate";
 import { formatNcmCode, formatRate, normalizeRateInput } from "../lib/ncm-rates";
 import { getMessages, useI18n } from "./I18nProvider";
 
@@ -26,6 +26,14 @@ const emptyDraft: Draft = { rate: "", fcpRate: "0", percent: "", ncm: "", benefi
   validFrom: "", validTo: "", reviewed: false, includeSiscomexFee: true, includeAfrmm: true, includeOtherExpenses: true,
   uf: "CE", reason: "" };
 
+/** Where a form opens: on the line of the edited row, or below the state buttons for a new record. */
+function placeOf(editing: Editing): string {
+  if (editing.kind === "importer") return `importer:${editing.target.importer}`;
+  if (editing.kind === "rate" && editing.target) return `rate:${editing.target.id}`;
+  if (editing.kind === "benefit" && editing.target) return `benefit:${editing.target.id}`;
+  return `uf:${editing.kind === "state" ? editing.target.uf : editing.uf}`;
+}
+
 function formatDate(value: string | null): string | null {
   const date = value ? /^(\d{4})-(\d{2})-(\d{2})/u.exec(value) : null;
   return date ? `${date[3]}/${date[2]}/${date[1]}` : null;
@@ -42,7 +50,7 @@ export function IcmsRatesPanel({ canManage }: { canManage: boolean }) {
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState<{ place: string; text: string } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -59,7 +67,7 @@ export function IcmsRatesPanel({ canManage }: { canManage: boolean }) {
   function start(next: Editing) {
     setEditing(next);
     setFormError("");
-    setNotice("");
+    setNotice(null);
     const base = { ...emptyDraft };
     if (next.kind === "rate" && next.target) Object.assign(base, { rate: next.target.rate, fcpRate: next.target.fcpRate,
       legalBasis: next.target.legalBasis, validFrom: next.target.validFrom, validTo: next.target.validTo ?? "", reviewed: next.target.reviewed });
@@ -116,8 +124,9 @@ export function IcmsRatesPanel({ canManage }: { canManage: boolean }) {
       const body = await response.json().catch(() => null) as { detail?: string } | null;
       if (!response.ok) throw new Error(body?.detail || text.saveFailed(response.status));
       setEditing(null);
-      setNotice(text.saved);
+      setNotice({ place: placeOf(editing), text: text.saved });
       setReload(current => current + 1);
+      window.dispatchEvent(new Event(ICMS_RATES_CHANGED));
     } catch (cause) {
       setFormError(cause instanceof Error ? cause.message : text.saveFailed(0));
     } finally { setSaving(false); }
@@ -167,14 +176,15 @@ export function IcmsRatesPanel({ canManage }: { canManage: boolean }) {
       <button className="button secondary" type="button" disabled={saving} onClick={() => setEditing(null)}>{m.ncmRates.cancel}</button>
     </div>
   </form>;
+  // The open form, or the confirmation of the last save, on the line it belongs to.
+  const here = (place: string) => editing && placeOf(editing) === place ? form
+    : notice?.place === place ? <p className="notice success ncm-rate-inline" role="status">{notice.text}</p> : null;
 
   return <section className="card" aria-labelledby="icms-rates-title">
     <h2 id="icms-rates-title">{t.title}</h2>
     <p className="muted">{t.intro}</p>
     {loadError && <p className="notice error" role="alert">{loadError}</p>}
-    {notice && <p className="notice success" role="status">{notice}</p>}
     {!data && !loadError && <p role="status">{t.loading}</p>}
-    {form}
     {data?.states.map(state => <section key={state.uf} className="ncm-rate-section" aria-label={m.importEstimate.states[state.uf]}>
       <div className="ncm-rate-selected-header">
         <h3>{m.importEstimate.states[state.uf]}</h3>
@@ -185,26 +195,32 @@ export function IcmsRatesPanel({ canManage }: { canManage: boolean }) {
       {state.rates.length > 0 && <div className="table-scroll"><table>
         <thead><tr><th>{t.rate}</th><th>{t.fcpRate}</th><th>{m.ncmRates.period}</th><th>{m.ncmRates.legalBasis}</th>
           <th>{m.ncmRates.situation}</th>{canManage && <th>{m.ncmRates.actions}</th>}</tr></thead>
-        <tbody>{state.rates.map(row => <tr key={row.id}>
-          <td>{formatRate(row.rate, locale)}</td><td>{formatRate(row.fcpRate, locale)}</td><td>{period(row.validFrom, row.validTo)}</td>
-          <td className="ncm-rate-description">{row.legalBasis}</td>
-          <td><span className={row.reviewed ? "badge badge-success badge-sm" : "badge badge-warning badge-sm"}>
-            {row.reviewed ? t.reviewed : t.notReviewed}</span></td>
-          {canManage && <td><button className="button secondary" type="button" disabled={saving}
-            onClick={() => start({ kind: "rate", uf: state.uf, target: row })}>{m.ncmRates.edit}</button></td>}
-        </tr>)}</tbody>
+        <tbody>{state.rates.map(row => {
+          const inline = here(`rate:${row.id}`);
+          return <Fragment key={row.id}><tr>
+            <td>{formatRate(row.rate, locale)}</td><td>{formatRate(row.fcpRate, locale)}</td><td>{period(row.validFrom, row.validTo)}</td>
+            <td className="ncm-rate-description">{row.legalBasis}</td>
+            <td><span className={row.reviewed ? "badge badge-success badge-sm" : "badge badge-warning badge-sm"}>
+              {row.reviewed ? t.reviewed : t.notReviewed}</span></td>
+            {canManage && <td><button className="button secondary" type="button" disabled={saving}
+              onClick={() => start({ kind: "rate", uf: state.uf, target: row })}>{m.ncmRates.edit}</button></td>}
+          </tr>
+          {inline && <tr><td className="ncm-rate-edit-cell" colSpan={canManage ? 6 : 5}>{inline}</td></tr>}</Fragment>;
+        })}</tbody>
       </table></div>}
       {state.benefits.length > 0 && <ul className="ncm-rate-periods">{state.benefits.map(row => <li key={row.id}>
         <span>{t.benefitLine(t.kinds[row.kind], formatRate(row.percent, locale), row.ncm ? formatNcmCode(row.ncm) : t.allNcms,
           period(row.validFrom, row.validTo), row.legalBasis)}</span>
         {canManage && <button className="button secondary" type="button" disabled={saving}
           onClick={() => start({ kind: "benefit", uf: state.uf, target: row })}>{m.ncmRates.edit}</button>}
+        {here(`benefit:${row.id}`)}
       </li>)}</ul>}
       {canManage && <div className="ncm-rate-form-actions">
         <button className="button secondary" type="button" onClick={() => start({ kind: "rate", uf: state.uf, target: null })}>{t.addRate}</button>
         <button className="button secondary" type="button" onClick={() => start({ kind: "state", target: state })}>{t.editExpenses}</button>
         <button className="button secondary" type="button" onClick={() => start({ kind: "benefit", uf: state.uf, target: null })}>{t.addBenefit}</button>
       </div>}
+      {here(`uf:${state.uf}`)}
     </section>)}
     {data && <section className="ncm-rate-section" aria-label={t.importersTitle}>
       <h3>{t.importersTitle}</h3>
@@ -212,6 +228,7 @@ export function IcmsRatesPanel({ canManage }: { canManage: boolean }) {
         <span>{t.importerLine(item.importer, item.uf ? m.importEstimate.states[item.uf] : t.noState)}</span>
         {canManage && <button className="button secondary" type="button" disabled={saving}
           onClick={() => start({ kind: "importer", target: item })}>{m.ncmRates.edit}</button>}
+        {here(`importer:${item.importer}`)}
       </li>)}</ul>
     </section>}
   </section>;

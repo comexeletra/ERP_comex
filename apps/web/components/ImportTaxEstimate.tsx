@@ -1,9 +1,9 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
-import { createEstimateUrl, customsValueFromForeign, formatMoney, ICMS_STATES, normalizeMoneyInput, stateForImporter,
-  type IcmsState, type ImportEstimate } from "../lib/import-estimate";
+import { createEstimateUrl, customsValueFromForeign, formatMoney, ICMS_RATES_CHANGED, ICMS_STATES, normalizeMoneyInput,
+  stateForImporter, type IcmsState, type ImportEstimate } from "../lib/import-estimate";
 import { formatRate } from "../lib/ncm-rates";
 import { getMessages, useI18n } from "./I18nProvider";
 
@@ -15,6 +15,7 @@ export function ImportTaxEstimate({ code, date = "" }: { code: string; date?: st
   const t = m.importEstimate;
   const [importers, setImporters] = useState<Importer[]>([]);
   const [importer, setImporter] = useState("");
+  const chosenImporter = useRef("");
   const [uf, setUf] = useState<IcmsState>("CE");
   const [foreign, setForeign] = useState(false);
   const [values, setValues] = useState({ customsValue: "", fob: "", freight: "", insurance: "", exchangeRate: "",
@@ -24,15 +25,30 @@ export function ImportTaxEstimate({ code, date = "" }: { code: string; date?: st
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const controller = new AbortController();
-    apiFetch("/api/v1/icms-rates", { cache: "no-store", signal: controller.signal })
-      .then(response => response.ok ? response.json() as Promise<{ importers: Importer[] }> : { importers: [] })
-      .then(body => { if (!controller.signal.aborted) setImporters(body.importers); })
-      .catch(() => undefined);
-    return () => controller.abort();
+    let controller = new AbortController();
+    function load() {
+      controller.abort();
+      controller = new AbortController();
+      const { signal } = controller;
+      apiFetch("/api/v1/icms-rates", { cache: "no-store", signal })
+        .then(response => response.ok ? response.json() as Promise<{ importers: Importer[] }> : { importers: [] })
+        .then(body => {
+          if (signal.aborted) return;
+          setImporters(body.importers);
+          // The importer already chosen takes the state just saved in the panel.
+          const current = chosenImporter.current;
+          const suggested = current ? stateForImporter(current, body.importers) : null;
+          if (suggested) setUf(suggested);
+        })
+        .catch(() => undefined);
+    }
+    load();
+    window.addEventListener(ICMS_RATES_CHANGED, load);
+    return () => { window.removeEventListener(ICMS_RATES_CHANGED, load); controller.abort(); };
   }, []);
 
   function chooseImporter(value: string) {
+    chosenImporter.current = value;
     setImporter(value);
     const suggested = stateForImporter(value, importers);
     if (suggested) setUf(suggested);
@@ -70,6 +86,7 @@ export function ImportTaxEstimate({ code, date = "" }: { code: string; date?: st
         <option value="">{t.noImporter}</option>
         {importers.map(item => <option key={item.importer} value={item.importer}>{item.importer}</option>)}
       </select></label>
+      {importer && !stateForImporter(importer, importers) && <p className="muted ncm-rate-form-wide">{t.importerWithoutState}</p>}
       <label>{t.state}<select value={uf} onChange={event => setUf(event.target.value as IcmsState)}>
         {ICMS_STATES.map(state => <option key={state} value={state}>{t.states[state]}</option>)}
       </select></label>

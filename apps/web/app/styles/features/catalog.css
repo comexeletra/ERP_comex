@@ -108,6 +108,8 @@
 .ncm-rate-badges { display: flex; flex-wrap: wrap; gap: 4px; }
 .ncm-rate-periods, .ncm-rate-sources, .ncm-rate-source-status { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
 .ncm-rate-periods > li { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; }
+.ncm-rate-periods > li > .ncm-rate-form, .ncm-rate-inline { flex: 1 1 100%; margin: 0; }
+.ncm-rate-edit-cell { background: var(--color-surface-muted); white-space: normal; }
 .ncm-rate-sources { font-size: var(--fs-sm); }
 .ncm-rate-source-status > li { display: grid; gap: 4px; }
 .ncm-rate-form { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); }

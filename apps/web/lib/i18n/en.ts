@@ -2225,6 +2225,7 @@ export const en: Messages = {
     help: "Choose the importer or the state and enter the customs value to estimate II, IPI, PIS, COFINS and ICMS for this NCM. Nothing is saved.",
     importer: "Importer",
     noImporter: "Choose the state manually",
+    importerWithoutState: "This importer has no state in the ICMS by state panel yet; choose the state below.",
     state: "State of the importing establishment",
     states: { CE: "Ceará (CE)", AM: "Amazonas (AM)", PR: "Paraná (PR)" },
     foreignMode: "Enter FOB, freight and insurance in foreign currency",

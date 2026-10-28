@@ -2224,6 +2224,7 @@ export const zhCN: Messages = {
     help: "选择进口商或州并输入完税价格，估算该 NCM 的 II、IPI、PIS、COFINS 和 ICMS。不会保存任何内容。",
     importer: "进口商",
     noImporter: "手动选择州",
+    importerWithoutState: "该进口商尚未在“各州 ICMS”面板中设置州；请在下方选择州。",
     state: "进口机构所在州",
     states: { CE: "塞阿拉州（CE）", AM: "亚马孙州（AM）", PR: "巴拉那州（PR）" },
     foreignMode: "以外币输入 FOB、运费和保险费",
