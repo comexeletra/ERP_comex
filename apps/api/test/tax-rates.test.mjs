@@ -97,7 +97,7 @@ test("M072 keeps rate versions, exceptions and the PIS/COFINS general rule apart
 });
 
 test("rate modules stay independent from the NCM update flow", async () => {
-  for (const file of ["ncm-rates.ts", "tax-rates.ts"]) {
+  for (const file of ["ncm-rates.ts", "tax-rates.ts", "icms-rates.ts", "import-estimate.ts"]) {
     const source = await readFile(new URL(`../src/${file}`, import.meta.url), "utf8");
     assert.doesNotMatch(source, /from "\.\/(siscomex-ncm|mdic-ncm|ncm-sync|ncm-snapshot|ncm-scheduler|ttce|tax-treatments|catalog)\.js"/u, file);
     assert.doesNotMatch(source, /(INSERT INTO|UPDATE|DELETE FROM) catalog\.(ncm_official|ncm_last_siscomex|ncm_siscomex_data|ncm_sync_state|entry|ttce)/u, file);

@@ -10,6 +10,7 @@ import { registerAdminUserRoutes } from "../dist/admin-users.js";
 import { registerCatalogRoutes } from "../dist/catalog.js";
 import { registerTaxTreatmentRoutes } from "../dist/tax-treatments.js";
 import { registerTaxRateRoutes } from "../dist/tax-rates.js";
+import { registerIcmsRateRoutes } from "../dist/icms-rates.js";
 import { registerRequestRoutes } from "../dist/requests.js";
 import { registerSourceAuditRoutes } from "../dist/source-audit.js";
 import { registerAdminOutboxRoutes } from "../dist/admin-outbox.js";
@@ -29,6 +30,10 @@ const webRoutes = [
   ["GET", "/api/v1/ncm-rates"], ["GET", "/api/v1/ncm-rates/status"], ["GET", "/api/v1/ncm-rates/:code"],
   ["POST", "/api/v1/ncm-rates/refresh"], ["POST", "/api/v1/ncm-rates/pis-cofins-exceptions"],
   ["PATCH", "/api/v1/ncm-rates/pis-cofins-exceptions/:id"],
+  ["GET", "/api/v1/ncm-rates/:code/estimate"], ["GET", "/api/v1/icms-rates"],
+  ["POST", "/api/v1/icms-rates/rates"], ["PATCH", "/api/v1/icms-rates/rates/:id"], ["PATCH", "/api/v1/icms-rates/states/:uf"],
+  ["POST", "/api/v1/icms-rates/benefits"], ["PATCH", "/api/v1/icms-rates/benefits/:id"],
+  ["PATCH", "/api/v1/icms-rates/importers/:importer"],
   ["GET", "/api/v1/purchase-orders"], ["GET", "/api/v1/purchase-orders/summary"],
   ["GET", "/api/v1/purchase-order-lines"], ["GET", "/api/v1/purchase-order-lines/e2e-stages"],
   ["GET", "/api/v1/purchase-orders/:id/overview"],
@@ -119,6 +124,7 @@ test("all Next.js API calls have a registered API method and path", async t => {
   await registerCatalogRoutes(app, unusedPool);
   await registerTaxTreatmentRoutes(app, unusedPool);
   await registerTaxRateRoutes(app, unusedPool);
+  await registerIcmsRateRoutes(app, unusedPool);
   await registerRequestRoutes(app, unusedPool);
   await registerSourceAuditRoutes(app, unusedPool);
   await registerAdminOutboxRoutes(app, unusedPool);
