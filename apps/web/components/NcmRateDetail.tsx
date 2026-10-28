@@ -5,6 +5,7 @@ import { apiFetch } from "../lib/api";
 import { describeIiSource, describeIpi, formatNcmCode, formatRate, pisCofinsPayload,
   type NcmRateDetail as Detail, type PisCofinsDraft, type PisCofinsException } from "../lib/ncm-rates";
 import { getMessages, useI18n } from "./I18nProvider";
+import { ImportTaxEstimate } from "./ImportTaxEstimate";
 
 const emptyDraft: PisCofinsDraft = { pisRate: "", cofinsRate: "", legalBasis: "", validFrom: "", validTo: "" };
 
@@ -165,6 +166,7 @@ export function NcmRateDetail({ code, date = "", canManage = false, collapsible 
           </div>
         </form>}
       </section>
+      <ImportTaxEstimate code={code} date={date} />
       <ul className="ncm-rate-sources">
         {detail.sources.map(item => <li key={item.source} className="muted">{item.version
           ? <>{t.sourceLine(item.version.sourceReference.slice(0, 160))} <a href={item.version.sourceUrl} target="_blank"

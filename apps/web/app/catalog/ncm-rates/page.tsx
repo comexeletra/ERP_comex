@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getMessages, useI18n } from "../../../components/I18nProvider";
+import { IcmsRatesPanel } from "../../../components/IcmsRatesPanel";
 import { NcmRateDetail } from "../../../components/NcmRateDetail";
 import PageHeader from "../../../components/PageHeader";
 import { apiFetch } from "../../../lib/api";
@@ -34,6 +35,7 @@ export default function NcmRatesPage() {
   const [listTick, setListTick] = useState(0);
   const wasRunning = useRef(false);
   const [canManage, setCanManage] = useState(false);
+  const [canManageIcms, setCanManageIcms] = useState(false);
   const [selected, setSelected] = useState<{ code: string; name: string } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState("");
@@ -43,7 +45,9 @@ export default function NcmRatesPage() {
     apiFetch("/auth/me", { signal: controller.signal })
       .then(response => response.ok ? response.json() as Promise<{ roles?: string[] }> : { roles: [] })
       .then(identity => { if (!controller.signal.aborted) {
-        setCanManage((identity.roles ?? []).some(role => ["Master", "Administrador", "Fiscal"].includes(role)));
+        const roles = identity.roles ?? [];
+        setCanManage(roles.some(role => ["Master", "Administrador", "Fiscal"].includes(role)));
+        setCanManageIcms(roles.some(role => ["Master", "Administrador"].includes(role)));
       } })
       .catch(() => undefined);
     return () => controller.abort();
@@ -126,6 +130,7 @@ export default function NcmRatesPage() {
         && <p className="notice warning">{status.manualRefresh.error}</p>}
       {status?.nextAutomaticAt && <p className="muted">{t.nextAutomatic(formatDateTime(status.nextAutomaticAt, t.never))}</p>}
     </section>
+    <IcmsRatesPanel canManage={canManageIcms} />
     <section className="card" aria-labelledby="ncm-rate-list-title">
       <h2 id="ncm-rate-list-title">{list ? t.listTitle(list.total, list.referenceDate.split("-").reverse().join("/")) : t.title}</h2>
       <div className="ncm-rate-filters">
