@@ -159,6 +159,13 @@ Se algo essencial não estiver claro, pergunte antes de supor.
 - O tipo de demanda é da PO, não do produto: a HQ planeja o pedido inteiro a partir do estoque (MTS, 30 dias no T3) ou sob encomenda (Não MTS, 45 dias). Ele fica só em `procurement.purchase_order.demand_type` (M071), e todo produto da PO o herda nas leituras (`po.demand_type`). Não volte a gravá-lo no produto nem a oferecê-lo como campo do produto; as rotas de produto o recusam.
 - Ele é diferente da origem da demanda (`DEMAND`: plano comercial, pós-venda, projetos), que continua sendo campo do produto.
 
+## Alíquotas por NCM (II, IPI, PIS/COFINS)
+
+- As alíquotas vêm dos arquivos oficiais (Resolução Gecex nº 272/2021, Anexos I–X, e TIPI) e ficam em tabelas próprias da M072, versionadas por SHA-256. Plano e regras em `docs/PLANO_ALIQUOTAS_NCM.md`.
+- `apps/api/src/ncm-rates.ts` e `tax-rates.ts` não podem importar nem alterar a sincronização de NCM (`siscomex-ncm`, `mdic-ncm`, `ncm-sync`, `ncm-snapshot`, `ncm-scheduler`) nem o TTCE, e a sincronização de NCM não chama as alíquotas; `test/tax-rates.test.mjs` falha se isso mudar. Lock, estado e horário (`NCM_RATES_REFRESH_TIME`, 07:00 no HML) são próprios.
+- O II aplicado só troca a alíquota brasileira por exceção da NCM inteira, sem Ex, sem cota e vigente na data; Ex, cota, setor aeronáutico e conflitos aparecem como condicionais, nunca aplicados. IPI `NT` não é 0%. PIS/COFINS não têm tabela oficial por NCM: regra geral datada mais exceções do fiscal (`tax-rates.manage`: Master, Administrador e Fiscal).
+- Alíquota de referência não é imposto devido; não transforme estes dados em cálculo de despacho sem a etapa própria de `docs/TRATAMENTO_TRIBUTARIO_NCM_E_DESPACHO.md`.
+
 ## Acesso SSH da VPS de homologação
 
 - No notebook da empresa, use o alias SSH `erp-validation-vps` definido em `%USERPROFILE%\.ssh\Host erp-validation-vps.txt`. A chave privada dessa máquina fica em `.local-keys/rf06_ed25519`, relativa à raiz do repositório.

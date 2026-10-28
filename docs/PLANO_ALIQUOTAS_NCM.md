@@ -1,7 +1,8 @@
 # Tarefa: alíquotas de II, IPI, PIS e COFINS por NCM vigente
 
-**Estado:** especificação aprovada pelo usuário em 28/10/2026; implementação na
-branch `homologacao`.
+**Estado:** implementado na branch `homologacao` em 28/10/2026 (API `baa584c`, web `a00a050`,
+M072 aplicada só no HML, API HML no release `a00a050`). Evidências em
+`deploy/hostinger/README.md`. Aguarda validação do usuário antes do PR para `main`.
 
 ## Objetivo
 
