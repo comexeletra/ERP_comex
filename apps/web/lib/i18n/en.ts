@@ -1411,6 +1411,10 @@ export const en: Messages = {
     allocatedItems: "Items linked to an IP",
     unallocatedItems: "Items without an active link",
     poIdentification: "PO identification status",
+    identityStatuses: {
+      HISTORICAL_UNVERIFIED: "Historical · number not verified",
+      MANUAL_UNVERIFIED: "Manual · number not verified",
+    },
     ipsInScope: "IPs in scope",
     historicalIps: "Historical IPs made operational",
     newIps: "New IPs",

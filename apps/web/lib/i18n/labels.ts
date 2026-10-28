@@ -13,6 +13,12 @@ export function statusLabel(m: Messages, status: unknown): string {
   return (m.statuses as Record<string, string>)[text] ?? text;
 }
 
+/** Translates the PO identity status codes listed in the pre-shipment indicators. */
+export function identityStatusLabel(m: Messages, status: unknown): string {
+  const text = status == null ? "" : String(status);
+  return (m.reports.identityStatuses as Record<string, string>)[text] ?? text;
+}
+
 /** Role names stay as API identifiers for permissions; only their display is translated. */
 export function roleLabel(m: Messages, role: string): string {
   return (m.roles as Record<string, string>)[role] ?? role;

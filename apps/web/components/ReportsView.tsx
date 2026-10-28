@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { formatCount } from "../lib/format-count";
+import { identityStatusLabel, statusLabel } from "../lib/i18n/labels";
 import { getMessages, useI18n } from "./I18nProvider";
 import PageHeader from "./PageHeader";
 
@@ -25,12 +26,12 @@ function Metric({ label, value }: { label: string; value: number | undefined }) 
   return <div className="metric"><span>{label}</span><strong>{value === undefined ? "…" : formatCount(value)}</strong></div>;
 }
 
-function StatusList({ items }: { items: MetricSet["statuses"] }) {
+function StatusList({ items, label }: { items: MetricSet["statuses"]; label: (status: string) => string }) {
   const { m } = useI18n();
   const peak = Math.max(1, ...items.map(item => item.count));
   if (!items.length) return <p className="muted">{m.reports.noStatuses}</p>;
   return <ul className="report-status-list">{items.map(item => <li key={item.status}>
-    <div><span>{item.status}</span><strong>{formatCount(item.count)}</strong></div>
+    <div><span>{label(item.status)}</span><strong>{formatCount(item.count)}</strong></div>
     <span className="report-status-track" aria-hidden="true"><span style={{ width: `${Math.max(2, item.count / peak * 100)}%` }} /></span>
   </li>)}</ul>;
 }
@@ -84,7 +85,7 @@ export default function ReportsView({ scope }: { scope: ReportScope }) {
         <Metric label={t.unallocatedItems} value={summary?.preShipment?.unallocatedItems} />
       </div>
       <section className="card report-status-card"><h3>{t.poIdentification}</h3>
-        <StatusList items={summary?.preShipment?.statuses ?? []} /></section>
+        <StatusList items={summary?.preShipment?.statuses ?? []} label={status => identityStatusLabel(m, status)} /></section>
     </section>}
 
     {scope === "post" && <section className="report-section" aria-labelledby="post-report-title">
@@ -104,7 +105,7 @@ export default function ReportsView({ scope }: { scope: ReportScope }) {
         <Metric label={t.withCosts} value={summary?.postShipment?.rowsWithAdditionalCosts} />
       </div>
       <section className="card report-status-card"><h3>{t.processStatuses}</h3>
-        <StatusList items={summary?.postShipment?.statuses ?? []} /></section>
+        <StatusList items={summary?.postShipment?.statuses ?? []} label={status => statusLabel(m, status)} /></section>
     </section>}
   </main>;
 }

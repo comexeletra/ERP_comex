@@ -1414,6 +1414,10 @@ export const ptBR = {
     allocatedItems: "Itens vinculados a IP",
     unallocatedItems: "Itens sem vínculo ativo",
     poIdentification: "Situação de identificação das POs",
+    identityStatuses: {
+      HISTORICAL_UNVERIFIED: "Histórica · número não conferido",
+      MANUAL_UNVERIFIED: "Manual · número não conferido",
+    },
     ipsInScope: "IPs no escopo",
     historicalIps: "Históricos operacionalizados",
     newIps: "Novos IPs",

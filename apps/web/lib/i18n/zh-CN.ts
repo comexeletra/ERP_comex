@@ -1411,6 +1411,10 @@ export const zhCN: Messages = {
     allocatedItems: "已关联 IP 的明细",
     unallocatedItems: "无有效关联的明细",
     poIdentification: "PO 识别状态",
+    identityStatuses: {
+      HISTORICAL_UNVERIFIED: "历史数据 · 编号未核对",
+      MANUAL_UNVERIFIED: "手工录入 · 编号未核对",
+    },
     ipsInScope: "范围内的 IP",
     historicalIps: "已转为业务的历史 IP",
     newIps: "新 IP",
