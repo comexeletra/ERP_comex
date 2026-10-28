@@ -1,5 +1,13 @@
 # API ERP na VPS Hostinger
 
+## Indicadores sem POs e IPs excluídos no HML (2026-10-28)
+
+Os commits `d04daa4` (API) e `3ff4bb6` (web) corrigem `GET /api/v1/reports/summary`. A rota contava todas as POs e todos os IPs das importadoras do usuário, inclusive os excluídos: no HML eram 15 POs, das quais 13 estavam `DELETED`, e 21 IPs, dos quais 12 estavam `DELETED`. Agora ela segue as listas operacionais. Ficam de fora as POs com `lifecycle_status = 'DELETED'` e os IPs com `record_status = 'DELETED'`. Um item só conta como vinculado se a alocação estiver `ACTIVE` e o IP de destino também. A tela passou a traduzir os status nas duas listas. Não há migration.
+
+O release `/opt/import-erp/apps/api/hml-release-3ff4bb6` foi montado com `git -c core.autocrlf=false archive` (sem CR nas fontes) e reaproveita o `node_modules` de `hml-release-fbd0ef4`, porque `package.json` e `pnpm-lock.yaml` são iguais. Ele foi compilado na VPS e ativado pelo drop-in `zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-release-3ff4bb6.conf`, e o worker foi movido com `enable-homologation-export-worker.sh 3ff4bb6`. Os drop-ins e o `ExecStart` anteriores estão em `/var/backups/import-erp/hml-reports-deleted-3ff4bb6-predeploy`. Para reverter só o código: remova o drop-in `3ff4bb6`, execute `systemctl daemon-reload`, reinicie `import-erp-hml-api` (volta a `hml-release-fbd0ef4`) e rode `enable-homologation-export-worker.sh fbd0ef4`.
+
+Após o restart, `/health/live` respondeu 200 e `/api/v1/reports/summary` sem sessão respondeu 401. A rota do release foi chamada pelo próprio Fastify contra o HML, com `import_erp_hml_app` e `default_transaction_read_only=on`, abrangendo todas as importadoras. Resultado no pré-embarque: 2 POs, 274 itens, todos vinculados. No pós-embarque: 10 IPs, sendo 3 aguardando produção, 2 aguardando embarque, 2 aguardando chegada, 2 em desembaraço e 1 entregue. O décimo IP é o `Teste` (ELETRA CURITIBA), criado no HML às 16:29. O Preview `erp-comex-6fw8khy4r` ficou `Ready` no alias estável e já serve os rótulos novos. Produção, `main` e as variáveis da Vercel não foram alteradas.
+
 ## ICMS de importação por UF e simulador de tributos (M073) no HML (2026-10-28)
 
 Os commits `1096cf5` (API, M073), `b061de8` (web) e `fbd0ef4` (vínculo das importadoras) publicam o simulador de tributos no detalhe da NCM (`GET /api/v1/ncm-rates/:code/estimate`) e o painel **ICMS de importação por UF** em `/catalog/ncm-rates` (`GET /api/v1/icms-rates`, `POST|PATCH /api/v1/icms-rates/rates`, `PATCH /api/v1/icms-rates/states/:uf`, `POST|PATCH /api/v1/icms-rates/benefits`, `PATCH /api/v1/icms-rates/importers/:importer`). A gestão usa a permissão nova `icms-rates.manage`, só Master e Administrador; o Fiscal recebe 403. A estimativa não grava nada.
