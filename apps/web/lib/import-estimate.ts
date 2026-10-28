@@ -53,7 +53,7 @@ export function formatMoney(value: string | null, locale: string): string {
 }
 
 /** State suggested for an importer; the user may still choose another one. */
-export function stateForImporter(importer: string, importers: Array<{ importer: string; uf: string }>): IcmsState | null {
+export function stateForImporter(importer: string, importers: Array<{ importer: string; uf: string | null }>): IcmsState | null {
   const found = importers.find(item => item.importer === importer)?.uf;
   return found && (ICMS_STATES as readonly string[]).includes(found) ? found as IcmsState : null;
 }

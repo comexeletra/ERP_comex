@@ -2306,6 +2306,7 @@ export const zhCN: Messages = {
     editExpenses: "编辑计税基础费用",
     addBenefit: "登记优惠",
     importersTitle: "各进口商所在州",
+    noState: "未设置州",
     importerLine: (importer: string, state: string) => `${importer}：${state}`,
   },
   entityValues: {

@@ -2307,6 +2307,7 @@ export const en: Messages = {
     editExpenses: "Edit base expenses",
     addBenefit: "Register a benefit",
     importersTitle: "State of each importer",
+    noState: "no state set",
     importerLine: (importer: string, state: string) => `${importer}: ${state}`,
   },
   entityValues: {

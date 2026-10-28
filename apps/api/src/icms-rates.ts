@@ -52,6 +52,7 @@ function failure(reply: FastifyReply, error: unknown) {
   throw error;
 }
 function author(actor: Actor) { return `${actor.issuer}#${actor.subject}`; }
+function importerKey(importer: string): string { return importer.trim().toUpperCase(); }
 /** Same value as md5(text)::uuid in PostgreSQL, so rows keyed by text keep one audit history. */
 function stableId(text: string): string {
   const hex = createHash("md5").update(text, "utf8").digest("hex");
@@ -97,8 +98,13 @@ export async function registerIcmsRateRoutes(app: FastifyInstance, pool: Pool): 
       pool.query<StateRow>(`SELECT ${stateColumns} FROM catalog.icms_import_state ORDER BY uf`),
       pool.query<RateRow>(`SELECT ${rateColumns} FROM catalog.icms_import_rate ORDER BY uf, valid_from DESC`),
       pool.query<BenefitRow>(`SELECT ${benefitColumns} FROM catalog.icms_import_benefit ORDER BY uf, kind, valid_from DESC`),
-      pool.query<{ importer: string; uf: Uf; version: string }>(
-        `SELECT importer, uf, version::text AS version FROM catalog.icms_importer_state ORDER BY importer`),
+      // Registered importers with their state, matched regardless of case and spacing.
+      pool.query<{ importer: string; uf: Uf | null; version: string | null }>(
+        `SELECT coalesce(registered.value, link.importer) AS importer, link.uf, link.version::text AS version
+         FROM (SELECT DISTINCT ON (upper(btrim(value))) value FROM catalog.operational_value
+               WHERE entity_key = 'IMPORTER' ORDER BY upper(btrim(value)), value) AS registered
+         FULL JOIN catalog.icms_importer_state AS link ON upper(btrim(link.importer)) = upper(btrim(registered.value))
+         ORDER BY 1`),
     ]);
     reply.header("cache-control", "no-store");
     return { states: states.rows.map(state => ({ ...state,
@@ -270,17 +276,34 @@ export async function registerIcmsRateRoutes(app: FastifyInstance, pool: Pool): 
       let actor: Actor; let version: string;
       try { actor = actorAndScopes(request).actor; version = versionFrom(request); } catch (error) { return failure(reply, error); }
       return transaction(pool, reply, async client => {
+        const key = importerKey(importer);
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`catalog:icms-importer:${key}`]);
         const current = await client.query<{ importer: string; uf: Uf; version: string }>(
-          `SELECT importer, uf, version::text AS version FROM catalog.icms_importer_state WHERE importer = $1 FOR UPDATE`, [importer]);
+          `SELECT importer, uf, version::text AS version FROM catalog.icms_importer_state
+           WHERE upper(btrim(importer)) = $1 FOR UPDATE`, [key]);
         const before = current.rows[0];
-        if (!before) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Importadora sem UF cadastrada.");
+        const auditId = stableId(`ICMS_IMPORTER_STATE|${key}`);
+        if (!before) {
+          // An importer without a state yet: version "0" creates its link, only for a registered importer.
+          if (version !== '"0"') {
+            throw new BusinessError(409, "VERSION_CONFLICT", "O registro foi alterado por outra pessoa. Recarregue antes de salvar.");
+          }
+          const registered = await client.query(`SELECT value FROM catalog.operational_value
+            WHERE entity_key = 'IMPORTER' AND upper(btrim(value)) = $1 LIMIT 1`, [key]);
+          if (!registered.rows[0]) throw new BusinessError(404, "RESOURCE_NOT_FOUND", "Importadora não cadastrada.");
+          const inserted = await client.query<{ importer: string; uf: Uf; version: string }>(`INSERT INTO catalog.icms_importer_state
+              (importer, uf, updated_by) VALUES ($1, $2, $3) RETURNING importer, uf, version::text AS version`,
+          [importer, parsed.data.uf, author(actor)]);
+          await record(client, "ICMS_IMPORTER_STATE", auditId, "ICMS_IMPORTER_STATE", auditId, "CREATE",
+            null, { importer, uf: parsed.data.uf }, actor, parsed.data.reason);
+          return inserted.rows[0];
+        }
         sameVersion(before, version);
         const updated = await client.query<{ importer: string; uf: Uf; version: string }>(`UPDATE catalog.icms_importer_state
           SET uf = $2, version = version + 1, updated_at = now(), updated_by = $3
-          WHERE importer = $1 RETURNING importer, uf, version::text AS version`, [importer, parsed.data.uf, author(actor)]);
-        const auditId = stableId(`ICMS_IMPORTER_STATE|${importer}`);
+          WHERE importer = $1 RETURNING importer, uf, version::text AS version`, [before.importer, parsed.data.uf, author(actor)]);
         await record(client, "ICMS_IMPORTER_STATE", auditId, "ICMS_IMPORTER_STATE", auditId, "UPDATE",
-          { importer, uf: before.uf }, { importer, uf: parsed.data.uf }, actor, parsed.data.reason);
+          { importer: before.importer, uf: before.uf }, { importer: before.importer, uf: parsed.data.uf }, actor, parsed.data.reason);
         return updated.rows[0];
       });
     });

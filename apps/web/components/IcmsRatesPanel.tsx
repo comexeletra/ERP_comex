@@ -12,7 +12,7 @@ type BenefitRow = { id: string; uf: IcmsState; ncm: string | null; kind: "BASE_R
   legalBasis: string; validFrom: string; validTo: string | null; version: string };
 type StateRow = { uf: IcmsState; includeSiscomexFee: boolean; includeAfrmm: boolean; includeOtherExpenses: boolean;
   reviewed: boolean; version: string; rates: RateRow[]; benefits: BenefitRow[] };
-type Importer = { importer: string; uf: IcmsState; version: string };
+type Importer = { importer: string; uf: IcmsState | null; version: string | null };
 type Editing =
   | { kind: "rate"; uf: IcmsState; target: RateRow | null }
   | { kind: "state"; target: StateRow }
@@ -67,7 +67,7 @@ export function IcmsRatesPanel({ canManage }: { canManage: boolean }) {
       includeAfrmm: next.target.includeAfrmm, includeOtherExpenses: next.target.includeOtherExpenses, reviewed: next.target.reviewed });
     if (next.kind === "benefit" && next.target) Object.assign(base, { percent: next.target.percent, ncm: next.target.ncm ?? "",
       benefitKind: next.target.kind, legalBasis: next.target.legalBasis, validFrom: next.target.validFrom, validTo: next.target.validTo ?? "" });
-    if (next.kind === "importer") base.uf = next.target.uf;
+    if (next.kind === "importer") base.uf = next.target.uf ?? "CE";
     setDraft(base);
   }
   function set<K extends keyof Draft>(field: K, value: Draft[K]) { setDraft(current => ({ ...current, [field]: value })); }
@@ -78,7 +78,8 @@ export function IcmsRatesPanel({ canManage }: { canManage: boolean }) {
     if (reason.length < 3) return null;
     if (next.kind === "importer") {
       return { url: `/api/v1/icms-rates/importers/${encodeURIComponent(next.target.importer)}`, method: "PATCH",
-        version: next.target.version, body: { uf: draft.uf, reason } };
+        // An importer without a state yet is linked with version "0".
+        version: next.target.version ?? "0", body: { uf: draft.uf, reason } };
     }
     if (next.kind === "state") {
       return { url: `/api/v1/icms-rates/states/${next.target.uf}`, method: "PATCH", version: next.target.version,
@@ -208,7 +209,7 @@ export function IcmsRatesPanel({ canManage }: { canManage: boolean }) {
     {data && <section className="ncm-rate-section" aria-label={t.importersTitle}>
       <h3>{t.importersTitle}</h3>
       <ul className="ncm-rate-periods">{data.importers.map(item => <li key={item.importer}>
-        <span>{t.importerLine(item.importer, m.importEstimate.states[item.uf])}</span>
+        <span>{t.importerLine(item.importer, item.uf ? m.importEstimate.states[item.uf] : t.noState)}</span>
         {canManage && <button className="button secondary" type="button" disabled={saving}
           onClick={() => start({ kind: "importer", target: item })}>{m.ncmRates.edit}</button>}
       </li>)}</ul>

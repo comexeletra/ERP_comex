@@ -2310,6 +2310,7 @@ export const ptBR = {
     editExpenses: "Editar despesas na base",
     addBenefit: "Cadastrar benefício",
     importersTitle: "UF de cada importadora",
+    noState: "sem UF definida",
     importerLine: (importer: string, state: string) => `${importer}: ${state}`,
   },
   entityValues: {

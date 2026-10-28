@@ -7,7 +7,7 @@ import { createEstimateUrl, customsValueFromForeign, formatMoney, ICMS_STATES, n
 import { formatRate } from "../lib/ncm-rates";
 import { getMessages, useI18n } from "./I18nProvider";
 
-type Importer = { importer: string; uf: string };
+type Importer = { importer: string; uf: string | null };
 
 /** Estimate of the import taxes of one NCM for a state; nothing is stored. */
 export function ImportTaxEstimate({ code, date = "" }: { code: string; date?: string }) {
