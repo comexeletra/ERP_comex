@@ -1,7 +1,9 @@
 # Tarefa: ICMS de importação por UF (CE, AM, PR) e simulador de tributos
 
-**Estado:** especificação aprovada pelo usuário em 28/10/2026; implementação na
-branch `homologacao`. Continua
+**Estado:** implementado na branch `homologacao` em 28/10/2026 (API `1096cf5` e `fbd0ef4`,
+web `b061de8`, M073 aplicada só no HML, API HML no release `fbd0ef4`). Evidências em
+`deploy/hostinger/README.md`. Alíquotas de ICMS ainda não revisadas; aguarda validação
+do usuário antes do PR para `main`. Continua
 `docs/PLANO_ALIQUOTAS_NCM.md`.
 
 ## Objetivo
