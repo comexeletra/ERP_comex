@@ -41,7 +41,12 @@ function readQuery(sql, values, options) {
     if (sql.includes("daterange")) return { rows: [] };
     return { rows: options.benefits ?? [] };
   }
-  if (sql.includes("FROM catalog.icms_importer_state")) return { rows: [{ importer: "ELETRA CWB", uf: "PR", version: "1" }] };
+  if (sql.includes("FULL JOIN catalog.icms_importer_state")) return { rows: [
+    { importer: "Eletra Cwb", uf: "PR", version: "1" }, { importer: "ELETRA CURITIBA", uf: null, version: null }] };
+  if (sql.includes("FROM catalog.icms_importer_state")) {
+    return { rows: options.unmapped ? [] : [{ importer: "ELETRA CWB", uf: "PR", version: "1" }] };
+  }
+  if (sql.includes("FROM catalog.operational_value")) return { rows: values[0] === "SEM CADASTRO" ? [] : [{ value: values[0] }] };
   return undefined;
 }
 
@@ -64,6 +69,7 @@ async function fixture(t, { role = "Administrador", ...options } = {}) {
           if (sql.includes("UPDATE catalog.icms_import_rate")) return { rows: [{ ...prRate, rate: values[1], version: "2" }] };
           if (sql.includes("UPDATE catalog.icms_import_state")) return { rows: [{ ...prState, includeAfrmm: false, version: "2" }] };
           if (sql.includes("INSERT INTO catalog.icms_import_benefit")) return { rows: [{ id: benefitId, uf: "PR" }] };
+          if (sql.includes("INSERT INTO catalog.icms_importer_state")) return { rows: [{ importer: values[0], uf: values[1], version: "1" }] };
           if (sql.includes("UPDATE catalog.icms_importer_state")) return { rows: [{ importer: "ELETRA CWB", uf: "CE", version: "2" }] };
           return { rows: [], rowCount: 1 };
         },
@@ -103,7 +109,9 @@ test("anyone with catalog.read sees the ICMS per state and the importer states",
   assert.equal(response.statusCode, 200, response.body);
   const pr = response.json().states.find(state => state.uf === "PR");
   assert.deepEqual([pr.rates[0].rate, pr.rates[0].reviewed, pr.includeAfrmm], ["19.5", false, true]);
-  assert.deepEqual(response.json().importers, [{ importer: "ELETRA CWB", uf: "PR", version: "1" }]);
+  // The registered importers are listed with the state matched regardless of case; unmapped ones have no state.
+  assert.deepEqual(response.json().importers, [{ importer: "Eletra Cwb", uf: "PR", version: "1" },
+    { importer: "ELETRA CURITIBA", uf: null, version: null }]);
 });
 
 test("the estimate composes the NCM rates with the state ICMS and flags what is not reviewed", async t => {
@@ -169,4 +177,14 @@ test("only Master and Administrador keep ICMS rates, base expenses, benefits and
   const importer = await app.inject({ method: "PATCH", url: `/api/v1/icms-rates/importers/${encodeURIComponent("ELETRA CWB")}`,
     headers: { "x-record-version": "1" }, payload: { uf: "CE", reason: "Teste" } });
   assert.equal(importer.statusCode, 200, importer.body);
+  const unmapped = await fixture(t, { role: "Administrador", unmapped: true });
+  const url = `/api/v1/icms-rates/importers/${encodeURIComponent("ELETRA CURITIBA")}`;
+  assert.equal((await unmapped.app.inject({ method: "PATCH", url, headers: { "x-record-version": "1" },
+    payload: { uf: "PR", reason: "Curitiba" } })).json().code, "VERSION_CONFLICT");
+  const first = await unmapped.app.inject({ method: "PATCH", url, headers: { "x-record-version": "0" },
+    payload: { uf: "PR", reason: "Curitiba" } });
+  assert.equal(first.statusCode, 200, first.body);
+  assert.deepEqual(first.json(), { importer: "ELETRA CURITIBA", uf: "PR", version: "1" });
+  assert.equal((await unmapped.app.inject({ method: "PATCH", url: `/api/v1/icms-rates/importers/${encodeURIComponent("Sem cadastro")}`,
+    headers: { "x-record-version": "0" }, payload: { uf: "PR", reason: "Teste" } })).statusCode, 404);
 });

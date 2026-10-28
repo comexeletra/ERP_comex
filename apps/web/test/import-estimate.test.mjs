@@ -37,9 +37,11 @@ test("the estimate asks the API with the state, date and values", () => {
 });
 
 test("the importer suggests its state: Matriz and FOR are Ceará", () => {
-  const importers = [{ importer: "ELETRA MATRIZ", uf: "CE" }, { importer: "ELETRA CWB", uf: "PR" }, { importer: "X", uf: "SP" }];
-  assert.equal(stateForImporter("ELETRA MATRIZ", importers), "CE");
-  assert.equal(stateForImporter("ELETRA CWB", importers), "PR");
+  const importers = [{ importer: "Eletra Matriz", uf: "CE" }, { importer: "Eletra Cwb", uf: "PR" }, { importer: "X", uf: "SP" },
+    { importer: "ELETRA CURITIBA", uf: null }];
+  assert.equal(stateForImporter("Eletra Matriz", importers), "CE");
+  assert.equal(stateForImporter("Eletra Cwb", importers), "PR");
+  assert.equal(stateForImporter("ELETRA CURITIBA", importers), null);
   assert.equal(stateForImporter("X", importers), null);
 });
 
