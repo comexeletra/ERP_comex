@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { classifyInvoiceDestination, distributeInvoiceParts, invoiceCodePoint, invoiceKeyItems, invoiceLineDecisions,
-  invoicePartAuditPoints, invoicePoCodeSummary, invoiceQuantityDecisionReady, invoiceQuantityPoint,
+  invoicePartAuditPoints, invoicePoCodeSummary, invoiceQuantityDecisionReady, invoiceQuantityPoint, invoiceSavePayload,
 } from "../lib/china-invoice-mapping.ts";
 
 const item = (id, lineNumber, productCode, remainingQuantity, orderedQuantity = remainingQuantity) =>
@@ -103,6 +103,20 @@ test("line decisions carry the invoice and destined quantities and the reason on
     { sourceRow: 17, invoiceQuantity: "20", destinedQuantity: "20", confirmQuantityMismatch: false, quantityMismatchReason: "" },
     { sourceRow: 18, invoiceQuantity: "5", destinedQuantity: "0", confirmQuantityMismatch: false, quantityMismatchReason: "" },
   ]);
+});
+
+test("the save payload sends one assignment and one allocation per PO item, only with fields the API accepts", () => {
+  const destination = { sourceRow: 16, sourcePoNumber: "PO030201", productCode: "A", confirmSupplierMismatch: true,
+    confirmUnitMismatch: false, confirmPriceMismatch: false };
+  const result = invoiceSavePayload("INV-1", [
+    { ...destination, itemId: "first", poNumber: "030201", poProductCode: "A", quantity: "30" },
+    { ...destination, itemId: "second", poNumber: "030201", poProductCode: "a ", quantity: "15.5" },
+  ]);
+  assert.deepEqual(result.assignments[1], { itemId: "second", sourceRow: 16, sourcePoNumber: "PO030201", poNumber: "030201",
+    productCode: "A", poProductCode: "a ", quantity: "15.5", confirmSupplierMismatch: true, confirmUnitMismatch: false,
+    confirmPriceMismatch: false });
+  assert.deepEqual(result.allocations, [{ itemId: "first", quantity: "30", notes: "Invoice INV-1, linha 16" },
+    { itemId: "second", quantity: "15.5", notes: "Invoice INV-1, linha 16" }]);
 });
 
 test("the summary by PO and code shows ordered, already shipped, this invoice and the balance after", () => {

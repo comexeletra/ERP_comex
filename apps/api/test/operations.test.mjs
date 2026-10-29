@@ -1080,12 +1080,17 @@ test("a line can fill two PO items with its code, each within its own balance", 
   assert.equal(refused.json().code, "PO_BALANCE_CHANGED");
 });
 
-test("the line decisions built by the web screen are accepted by the invoice route", async t => {
-  const { invoiceLineDecisions } = await import("../../web/lib/china-invoice-mapping.ts");
+test("the assignments, allocations and line decisions built by the web screen are accepted by the invoice route", async t => {
+  const { invoiceLineDecisions, invoiceSavePayload } = await import("../../web/lib/china-invoice-mapping.ts");
   const { client } = invoiceImportClient();
   const app = await invoiceImportApp(t, client);
   const payload = invoicePayload();
   payload.invoice.metadata.lines[0].quantity = "8";
+  const { assignments, allocations } = invoiceSavePayload("INV-1", [{ sourceRow: 16, sourcePoNumber: "PO030201",
+    productCode: "PO-CODE", itemId: poId, poNumber: "PO030201", poProductCode: "PO-CODE", quantity: "5",
+    confirmSupplierMismatch: false, confirmUnitMismatch: false, confirmPriceMismatch: false }]);
+  payload.invoice.metadata.assignments = assignments;
+  payload.allocations = allocations;
   payload.invoice.metadata.lineDecisions = invoiceLineDecisions(payload.invoice.metadata.lines,
     [{ sourceRow: 16, invoiceQuantity: "8", quantity: "5" }], { 16: { confirmed: true, reason: "Saldo no próximo embarque" } });
   const response = await sendInvoice(app, "invoice-web-decisions", payload);

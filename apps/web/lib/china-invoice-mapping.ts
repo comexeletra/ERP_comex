@@ -71,7 +71,7 @@ export function distributeInvoiceParts<T extends InvoicePoItemCandidate>(
     const remaining = (invoiceQuantityUnits(item.remainingQuantity) ?? 0n) - (used.get(item.id) ?? 0n);
     return remaining > 0n ? remaining : 0n;
   };
-  return new Map(parts.map(part => {
+  return new Map(parts.map((part): [string, InvoicePartDistribution] => {
     const available = part.items.reduce((total, item) => total + free(item), 0n);
     const requested = invoiceQuantityUnits(part.quantity);
     if (requested === null || requested > available) {
@@ -227,6 +227,24 @@ export function invoiceLineDecisions(
       confirmQuantityMismatch: differs && Boolean(decision?.confirmed),
       quantityMismatchReason: differs ? decision?.reason.trim() ?? "" : "" };
   });
+}
+
+export type InvoiceItemDestination = { sourceRow: number; sourcePoNumber: string; productCode: string; itemId: string;
+  poNumber: string; poProductCode: string; quantity: string; confirmSupplierMismatch: boolean;
+  confirmUnitMismatch: boolean; confirmPriceMismatch: boolean };
+
+/** Assignments and allocations of the save request: only the fields the strict API schema accepts. */
+export function invoiceSavePayload(invoiceLabel: string, destinations: readonly InvoiceItemDestination[]) {
+  return {
+    assignments: destinations.map(destination => ({ itemId: destination.itemId, sourceRow: destination.sourceRow,
+      sourcePoNumber: destination.sourcePoNumber, poNumber: destination.poNumber, productCode: destination.productCode,
+      poProductCode: destination.poProductCode, quantity: destination.quantity,
+      confirmSupplierMismatch: destination.confirmSupplierMismatch, confirmUnitMismatch: destination.confirmUnitMismatch,
+      confirmPriceMismatch: destination.confirmPriceMismatch })),
+    // The allocation note is stored data and keeps the Portuguese wording of the existing records.
+    allocations: destinations.map(destination => ({ itemId: destination.itemId, quantity: destination.quantity,
+      notes: `Invoice ${invoiceLabel}, linha ${destination.sourceRow}` })),
+  };
 }
 
 export type InvoicePoCodeSummaryRow = { poNumber: string; productCode: string; ordered: string; shipped: string;

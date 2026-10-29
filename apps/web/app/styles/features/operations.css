@@ -108,6 +108,13 @@
 .invoice-match-table td:nth-child(4) > .operational-fields { gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 10px; }
 .invoice-match-table td:nth-child(4) > .operational-fields > label { align-items: flex-start; display: flex; font-size: var(--fs-xs); gap: 7px; line-height: 1.35; }
 .invoice-match-table td:nth-child(4) > .operational-fields input[type="checkbox"] { flex: 0 0 auto; margin-top: 2px; width: auto; }
+.invoice-match-table td:nth-child(4) .notice .button { margin: 6px 8px 0 0; }
+/* PO items with the line code, in PO line order; each shows the quantity it receives */
+.invoice-key-items { display: grid; font-size: var(--fs-xs); gap: 3px; line-height: 1.4; list-style: none; margin: 0; padding: 0; }
+/* Balance by PO and product: ordered, already shipped, this invoice and the balance after it */
+.invoice-po-summary { margin-bottom: 12px; }
+.invoice-po-summary caption { font-weight: 700; padding: 6px 0; text-align: left; }
+.invoice-po-summary-over td { background: var(--color-danger-bg); color: var(--color-danger-text); font-weight: 700; }
 /* Invoice audit points: one checklist per destination, pending in red and confirmed in green */
 .invoice-audit { display: grid; gap: 6px; margin-top: 10px; }
 .invoice-audit-header { align-items: center; color: var(--color-text-strong); display: flex; flex-wrap: wrap; font-size: var(--fs-xs); gap: 6px 10px; justify-content: space-between; }
@@ -120,6 +127,8 @@
 .invoice-audit-note { margin: 0; }
 .invoice-match-table .invoice-audit-confirm { align-items: flex-start; cursor: pointer; display: flex; font-weight: 400; gap: 7px; }
 .invoice-audit-confirm input { flex: 0 0 auto; margin: 1px 0 0; }
+.invoice-match-table .invoice-audit-reason { display: grid; font-weight: 400; gap: 4px; }
+.invoice-audit-reason input { min-width: 0; width: 100%; }
 .invoice-compare-table { border-collapse: collapse; font-size: var(--fs-xs); margin-top: 8px; width: 100%; }
 .invoice-match-table .invoice-compare-table th, .invoice-match-table .invoice-compare-table td {
   border-bottom: 1px solid var(--color-divider); min-width: 0; padding: 5px 8px; position: static; vertical-align: top; width: auto;
