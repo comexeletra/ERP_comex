@@ -102,7 +102,7 @@ test("invoice import validates SHA-256 and stores it in document metadata", asyn
 function invoiceImportClient({ revision = false, supplierMatchesExporter = true, otherImporterIp = false,
   canceledItem = false, duplicateKind = null, poUnit = null, poUnitPrice = null, poCurrency = null,
   linkedOrphanPo = false, draft = false, insufficientBalance = false, purchaseOrderStatus = "ACTIVE",
-  previousAllocationPoStatus = "ACTIVE", recordStatus = "ACTIVE", shipped = false } = {}) {
+  previousAllocationPoStatus = "ACTIVE", recordStatus = "ACTIVE", shipped = false, exporterAliases = [] } = {}) {
   const processId = "00000000-0000-4000-8000-000000000021";
   const oldDocumentId = "00000000-0000-4000-8000-000000000022";
   const oldAllocationId = "00000000-0000-4000-8000-000000000023";
@@ -130,7 +130,7 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true,
           supplier_entry_id: "00000000-0000-4000-8000-000000000003",
           supplier_text: supplierMatchesExporter ? "Exporter Ltd" : "PO Supplier",
           supplier_name: supplierMatchesExporter ? "Exporter Ltd" : "PO Supplier Ltd",
-          supplier_code: supplierMatchesExporter ? "EXPORTER" : "PO-SUP" }], rowCount: 1 };
+          supplier_code: supplierMatchesExporter ? "EXPORTER" : "PO-SUP", exporter_aliases: exporterAliases }], rowCount: 1 };
       }
       if (sql.includes("normalized_ip_number = upper(btrim($1))")) {
         if (otherImporterIp && !sql.includes("AND importer = $2")) {
@@ -604,6 +604,36 @@ test("confirmed invoice supplier divergence is persisted for the database constr
   assert.ok(processInsert.sql.includes("invoice_supplier_divergence"));
 });
 
+test("an Exporter alias of the PO supplier matches the invoice without a supplier confirmation", async t => {
+  const { client, queries } = invoiceImportClient({ supplierMatchesExporter: false, exporterAliases: ["EXPORTER LTD"] });
+  const app = await invoiceImportApp(t, client);
+  const payload = invoicePayload();
+  payload.process.supplierText = payload.invoice.metadata.exporterText = "Exporter Ltd\nShangcheng Industrial Zone, 1418";
+  const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-exporter-alias" }, payload });
+
+  assert.equal(response.statusCode, 201, response.body);
+  const items = queries.find(query => query.sql.includes("FROM procurement.purchase_order_item item JOIN procurement.purchase_order po"));
+  assert.match(items.sql, /FROM catalog\.supplier_exporter_alias alias\s+WHERE alias\.supplier_entry_id = po\.supplier_entry_id AND alias\.status = 'ACTIVE'/u);
+  const processInsert = queries.find(query => query.sql.includes("INSERT INTO imports.import_process"));
+  assert.equal(processInsert.params[6], "00000000-0000-4000-8000-000000000003");
+  assert.equal(processInsert.params[10], false);
+  assert.ok(queries.some(query => query.sql.includes("INSERT INTO audit.audit_log")
+    && query.params.some(value => typeof value === "string" && value.includes('"supplierMatchedByAlias":true'))));
+});
+
+test("a short or unrelated Exporter alias still requires the supplier confirmation", async t => {
+  for (const exporterAliases of [["EXPORTE"], ["OTHER COMPANY LTD"]]) {
+    const { client } = invoiceImportClient({ supplierMatchesExporter: false, exporterAliases });
+    const app = await invoiceImportApp(t, client);
+    const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+      headers: { "x-test-subject": "writer", "idempotency-key": `invoice-alias-${exporterAliases[0].length}` },
+      payload: invoicePayload() });
+    assert.equal(response.statusCode, 400, response.body);
+    assert.equal(response.json().code, "INVOICE_SUPPLIER_MISMATCH_UNCONFIRMED");
+  }
+});
+
 test("invoice revision cancels the previous allocation and invoice before replacing them", async t => {
   const { client, queries, processId } = invoiceImportClient({ revision: true });
   const app = await invoiceImportApp(t, client);
@@ -825,6 +855,23 @@ test("invoice candidate batch returns requested POs in order with two read queri
   assert.match(dataQueries[0].sql, /source_status/u);
   assert.match(dataQueries[1].sql, /lifecycle_status = 'ACTIVE'.*DESC/su);
   assert.equal(connections(), 0);
+});
+
+test("invoice candidate batch returns the active Exporter aliases of each PO supplier", async t => {
+  const { app, dataQueries } = await invoiceCandidateBatchApp(t, {
+    dataQuery(sql) {
+      if (sql.includes("procurement.purchase_order_item item")) return { rows: [{ sourcePoNumber: "030201", id: poId,
+        lineNumber: 1, productCode: "PO-CODE", supplierEntryId: "supplier-1",
+        supplierExporterAliases: ["HEXING ELECTRICAL CO.,LTD"], remainingQuantity: "8" }], rowCount: 1 };
+      return { rows: [{ sourcePoNumber: "030201", purchaseOrderId: "po-active", poStatus: "ACTIVE" }], rowCount: 1 };
+    },
+  });
+  const response = await app.inject({ method: "POST", url: "/api/v1/purchase-orders/invoice-candidates/batch",
+    headers: { "x-test-subject": "writer" }, payload: { importer: "ELETRA MATRIZ", poNumbers: ["030201"] } });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.deepEqual(response.json().purchaseOrders[0].items[0].supplierExporterAliases, ["HEXING ELECTRICAL CO.,LTD"]);
+  assert.match(dataQueries[0].sql, /FROM catalog\.supplier_exporter_alias alias\s+WHERE alias\.supplier_entry_id = po\.supplier_entry_id AND alias\.status = 'ACTIVE'/u);
+  assert.match(dataQueries[0].sql, /AS "supplierExporterAliases"/u);
 });
 
 test("invoice candidate batch validates input and importer scope before data queries", async t => {

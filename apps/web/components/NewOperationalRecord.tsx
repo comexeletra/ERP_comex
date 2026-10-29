@@ -69,7 +69,7 @@ type InvoiceItemCandidate = { id: string; lineNumber: number; productCode: strin
   unit: string; remainingQuantity: string; purchaseOrderId: string; poNumber: string;
   poStatus?: "ACTIVE" | "CANCELLED" | "CLOSED" | "DELETED";
   supplierEntryId: string | null; supplierText: string | null; supplierName: string | null; supplierCode: string | null;
-  orderedQuantity: string; unitPrice: string | null; currency: string | null; poNcmCode: string | null;
+  supplierExporterAliases?: string[]; orderedQuantity: string; unitPrice: string | null; currency: string | null; poNcmCode: string | null;
   productId: string | null; productName: string | null; productNcmCode: string | null;
   manufacturer: string | null; manufacturerAddress: string | null; manufacturerCountry: string | null };
 type InvoiceMatch = { key: string; sourceRow: number; sourcePoNumber: string; poNumber: string; quantity: string;
@@ -96,7 +96,8 @@ function normalizeLookup(value: string | null | undefined): string {
 }
 
 function supplierMatchesExporter(candidate: InvoiceItemCandidate, exporter: string): boolean {
-  return invoiceSupplierMatchesExporter([candidate.supplierText, candidate.supplierName, candidate.supplierCode], exporter);
+  return invoiceSupplierMatchesExporter([candidate.supplierText, candidate.supplierName, candidate.supplierCode], exporter,
+    candidate.supplierExporterAliases);
 }
 
 const invoiceAuditConfirmationField = {
@@ -1225,7 +1226,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                 const selectedCandidate = match.candidates.find(candidate => candidate.id === match.itemId);
                 const auditPoints = selectedCandidate ? invoiceAuditPoints(
                   { productCode: match.productCode, exporter: invoiceDraft.exporterText, line: sourceLine ?? null },
-                  { ...selectedCandidate, supplierValues: [selectedCandidate.supplierName, selectedCandidate.supplierText, selectedCandidate.supplierCode] },
+                  { ...selectedCandidate, supplierValues: [selectedCandidate.supplierName, selectedCandidate.supplierText, selectedCandidate.supplierCode],
+                    exporterAliases: selectedCandidate.supplierExporterAliases },
                   { code: match.confirmCodeMismatch, supplier: match.confirmSupplierMismatch,
                     unit: match.confirmUnitMismatch, price: match.confirmPriceMismatch }) : [];
                 const progress = invoiceAuditProgress(auditPoints);

@@ -4,6 +4,7 @@ import type { Pool, PoolClient } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
 import { unitsDiffer } from "./unit-equivalence.js";
+import { exporterMatchesAlias } from "./exporter-alias.js";
 
 const quantity = z.string().trim().regex(/^(?:0|[1-9]\d{0,15})(?:[.,]\d{1,8})?$/u)
   .refine(value => !/^0(?:[.,]0+)?$/u.test(value)).transform(value => value.replace(",", "."));
@@ -205,6 +206,10 @@ export function problem(reply: FastifyReply, status: number, code: string, detai
 function normalizePoNumber(value: string): string {
   return value.toLocaleUpperCase("en-US").replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "");
 }
+/** Active Exporter aliases of the PO supplier (M074), read with the PO row aliased as po. */
+const exporterAliasesSql = `coalesce((SELECT array_agg(alias.alias ORDER BY alias.alias)
+  FROM catalog.supplier_exporter_alias alias
+  WHERE alias.supplier_entry_id = po.supplier_entry_id AND alias.status = 'ACTIVE'), '{}'::varchar[])`;
 function normalizeSupplier(value: string | null | undefined): string {
   return (value ?? "").toLocaleUpperCase("en-US").replace(/[^A-Z0-9]/gu, "");
 }
@@ -1199,12 +1204,13 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           throw new BusinessError(409, "INVOICE_DUPLICATE_UNCONFIRMED",
             "Esta invoice já está associada a outro IP ativo. Confirme a duplicidade para continuar.", duplicateIpNumbers);
         }
-        const matchedItems = await client.query<{ id: string; purchase_order_id: string; number: string; importer: string; lifecycle_status: string; quantity: string; product_code: string; source_status: string | null; unit: string; unit_price: string | null; currency_code: string | null; supplier_entry_id: string | null; supplier_text: string | null; supplier_name: string | null; supplier_code: string | null }>(
+        const matchedItems = await client.query<{ id: string; purchase_order_id: string; number: string; importer: string; lifecycle_status: string; quantity: string; product_code: string; source_status: string | null; unit: string; unit_price: string | null; currency_code: string | null; supplier_entry_id: string | null; supplier_text: string | null; supplier_name: string | null; supplier_code: string | null; exporter_aliases: string[] }>(
           `SELECT item.id, item.purchase_order_id, po.external_number AS number, po.importer, po.lifecycle_status,
                   item.ordered_quantity::text AS quantity, item.product_code, item.source_status,
                   item.unit, item.unit_price::text, item.currency_code,
                   po.supplier_entry_id, po.supplier_text,
-                  supplier.name AS supplier_name, supplier.code AS supplier_code
+                  supplier.name AS supplier_name, supplier.code AS supplier_code,
+                  ${exporterAliasesSql} AS exporter_aliases
            FROM procurement.purchase_order_item item JOIN procurement.purchase_order po ON po.id = item.purchase_order_id
            LEFT JOIN catalog.entry supplier ON supplier.id = po.supplier_entry_id
            WHERE item.id = ANY($1::uuid[]) ORDER BY item.id FOR UPDATE OF item, po`, [[...aggregated.keys()]],
@@ -1227,12 +1233,14 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           throw new BusinessError(409, "PO_ITEM_MISMATCH", `Linha ${row ?? "?"} da invoice: item cancelado na PO de origem.`);
         }
         const byItemId = new Map(matchedItems.rows.map(item => [item.id, item]));
-        const supplierByItemId = new Map(matchedItems.rows.map(item => [item.id, {
-          supplierEntryId: item.supplier_entry_id, supplierText: item.supplier_text,
-          supplierName: item.supplier_name, supplierCode: item.supplier_code,
-          matchesExporter: [item.supplier_text, item.supplier_name, item.supplier_code]
-            .some(value => normalizeSupplier(value) === normalizeSupplier(exporterText)),
-        }]));
+        const supplierByItemId = new Map(matchedItems.rows.map(item => {
+          const sameName = [item.supplier_text, item.supplier_name, item.supplier_code]
+            .some(value => normalizeSupplier(value) === normalizeSupplier(exporterText));
+          const matchedByAlias = !sameName && exporterMatchesAlias(exporterText, item.exporter_aliases ?? []);
+          return [item.id, { supplierEntryId: item.supplier_entry_id, supplierText: item.supplier_text,
+            supplierName: item.supplier_name, supplierCode: item.supplier_code,
+            matchesExporter: sameName || matchedByAlias, matchedByAlias }];
+        }));
         for (const assignment of invoiceAssignments.data) {
           const item = byItemId.get(assignment.itemId);
           if (!item || item.product_code !== assignment.poProductCode
@@ -1427,6 +1435,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
                   poSupplierName: supplierByItemId.get(item.id)?.supplierName,
                   poSupplierCode: supplierByItemId.get(item.id)?.supplierCode,
                   confirmedSupplierMismatch: assignment.confirmSupplierMismatch,
+                  supplierMatchedByAlias: supplierByItemId.get(item.id)?.matchedByAlias === true,
                   confirmedUnitMismatch: assignment.confirmUnitMismatch === true,
                   confirmedPriceMismatch: assignment.confirmPriceMismatch === true })) }, auth.actor, body.process.reason);
         }
@@ -1505,6 +1514,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
                 po.lifecycle_status AS "poStatus",
                 po.supplier_entry_id AS "supplierEntryId", po.supplier_text AS "supplierText",
                 supplier.name AS "supplierName", supplier.code AS "supplierCode",
+                ${exporterAliasesSql} AS "supplierExporterAliases",
                 product.id AS "productId", product.name AS "productName",
                 product.product_ncm_code AS "productNcmCode", product.manufacturer,
                 product.manufacturer_address AS "manufacturerAddress",

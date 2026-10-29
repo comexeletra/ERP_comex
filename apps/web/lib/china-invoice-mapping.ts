@@ -81,12 +81,29 @@ export function invoicePoPriceDiffers(invoicePrice: string, poPrice: string | nu
     && Number.isFinite(Number(poPrice)) && Math.abs(Number(invoicePrice) - Number(poPrice)) > 0.00000001;
 }
 
+/** Same rule as apps/api/src/exporter-alias.ts: an alias has at least 8 letters or digits. */
+const minimumExporterAliasLength = 8;
+
+/**
+ * The Exporter matches the PO supplier by code or name, or when it starts with
+ * one of that supplier's aliases (the Exporter also carries the address).
+ */
 export function invoiceSupplierMatchesExporter(
-  supplierValues: readonly (string | null | undefined)[], exporter: string,
+  supplierValues: readonly (string | null | undefined)[], exporter: string, aliases: readonly string[] = [],
 ): boolean {
   const normalize = (value: string) => value.toLocaleUpperCase("en-US").replace(/[^A-Z0-9]/gu, "");
   const normalizedExporter = normalize(exporter);
-  return supplierValues.some(value => Boolean(value && normalize(value) === normalizedExporter));
+  if (supplierValues.some(value => Boolean(value && normalize(value) === normalizedExporter))) return true;
+  const exporterPrefix = exporter.replace(/[^A-Za-z0-9]/gu, "").toUpperCase();
+  return aliases.some(alias => {
+    const prefix = alias.replace(/[^A-Za-z0-9]/gu, "").toUpperCase();
+    return prefix.length >= minimumExporterAliasLength && exporterPrefix.startsWith(prefix);
+  });
+}
+
+/** The company name is the first line of the Exporter; the address follows it. */
+export function invoiceExporterAliasSuggestion(exporter: string): string {
+  return exporter.split(/\r?\n/u).map(line => line.trim()).find(Boolean) ?? "";
 }
 
 export type InvoiceAuditPointKind = "CODE" | "SUPPLIER" | "UNIT" | "PRICE" | "CURRENCY";
@@ -96,14 +113,14 @@ export type InvoiceAuditPoint = { kind: InvoiceAuditPointKind; invoiceValue: str
 export function invoiceAuditPoints(
   invoice: { productCode: string; exporter: string; line: { unit: string; unitPrice: string } | null },
   poItem: { productCode: string; unit: string; unitPrice: string | null; currency: string | null;
-    supplierValues: readonly (string | null | undefined)[] },
+    supplierValues: readonly (string | null | undefined)[]; exporterAliases?: readonly string[] },
   confirmations: { code: boolean; supplier: boolean; unit: boolean; price: boolean },
 ): InvoiceAuditPoint[] {
   const points: InvoiceAuditPoint[] = [];
   if (invoicePoCodeDiffers(invoice.productCode, poItem.productCode)) {
     points.push({ kind: "CODE", invoiceValue: invoice.productCode, poValue: poItem.productCode, confirmed: confirmations.code });
   }
-  if (!invoiceSupplierMatchesExporter(poItem.supplierValues, invoice.exporter)) {
+  if (!invoiceSupplierMatchesExporter(poItem.supplierValues, invoice.exporter, poItem.exporterAliases)) {
     points.push({ kind: "SUPPLIER", invoiceValue: invoice.exporter,
       poValue: poItem.supplierValues.filter(Boolean).join(" · "), confirmed: confirmations.supplier });
   }

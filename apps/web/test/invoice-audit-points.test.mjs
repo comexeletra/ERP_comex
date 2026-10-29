@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { invoiceAuditPoints, invoiceAuditProgress, invoiceComparisonRows, invoicePoUnitDiffers } from "../lib/china-invoice-mapping.ts";
+import { invoiceAuditPoints, invoiceAuditProgress, invoiceComparisonRows, invoiceExporterAliasSuggestion, invoicePoUnitDiffers,
+  invoiceSupplierMatchesExporter } from "../lib/china-invoice-mapping.ts";
 
 const unconfirmed = { code: false, supplier: false, unit: false, price: false };
 const poItem = { productCode: "3080500380", unit: "UN", unitPrice: "1.5", currency: "CNY",
@@ -79,4 +80,15 @@ test("equivalent units of the same measure are not a divergence", () => {
   assert.equal(invoiceComparisonRows({ description: "", ncm: "", unit: "PCS", unitPrice: "1.5", manufacturer: "" },
     { description: "", unit: "UN", ncmCode: null, unitPrice: "1.5", currency: "CNY" },
     { name: null, ncmCode: null, manufacturer: null }).find(row => row.field === "unit").differs, false);
+});
+
+test("an Exporter alias of the PO supplier removes the supplier point; a short one does not", () => {
+  const withAddress = { ...invoice, exporter: "HEXING ELECTRICAL CO.,LTD\nSHANGCHENG INDUSTRIAL ZONE, 1418", line: null };
+  assert.deepEqual(invoiceAuditPoints(withAddress, { ...poItem, exporterAliases: ["Hexing Electrical Co., Ltd"] }, unconfirmed), []);
+  assert.deepEqual(invoiceAuditPoints(withAddress, { ...poItem, exporterAliases: ["HEXING"] }, unconfirmed)
+    .map(point => point.kind), ["SUPPLIER"]);
+  assert.equal(invoiceSupplierMatchesExporter(["EX000135"], withAddress.exporter, ["HEXING ELECTRICAL CO.,LTD"]), true);
+  assert.equal(invoiceSupplierMatchesExporter(["EX000135"], withAddress.exporter), false);
+  assert.equal(invoiceExporterAliasSuggestion(withAddress.exporter), "HEXING ELECTRICAL CO.,LTD");
+  assert.equal(invoiceExporterAliasSuggestion("  Exporter Ltd, Shangcheng  "), "Exporter Ltd, Shangcheng");
 });
