@@ -19,6 +19,7 @@ import { registerFollowupRoutes } from "../dist/followup.js";
 import { registerE2eTargetRoutes } from "../dist/e2e-targets.js";
 import { registerPurchaseRequestRoutes } from "../dist/purchase-requests.js";
 import { registerShipmentLineRoutes } from "../dist/shipment-lines.js";
+import { registerSupplierAliasRoutes } from "../dist/supplier-aliases.js";
 
 // Routes called by the Next.js app. Fastify's own router is checked, so a
 // missing registration or a changed method fails before a browser test.
@@ -97,6 +98,8 @@ const webRoutes = [
   ["POST", "/api/v1/admin/users/:id/reset-password"],
   ["GET", "/api/v1/admin/importers"], ["GET", "/api/v1/admin/outbox"],
   ["GET", "/api/v1/suppliers/options"], ["GET", "/api/v1/products/options"],
+  ["GET", "/api/v1/suppliers/:id/exporter-aliases"], ["POST", "/api/v1/suppliers/:id/exporter-aliases"],
+  ["POST", "/api/v1/suppliers/:id/exporter-aliases/:aliasId/remove"],
   ...["suppliers", "products", "ncms"].flatMap(resource => [
     ["GET", `/api/v1/${resource}`],
     ["GET", `/api/v1/${resource}/candidates`], ["GET", `/api/v1/${resource}/:id`],
@@ -133,6 +136,7 @@ test("all Next.js API calls have a registered API method and path", async t => {
   await registerE2eTargetRoutes(app, unusedPool);
   await registerPurchaseRequestRoutes(app, unusedPool);
   await registerShipmentLineRoutes(app, unusedPool);
+  await registerSupplierAliasRoutes(app, unusedPool);
   for (const [method, url] of webRoutes) {
     assert.equal(app.hasRoute({ method, url }), true, `${method} ${url} is missing`);
   }

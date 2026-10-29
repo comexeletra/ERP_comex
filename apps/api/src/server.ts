@@ -22,6 +22,7 @@ import { registerFollowupRoutes } from "./followup.js";
 import { registerPurchaseRequestRoutes } from "./purchase-requests.js";
 import { registerExportJobRoutes } from "./export-jobs.js";
 import { registerShipmentLineRoutes } from "./shipment-lines.js";
+import { registerSupplierAliasRoutes } from "./supplier-aliases.js";
 import { registerApiErrorHandler } from "./api-error-response.js";
 import { gatewayTokenMatches, rateLimitKey } from "./rate-limit-key.js";
 
@@ -110,6 +111,7 @@ await registerE2eTargetRoutes(app, pool);
 await registerPurchaseRequestRoutes(app, pool);
 await registerExportJobRoutes(app, pool);
 await registerShipmentLineRoutes(app, pool);
+await registerSupplierAliasRoutes(app, pool);
 
 app.get("/health/live", async () => ({ status: "ok" }));
 
