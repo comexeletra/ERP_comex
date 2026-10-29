@@ -125,6 +125,7 @@ Se algo essencial não estiver claro, pergunte antes de supor.
 - O banco `erp_po_totvs_test` é o de **produção**, apesar do nome; o de homologação é `erp_po_totvs_hml`. Confira o nome do banco antes de cada consulta ou escrita.
 - No Windows, gere o pacote de um release com `git -c core.autocrlf=false archive`. Sem essa opção as fontes chegam à VPS em CRLF e o SHA-256 das migrations diverge do registrado no ledger.
 - Para rodar scripts Node com o ambiente HML, use `node --env-file=/etc/import-erp/homologation-db.env`; carregar esse arquivo com `source` no shell não exporta `DATABASE_URL`.
+- Comandos longos na VPS (backup, ensaio de migration, release) podem perder a saída se a conexão SSH cair. Rode-os com `setsid nohup bash arquivo > log 2>&1 < /dev/null &` e leia o log depois.
 - Não envie um script à VPS por stdin (`ssh ... 'bash -s' < script`) se ele usa `docker exec -i`: o primeiro `docker exec -i` consome o restante do script, que para sem erro. Grave o script num arquivo na VPS e rode `bash arquivo < /dev/null`. No Git Bash, um comando `ssh` cujo argumento remoto começa com `/` precisa de `MSYS_NO_PATHCONV=1`.
 - O domínio do Preview fica atrás da autenticação da Vercel. Sem `gh` nem `vercel` instalados, use `npx --yes vercel@50.1.6 ls erp-comex --environment preview` para conferir o status e `MSYS_NO_PATHCONV=1 npx --yes vercel@50.1.6 curl /login --deployment <url> -- -sL` para ler uma página. No Git Bash, sem `MSYS_NO_PATHCONV=1`, o caminho iniciado por `/` é convertido e a página inicial é retornada no lugar dele.
 
@@ -158,6 +159,12 @@ Se algo essencial não estiver claro, pergunte antes de supor.
 
 - O tipo de demanda é da PO, não do produto: a HQ planeja o pedido inteiro a partir do estoque (MTS, 30 dias no T3) ou sob encomenda (Não MTS, 45 dias). Ele fica só em `procurement.purchase_order.demand_type` (M071), e todo produto da PO o herda nas leituras (`po.demand_type`). Não volte a gravá-lo no produto nem a oferecê-lo como campo do produto; as rotas de produto o recusam.
 - Ele é diferente da origem da demanda (`DEMAND`: plano comercial, pós-venda, projetos), que continua sendo campo do produto.
+
+## Carga de invoice (INV)
+
+- Unidades do mesmo grupo são equivalentes para todos os fornecedores e produtos (peça `UN, UND, UNID, UNIDADE, PC, PCS, PCE, PECA, PECAS, UNIT, UNITS, EA`; quilo `KG, KGS`; metro `M, MT, MTS`). A lista fica em `apps/api/src/unit-equivalence.ts` e no espelho `apps/web/lib/china-invoice-mapping.ts`, e `test/unit-equivalence.test.mjs` falha se as duas divergirem.
+- O Exporter da invoice traz o nome seguido do endereço. Ele corresponde ao fornecedor da PO quando bate com o código ou o nome, ou quando começa com um apelido ativo desse fornecedor (`catalog.supplier_exporter_alias`, M074, ao menos 8 letras ou números). Compare sempre com o fornecedor da PO escolhida, nunca procure o apelido no cadastro inteiro: vários fornecedores têm o mesmo nome (por exemplo, EX000495, EX000767 e EX000135 da HEXING). Apelidos são editados por Master, Administrador e Compras; remover mantém o registro como `REMOVED`.
+- A API recalcula unidade e fornecedor na gravação e não confia nas confirmações enviadas pela tela.
 
 ## Alíquotas por NCM (II, IPI, PIS/COFINS)
 

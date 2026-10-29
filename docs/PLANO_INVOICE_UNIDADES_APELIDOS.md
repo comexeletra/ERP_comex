@@ -5,7 +5,7 @@
 | Data | 2026-10-29 |
 | Branch de trabalho | `homologacao` |
 | Ambiente de validação | HML (VPS `import-erp-hml-api` + banco `erp_po_totvs_hml`) e Preview Vercel |
-| Status | **Aprovado; em execução** |
+| Status | **Implementado e publicado em HML/Preview; teste de tela da IPH034A pendente** |
 
 ## 1. Resumo
 
@@ -70,3 +70,12 @@ Confirmação em lote, limite de chamadas por usuário, remoção da rota GET an
 ## 5. Dados de aceite no HML
 
 Decisão do usuário (2026-10-29): criar uma PO de teste só para a IPH034A, sem mexer na simulação dos IPs `030201-A`…`G`. Como a célula PO da invoice traz `PO030201` e a carga exige o mesmo número, a PO de teste usa o número 030201 numa importadora diferente da PO da simulação, com os 196 produtos da invoice (inclusive 2054300540) e fornecedor EX000135. A carga então pede a confirmação de CNPJ da importadora, que fica registrada na auditoria. Ao final, a invoice e as alocações de teste são canceladas e o IP e a PO de teste ficam `DELETED`.
+
+## 6. Resultado da execução
+
+- Commits: plano `4c28ba4`; unidades `5bc6105`; M074 e rotas `6135752`; correspondência `a97ea01`; telas `32ad8e3`; dados de aceite `a1efd37`.
+- HML: backup, ensaio com ROLLBACK e M074 aplicada (ledger 74); release `hml-release-32ad8e3` ativo, com o worker no mesmo release. Detalhes em `deploy/hostinger/README.md`.
+- Preview `dpl_BdaLezq47JsVQJ7f1Ntun3yDoRyK` em `Ready`, branch `homologacao`, commit `32ad8e3`.
+- Aceite pela API do release com as funções da tela: na IPH034A, 0 pontos de unidade (antes 196) e 0 de fornecedor com o apelido (196 sem ele); nenhum problema de destino nem de código.
+- Pendente: o teste de tela no Preview (cadastrar o apelido pelo botão e revisar as linhas), que precisa de uma sessão de usuário.
+- Achados fora do escopo: (1) a IPH034A ainda pede 135 confirmações de preço, porque os preços da invoice diferem dos da PO 030201 (106 acima de 0,01%; alguns casos são só arredondamento do preço calculado pela planilha); (2) o parser lê o número da invoice como `INVOICE`, porque o título da planilha bate com o rótulo `INVOICE:`; o número real é `PWBR260205-10A`.
