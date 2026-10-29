@@ -1,5 +1,11 @@
 # API ERP na VPS Hostinger
 
+## Invoice sem alterar a PO no HML (2026-10-29)
+
+O commit `5615d9b` segue a etapa 1 de `docs/PLANO_INVOICE_DISTRIBUICAO_POS.md`: a carga da invoice deixa de alterar o item da PO (a API recusa `catalogUpdates.poItems` com `INVOICE_PO_ITEM_UPDATE_NOT_ALLOWED`) e só completa NCM e dados do fabricante vazios no cadastro do produto. Não há migration. O web novo não envia `poItems`, que a API anterior exigia; por isso a API foi publicada antes do push.
+
+O release `/opt/import-erp/apps/api/hml-release-5615d9b` foi montado com `git -c core.autocrlf=false archive` (nenhuma fonte com CR), reaproveitando o `node_modules` de `hml-release-32ad8e3` (dependências iguais), compilado na VPS e ativado pelo drop-in `zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-release-5615d9b.conf`; o worker foi movido com `enable-homologation-export-worker.sh 5615d9b`. Drop-ins e `ExecStart` anteriores: `/var/backups/import-erp/hml-invoice-po-reference-5615d9b-predeploy`. Rollback somente do código: remova o drop-in `5615d9b`, execute `systemctl daemon-reload`, reinicie `import-erp-hml-api` (volta a `hml-release-32ad8e3`) e rode `enable-homologation-export-worker.sh 32ad8e3`. `/health/live` respondeu 200 e `POST /api/v1/processes/import-invoice` sem sessão respondeu 401. O Preview `erp-comex-m3aly6sy3` (branch `homologacao`, commit `5615d9b`) ficou `Ready`. Produção, `main` e as variáveis da Vercel não foram alteradas.
+
 ## Unidades equivalentes e apelidos de Exporter (M074) no HML (2026-10-29)
 
 Os commits `5bc6105` (unidades), `6135752` (API, M074), `a97ea01` (correspondência na carga da invoice) e `32ad8e3` (web) seguem `docs/PLANO_INVOICE_UNIDADES_APELIDOS.md`. Unidades do mesmo grupo (peça `UN/PC/PCS…`, quilo `KG/KGS`, metro `M/MT/MTS`) deixam de pedir confirmação na carga da invoice. Cada fornecedor global ganha apelidos de Exporter (`GET|POST /api/v1/suppliers/:id/exporter-aliases`, `POST …/:aliasId/remove`; escrita por Master, Administrador e Compras). O Exporter corresponde ao fornecedor da PO quando começa com um apelido ativo desse fornecedor, e então o IP grava o fornecedor do cadastro sem a marca de divergência.
