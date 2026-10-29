@@ -4,7 +4,7 @@
 |---|---|
 | Data | 2026-10-29 |
 | Branch de trabalho | `homologacao` |
-| Status | Etapa 1 publicada em HML/Preview (`5615d9b`); etapa 2 em especificação, aguardando decisões |
+| Status | Etapa 1 publicada em HML/Preview (`5615d9b`); etapa 2 especificada, aguardando aprovação |
 
 ## 1. Contexto
 
@@ -29,42 +29,58 @@ No sistema, a parte "linha a mais com o restante" já é automática: cada embar
 
 ### Objetivo
 
-Permitir que o analista, a partir da divergência encontrada, distribua a quantidade de cada linha da invoice entre as POs que têm saldo daquele produto, com o sistema sugerindo a distribuição e mostrando o saldo antes e depois, sem planilha paralela.
+Permitir que o analista, a partir da divergência encontrada, decida quanto de cada linha da invoice vai para cada PO com saldo daquele produto, com o sistema sugerindo a distribuição e mostrando o saldo antes e depois, sem planilha paralela. A invoice fica gravada como veio e a quantidade pedida da PO continua a do Protheus; só o saldo da PO baixa pelo que foi distribuído.
 
-### Requisitos propostos
+### Decisões (2026-10-29)
 
-1. **Dividir a linha.** Cada linha da revisão ganha "Dividir entre POs": o analista acrescenta partes, escolhe PO e item e informa a quantidade de cada uma. A soma das partes tem de bater com a quantidade da linha (regra que já existe).
-2. **POs candidatas.** Além da PO citada na invoice, a escolha mostra as POs ativas da mesma importadora que têm o produto com saldo, do mesmo fornecedor da PO citada (as regras M061/M062 exigem um fornecedor por IP).
-3. **Sugestão automática.** Quando a PO citada não tem saldo para a linha inteira, o sistema propõe: primeiro o saldo da PO citada, depois o restante nas outras POs com saldo, na ordem definida na decisão 2. O analista aceita, ajusta ou desfaz.
-4. **Ponto de auditoria.** Parte destinada a uma PO diferente da citada na invoice vira o ponto "PO diferente da invoice", com os dois números lado a lado, e exige confirmação. A API grava a PO citada e a PO escolhida em cada associação (o metadado já tem `sourcePoNumber` e `poNumber`) e recalcula tudo na gravação.
-5. **Resumo por produto.** Um quadro acima das linhas mostra, por produto: quantidade da invoice, saldo de cada PO antes, quanto esta invoice tira de cada uma e o saldo depois. É a conta que hoje se faz com PROCV.
-6. **Saldo restante.** O restante de cada item continua na PO, disponível para o próximo IP, como já acontece.
-7. **Excedente.** Quando a soma dos saldos de todas as POs candidatas for menor que a quantidade da invoice, ver a decisão 3.
+1. Candidatas: só as POs citadas na invoice (em qualquer linha), ativas, da mesma importadora e do mesmo fornecedor, que tenham o produto com saldo. POs que não estão na invoice não recebem quantidade dela (correção do usuário em 2026-10-29).
+2. Sugestão: primeiro a PO citada na linha até o saldo; o restante nas outras POs citadas na invoice, da mais antiga para a mais nova (data da PO; sem data, data de cadastro).
+3. O analista decide a quantidade de cada PO; a soma pode ser diferente da quantidade da linha da invoice.
+4. O saldo do item da PO é o limite de cada parte: não se distribui mais que o saldo.
+5. Quando a soma distribuída difere da invoice, gravar exige confirmação e um motivo escrito por linha.
 
-### Decisões pendentes
+### Requisitos
 
-1. Outras POs: qualquer PO ativa da importadora com o produto e o mesmo fornecedor (proposta), ou só as citadas na invoice?
-2. Ordem da sugestão: PO mais antiga primeiro, pela data da PO (proposta), ou outra ordem (número da PO, ETA, prioridade)?
-3. Excedente: bloquear a gravação até a PO ser corrigida no Protheus ou a invoice ser corrigida (proposta), ou aceitar o excedente como pendência registrada?
+1. **Partes da linha.** Cada linha da revisão tem uma ou mais partes (PO, item e quantidade). "Dividir entre POs" acrescenta uma parte; cada parte pode ser removida. As partes que vêm da célula PO da invoice continuam sendo o ponto de partida.
+2. **POs candidatas.** A escolha de item de cada parte mostra os itens do mesmo produto em todas as POs citadas na invoice (decisão 1), com saldo e data da PO. A rota de lote atual já carrega essas POs; ela passa a devolver também a data da PO. Não há rota nova.
+3. **Sugerir distribuição.** Botão por linha (e um para todas as linhas com falta de saldo) que monta as partes pela decisão 2. O analista aceita, ajusta ou desfaz.
+4. **Ponto "PO diferente da linha".** Parte numa PO citada em outra linha da invoice, e não na desta, aparece na auditoria da linha, com os dois números, e exige confirmação.
+5. **Ponto "quantidade distribuída diferente da invoice".** Quando a soma das partes difere da linha (para mais ou para menos, inclusive linha sem nenhuma parte), a linha mostra invoice × distribuído e exige confirmação e motivo (mínimo de 3 caracteres).
+6. **Limite de saldo.** Nenhuma parte passa do saldo do item; a soma das partes no mesmo item, em todas as linhas, também não.
+7. **Resumo por produto.** Quadro acima das linhas: por produto, quantidade da invoice, total distribuído e, por PO, saldo antes, quanto esta invoice tira e saldo depois.
+8. **Gravação.** A API aceita associação em outra PO citada na invoice quando confirmada, e recusa PO que não esteja em nenhuma célula PO da invoice; e soma diferente da linha quando confirmada com motivo; recalcula fornecedor, importadora, saldos e confirmações. O metadado guarda, por linha, quantidade da invoice, quantidade distribuída, confirmação e motivo; cada associação guarda a PO citada e a escolhida. Auditoria e outbox como hoje.
 
 ### Restrições
 
-- A PO não é alterada pela invoice (etapa 1).
-- Um fornecedor por IP (M061/M062); POs de outro fornecedor não entram como candidatas.
-- A API recalcula saldos, POs e confirmações na gravação e não confia na tela.
-- Textos nos três dicionários.
+- A invoice não altera a PO (etapa 1); a quantidade pedida não muda.
+- Um fornecedor por IP (M061/M062); POs de outro fornecedor não são candidatas.
+- A API não confia na tela: recusa PO que não esteja citada na invoice, de outra importadora ou fornecedor, parte acima do saldo, PO diferente sem confirmação e diferença de quantidade sem confirmação e motivo.
+- Os totais da invoice (cabeçalho e linhas) continuam conferidos contra o documento, sem mudança.
+- Sem migration: as decisões ficam no metadado da invoice e na auditoria.
+- Textos nos três dicionários; regras de cálculo em `lib/` com `m` por parâmetro.
 
-### Critérios de aceite (rascunho)
+### Critérios de aceite
 
 | # | Critério | Teste |
 |---|---|---|
-| 1 | Uma linha pode ser dividida entre a PO citada e outra PO do mesmo fornecedor com saldo | API e web |
-| 2 | A sugestão preenche a PO citada até o saldo e o restante nas outras POs, na ordem decidida | web (função de `lib/`) |
-| 3 | Parte em PO diferente da citada exige confirmação; sem ela a API responde 400 | API |
-| 4 | PO de outro fornecedor ou de outra importadora é recusada | API |
-| 5 | O resumo por produto mostra saldo antes, desta invoice e depois por PO | web |
-| 6 | Excedente segue a decisão 3 | API e web |
-| 7 | Rota nova de candidatos por produto registrada no contrato web/API | `web-route-contract.test.mjs` |
+| 1 | As candidatas de uma linha são os itens do produto nas POs citadas na invoice, do mesmo fornecedor, com saldo; a rota de lote devolve a data da PO | API e web (`lib/`) |
+| 2 | A sugestão preenche a PO citada até o saldo e o restante nas outras POs pela data | web (`lib/`) |
+| 3 | Parte em outra PO citada na invoice sem confirmação: 400; com confirmação: 201 e metadado com as duas POs | API |
+| 4 | PO não citada na invoice, de outro fornecedor ou importadora, ou parte acima do saldo: recusada | API |
+| 5 | Soma diferente da linha sem confirmação ou sem motivo: 400; com ambos: 201 e motivo no metadado e na auditoria | API |
+| 6 | Linha sem parte só grava com confirmação e motivo | API e web |
+| 7 | O resumo por produto mostra saldo antes, desta invoice e depois por PO | web (`lib/`) |
+| 8 | Contrato web/API da rota de lote com a data da PO; textos nos três idiomas | `web-route-contract.test.mjs`, i18n |
+| 9 | Aceite no HML com a IPH034A: uma linha dividida entre duas POs e uma linha com quantidade diferente, confirmadas | validação manual no Preview |
+
+### Plano
+
+1. Funções de `lib/` (sugestão, resumo por produto, pontos de auditoria novos) e testes.
+2. Data da PO na rota de lote e testes.
+3. Gravação: validações novas e metadado, com testes.
+4. Tela: partes, sugestão, pontos novos e resumo; textos.
+5. Verificação completa, release da API no HML, push e Preview.
+6. Dados de aceite no HML: como a IPH034A cita só a PO 030201, a divisão entre POs é exercitada com uma cópia da invoice de teste que cite também uma segunda PO de teste do EX000135 na GALPAO-FORTALEZA; a diferença de quantidade é exercitada na própria IPH034A.
 
 ### Fora do escopo
 
