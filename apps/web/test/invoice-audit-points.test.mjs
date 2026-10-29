@@ -1,18 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { invoiceAuditPoints, invoiceAuditProgress, invoiceComparisonRows } from "../lib/china-invoice-mapping.ts";
+import { invoiceAuditPoints, invoiceAuditProgress, invoiceComparisonRows, invoicePoUnitDiffers } from "../lib/china-invoice-mapping.ts";
 
 const unconfirmed = { code: false, supplier: false, unit: false, price: false };
 const poItem = { productCode: "3080500380", unit: "UN", unitPrice: "1.5", currency: "CNY",
   supplierValues: ["HEXING ELECTRICAL CO.,LTD HANGZHOU", null, "EX000135"] };
 const invoice = { productCode: "3080500380", exporter: "HEXING ELECTRICAL CO.,LTD SHANGCHENG",
-  line: { unit: "PCS", unitPrice: "1.5" } };
+  line: { unit: "KG", unitPrice: "1.5" } };
 
 test("invoice audit lists each divergence with both values side by side", () => {
   assert.deepEqual(invoiceAuditPoints(invoice, poItem, unconfirmed), [
     { kind: "SUPPLIER", invoiceValue: "HEXING ELECTRICAL CO.,LTD SHANGCHENG",
       poValue: "HEXING ELECTRICAL CO.,LTD HANGZHOU · EX000135", confirmed: false },
-    { kind: "UNIT", invoiceValue: "PCS", poValue: "UN", confirmed: false },
+    { kind: "UNIT", invoiceValue: "KG", poValue: "UN", confirmed: false },
   ]);
 });
 
@@ -43,14 +43,14 @@ test("invoice audit skips line checks while the invoice line is unknown", () => 
 
 test("invoice comparison lines up invoice, PO item and product and highlights divergent fields", () => {
   const rows = invoiceComparisonRows(
-    { description: "SILICONE BUTTON", ncm: "4016.99.90", unit: "PCS", unitPrice: "1.5", manufacturer: "HEXING" },
+    { description: "SILICONE BUTTON", ncm: "4016.99.90", unit: "KG", unitPrice: "1.5", manufacturer: "HEXING" },
     { description: "BOTAO SILICONE", unit: "UN", ncmCode: "40169990", unitPrice: "1.5", currency: "CNY" },
     { name: "BOTAO SILICONE DO SENSOR", ncmCode: "40169100", manufacturer: null },
   );
   assert.deepEqual(rows, [
     { field: "description", invoice: "SILICONE BUTTON", poItem: "BOTAO SILICONE", product: "BOTAO SILICONE DO SENSOR", differs: false },
     { field: "ncm", invoice: "4016.99.90", poItem: "40169990", product: "40169100", differs: true },
-    { field: "unit", invoice: "PCS", poItem: "UN", product: "", differs: true },
+    { field: "unit", invoice: "KG", poItem: "UN", product: "", differs: true },
     { field: "price", invoice: "1.5 CNY", poItem: "1.5 CNY", product: "", differs: false },
     { field: "manufacturer", invoice: "HEXING", poItem: "", product: "", differs: false },
   ]);
@@ -64,4 +64,19 @@ test("invoice comparison tolerates a missing invoice line and missing PO values"
     ["description", "", "ITEM", false], ["ncm", "", "", false], ["unit", "", "UN", false],
     ["price", "", "", false], ["manufacturer", "", "", false],
   ]);
+});
+
+test("equivalent units of the same measure are not a divergence", () => {
+  for (const [invoiceUnit, poUnit] of [["PCS", "UN"], ["pc", "UN"], ["Pç", "UNID"], ["PEÇA", "PCS"], ["KGS", "KG"],
+    ["MTS", "M"], ["u.n.", "UN"]]) {
+    assert.equal(invoicePoUnitDiffers(invoiceUnit, poUnit), false, `${invoiceUnit} × ${poUnit}`);
+  }
+  for (const [invoiceUnit, poUnit] of [["PCS", "KG"], ["KG", "M"], ["BOX", "PCS"], ["SET", "UN"]]) {
+    assert.equal(invoicePoUnitDiffers(invoiceUnit, poUnit), true, `${invoiceUnit} × ${poUnit}`);
+  }
+  assert.deepEqual(invoiceAuditPoints({ ...invoice, line: { unit: "PCS", unitPrice: "1.5" } }, poItem, unconfirmed)
+    .map(point => point.kind), ["SUPPLIER"]);
+  assert.equal(invoiceComparisonRows({ description: "", ncm: "", unit: "PCS", unitPrice: "1.5", manufacturer: "" },
+    { description: "", unit: "UN", ncmCode: null, unitPrice: "1.5", currency: "CNY" },
+    { name: null, ncmCode: null, manufacturer: null }).find(row => row.field === "unit").differs, false);
 });

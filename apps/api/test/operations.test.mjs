@@ -218,6 +218,18 @@ test("invoice import requires unit and CNY price confirmations per destination",
       && value.includes('"confirmedPriceMismatch":true'))), true);
 });
 
+test("invoice import accepts equivalent units without a unit confirmation", async t => {
+  const { client, queries } = invoiceImportClient({ poUnit: "UN" });
+  const app = await invoiceImportApp(t, client);
+  const payload = invoicePayload();
+  Object.assign(payload.invoice.metadata.lines[0], { unit: "PCS" });
+  const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-equivalent-unit" }, payload });
+  assert.equal(response.statusCode, 201, response.body);
+  assert.equal(queries.some(query => query.sql.includes("INSERT INTO audit.audit_log")
+    && query.params.some(value => typeof value === "string" && value.includes('"confirmedUnitMismatch":true'))), false);
+});
+
 test("invoice import does not require a price confirmation for a non-CNY PO", async t => {
   const { client } = invoiceImportClient({ poUnit: "PCS", poUnitPrice: "3", poCurrency: "USD" });
   const app = await invoiceImportApp(t, client);

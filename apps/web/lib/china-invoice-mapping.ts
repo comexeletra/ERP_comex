@@ -59,8 +59,21 @@ export function invoicePoCodeDiffers(invoiceProductCode: string, poProductCode: 
     !== poProductCode.trim().toLocaleUpperCase("en-US");
 }
 
+/** Same groups as apps/api/src/unit-equivalence.ts: units of one measure for every supplier and product. */
+export const equivalentUnitGroups: readonly (readonly string[])[] = [
+  ["UN", "UND", "UNID", "UNIDADE", "PC", "PCS", "PCE", "PECA", "PECAS", "UNIT", "UNITS", "EA"],
+  ["KG", "KGS"],
+  ["M", "MT", "MTS"],
+];
+
+function normalizeUnit(value: string): string {
+  return value.normalize("NFD").replace(/[̀-ͯ]/gu, "").toLocaleUpperCase("en-US").replace(/[^A-Z0-9]/gu, "");
+}
+
 export function invoicePoUnitDiffers(invoiceUnit: string, poUnit: string): boolean {
-  return invoiceUnit.trim().toLocaleUpperCase("en-US") !== poUnit.trim().toLocaleUpperCase("en-US");
+  const invoice = normalizeUnit(invoiceUnit), po = normalizeUnit(poUnit);
+  if (invoice === po) return false;
+  return !equivalentUnitGroups.some(group => group.includes(invoice) && group.includes(po));
 }
 
 export function invoicePoPriceDiffers(invoicePrice: string, poPrice: string | null, poCurrency: string | null): boolean {

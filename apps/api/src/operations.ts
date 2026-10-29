@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Pool, PoolClient } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
+import { unitsDiffer } from "./unit-equivalence.js";
 
 const quantity = z.string().trim().regex(/^(?:0|[1-9]\d{0,15})(?:[.,]\d{1,8})?$/u)
   .refine(value => !/^0(?:[.,]0+)?$/u.test(value)).transform(value => value.replace(",", "."));
@@ -1246,7 +1247,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
               "Confirme a divergencia entre o Exporter da invoice e o fornecedor da PO.");
           }
           const sourceLine = lineByRow.get(assignment.sourceRow);
-          if (sourceLine?.unit && item.unit && sourceLine.unit.trim().toUpperCase() !== item.unit.trim().toUpperCase()
+          if (sourceLine?.unit && item.unit && unitsDiffer(sourceLine.unit, item.unit)
             && assignment.confirmUnitMismatch !== true) {
             throw new BusinessError(400, "INVOICE_UNIT_MISMATCH_UNCONFIRMED",
               `Linha ${assignment.sourceRow}: confirme a divergência de unidade com a PO.`);
