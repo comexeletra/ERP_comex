@@ -4,7 +4,7 @@
 |---|---|
 | Data | 2026-10-29 |
 | Branch de trabalho | `homologacao` |
-| Status | Etapa 1 publicada em HML/Preview (`5615d9b`); etapa 2 especificada, aguardando aprovação |
+| Status | Etapa 1 publicada em HML/Preview (`5615d9b`); etapa 2 especificada e fechada com o usuário; implementação não iniciada |
 
 ## 1. Contexto
 
@@ -90,3 +90,60 @@ Permitir que o analista decida quanto de cada linha da invoice baixa do saldo da
 ### Fora do escopo
 
 Alterar PO pela invoice, destinar quantidade a PO não citada na linha, tolerância de preço, correção do número da invoice lido como `INVOICE` (tratados à parte).
+
+## 4. Guia de implementação da etapa 2
+
+Ponto de partida: branch `homologacao` no commit deste plano. API e web do HML no release `5615d9b` (etapa 1). Antes de começar, leia `AGENTS.md` (seções "Carga de invoice (INV)" e "Homologação antes da produção") e confira `git status --short --branch`.
+
+### Onde está cada regra hoje
+
+| Regra | Arquivo e ponto |
+|---|---|
+| Rota de gravação da invoice | `apps/api/src/operations.ts`, `POST /api/v1/processes/import-invoice` |
+| Associação só na PO da célula da linha (`INVOICE_LINE_MISMATCH`) | mesma rota, laço `for (const assignment of invoiceAssignments.data)` |
+| Divergência de código com confirmação (`INVOICE_CODE_MISMATCH_UNCONFIRMED`, campo `confirmCodeMismatch`) | mesmo laço; sai com a decisão 7 |
+| Soma das associações igual à linha (`INVOICE_LINE_QUANTITY_MISMATCH`) | logo após o laço; passa a aceitar diferença confirmada com motivo |
+| Saldo, fornecedor, unidade e preço por item travado | mesma rota, laço sobre `matchedItems` (`FOR UPDATE OF item, po`) |
+| Candidatos da revisão | `POST /api/v1/purchase-orders/invoice-candidates/batch` (mesmo arquivo); devolve `remainingQuantity` por item e `poExists`/`poStatus` por PO, só da importadora pedida |
+| Classificação do destino da linha | `apps/web/lib/china-invoice-mapping.ts`: `classifyInvoiceDestination`, `suggestInvoicePoItem`, `invoiceCandidatesForProduct`, `invoicePoCodeDiffers` |
+| Pontos de auditoria da linha | `invoiceAuditPoints` (tipo `InvoiceAuditPointKind`: `CODE`, `SUPPLIER`, `UNIT`, `PRICE`, `CURRENCY`) |
+| Tela de revisão | `apps/web/components/NewOperationalRecord.tsx`: `loadInvoiceCandidates`, montagem de `matches` ao carregar o arquivo, `revalidateInvoiceMatches`, tabela `invoice-match-table`, validação antes de gravar (`t.reviewAllLines`) e montagem do `payload` |
+| Leitura da célula PO | `apps/web/lib/china-invoice-xlsx.ts`, `parseInvoicePoAssignments` |
+
+### Mudanças por etapa
+
+1. **`lib/` (web).** Em `china-invoice-mapping.ts`:
+   - destino por chave PO + código: os candidatos de uma linha passam a ser só os itens da PO citada com o mesmo código normalizado (`invoicePoCodeDiffers` = falso), em ordem de `lineNumber`;
+   - função que preenche os itens da chave em ordem até a quantidade decidida e devolve as alocações por item, com o limite na soma dos saldos (decisão 8);
+   - ponto de auditoria novo `QUANTITY` (invoice × destinada), com confirmação e motivo; o ponto `CODE` sai;
+   - resumo por PO + código: pedida, já embarcada em outros IPs, desta invoice e saldo depois, somando linhas repetidas da invoice.
+   Testes em `apps/web/test/invoice-audit-points.test.mjs` (ou arquivo novo em `apps/web/test/`). Funções de `lib/` não importam valores de outros módulos de `lib/` e recebem `m: Messages` quando geram texto.
+2. **Rota de lote (API).** Acrescentar por item a quantidade pedida (já vem `orderedQuantity`) e a já embarcada em outros IPs (ativa, excluindo o IP em revisão), e por PO a data (`po.order_date`). Para PO sem correspondência na importadora pedida, devolver as importadoras do escopo do usuário onde ela existe (`otherImporters`), para o aviso da decisão 6. Testes em `apps/api/test/operations.test.mjs` (há testes de lote: "invoice candidate batch …").
+3. **Gravação (API).**
+   - Recusar associação com `poProductCode` diferente de `productCode` (código novo, por exemplo `INVOICE_PRODUCT_CODE_MISMATCH`), em vez de aceitar com `confirmCodeMismatch`. Os testes atuais que usam `confirmCodeMismatch: true` mudam porque a regra mudou.
+   - Metadado novo por linha, por exemplo `lineDecisions: [{ sourceRow, invoiceQuantity, destinedQuantity, confirmQuantityMismatch, quantityMismatchReason }]`, validado com zod `.strict()`. Soma das associações da linha diferente da quantidade da linha só passa com `confirmQuantityMismatch = true` e motivo com pelo menos 3 caracteres; linha com destino 0 não tem associação.
+   - Manter: PO da associação igual à da célula da linha, saldo por item travado, importadora, fornecedor (com a confirmação que já existe), unidade e preço.
+   - Gravar a decisão na auditoria da invoice (o registro `CREATE` do documento ou um registro próprio da alocação).
+   - Atenção: `INVOICE_ALLOCATION_MISMATCH` compara `allocations` com `assignments`; os dois continuam tendo de bater entre si.
+4. **Tela.**
+   - Campo "quantidade para a PO" por linha (hoje o campo edita a quantidade da parte e exige soma igual à linha; ver a mensagem `t.sumDiffers`).
+   - Botão "Usar o saldo da PO (N)" quando falta saldo.
+   - Remover a escolha de item com outro código e a confirmação de código.
+   - Ponto `QUANTITY` com caixa de confirmação e campo de motivo.
+   - Resumo por PO + código acima da tabela.
+   - Aviso de PO em outra importadora com botão para trocar a importadora do IP.
+   - Ao trocar a importadora, limpar também `poExists`/`poStatus` ou revalidar na hora; hoje a troca apaga os candidatos e mantém `poExists`, e todas as linhas aparecem como "produto não encontrado" até clicar em "Revalidar POs e saldos".
+   - Textos nos três dicionários (`apps/web/lib/i18n/pt-BR.ts`, `en.ts`, `zh-CN.ts`, seção `processPanel`/invoice); `test/i18n-coverage.test.mjs` falha com texto em português solto.
+   - Classes novas no JSX precisam de regra em `app/styles/` (veja `test/layout-consistency.test.mjs`).
+5. **Verificação e publicação.**
+   - `cd apps/api && npm run build && npm test`; `cd apps/web && npm test && npx tsc --noEmit -p . && npm run lint && npm run build`.
+   - Release da API no HML antes do push do web, se o web novo enviar campos que a API anterior recusa (é o caso do `lineDecisions`): siga a última seção de release em `deploy/hostinger/README.md` (pacote com `git -c core.autocrlf=false archive <sha> apps/api deploy/hostinger`, `node_modules` reaproveitado do release ativo quando o lockfile não muda, drop-in com um `z` a mais que o anterior, `enable-homologation-export-worker.sh <sha>`, health 200 e rota sem sessão 401).
+   - `git push production homologacao` e conferência do Preview (`npx --yes vercel@50.1.6 ls erp-comex --environment preview --scope eletra-comex`, rodado fora de `apps/web`).
+6. **Aceite no HML.** A PO de teste 030201 da importadora `ELETRA INDUSTRIA E COMERCIO( GALPAO-FORTALEZA )` (id `64ec9a4b-f2f1-4833-bfac-2299cfbd714a`, 196 produtos da IPH034A) já existe; `deploy/hostinger/seed-hml-iph034a-acceptance.mjs revert` a remove. Carregar a IPH034A, escolher essa importadora, destinar uma linha com quantidade menor que a da invoice, confirmar com motivo, gravar e conferir o saldo restante da PO. Confirme o banco `erp_po_totvs_hml` antes de qualquer consulta; nunca use `erp_po_totvs_test` (produção).
+
+### Pendências conhecidas, fora desta etapa
+
+- O parser lê o número da invoice IPH034A como `INVOICE` (o título da planilha bate com o rótulo `INVOICE:`); o número real é `PWBR260205-10A`.
+- A IPH034A pede 135 confirmações de preço contra a PO 030201 (106 acima de 0,01%).
+- Promoção de `homologacao` para `main` só por PR, depois da aprovação do usuário.
+
