@@ -33,10 +33,12 @@ import { fieldLabel } from "../lib/i18n/labels";
 import PageHeader from "./PageHeader";
 import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoiceAuditPoints, InvoiceAuditPointKind, invoiceAuditProgress,
   invoiceCandidatesForProduct, invoiceComparisonRows, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
-  invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping";
+  invoiceExporterAliasSuggestion, invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping";
+import { createExporterAlias } from "./SupplierExporterAliases";
 
 const poRoles = new Set(["Master", "Administrador", "Importação", "Compras"]);
 const ipRoles = new Set(["Master", "Administrador", "Importação"]);
+const supplierEditorRoles = ["Master", "Administrador", "Compras"];
 
 type PoItemDraft = {
   draftId: string;
@@ -245,6 +247,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   const [invoiceExistingProcess, setInvoiceExistingProcess] = useState<InvoiceExistingProcess | null>(null);
   const [reviewTarget, setReviewTarget] = useState<InvoiceExistingProcess | null>(null);
   const [orphanPoDecisions, setOrphanPoDecisions] = useState<Record<string, "KEEP" | "REMOVE">>({});
+  const [exporterAliasNotice, setExporterAliasNotice] = useState("");
   const [invoiceError, setInvoiceError] = useState("");
   const [confirmImporterCnpjMismatch, setConfirmImporterCnpjMismatch] = useState(false);
   const [invoiceLoading, setInvoiceLoading] = useState(false);
@@ -418,6 +421,18 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   const destinationIssues = invoiceMatches.map(match => ({ match, issue: classifyInvoiceDestination(
     match.candidates, match.poExists, match.productCode, match.quantity, match.itemId, match.poStatus ?? "ACTIVE") }))
     .filter(entry => entry.issue !== null);
+  // One notice per PO supplier whose name differs from the invoice Exporter, offering the Exporter name as an alias.
+  const supplierMismatches = [...invoiceMatches.reduce((groups, match) => {
+    const candidate = match.candidates.find(value => value.id === match.itemId);
+    if (!invoiceDraft || !candidate?.supplierEntryId || supplierMatchesExporter(candidate, invoiceDraft.exporterText)) return groups;
+    const group = groups.get(candidate.supplierEntryId)
+      ?? { supplierId: candidate.supplierEntryId, code: candidate.supplierCode ?? candidate.supplierText ?? "", lines: 0 };
+    groups.set(candidate.supplierEntryId, { ...group, lines: group.lines + 1 });
+    return groups;
+  }, new Map<string, { supplierId: string; code: string; lines: number }>()).values()];
+  const exporterAliasSuggestion = invoiceExporterAliasSuggestion(invoiceDraft?.exporterText ?? "");
+  const exporterAliasValid = exporterAliasSuggestion.replace(/[^A-Za-z0-9]/gu, "").length >= 8;
+  const canEditSuppliers = roles.some(role => supplierEditorRoles.includes(role));
   const importerCnpjMismatch = Boolean(invoiceDraft && importer
     && (normalizeCnpj(invoiceDraft.importerCnpj).length !== 14
       || normalizeCnpj(importerCnpjs[importer]) !== normalizeCnpj(invoiceDraft.importerCnpj)));
@@ -478,7 +493,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     clearInvoiceCommandKey(sessionStorage);
     setInvoiceError(""); setInvoiceDraft(null); setInvoiceMatches([]); setInvoiceDuplicate(null);
     setDuplicateInvoiceIps([]); setConfirmDuplicateInvoice(false); setIpReferenceOtherImporter(false);
-    setInvoiceExistingProcess(null); setOrphanPoDecisions({}); setInvoiceLoading(true);
+    setInvoiceExistingProcess(null); setOrphanPoDecisions({}); setExporterAliasNotice(""); setInvoiceLoading(true);
     try {
       const draft = await parseChinaInvoiceXlsx(file, m);
       if (!draft.ipNumber.trim()) throw new Error(t.ipRefEmpty);
@@ -553,9 +568,10 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     finally { setInvoiceLoading(false); }
   }
 
-  async function revalidateInvoiceMatches() {
-    if (!invoiceDraft) return;
-    if (!importer) { setInvoiceError(t.selectImporterFirst); return; }
+  /** Resolves true when the lines were matched again against the current PO balances. */
+  async function revalidateInvoiceMatches(): Promise<boolean> {
+    if (!invoiceDraft) return false;
+    if (!importer) { setInvoiceError(t.selectImporterFirst); return false; }
     setInvoiceLoading(true); setInvoiceError("");
     try {
       const duplicateQuery = new URLSearchParams({ ipNumber: invoiceDraft.ipNumber.trim(), importer,
@@ -576,11 +592,11 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       const deletedMessage = deletedIpInvoiceBlockMessage(duplicate?.recordStatus, m);
       if (deletedMessage) {
         setInvoiceError(deletedMessage);
-        return;
+        return false;
       }
       if (duplicate?.recordStatus === "CANCELLED" || duplicate?.lifecycleStatus === "CLOSED") {
         setInvoiceError(t.ipCancelledOrClosed);
-        return;
+        return false;
       }
       setInvoiceExistingProcess(duplicate ? await readResponse<InvoiceExistingProcess>(
         await apiFetch(`/api/v1/processes/${duplicate.id}`, { cache: "no-store" })) : null);
@@ -609,8 +625,26 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           confirmPriceMismatch: Boolean(previous && match.confirmPriceMismatch) };
       });
       setInvoiceMatches(refreshed);
-    } catch (cause) { setInvoiceError(cause instanceof Error ? cause.message : t.revalidateFailed); }
+      return true;
+    } catch (cause) {
+      setInvoiceError(cause instanceof Error ? cause.message : t.revalidateFailed);
+      return false;
+    }
     finally { setInvoiceLoading(false); }
+  }
+
+  async function registerExporterAlias(supplierId: string, code: string) {
+    const texts = getMessages().exporterAliases;
+    setInvoiceError(""); setExporterAliasNotice(""); setInvoiceLoading(true);
+    try {
+      await createExporterAlias(supplierId, exporterAliasSuggestion);
+    } catch (cause) {
+      setInvoiceError(cause instanceof Error ? cause.message : texts.saveFailed);
+      setInvoiceLoading(false);
+      return;
+    }
+    setExporterAliasNotice(await revalidateInvoiceMatches()
+      ? texts.invoiceCreated(exporterAliasSuggestion, code) : texts.created);
   }
 
   function applyTotvsProducts(mode: "replace" | "append") {
@@ -1214,6 +1248,16 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                 destinationIssues.filter(entry => entry.issue?.kind === "ITEM_NOT_FOUND").length,
                 destinationIssues.filter(entry => entry.issue?.kind === "INSUFFICIENT_BALANCE").length)}</p>
             </div>}
+            {supplierMismatches.map(group => <div className="notice warning" key={group.supplierId}>
+              <p>{m.exporterAliases.invoiceMismatch(group.code, group.lines)}</p>
+              {exporterAliasValid && (canEditSuppliers ? <>
+                <p>{m.exporterAliases.invoiceSuggestion(exporterAliasSuggestion)}</p>
+                <button className="button secondary" type="button" disabled={invoiceLoading}
+                  onClick={() => void registerExporterAlias(group.supplierId, group.code)}>
+                  {m.exporterAliases.invoiceAdd(exporterAliasSuggestion, group.code)}</button>
+              </> : <p>{m.exporterAliases.invoiceAskEditor(exporterAliasSuggestion, group.code)}</p>)}
+            </div>)}
+            {exporterAliasNotice && <p className="notice success" role="status">{exporterAliasNotice}</p>}
             <div className="totvs-import-actions"><button className="button secondary" type="button" disabled={invoiceLoading || !importer}
               onClick={() => void revalidateInvoiceMatches()}>{t.revalidate}</button></div>
             <div className="totvs-import-table-wrap invoice-match-table-wrap"><table className="totvs-import-table invoice-match-table">

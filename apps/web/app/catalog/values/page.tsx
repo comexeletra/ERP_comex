@@ -9,6 +9,7 @@ import { parseProductCatalogJson, type ProductCatalogImport } from "../../../lib
 import { filterImporterCatalog, sortImporterCatalog } from "../../../lib/catalog-importers";
 import { createSupplierCatalogUrl } from "../../../lib/catalog-suppliers";
 import { useConfirmDialog } from "../../../components/ConfirmDialog";
+import SupplierExporterAliases from "../../../components/SupplierExporterAliases";
 import PageHeader from "../../../components/PageHeader";
 import { getMessages, useI18n } from "../../../components/I18nProvider";
 import { SearchableSelect } from "../../../components/SearchableSelect";
@@ -943,6 +944,7 @@ export default function OperationalValuesPage() {
             </div>
             {canWrite && <button className="button secondary entity-value-action" type="button" disabled={busy}
               aria-label={t.editSupplierAria(supplier.code)} onClick={() => startEditingSupplier(supplier)}>{t.edit}</button>}
+            <SupplierExporterAliases supplierId={supplier.id} supplierCode={supplier.code} canWrite={canWrite} />
           </>}
         </li>)}
       </ul> : <p className="muted">{supplierSearch.trim() ? t.noSupplierMatch : t.noSuppliers}</p>}

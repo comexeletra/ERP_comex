@@ -48,6 +48,8 @@
 .supplier-edit-form > label { max-width: none; }
 .supplier-edit-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; grid-column: 1 / -1; }
 .supplier-search input { width: 100%; }
+.supplier-alias { display: grid; gap: 8px; grid-column: 1 / -1; min-width: 0; }
+.supplier-alias > summary { color: var(--color-text-muted); cursor: pointer; font-size: var(--fs-md); font-weight: 700; }
 
 /* Products and NCMs */
 .entity-values-card label.product-catalog-search { max-width: 100%; }
