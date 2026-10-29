@@ -4,7 +4,7 @@
 |---|---|
 | Data | 2026-10-29 |
 | Branch de trabalho | `homologacao` |
-| Status | Etapa 1 publicada em HML/Preview (`5615d9b`); etapa 2 especificada e fechada com o usuário; implementação não iniciada |
+| Status | Etapa 1 publicada em HML/Preview (`5615d9b`); etapa 2 implementada (`7c59c6c`, `744273b`), API HML no release `744273b`; aceite com a IPH034A pendente |
 
 ## 1. Contexto
 
@@ -143,6 +143,14 @@ Ponto de partida: branch `homologacao` no commit deste plano. API e web do HML n
    - Release da API no HML antes do push do web, se o web novo enviar campos que a API anterior recusa (é o caso do `lineDecisions`): siga a última seção de release em `deploy/hostinger/README.md` (pacote com `git -c core.autocrlf=false archive <sha> apps/api deploy/hostinger`, `node_modules` reaproveitado do release ativo quando o lockfile não muda, drop-in com um `z` a mais que o anterior, `enable-homologation-export-worker.sh <sha>`, health 200 e rota sem sessão 401).
    - `git push production homologacao` e conferência do Preview (`npx --yes vercel@50.1.6 ls erp-comex --environment preview --scope eletra-comex`, rodado fora de `apps/web`).
 6. **Aceite no HML.** A PO de teste 030201 da importadora `ELETRA INDUSTRIA E COMERCIO( GALPAO-FORTALEZA )` (id `64ec9a4b-f2f1-4833-bfac-2299cfbd714a`, 196 produtos da IPH034A) já existe; `deploy/hostinger/seed-hml-iph034a-acceptance.mjs revert` a remove. Carregar a IPH034A, escolher essa importadora, destinar uma linha com quantidade menor que a da invoice, confirmar com motivo, gravar e conferir o saldo restante da PO. Confirme o banco `erp_po_totvs_hml` antes de qualquer consulta; nunca use `erp_po_totvs_test` (produção).
+
+### Como ficou a implementação (2026-10-29)
+
+- **Quantidade por parte, confirmação por linha.** Cada PO citada numa linha (parte da célula PO) tem seu campo de quantidade. O ponto `QUANTITY` aparece na parte cuja quantidade difere da citada na célula; uma confirmação e um motivo por linha cobrem todas as partes dela. A API exige a confirmação quando a soma destinada da linha difere da quantidade da linha; linha sem `lineDecisions` destina a quantidade inteira.
+- **Saldo compartilhado.** Linhas com a mesma PO e o mesmo código dividem o saldo na ordem da invoice; uma parte que não cabe não consome saldo e mostra "Usar o saldo da PO (N)" com o que sobrou para ela.
+- **Já embarcada** é calculada na tela como pedida − saldo (o saldo da rota de lote já desconta os outros IPs ativos e exclui o IP em revisão); a rota de lote não ganhou campo para isso. A data da PO (`order_date`) não foi incluída: nenhum requisito a usa.
+- **Outra importadora.** `otherImporters` lista as importadoras do escopo do usuário onde a PO existe (exceto excluída). A tela mostra o nome e um botão por importadora disponível para trocar a do IP (não na revisão de IP existente, em que a importadora é fixa); trocar a importadora revalida as linhas na hora.
+- **Correção encontrada no caminho.** A tela enviava `poSupplierText`, `poSupplierName` e `poSupplierCode` em cada associação, e o schema `.strict()` da API recusava a gravação com `INVALID_INVOICE_ASSIGNMENTS` (desde `5247e2f`). O payload agora sai de `invoiceSavePayload`, que o teste de contrato da API também usa.
 
 ### Pendências conhecidas, fora desta etapa
 

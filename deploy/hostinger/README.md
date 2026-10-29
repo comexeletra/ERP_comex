@@ -1,5 +1,11 @@
 # API ERP na VPS Hostinger
 
+## Quantidade da invoice por PO e código no HML (2026-10-29)
+
+Os commits `7c59c6c` e `744273b` implementam a etapa 2 de `docs/PLANO_INVOICE_DISTRIBUICAO_POS.md`: cada linha da invoice só vai para o item com o mesmo código na PO citada (a API recusa outro código com `INVOICE_PRODUCT_CODE_MISMATCH`), a quantidade destinada pode diferir da invoice só com confirmação e motivo em `lineDecisions`, e a rota de lote informa `otherImporters`. Não há migration. O web novo envia `lineDecisions`, que a API anterior recusava; por isso a API foi publicada antes do push.
+
+O release `/opt/import-erp/apps/api/hml-release-744273b` foi montado com `git -c core.autocrlf=false archive` (nenhuma fonte com CR; SHA-256 do pacote `f53d6b52…8b14`), reaproveitando o `node_modules` de `hml-release-5615d9b` (`package.json` e lockfile iguais, conferidos com `cmp`), compilado na VPS e ativado pelo drop-in `zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-release-744273b.conf`; o worker foi movido com `enable-homologation-export-worker.sh 744273b`. Drop-ins e `ExecStart` anteriores: `/var/backups/import-erp/hml-invoice-distribution-744273b-predeploy`. Rollback somente do código: remova o drop-in `744273b`, execute `systemctl daemon-reload`, reinicie `import-erp-hml-api` (volta a `hml-release-5615d9b`) e rode `enable-homologation-export-worker.sh 5615d9b`; a web nova precisa voltar junto, porque envia `lineDecisions`. `/health/live` respondeu 200; `POST /api/v1/processes/import-invoice` e `POST /api/v1/purchase-orders/invoice-candidates/batch` sem sessão responderam 401. Produção, `main` e as variáveis da Vercel não foram alteradas.
+
 ## Invoice sem alterar a PO no HML (2026-10-29)
 
 O commit `5615d9b` segue a etapa 1 de `docs/PLANO_INVOICE_DISTRIBUICAO_POS.md`: a carga da invoice deixa de alterar o item da PO (a API recusa `catalogUpdates.poItems` com `INVOICE_PO_ITEM_UPDATE_NOT_ALLOWED`) e só completa NCM e dados do fabricante vazios no cadastro do produto. Não há migration. O web novo não envia `poItems`, que a API anterior exigia; por isso a API foi publicada antes do push.
