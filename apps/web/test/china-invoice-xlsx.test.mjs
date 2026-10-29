@@ -3,41 +3,19 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ExcelJS from "exceljs";
 import { parseChinaInvoiceXlsx, parseInvoicePoAssignments } from "../lib/china-invoice-xlsx.ts";
-import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoiceCandidatesForProduct, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
-  invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping.ts";
+import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
+  invoiceSupplierMatchesExporter } from "../lib/china-invoice-mapping.ts";
 import { en } from "../lib/i18n/en.ts";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
 import { zhCN } from "../lib/i18n/zh-CN.ts";
 
 const parseInvoice = file => parseChinaInvoiceXlsx(file, ptBR);
 
-test("suggests only an unambiguous invoice item and reports code/supplier divergences", () => {
-  const candidates = [
-    { id: "a", productCode: "3011100110", remainingQuantity: "30" },
-    { id: "b", productCode: "OTHER", remainingQuantity: "20" },
-  ];
-  assert.equal(suggestInvoicePoItem(candidates, "3011100110", "25")?.id, "a");
-  assert.equal(suggestInvoicePoItem(candidates, "NEW-CODE", "15"), undefined);
-  assert.equal(suggestInvoicePoItem([candidates[1]], "NEW-CODE", "15"), undefined);
-  assert.equal(suggestInvoicePoItem(candidates, "3011100110", "31"), undefined);
+test("compares product codes and suppliers without case or surrounding spaces", () => {
   assert.equal(invoicePoCodeDiffers(" abc-1 ", "ABC-1"), false);
   assert.equal(invoicePoCodeDiffers("ABC-1", "ABC-2"), true);
   assert.equal(invoiceSupplierMatchesExporter(["SUP.001", "Exporter Ltd"], "exporter ltd"), true);
   assert.equal(invoiceSupplierMatchesExporter(["SUP.001"], "Other Ltd"), false);
-});
-
-test("orders invoice candidates by matching product and then line number", () => {
-  const candidates = [
-    { id: "other-3", lineNumber: 3, productCode: "OTHER", remainingQuantity: "10" },
-    { id: "exact-8", lineNumber: 8, productCode: " product-a ", remainingQuantity: "10" },
-    { id: "exact-2", lineNumber: 2, productCode: "PRODUCT-A", remainingQuantity: "10" },
-    { id: "other-1", lineNumber: 1, productCode: "ANOTHER", remainingQuantity: "10" },
-  ];
-  assert.deepEqual(invoiceCandidatesForProduct(candidates, "Product-A").map(candidate => candidate.id),
-    ["exact-2", "exact-8", "other-1", "other-3"]);
-  assert.deepEqual(candidates.map(candidate => candidate.id), ["other-3", "exact-8", "exact-2", "other-1"]);
-  assert.equal(suggestInvoicePoItem(invoiceCandidatesForProduct(candidates, "Product-A"), "Product-A", "5")?.id,
-    undefined);
 });
 
 test("identifies unit and CNY price differences for each PO destination", () => {
@@ -50,11 +28,12 @@ test("identifies unit and CNY price differences for each PO destination", () => 
 
 test("classifies missing PO, missing product, and insufficient balance by invoice row", () => {
   const matching = [{ id: "a", productCode: "A", remainingQuantity: "3" }];
-  assert.equal(classifyInvoiceDestination([], false, "A", "5", "").kind, "PO_NOT_REGISTERED");
-  assert.equal(classifyInvoiceDestination(matching, true, "B", "5", "").kind, "ITEM_NOT_FOUND");
-  assert.deepEqual(classifyInvoiceDestination(matching, true, "A", "5", ""),
+  assert.equal(classifyInvoiceDestination([], false, "5", undefined).kind, "PO_NOT_REGISTERED");
+  assert.equal(classifyInvoiceDestination([], true, "5", undefined).kind, "ITEM_NOT_FOUND");
+  assert.deepEqual(classifyInvoiceDestination(matching, true, "5", { allocations: [], available: "3", enough: false }),
     { kind: "INSUFFICIENT_BALANCE", requested: "5", available: "3" });
-  assert.equal(classifyInvoiceDestination(matching, true, "A", "3", "a"), null);
+  assert.equal(classifyInvoiceDestination(matching, true, "3",
+    { allocations: [{ itemId: "a", quantity: "3" }], available: "3", enough: true }), null);
 });
 
 test("rebuilds invoice PO assignments after an importer is selected manually", () => {

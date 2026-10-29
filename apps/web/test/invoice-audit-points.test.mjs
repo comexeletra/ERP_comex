@@ -3,7 +3,7 @@ import test from "node:test";
 import { invoiceAuditPoints, invoiceAuditProgress, invoiceComparisonRows, invoiceExporterAliasSuggestion, invoicePoUnitDiffers,
   invoiceSupplierMatchesExporter } from "../lib/china-invoice-mapping.ts";
 
-const unconfirmed = { code: false, supplier: false, unit: false, price: false };
+const unconfirmed = { supplier: false, unit: false, price: false };
 const poItem = { productCode: "3080500380", unit: "UN", unitPrice: "1.5", currency: "CNY",
   supplierValues: ["HEXING ELECTRICAL CO.,LTD HANGZHOU", null, "EX000135"] };
 const invoice = { productCode: "3080500380", exporter: "HEXING ELECTRICAL CO.,LTD SHANGCHENG",
@@ -18,10 +18,10 @@ test("invoice audit lists each divergence with both values side by side", () => 
 });
 
 test("invoice audit keeps confirmations per point and marks a foreign PO currency as informative", () => {
-  const points = invoiceAuditPoints({ productCode: "ABC", exporter: "HEXING ELECTRICAL CO.,LTD HANGZHOU", line: { unit: "UN", unitPrice: "2" } },
-    { ...poItem, currency: "USD" }, { ...unconfirmed, code: true });
+  const points = invoiceAuditPoints({ productCode: "3080500380", exporter: "OTHER", line: { unit: "UN", unitPrice: "2" } },
+    { ...poItem, currency: "USD" }, { ...unconfirmed, supplier: true });
   assert.deepEqual(points, [
-    { kind: "CODE", invoiceValue: "ABC", poValue: "3080500380", confirmed: true },
+    { kind: "SUPPLIER", invoiceValue: "OTHER", poValue: "HEXING ELECTRICAL CO.,LTD HANGZHOU · EX000135", confirmed: true },
     { kind: "CURRENCY", invoiceValue: "CNY", poValue: "USD", confirmed: null },
   ]);
   assert.deepEqual(invoiceAuditProgress(points), { required: 1, confirmed: 1 });

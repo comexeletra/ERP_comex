@@ -1,21 +1,37 @@
 export type InvoicePoItemCandidate = { id: string; productCode: string; remainingQuantity: string };
 export type InvoiceDestinationIssue = { kind: "PO_NOT_REGISTERED" } | { kind: "PO_NOT_ACTIVE"; status: "CANCELLED" | "CLOSED" | "DELETED" }
-  | { kind: "ITEM_NOT_FOUND" }
+  | { kind: "ITEM_NOT_FOUND" } | { kind: "INVALID_QUANTITY" }
   | { kind: "INSUFFICIENT_BALANCE"; requested: string; available: string };
 
-export function classifyInvoiceDestination(candidates: readonly InvoicePoItemCandidate[], poExists: boolean,
-  invoiceProductCode: string, quantity: string, selectedItemId: string, poStatus = "ACTIVE"): InvoiceDestinationIssue | null {
+/** Quantities use the API scale: up to 8 decimal places, compared as exact integers. */
+const quantityScale = 100_000_000n;
+
+export function invoiceQuantityUnits(value: string): bigint | null {
+  const match = /^(\d{1,16})(?:[.,](\d{1,8}))?$/u.exec(value.trim());
+  return match ? BigInt(match[1]) * quantityScale + BigInt((match[2] ?? "").padEnd(8, "0")) : null;
+}
+
+export function formatInvoiceQuantity(units: bigint): string {
+  const sign = units < 0n ? "-" : "";
+  const absolute = units < 0n ? -units : units;
+  const fraction = (absolute % quantityScale).toString().padStart(8, "0").replace(/0+$/u, "");
+  return `${sign}${absolute / quantityScale}${fraction ? `.${fraction}` : ""}`;
+}
+
+/** Destined with 0 the part allocates nothing, so neither the PO nor the code can block it. */
+export function classifyInvoiceDestination(keyItems: readonly InvoicePoItemCandidate[], poExists: boolean, quantity: string,
+  distribution: InvoicePartDistribution | undefined, poStatus = "ACTIVE"): InvoiceDestinationIssue | null {
+  const units = invoiceQuantityUnits(quantity);
+  if (units === null) return { kind: "INVALID_QUANTITY" };
+  if (units === 0n) return null;
   if (!poExists) return { kind: "PO_NOT_REGISTERED" };
   if (poStatus === "CANCELLED" || poStatus === "CLOSED" || poStatus === "DELETED") {
     return { kind: "PO_NOT_ACTIVE", status: poStatus };
   }
-  const exact = candidates.filter(item => !invoicePoCodeDiffers(item.productCode, invoiceProductCode));
-  const selected = candidates.find(item => item.id === selectedItemId);
-  if (selected && Number(selected.remainingQuantity) >= Number(quantity)) return null;
-  if (selected) return { kind: "INSUFFICIENT_BALANCE", requested: quantity, available: selected.remainingQuantity };
-  if (!exact.length) return { kind: "ITEM_NOT_FOUND" };
-  const available = Math.max(...exact.map(item => Number(item.remainingQuantity)));
-  if (available < Number(quantity)) return { kind: "INSUFFICIENT_BALANCE", requested: quantity, available: String(available) };
+  if (!keyItems.length) return { kind: "ITEM_NOT_FOUND" };
+  if (distribution && !distribution.enough) {
+    return { kind: "INSUFFICIENT_BALANCE", requested: quantity, available: distribution.available };
+  }
   return null;
 }
 export type InvoicePoAssignmentSource = {
@@ -33,25 +49,46 @@ export function invoiceAssignmentsFromLines(lines: readonly InvoicePoAssignmentS
   })));
 }
 
-export function suggestInvoicePoItem<T extends InvoicePoItemCandidate>(
-  candidates: readonly T[], invoiceProductCode: string, invoiceQuantity: string,
-): T | undefined {
-  const enough = candidates.filter(candidate => Number(candidate.remainingQuantity) >= Number(invoiceQuantity));
-  const exact = enough.filter(candidate => candidate.productCode.trim().toLocaleUpperCase("en-US")
-    === invoiceProductCode.trim().toLocaleUpperCase("en-US"));
-  if (exact.length === 1) return exact[0];
-  return undefined;
-}
-
-export function invoiceCandidatesForProduct<T extends InvoicePoItemCandidate & { lineNumber: number }>(
+/** The destination key is the cited PO plus the line code: only the PO items with that code, in PO line order. */
+export function invoiceKeyItems<T extends InvoicePoItemCandidate & { lineNumber: number }>(
   items: readonly T[], productCode: string,
 ): T[] {
-  return [...items].sort((left, right) => {
-    const leftMatches = !invoicePoCodeDiffers(left.productCode, productCode);
-    const rightMatches = !invoicePoCodeDiffers(right.productCode, productCode);
-    if (leftMatches !== rightMatches) return leftMatches ? -1 : 1;
-    return left.lineNumber - right.lineNumber;
-  });
+  return items.filter(item => !invoicePoCodeDiffers(item.productCode, productCode))
+    .sort((left, right) => left.lineNumber - right.lineNumber);
+}
+
+export type InvoicePartDistribution = { allocations: { itemId: string; quantity: string }[]; available: string; enough: boolean };
+
+/**
+ * Fills the key items of each part in order. Parts are read in invoice order and share the balance
+ * of the same items; a part that does not fit takes nothing and leaves the balance to the next ones.
+ */
+export function distributeInvoiceParts<T extends InvoicePoItemCandidate>(
+  parts: readonly { key: string; quantity: string; items: readonly T[] }[],
+): Map<string, InvoicePartDistribution> {
+  const used = new Map<string, bigint>();
+  const free = (item: T) => {
+    const remaining = (invoiceQuantityUnits(item.remainingQuantity) ?? 0n) - (used.get(item.id) ?? 0n);
+    return remaining > 0n ? remaining : 0n;
+  };
+  return new Map(parts.map(part => {
+    const available = part.items.reduce((total, item) => total + free(item), 0n);
+    const requested = invoiceQuantityUnits(part.quantity);
+    if (requested === null || requested > available) {
+      return [part.key, { allocations: [], available: formatInvoiceQuantity(available), enough: false }];
+    }
+    const allocations: { itemId: string; quantity: string }[] = [];
+    let missing = requested;
+    for (const item of part.items) {
+      if (missing === 0n) break;
+      const taken = free(item) < missing ? free(item) : missing;
+      if (taken === 0n) continue;
+      used.set(item.id, (used.get(item.id) ?? 0n) + taken);
+      allocations.push({ itemId: item.id, quantity: formatInvoiceQuantity(taken) });
+      missing -= taken;
+    }
+    return [part.key, { allocations, available: formatInvoiceQuantity(available), enough: true }];
+  }));
 }
 
 export function invoicePoCodeDiffers(invoiceProductCode: string, poProductCode: string): boolean {
@@ -106,20 +143,55 @@ export function invoiceExporterAliasSuggestion(exporter: string): string {
   return exporter.split(/\r?\n/u).map(line => line.trim()).find(Boolean) ?? "";
 }
 
-export type InvoiceAuditPointKind = "CODE" | "SUPPLIER" | "UNIT" | "PRICE" | "CURRENCY";
+export type InvoiceAuditPointKind = "QUANTITY" | "CODE" | "SUPPLIER" | "UNIT" | "PRICE" | "CURRENCY";
 /** `confirmed` is null for informative points that need analysis but no confirmation. */
 export type InvoiceAuditPoint = { kind: InvoiceAuditPointKind; invoiceValue: string; poValue: string; confirmed: boolean | null };
+type InvoiceAuditInvoice = { productCode: string; exporter: string; line: { unit: string; unitPrice: string } | null };
+type InvoiceAuditPoItem = { productCode: string; unit: string; unitPrice: string | null; currency: string | null;
+  supplierValues: readonly (string | null | undefined)[]; exporterAliases?: readonly string[] };
+type InvoiceAuditConfirmations = { supplier: boolean; unit: boolean; price: boolean };
 
-export function invoiceAuditPoints(
-  invoice: { productCode: string; exporter: string; line: { unit: string; unitPrice: string } | null },
-  poItem: { productCode: string; unit: string; unitPrice: string | null; currency: string | null;
-    supplierValues: readonly (string | null | undefined)[]; exporterAliases?: readonly string[] },
-  confirmations: { code: boolean; supplier: boolean; unit: boolean; price: boolean },
-): InvoiceAuditPoint[] {
-  const points: InvoiceAuditPoint[] = [];
-  if (invoicePoCodeDiffers(invoice.productCode, poItem.productCode)) {
-    points.push({ kind: "CODE", invoiceValue: invoice.productCode, poValue: poItem.productCode, confirmed: confirmations.code });
+/** One confirmation and one written reason per invoice line cover every part of that line. */
+export type InvoiceQuantityDecision = { confirmed: boolean; reason: string };
+const minimumQuantityReasonLength = 3;
+
+export function invoiceQuantityDecisionReady(decision: InvoiceQuantityDecision): boolean {
+  return decision.confirmed && decision.reason.trim().length >= minimumQuantityReasonLength;
+}
+
+/** The analyst destined to the PO a quantity different from the one the invoice cites for it. */
+export function invoiceQuantityPoint(invoiceQuantity: string, destinedQuantity: string, unit: string,
+  decision: InvoiceQuantityDecision): InvoiceAuditPoint | null {
+  const destined = invoiceQuantityUnits(destinedQuantity);
+  if (destined === null || destined === invoiceQuantityUnits(invoiceQuantity)) return null;
+  const withUnit = (value: string) => `${value} ${unit}`.trim();
+  return { kind: "QUANTITY", invoiceValue: withUnit(invoiceQuantity), poValue: withUnit(formatInvoiceQuantity(destined)),
+    confirmed: invoiceQuantityDecisionReady(decision) };
+}
+
+/** The invoice code is not in the cited PO: resolved only by destining 0 with the quantity reason, or by fixing PO or invoice. */
+export function invoiceCodePoint(productCode: string, codeFound: boolean, destinedQuantity: string,
+  decision: InvoiceQuantityDecision): InvoiceAuditPoint | null {
+  if (codeFound) return null;
+  return { kind: "CODE", invoiceValue: productCode, poValue: "",
+    confirmed: invoiceQuantityUnits(destinedQuantity) === 0n && invoiceQuantityDecisionReady(decision) };
+}
+
+/** Audits every PO item that receives the part; a divergence found in more than one item is listed once. */
+export function invoicePartAuditPoints(invoice: InvoiceAuditInvoice, poItems: readonly InvoiceAuditPoItem[],
+  confirmations: InvoiceAuditConfirmations): InvoiceAuditPoint[] {
+  const points = new Map<InvoiceAuditPointKind, InvoiceAuditPoint>();
+  for (const poItem of poItems) {
+    for (const point of invoiceAuditPoints(invoice, poItem, confirmations)) {
+      if (!points.has(point.kind)) points.set(point.kind, point);
+    }
   }
+  return [...points.values()];
+}
+
+export function invoiceAuditPoints(invoice: InvoiceAuditInvoice, poItem: InvoiceAuditPoItem,
+  confirmations: InvoiceAuditConfirmations): InvoiceAuditPoint[] {
+  const points: InvoiceAuditPoint[] = [];
   if (!invoiceSupplierMatchesExporter(poItem.supplierValues, invoice.exporter, poItem.exporterAliases)) {
     points.push({ kind: "SUPPLIER", invoiceValue: invoice.exporter,
       poValue: poItem.supplierValues.filter(Boolean).join(" · "), confirmed: confirmations.supplier });
@@ -135,6 +207,56 @@ export function invoiceAuditPoints(
     points.push({ kind: "CURRENCY", invoiceValue: "CNY", poValue: poItem.currency, confirmed: null });
   }
   return points;
+}
+
+export type InvoiceLineDecision = { sourceRow: number; invoiceQuantity: string; destinedQuantity: string;
+  confirmQuantityMismatch: boolean; quantityMismatchReason: string };
+
+/** What the analyst destined from each invoice line; the confirmation and reason only go when a part differs. */
+export function invoiceLineDecisions(
+  lines: readonly { sourceRow: number; quantity: string }[],
+  parts: readonly { sourceRow: number; invoiceQuantity: string; quantity: string }[],
+  decisions: Readonly<Record<number, InvoiceQuantityDecision | undefined>>,
+): InvoiceLineDecision[] {
+  return lines.map(line => {
+    const lineParts = parts.filter(part => part.sourceRow === line.sourceRow);
+    const destined = lineParts.reduce((total, part) => total + (invoiceQuantityUnits(part.quantity) ?? 0n), 0n);
+    const differs = lineParts.some(part => invoiceQuantityUnits(part.quantity) !== invoiceQuantityUnits(part.invoiceQuantity));
+    const decision = decisions[line.sourceRow];
+    return { sourceRow: line.sourceRow, invoiceQuantity: line.quantity, destinedQuantity: formatInvoiceQuantity(destined),
+      confirmQuantityMismatch: differs && Boolean(decision?.confirmed),
+      quantityMismatchReason: differs ? decision?.reason.trim() ?? "" : "" };
+  });
+}
+
+export type InvoicePoCodeSummaryRow = { poNumber: string; productCode: string; ordered: string; shipped: string;
+  thisInvoice: string; balanceAfter: string; overBalance: boolean };
+
+/** Per cited PO and code: ordered, already shipped in other IPs, destined by this invoice and the balance left. */
+export function invoicePoCodeSummary(
+  parts: readonly { poNumber: string; productCode: string; quantity: string;
+    items: readonly { id: string; orderedQuantity: string; remainingQuantity: string }[] }[],
+): InvoicePoCodeSummaryRow[] {
+  const groups = new Map<string, { poNumber: string; productCode: string; thisInvoice: bigint;
+    items: Map<string, { orderedQuantity: string; remainingQuantity: string }> }>();
+  for (const part of parts) {
+    if (!part.items.length) continue;
+    const key = `${part.poNumber.toLocaleUpperCase("en-US").replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "")}|${
+      part.productCode.trim().toLocaleUpperCase("en-US")}`;
+    const group = groups.get(key) ?? { poNumber: part.poNumber, productCode: part.productCode, thisInvoice: 0n, items: new Map() };
+    group.thisInvoice += invoiceQuantityUnits(part.quantity) ?? 0n;
+    for (const item of part.items) group.items.set(item.id, item);
+    groups.set(key, group);
+  }
+  return [...groups.values()].map(group => {
+    const items = [...group.items.values()];
+    const ordered = items.reduce((total, item) => total + (invoiceQuantityUnits(item.orderedQuantity) ?? 0n), 0n);
+    const remaining = items.reduce((total, item) => total + (invoiceQuantityUnits(item.remainingQuantity) ?? 0n), 0n);
+    const balanceAfter = remaining - group.thisInvoice;
+    return { poNumber: group.poNumber, productCode: group.productCode, ordered: formatInvoiceQuantity(ordered),
+      shipped: formatInvoiceQuantity(ordered - remaining), thisInvoice: formatInvoiceQuantity(group.thisInvoice),
+      balanceAfter: formatInvoiceQuantity(balanceAfter), overBalance: balanceAfter < 0n };
+  });
 }
 
 export function invoiceAuditProgress(points: readonly InvoiceAuditPoint[]): { required: number; confirmed: number } {

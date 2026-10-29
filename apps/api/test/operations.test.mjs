@@ -5,6 +5,7 @@ import { registerAuthorization } from "../dist/authorization.js";
 import { registerOperationalRoutes } from "../dist/operations.js";
 
 const poId = "00000000-0000-4000-8000-000000000001";
+const secondItemId = "00000000-0000-4000-8000-000000000005";
 const body = { importer: "ELETRA MATRIZ", number: "PO-TESTE", supplierText: "SUP-TESTE",
   orderDate: null, notes: "", reason: "Pedido conferido" };
 
@@ -49,7 +50,7 @@ function invoicePayload({ confirmSupplierMismatch = false, fileSha256 = "a".repe
       metadata: { importerCnpj: "12345678000190", ipNumberFromInvoice: "IPH/TEST", exporterText: "Exporter Ltd", fileSha256,
         lines: [{ sourceRow: 16, productCode: "PO-CODE", quantity: "5", poCell: "PO030201" }],
         assignments: [{ itemId: poId, sourceRow: 16, sourcePoNumber: "PO030201", poNumber: "PO030201",
-          poProductCode: "PO-CODE", productCode: "PO-CODE", quantity: "5", confirmCodeMismatch: false,
+          poProductCode: "PO-CODE", productCode: "PO-CODE", quantity: "5",
           confirmSupplierMismatch }], catalogUpdates: { products: [], poItems: [] } } },
     allocations: [{ itemId: poId, quantity: "5", notes: "Invoice row 16" }],
   };
@@ -103,7 +104,7 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true,
   canceledItem = false, duplicateKind = null, poUnit = null, poUnitPrice = null, poCurrency = null,
   linkedOrphanPo = false, draft = false, insufficientBalance = false, purchaseOrderStatus = "ACTIVE",
   previousAllocationPoStatus = "ACTIVE", recordStatus = "ACTIVE", shipped = false, exporterAliases = [],
-  catalogProduct = null } = {}) {
+  catalogProduct = null, secondItem = false, codesInPo = [] } = {}) {
   const processId = "00000000-0000-4000-8000-000000000021";
   const oldDocumentId = "00000000-0000-4000-8000-000000000022";
   const oldAllocationId = "00000000-0000-4000-8000-000000000023";
@@ -123,7 +124,7 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true,
           : { rows: [], rowCount: 0 };
       }
       if (sql.includes("FROM procurement.purchase_order_item item JOIN procurement.purchase_order po")) {
-        return { rows: [{ id: poId, purchase_order_id: "00000000-0000-4000-8000-000000000002",
+        const row = { id: poId, purchase_order_id: "00000000-0000-4000-8000-000000000002",
           number: "PO030201", importer: "ELETRA MATRIZ", quantity: "10", product_code: "PO-CODE",
           lifecycle_status: purchaseOrderStatus,
           source_status: canceledItem ? "CANCELLED" : null,
@@ -131,7 +132,12 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true,
           supplier_entry_id: "00000000-0000-4000-8000-000000000003",
           supplier_text: supplierMatchesExporter ? "Exporter Ltd" : "PO Supplier",
           supplier_name: supplierMatchesExporter ? "Exporter Ltd" : "PO Supplier Ltd",
-          supplier_code: supplierMatchesExporter ? "EXPORTER" : "PO-SUP", exporter_aliases: exporterAliases }], rowCount: 1 };
+          supplier_code: supplierMatchesExporter ? "EXPORTER" : "PO-SUP", exporter_aliases: exporterAliases };
+        const rows = secondItem ? [row, { ...row, id: secondItemId }] : [row];
+        return { rows, rowCount: rows.length };
+      }
+      if (sql.includes("AS invoice_po_code")) {
+        return { rows: codesInPo.map(([po, code]) => ({ po, code })), rowCount: codesInPo.length };
       }
       if (sql.includes("normalized_ip_number = upper(btrim($1))")) {
         if (otherImporterIp && !sql.includes("AND importer = $2")) {
@@ -162,8 +168,9 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true,
         return catalogProduct ? { rows: [catalogProduct], rowCount: 1 } : { rows: [], rowCount: 0 };
       }
       if (sql.includes("SELECT item.id, item.ordered_quantity::text")) {
-        return { rows: [{ id: poId, ordered_quantity: insufficientBalance ? "3" : "10",
-          allocated_quantity: "0" }], rowCount: 1 };
+        const rows = [{ id: poId, ordered_quantity: insufficientBalance ? "3" : "10", allocated_quantity: "0" }];
+        if (secondItem) rows.push({ id: secondItemId, ordered_quantity: "10", allocated_quantity: "0" });
+        return { rows, rowCount: rows.length };
       }
       return { rows: [], rowCount: 1 };
     },
@@ -539,9 +546,9 @@ test("invoice import requires explicit confirmation for a PO supplier mismatch",
         logisticsStatus: "WAITING SHIPMENT", priority: null, notes: "", reason: "Invoice review" },
       invoice: { fileName: "invoice.xlsx", number: "INV-1", issueDate: null, amount: "10", currency: "CNY",
         metadata: { importerCnpj: "12345678000190", ipNumberFromInvoice: "IPH/TEST", exporterText: "Exporter Ltd",
-          lines: [{ sourceRow: 16, productCode: "INV-CODE", quantity: "5", poCell: "PO030201" }],
+          lines: [{ sourceRow: 16, productCode: "PO-CODE", quantity: "5", poCell: "PO030201" }],
           assignments: [{ itemId: poId, sourceRow: 16, sourcePoNumber: "PO030201", poNumber: "PO030201",
-            poProductCode: "PO-CODE", productCode: "INV-CODE", quantity: "5", confirmCodeMismatch: true,
+            poProductCode: "PO-CODE", productCode: "PO-CODE", quantity: "5",
             confirmSupplierMismatch: false }] } },
       allocations: [{ itemId: poId, quantity: "5", notes: "Invoice row 16" }],
     },
@@ -826,9 +833,10 @@ test("invoice candidate batch returns requested POs in order with two read queri
         manufacturerCountry: null, remainingQuantity: "8",
       }], rowCount: 1 };
       return { rows: [
-        { sourcePoNumber: "PO 030201", purchaseOrderId: "po-active", poStatus: "ACTIVE" },
-        { sourcePoNumber: "030202", purchaseOrderId: "po-closed", poStatus: "CLOSED" },
-      ], rowCount: 2 };
+        { sourcePoNumber: "PO 030201", purchaseOrderId: "po-active", poStatus: "ACTIVE", otherImporters: [] },
+        { sourcePoNumber: "030202", purchaseOrderId: "po-closed", poStatus: "CLOSED", otherImporters: [] },
+        { sourcePoNumber: "MISSING", purchaseOrderId: null, poStatus: null, otherImporters: ["ELETRA FILIAL"] },
+      ], rowCount: 3 };
     },
   });
   const response = await app.inject({ method: "POST",
@@ -839,15 +847,16 @@ test("invoice candidate batch returns requested POs in order with two read queri
 
   assert.equal(response.statusCode, 200, response.body);
   assert.deepEqual(response.json(), { purchaseOrders: [
-    { sourcePoNumber: "PO 030201", poExists: true, purchaseOrderId: "po-active", poStatus: "ACTIVE",
+    { sourcePoNumber: "PO 030201", poExists: true, purchaseOrderId: "po-active", poStatus: "ACTIVE", otherImporters: [],
       items: [{ id: poId, lineNumber: 2, productCode: "PO-CODE", description: "PO item",
         orderedQuantity: "10", unit: "PCS", unitPrice: "2", currency: "CNY", poNcmCode: "85044090",
         purchaseOrderId: "po-active", poNumber: "030201", poStatus: "ACTIVE", supplierEntryId: null,
         supplierText: "Supplier", supplierName: null, supplierCode: null, productId: null,
         productName: null, productNcmCode: null, manufacturer: null, manufacturerAddress: null,
         manufacturerCountry: null, remainingQuantity: "8" }] },
-    { sourcePoNumber: "030202", poExists: true, purchaseOrderId: "po-closed", poStatus: "CLOSED", items: [] },
-    { sourcePoNumber: "MISSING", poExists: false, purchaseOrderId: null, poStatus: null, items: [] },
+    { sourcePoNumber: "030202", poExists: true, purchaseOrderId: "po-closed", poStatus: "CLOSED", otherImporters: [], items: [] },
+    { sourcePoNumber: "MISSING", poExists: false, purchaseOrderId: null, poStatus: null, otherImporters: ["ELETRA FILIAL"],
+      items: [] },
   ] });
   assert.equal(dataQueries.length, 2);
   for (const query of dataQueries) {
@@ -858,6 +867,10 @@ test("invoice candidate batch returns requested POs in order with two read queri
   assert.match(dataQueries[0].sql, /lifecycle_status = 'ACTIVE'/u);
   assert.match(dataQueries[0].sql, /source_status/u);
   assert.match(dataQueries[1].sql, /lifecycle_status = 'ACTIVE'.*DESC/su);
+  // Other importers come only from the user's scope and only for a PO missing from the chosen importer.
+  assert.match(dataQueries[1].sql, /CASE WHEN matching\.id IS NULL THEN ARRAY\(/u);
+  assert.match(dataQueries[1].sql, /other\.importer <> \$1 AND other\.importer = ANY\(\$4::text\[\]\)/u);
+  assert.match(dataQueries[1].sql, /AS "otherImporters"/u);
   assert.equal(connections(), 0);
 });
 
@@ -944,4 +957,137 @@ test("the invoice never overwrites the PO item and only fills empty product fiel
   assert.equal(unchanged.statusCode, 201, unchanged.body);
   assert.equal(fullQueries.some(query => query.sql.includes("UPDATE catalog.entry")), false);
   assert.equal(before, 1);
+});
+
+async function sendInvoice(app, key, payload) {
+  return app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": key }, payload });
+}
+
+function lessThanInvoicePayload(decision) {
+  const payload = invoicePayload();
+  payload.invoice.metadata.lines[0].quantity = "8";
+  payload.invoice.metadata.lineDecisions = [{ sourceRow: 16, invoiceQuantity: "8", destinedQuantity: "5", ...decision }];
+  return payload;
+}
+
+test("the analyst destines less than the invoice line with a confirmed reason", async t => {
+  const { client, queries } = invoiceImportClient();
+  const app = await invoiceImportApp(t, client);
+  const response = await sendInvoice(app, "invoice-destined-less", lessThanInvoicePayload({
+    confirmQuantityMismatch: true, quantityMismatchReason: "Saldo vem no próximo embarque" }));
+  assert.equal(response.statusCode, 201, response.body);
+  assert.ok(queries.some(query => query.sql.includes("INSERT INTO procurement.po_item_allocation") && query.params[3] === 5));
+  const document = queries.find(query => query.sql.includes("INSERT INTO imports.process_document"));
+  assert.deepEqual(JSON.parse(document.params[6]).lineDecisions, [{ sourceRow: 16, invoiceQuantity: "8", destinedQuantity: "5",
+    confirmQuantityMismatch: true, quantityMismatchReason: "Saldo vem no próximo embarque" }]);
+  const audit = queries.find(query => query.sql.includes("INSERT INTO audit.audit_log")
+    && query.params.some(value => typeof value === "string" && value.includes('"kind":"INVOICE"')));
+  assert.deepEqual(JSON.parse(audit.params[7]).lineDecisions, [{ sourceRow: 16, productCode: "PO-CODE",
+    invoiceQuantity: "8", destinedQuantity: "5", quantityMismatchReason: "Saldo vem no próximo embarque" }]);
+});
+
+test("a destined quantity different from the line needs the confirmation and a reason of 3 characters", async t => {
+  const { client, queries } = invoiceImportClient();
+  const app = await invoiceImportApp(t, client);
+  for (const [name, payload] of [
+    ["no-decision", (() => { const payload = lessThanInvoicePayload({}); delete payload.invoice.metadata.lineDecisions; return payload; })()],
+    ["unconfirmed", lessThanInvoicePayload({ confirmQuantityMismatch: false, quantityMismatchReason: "Saldo no próximo" })],
+    ["short-reason", lessThanInvoicePayload({ confirmQuantityMismatch: true, quantityMismatchReason: " ok " })],
+  ]) {
+    const response = await sendInvoice(app, `invoice-destined-${name}`, payload);
+    assert.equal(response.statusCode, 400, `${name}: ${response.body}`);
+    assert.equal(response.json().code, name === "no-decision" ? "INVOICE_LINE_QUANTITY_MISMATCH" : "INVOICE_QUANTITY_MISMATCH_UNCONFIRMED", name);
+  }
+  // The decision must describe the line and its assignments; the API does not trust the screen totals.
+  for (const [name, change] of [
+    ["invoice-quantity", payload => { payload.invoice.metadata.lineDecisions[0].invoiceQuantity = "9"; }],
+    ["destined-total", payload => { payload.invoice.metadata.lineDecisions[0].destinedQuantity = "4"; }],
+    ["unknown-row", payload => { payload.invoice.metadata.lineDecisions[0].sourceRow = 99; }],
+  ]) {
+    const payload = lessThanInvoicePayload({ confirmQuantityMismatch: true, quantityMismatchReason: "Saldo no próximo" });
+    change(payload);
+    const response = await sendInvoice(app, `invoice-decision-${name}`, payload);
+    assert.equal(response.statusCode, 400, `${name}: ${response.body}`);
+    assert.equal(response.json().code, name === "destined-total" ? "INVOICE_LINE_QUANTITY_MISMATCH" : "INVALID_INVOICE_LINE_DECISIONS", name);
+  }
+  assert.equal(queries.some(query => /^\s*INSERT INTO procurement\.po_item_allocation/u.test(query.sql)), false);
+});
+
+test("a line destined with 0 and a reason is saved without allocation and records whether its code is in the PO", async t => {
+  const { client, queries } = invoiceImportClient({ codesInPo: [["030201", "PO-CODE"]] });
+  const app = await invoiceImportApp(t, client);
+  const payload = invoicePayload();
+  payload.invoice.metadata.lines.push({ sourceRow: 17, productCode: "NEW-CODE", quantity: "3", poCell: "PO030201" });
+  payload.invoice.metadata.lineDecisions = [
+    { sourceRow: 16, invoiceQuantity: "5", destinedQuantity: "5", confirmQuantityMismatch: false, quantityMismatchReason: "" },
+    { sourceRow: 17, invoiceQuantity: "3", destinedQuantity: "0", confirmQuantityMismatch: true,
+      quantityMismatchReason: "Código não existe na PO" },
+  ];
+  const response = await sendInvoice(app, "invoice-destined-zero", payload);
+  assert.equal(response.statusCode, 201, response.body);
+  assert.equal(response.json().allocations, 1);
+  const lookup = queries.find(query => query.sql.includes("AS invoice_po_code"));
+  assert.deepEqual(lookup.params, ["ELETRA MATRIZ", ["030201"], ["NEW-CODE"]]);
+  const document = queries.find(query => query.sql.includes("INSERT INTO imports.process_document"));
+  assert.equal(JSON.parse(document.params[6]).lineDecisions[1].codeFoundInPo, false);
+  assert.equal(JSON.parse(document.params[6]).lineDecisions[0].codeFoundInPo, undefined);
+
+  // The screen cannot claim the code exists: the API looks it up in the cited PO.
+  const forged = structuredClone(payload);
+  forged.invoice.metadata.lineDecisions[1].codeFoundInPo = true;
+  const rejected = await sendInvoice(app, "invoice-destined-zero-forged", forged);
+  assert.equal(rejected.statusCode, 400, rejected.body);
+  assert.equal(rejected.json().code, "INVALID_INVOICE_LINE_DECISIONS");
+});
+
+test("an assignment to a PO item with another code is refused even with the old confirmation", async t => {
+  const { client } = invoiceImportClient();
+  const app = await invoiceImportApp(t, client);
+  const payload = invoicePayload();
+  payload.invoice.metadata.lines[0].productCode = "INV-CODE";
+  payload.invoice.metadata.assignments[0].productCode = "INV-CODE";
+  const response = await sendInvoice(app, "invoice-other-code", payload);
+  assert.equal(response.statusCode, 400, response.body);
+  assert.equal(response.json().code, "INVOICE_PRODUCT_CODE_MISMATCH");
+  payload.invoice.metadata.assignments[0].confirmCodeMismatch = true;
+  const confirmed = await sendInvoice(app, "invoice-other-code-confirmed", payload);
+  assert.equal(confirmed.statusCode, 400, confirmed.body);
+  assert.equal(confirmed.json().code, "INVALID_INVOICE_ASSIGNMENTS");
+});
+
+test("a line can fill two PO items with its code, each within its own balance", async t => {
+  const { client, queries } = invoiceImportClient({ secondItem: true });
+  const app = await invoiceImportApp(t, client);
+  const payload = invoicePayload();
+  payload.invoice.amount = "28";
+  payload.invoice.metadata.lines[0].quantity = "14";
+  const second = { ...payload.invoice.metadata.assignments[0], itemId: secondItemId, quantity: "4" };
+  payload.invoice.metadata.assignments[0].quantity = "10";
+  payload.invoice.metadata.assignments.push(second);
+  payload.allocations = [{ itemId: poId, quantity: "10", notes: "" }, { itemId: secondItemId, quantity: "4", notes: "" }];
+  const response = await sendInvoice(app, "invoice-two-items", payload);
+  assert.equal(response.statusCode, 201, response.body);
+  assert.deepEqual(queries.filter(query => query.sql.includes("INSERT INTO procurement.po_item_allocation"))
+    .map(query => [query.params[1], query.params[3]]), [[poId, 10], [secondItemId, 4]]);
+
+  const over = structuredClone(payload);
+  over.invoice.metadata.lines[0].quantity = "15";
+  over.invoice.metadata.assignments[0].quantity = "11";
+  over.allocations[0].quantity = "11";
+  const refused = await sendInvoice(app, "invoice-two-items-over", over);
+  assert.equal(refused.statusCode, 409, refused.body);
+  assert.equal(refused.json().code, "PO_BALANCE_CHANGED");
+});
+
+test("the line decisions built by the web screen are accepted by the invoice route", async t => {
+  const { invoiceLineDecisions } = await import("../../web/lib/china-invoice-mapping.ts");
+  const { client } = invoiceImportClient();
+  const app = await invoiceImportApp(t, client);
+  const payload = invoicePayload();
+  payload.invoice.metadata.lines[0].quantity = "8";
+  payload.invoice.metadata.lineDecisions = invoiceLineDecisions(payload.invoice.metadata.lines,
+    [{ sourceRow: 16, invoiceQuantity: "8", quantity: "5" }], { 16: { confirmed: true, reason: "Saldo no próximo embarque" } });
+  const response = await sendInvoice(app, "invoice-web-decisions", payload);
+  assert.equal(response.statusCode, 201, response.body);
 });

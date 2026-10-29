@@ -1097,7 +1097,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         }
         const invoiceAssignments = z.array(z.object({ itemId: z.uuid(), poNumber: z.string().trim().min(1).max(80),
           sourcePoNumber: z.string().trim().min(1).max(80), poProductCode: z.string().trim().min(1).max(120),
-          confirmCodeMismatch: z.boolean(), confirmSupplierMismatch: z.boolean(),
+          confirmSupplierMismatch: z.boolean(),
           confirmUnitMismatch: z.boolean().optional(), confirmPriceMismatch: z.boolean().optional(), quantity,
           productCode: z.string().trim().min(1).max(120),
           sourceRow: z.number().int().positive() }).strict())
@@ -1142,7 +1142,19 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
             throw new BusinessError(400, "INVOICE_TOTAL_MISMATCH", "A quantidade total não confere com as linhas.");
           }
         }
-        const assignedByRow = new Map<number, number>();
+        // What the analyst destined from each line; a line without a decision destines its whole quantity.
+        const lineDecisions = z.array(z.object({ sourceRow: z.number().int().positive(),
+          invoiceQuantity: nonnegative, destinedQuantity: nonnegative, confirmQuantityMismatch: z.boolean(),
+          quantityMismatchReason: z.string().trim().max(1000) }).strict())
+          .max(2000).optional().safeParse(body.invoice.metadata.lineDecisions);
+        if (!lineDecisions.success) throw new BusinessError(400, "INVALID_INVOICE_LINE_DECISIONS", "Revise as quantidades destinadas da invoice.");
+        const decisionByRow = new Map((lineDecisions.data ?? []).map(decision => [decision.sourceRow, decision]));
+        if (decisionByRow.size !== (lineDecisions.data ?? []).length || [...decisionByRow.values()].some(decision =>
+          !lineByRow.has(decision.sourceRow)
+          || decimalUnits(decision.invoiceQuantity) !== decimalUnits(lineByRow.get(decision.sourceRow)!.quantity))) {
+          throw new BusinessError(400, "INVALID_INVOICE_LINE_DECISIONS", "Revise as quantidades destinadas da invoice.");
+        }
+        const assignedByRow = new Map<number, bigint>();
         for (const assignment of invoiceAssignments.data) {
           const sourceLine = lineByRow.get(assignment.sourceRow);
           const sourcePoNumbers = sourceLine
@@ -1152,18 +1164,55 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
             || normalizePoNumber(assignment.poNumber) !== normalizePoNumber(assignment.sourcePoNumber)) {
             throw new BusinessError(400, "INVOICE_LINE_MISMATCH", "Assignment does not match the source invoice line.");
           }
+          // The destination key is the cited PO plus the line code: no item with another code.
           if (assignment.productCode.trim().toLocaleUpperCase("en-US")
-            !== assignment.poProductCode.trim().toLocaleUpperCase("en-US")
-            && !assignment.confirmCodeMismatch) {
-            throw new BusinessError(400, "INVOICE_CODE_MISMATCH_UNCONFIRMED", "Confirm the product code divergence before approving this PO allocation.");
+            !== assignment.poProductCode.trim().toLocaleUpperCase("en-US")) {
+            throw new BusinessError(400, "INVOICE_PRODUCT_CODE_MISMATCH",
+              `Linha ${assignment.sourceRow} da invoice: o item da PO precisa ter o mesmo código da linha.`);
           }
           assignedByRow.set(assignment.sourceRow,
-            (assignedByRow.get(assignment.sourceRow) ?? 0) + Number(assignment.quantity));
+            (assignedByRow.get(assignment.sourceRow) ?? 0n) + decimalUnits(assignment.quantity));
         }
-        if (invoiceLines.data.some(line => Math.abs((assignedByRow.get(line.sourceRow) ?? 0) - Number(line.quantity)) > 0.00000001)
-          || assignedByRow.size !== invoiceLines.data.length) {
-          throw new BusinessError(400, "INVOICE_LINE_QUANTITY_MISMATCH", "Assignments must total the source line quantity.");
+        for (const line of invoiceLines.data) {
+          const decision = decisionByRow.get(line.sourceRow);
+          const destined = decimalUnits(decision?.destinedQuantity ?? line.quantity);
+          if ((assignedByRow.get(line.sourceRow) ?? 0n) !== destined) {
+            throw new BusinessError(400, "INVOICE_LINE_QUANTITY_MISMATCH", "Assignments must total the destined line quantity.");
+          }
+          if (destined !== decimalUnits(line.quantity)
+            && !(decision?.confirmQuantityMismatch && decision.quantityMismatchReason.length >= 3)) {
+            throw new BusinessError(400, "INVOICE_QUANTITY_MISMATCH_UNCONFIRMED",
+              `Linha ${line.sourceRow}: confirme e explique a quantidade destinada diferente da invoice.`);
+          }
         }
+        // For a line destined with 0 the API itself records whether its code exists in the cited PO.
+        const zeroRows = invoiceLines.data.filter(line => decimalUnits(decisionByRow.get(line.sourceRow)?.destinedQuantity
+          ?? line.quantity) === 0n);
+        const citedPoNumbers = (line: { poCell: string }) =>
+          [...line.poCell.matchAll(/\bPO\s*([0-9]{3,})/giu)].map(match => normalizePoNumber(match[0]));
+        const codesInCitedPos = zeroRows.length ? await client.query<{ po: string; code: string }>(
+          `SELECT DISTINCT regexp_replace(regexp_replace(upper(po.external_number), '[^A-Z0-9]', '', 'g'), '^PO', '') AS po,
+                  upper(btrim(item.product_code)) AS code, true AS invoice_po_code
+           FROM procurement.purchase_order po
+           JOIN procurement.purchase_order_item item ON item.purchase_order_id = po.id
+           WHERE po.importer = $1
+             AND regexp_replace(regexp_replace(upper(po.external_number), '[^A-Z0-9]', '', 'g'), '^PO', '') = ANY($2::text[])
+             AND upper(btrim(item.product_code)) = ANY($3::text[])`,
+          [body.process.importer, [...new Set(zeroRows.flatMap(citedPoNumbers))],
+            [...new Set(zeroRows.map(line => line.productCode.trim().toLocaleUpperCase("en-US")))]]) : { rows: [] };
+        const savedLineDecisions = (lineDecisions.data ?? []).map(decision => {
+          if (decimalUnits(decision.destinedQuantity) !== 0n) return decision;
+          const line = lineByRow.get(decision.sourceRow)!;
+          const code = line.productCode.trim().toLocaleUpperCase("en-US");
+          return { ...decision, codeFoundInPo: citedPoNumbers(line).some(po =>
+            codesInCitedPos.rows.some(row => row.po === po && row.code === code)) };
+        });
+        const auditedLineDecisions = savedLineDecisions
+          .filter(decision => decimalUnits(decision.destinedQuantity) !== decimalUnits(decision.invoiceQuantity))
+          .map(decision => ({ sourceRow: decision.sourceRow, productCode: lineByRow.get(decision.sourceRow)!.productCode,
+            invoiceQuantity: decision.invoiceQuantity, destinedQuantity: decision.destinedQuantity,
+            quantityMismatchReason: decision.quantityMismatchReason,
+            ...("codeFoundInPo" in decision ? { codeFoundInPo: decision.codeFoundInPo } : {}) }));
         const parsedCatalogUpdates = invoiceCatalogUpdates.safeParse(body.invoice.metadata.catalogUpdates ?? { products: [], poItems: [] });
         if (!parsedCatalogUpdates.success) throw new BusinessError(400, "INVALID_INVOICE_CATALOG_UPDATES", "Revise the selected product and PO catalog updates.");
         const catalogUpdates = parsedCatalogUpdates.data;
@@ -1431,7 +1480,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
             { itemId: item.id, poNumber: item.number, poProductCode: item.product_code, quantity: allocationQuantity,
               invoiceAssignments: invoiceAssignments.data.filter(assignment => assignment.itemId === item.id)
                 .map(assignment => ({ sourceRow: assignment.sourceRow, invoiceProductCode: assignment.productCode,
-                  confirmedCodeMismatch: assignment.confirmCodeMismatch, exporterText,
+                  exporterText,
                   poSupplierText: supplierByItemId.get(item.id)?.supplierText,
                   poSupplierName: supplierByItemId.get(item.id)?.supplierName,
                   poSupplierCode: supplierByItemId.get(item.id)?.supplierCode,
@@ -1446,11 +1495,13 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
            (id,process_id,kind,number,issue_date,amount,currency_code,notes)
            VALUES ($1,$2,'INVOICE',$3,$4,$5,$6,$7)`,
           [documentId, processId, body.invoice.number, body.invoice.issueDate, body.invoice.amount,
-            body.invoice.currency, JSON.stringify({ fileName: body.invoice.fileName, ...body.invoice.metadata })],
+            body.invoice.currency, JSON.stringify({ fileName: body.invoice.fileName, ...body.invoice.metadata,
+              ...(lineDecisions.data ? { lineDecisions: savedLineDecisions } : {}) })],
         );
         await record(client, "IMPORT_PROCESS", processId, "PROCESS_DOCUMENT", documentId, "CREATE", null,
           { kind: "INVOICE", number: body.invoice.number, issueDate: body.invoice.issueDate,
-            amount: body.invoice.amount, currency: body.invoice.currency, fileName: body.invoice.fileName }, auth.actor, body.process.reason);
+            amount: body.invoice.amount, currency: body.invoice.currency, fileName: body.invoice.fileName,
+            ...(auditedLineDecisions.length ? { lineDecisions: auditedLineDecisions } : {}) }, auth.actor, body.process.reason);
         for (const update of catalogUpdates.products) {
           const found = await client.query<Record<string, unknown>>(
             `SELECT * FROM catalog.entry WHERE kind = 'PRODUCT' AND importer IS NULL
@@ -1531,14 +1582,21 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
          GROUP BY requested.source, requested.ordinal, item.id, po.id, supplier.id, product.id
          ORDER BY requested.ordinal, po.normalized_number, item.line_number`, parameters);
       const purchaseOrders = await pool.query<{ sourcePoNumber: string; purchaseOrderId: string | null;
-        poStatus: string | null }>(
+        poStatus: string | null; otherImporters: string[] }>(
         `WITH requested AS (
            SELECT input.source, input.ordinal,
              regexp_replace(regexp_replace(upper(input.source), '[^A-Z0-9]', '', 'g'), '^PO', '') AS normalized
            FROM unnest($2::text[]) WITH ORDINALITY AS input(source, ordinal)
          ), request_context AS (SELECT $3::text AS revising_ip_number)
          SELECT requested.source AS "sourcePoNumber", matching.id AS "purchaseOrderId",
-                matching.lifecycle_status AS "poStatus"
+                matching.lifecycle_status AS "poStatus",
+                CASE WHEN matching.id IS NULL THEN ARRAY(
+                  SELECT DISTINCT other.importer FROM procurement.purchase_order other
+                  WHERE other.importer <> $1 AND other.importer = ANY($4::text[])
+                    AND other.lifecycle_status <> 'DELETED'
+                    AND regexp_replace(regexp_replace(upper(other.external_number), '[^A-Z0-9]', '', 'g'), '^PO', '')
+                      = requested.normalized
+                  ORDER BY other.importer) ELSE ARRAY[]::text[] END AS "otherImporters"
          FROM requested
          CROSS JOIN request_context
          LEFT JOIN LATERAL (
@@ -1562,7 +1620,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const status = statusByPo.get(sourcePoNumber);
         return { sourcePoNumber, poExists: Boolean(status?.purchaseOrderId),
           purchaseOrderId: status?.purchaseOrderId ?? null, poStatus: status?.poStatus ?? null,
-          items: itemsByPo.get(sourcePoNumber) ?? [] };
+          otherImporters: status?.otherImporters ?? [], items: itemsByPo.get(sourcePoNumber) ?? [] };
       }) };
     });
 
