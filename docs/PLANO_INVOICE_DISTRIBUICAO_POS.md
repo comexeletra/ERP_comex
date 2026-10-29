@@ -39,7 +39,7 @@ Permitir que o analista decida quanto de cada linha da invoice baixa do saldo da
 4. Quantidade destinada diferente da invoice exige confirmação e motivo escrito por linha.
 5. Fornecedor da PO diferente do Exporter: continua o ponto de auditoria "Fornecedor" com confirmação (o IP fica marcado com divergência, como o banco já permite).
 6. PO citada que está em outra importadora: o banco não permite misturar importadoras num IP; a tela avisa em qual importadora a PO está e oferece trocar a importadora do IP ou abrir a PO.
-7. Código da invoice que não existe na PO citada: a linha fica pendente até corrigir a PO (Protheus) ou o código na invoice, ou ser destinada com quantidade 0 e motivo. Deixa de existir a escolha de outro item da PO com confirmação de divergência de código.
+7. Código da invoice que não existe na PO citada: a auditoria da linha mostra o ponto "Código do produto" (código da invoice × não existe na PO), pendente até corrigir a PO (Protheus) ou o código na invoice, ou até a linha ser destinada com quantidade 0 e motivo. Deixa de existir a escolha de outro item da PO com confirmação de divergência de código.
 8. Mesmo código em mais de um item da PO citada: o saldo da chave é a soma dos itens, e a quantidade preenche os itens na ordem das linhas da PO.
 
 ### Requisitos
@@ -48,9 +48,10 @@ Permitir que o analista decida quanto de cada linha da invoice baixa do saldo da
 2. **Saldo insuficiente.** Quando a quantidade da invoice passa do saldo do item, a linha mostra o saldo e o botão "Usar o saldo da PO (N)", que preenche o campo com o saldo. Não é possível gravar acima do saldo.
 3. **Ponto "quantidade diferente da invoice".** Quando a quantidade para a PO difere da linha, a auditoria da linha mostra invoice × PO e exige confirmação e motivo (mínimo de 3 caracteres).
 4. **Chave PO + código.** O destino de cada linha é o item com o mesmo código (normalizado como hoje) na PO citada; a escolha manual de item com outro código sai da tela e da API. Se o código aparece em mais de um item, o sistema preenche os itens na ordem das linhas da PO até a quantidade decidida; o limite é a soma dos saldos.
-5. **Resumo por PO + código.** Quadro acima das linhas: para cada PO citada e código, quantidade pedida, já embarcada em outros IPs, desta invoice e saldo depois. Linhas com o mesmo produto e PO somam no mesmo saldo.
-6. **PO em outra importadora.** Quando a PO citada não existe na importadora do IP mas existe em outra, o aviso diz em qual e oferece trocar a importadora do IP (que revalida as linhas) ou abrir a PO.
-7. **Gravação.** A API aceita soma destinada diferente da linha quando confirmada com motivo (inclusive 0); recusa item com código diferente do da linha; continua recusando PO diferente da citada, acima do saldo, outra importadora e fornecedor sem confirmação. O metadado guarda, por linha, quantidade da invoice, quantidade destinada, confirmação e motivo; a auditoria registra a decisão.
+5. **Ponto "código do produto".** O ponto continua na auditoria da linha e passa a indicar código da invoice ausente na PO citada: mostra o código da invoice e que ele não existe na PO. Não tem caixa de confirmação própria; fica resolvido quando a linha é destinada com 0 e o ponto de quantidade é confirmado com motivo, ou some quando a PO ou a invoice é corrigida.
+6. **Resumo por PO + código.** Quadro acima das linhas: para cada PO citada e código, quantidade pedida, já embarcada em outros IPs, desta invoice e saldo depois. Linhas com o mesmo produto e PO somam no mesmo saldo.
+7. **PO em outra importadora.** Quando a PO citada não existe na importadora do IP mas existe em outra, o aviso diz em qual e oferece trocar a importadora do IP (que revalida as linhas) ou abrir a PO.
+8. **Gravação.** A API aceita soma destinada diferente da linha quando confirmada com motivo (inclusive 0); recusa item com código diferente do da linha; continua recusando PO diferente da citada, acima do saldo, outra importadora e fornecedor sem confirmação. O metadado guarda, por linha, quantidade da invoice, quantidade destinada, confirmação e motivo; a auditoria registra a decisão.
 
 ### Restrições
 
@@ -71,7 +72,7 @@ Permitir que o analista decida quanto de cada linha da invoice baixa do saldo da
 | 3 | Quantidade 0 com confirmação e motivo grava a linha sem alocação | API |
 | 4 | Acima do saldo, em PO diferente da citada ou em item com outro código: recusada (os testes atuais de confirmação de divergência de código mudam, porque a regra muda) | API |
 | 4b | Código repetido em dois itens da PO: a quantidade preenche os itens na ordem das linhas, até a soma dos saldos | API e web (`lib/`) |
-| 4c | Código ausente na PO citada: linha pendente, ou quantidade 0 com motivo | web e API |
+| 4c | Código ausente na PO citada: ponto "código do produto" pendente na auditoria da linha (invoice × não existe na PO); resolvido só com quantidade 0 confirmada com motivo, e a API recusa destinar a item com outro código | web (`lib/`) e API |
 | 5 | "Usar o saldo da PO" preenche o saldo; o ponto de diferença aparece até ser confirmado com motivo | web (`lib/`) |
 | 6 | Resumo por PO e produto: pedida, já embarcada, desta invoice e saldo depois, somando linhas repetidas | web (`lib/`) |
 | 7 | PO citada em outra importadora: aviso com o nome da importadora | API (rota de lote) e web |
@@ -101,7 +102,7 @@ Ponto de partida: branch `homologacao` no commit deste plano. API e web do HML n
 |---|---|
 | Rota de gravação da invoice | `apps/api/src/operations.ts`, `POST /api/v1/processes/import-invoice` |
 | Associação só na PO da célula da linha (`INVOICE_LINE_MISMATCH`) | mesma rota, laço `for (const assignment of invoiceAssignments.data)` |
-| Divergência de código com confirmação (`INVOICE_CODE_MISMATCH_UNCONFIRMED`, campo `confirmCodeMismatch`) | mesmo laço; sai com a decisão 7 |
+| Divergência de código com confirmação (`INVOICE_CODE_MISMATCH_UNCONFIRMED`, campo `confirmCodeMismatch`) | mesmo laço; a confirmação sai com a decisão 7 (o ponto `CODE` fica na tela com a regra nova) |
 | Soma das associações igual à linha (`INVOICE_LINE_QUANTITY_MISMATCH`) | logo após o laço; passa a aceitar diferença confirmada com motivo |
 | Saldo, fornecedor, unidade e preço por item travado | mesma rota, laço sobre `matchedItems` (`FOR UPDATE OF item, po`) |
 | Candidatos da revisão | `POST /api/v1/purchase-orders/invoice-candidates/batch` (mesmo arquivo); devolve `remainingQuantity` por item e `poExists`/`poStatus` por PO, só da importadora pedida |
@@ -115,7 +116,8 @@ Ponto de partida: branch `homologacao` no commit deste plano. API e web do HML n
 1. **`lib/` (web).** Em `china-invoice-mapping.ts`:
    - destino por chave PO + código: os candidatos de uma linha passam a ser só os itens da PO citada com o mesmo código normalizado (`invoicePoCodeDiffers` = falso), em ordem de `lineNumber`;
    - função que preenche os itens da chave em ordem até a quantidade decidida e devolve as alocações por item, com o limite na soma dos saldos (decisão 8);
-   - ponto de auditoria novo `QUANTITY` (invoice × destinada), com confirmação e motivo; o ponto `CODE` sai;
+   - ponto de auditoria novo `QUANTITY` (invoice × destinada), com confirmação e motivo;
+   - o ponto `CODE` continua, com regra nova: aparece quando a PO citada não tem item com o código da linha (`poValue` vazio, exibido como "não existe na PO"); não tem confirmação própria e conta como confirmado só quando a quantidade destinada é 0 e o ponto `QUANTITY` está confirmado com motivo. `invoiceAuditPoints` passa a receber a lista de itens da PO citada (ou a ausência do código) em vez de exigir um item escolhido;
    - resumo por PO + código: pedida, já embarcada em outros IPs, desta invoice e saldo depois, somando linhas repetidas da invoice.
    Testes em `apps/web/test/invoice-audit-points.test.mjs` (ou arquivo novo em `apps/web/test/`). Funções de `lib/` não importam valores de outros módulos de `lib/` e recebem `m: Messages` quando geram texto.
 2. **Rota de lote (API).** Acrescentar por item a quantidade pedida (já vem `orderedQuantity`) e a já embarcada em outros IPs (ativa, excluindo o IP em revisão), e por PO a data (`po.order_date`). Para PO sem correspondência na importadora pedida, devolver as importadoras do escopo do usuário onde ela existe (`otherImporters`), para o aviso da decisão 6. Testes em `apps/api/test/operations.test.mjs` (há testes de lote: "invoice candidate batch …").
@@ -123,12 +125,13 @@ Ponto de partida: branch `homologacao` no commit deste plano. API e web do HML n
    - Recusar associação com `poProductCode` diferente de `productCode` (código novo, por exemplo `INVOICE_PRODUCT_CODE_MISMATCH`), em vez de aceitar com `confirmCodeMismatch`. Os testes atuais que usam `confirmCodeMismatch: true` mudam porque a regra mudou.
    - Metadado novo por linha, por exemplo `lineDecisions: [{ sourceRow, invoiceQuantity, destinedQuantity, confirmQuantityMismatch, quantityMismatchReason }]`, validado com zod `.strict()`. Soma das associações da linha diferente da quantidade da linha só passa com `confirmQuantityMismatch = true` e motivo com pelo menos 3 caracteres; linha com destino 0 não tem associação.
    - Manter: PO da associação igual à da célula da linha, saldo por item travado, importadora, fornecedor (com a confirmação que já existe), unidade e preço.
-   - Gravar a decisão na auditoria da invoice (o registro `CREATE` do documento ou um registro próprio da alocação).
+   - Gravar a decisão na auditoria da invoice (o registro `CREATE` do documento ou um registro próprio da alocação). Para linha com destino 0, a API confere na PO citada se o código existe e grava o resultado na decisão da linha (por exemplo `codeFoundInPo`), sem aceitar esse valor da tela.
    - Atenção: `INVOICE_ALLOCATION_MISMATCH` compara `allocations` com `assignments`; os dois continuam tendo de bater entre si.
 4. **Tela.**
    - Campo "quantidade para a PO" por linha (hoje o campo edita a quantidade da parte e exige soma igual à linha; ver a mensagem `t.sumDiffers`).
    - Botão "Usar o saldo da PO (N)" quando falta saldo.
-   - Remover a escolha de item com outro código e a confirmação de código.
+   - Remover a escolha de item com outro código e a caixa "confirmo a divergência de código" (`confirmCodeMismatch`).
+   - Mostrar a seção de auditoria também quando não há item com o código na PO citada (hoje ela só aparece com `selectedCandidate`), com o ponto `CODE` pendente.
    - Ponto `QUANTITY` com caixa de confirmação e campo de motivo.
    - Resumo por PO + código acima da tabela.
    - Aviso de PO em outra importadora com botão para trocar a importadora do IP.
