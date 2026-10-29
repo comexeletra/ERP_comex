@@ -102,7 +102,8 @@ test("invoice import validates SHA-256 and stores it in document metadata", asyn
 function invoiceImportClient({ revision = false, supplierMatchesExporter = true, otherImporterIp = false,
   canceledItem = false, duplicateKind = null, poUnit = null, poUnitPrice = null, poCurrency = null,
   linkedOrphanPo = false, draft = false, insufficientBalance = false, purchaseOrderStatus = "ACTIVE",
-  previousAllocationPoStatus = "ACTIVE", recordStatus = "ACTIVE", shipped = false, exporterAliases = [] } = {}) {
+  previousAllocationPoStatus = "ACTIVE", recordStatus = "ACTIVE", shipped = false, exporterAliases = [],
+  catalogProduct = null } = {}) {
   const processId = "00000000-0000-4000-8000-000000000021";
   const oldDocumentId = "00000000-0000-4000-8000-000000000022";
   const oldAllocationId = "00000000-0000-4000-8000-000000000023";
@@ -156,6 +157,9 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true,
           purchase_order_item_id: poId, quantity: "5", status: "ACTIVE",
           lifecycle_status: previousAllocationPoStatus }], rowCount: 1 }
           : { rows: [], rowCount: 0 };
+      }
+      if (sql.includes("SELECT * FROM catalog.entry WHERE kind = 'PRODUCT'")) {
+        return catalogProduct ? { rows: [catalogProduct], rowCount: 1 } : { rows: [], rowCount: 0 };
       }
       if (sql.includes("SELECT item.id, item.ordered_quantity::text")) {
         return { rows: [{ id: poId, ordered_quantity: insufficientBalance ? "3" : "10",
@@ -897,4 +901,47 @@ test("invoice balance errors identify the affected invoice row", async t => {
   assert.equal(response.statusCode, 409);
   assert.equal(response.json().code, "PO_BALANCE_CHANGED");
   assert.match(response.json().detail, /linha 16/i);
+});
+
+test("the invoice never overwrites the PO item and only fills empty product fields", async t => {
+  const product = { id: "00000000-0000-4000-8000-000000000031", name: "BOTAO SILICONE", product_ncm_code: "39269090",
+    manufacturer: null, manufacturer_address: " ", manufacturer_country: "CN" };
+  const { client, queries } = invoiceImportClient({ catalogProduct: product });
+  const app = await invoiceImportApp(t, client);
+  const send = (key, catalogUpdates) => {
+    const payload = invoicePayload();
+    payload.invoice.metadata.catalogUpdates = catalogUpdates;
+    return app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+      headers: { "x-test-subject": "writer", "idempotency-key": key }, payload });
+  };
+  const fill = { productCode: "PO-CODE", ncmCode: "40169990", manufacturer: "Hangzhou Shunhesheng",
+    manufacturerAddress: "Hangzhou", manufacturerCountry: "BR" };
+
+  const poItem = await send("invoice-po-item-update", { products: [], poItems: [{ itemId: poId,
+    description: "Invoice text", unitPrice: "1", currency: "CNY", ncmCode: null }] });
+  assert.equal(poItem.statusCode, 400, poItem.body);
+  assert.equal(poItem.json().code, "INVOICE_PO_ITEM_UPDATE_NOT_ALLOWED");
+  const renamed = await send("invoice-product-rename", { products: [{ ...fill, name: "Invoice text" }] });
+  assert.equal(renamed.statusCode, 400, renamed.body);
+  assert.equal(renamed.json().code, "INVALID_INVOICE_CATALOG_UPDATES");
+  assert.equal(queries.some(query => query.sql.includes("UPDATE procurement.purchase_order_item")), false);
+
+  const filled = await send("invoice-product-fill", { products: [fill] });
+  assert.equal(filled.statusCode, 201, filled.body);
+  const update = queries.find(query => query.sql.includes("UPDATE catalog.entry"));
+  assert.doesNotMatch(update.sql, /\bname\s*=/u);
+  assert.match(update.sql, /product_ncm_code = coalesce\(nullif\(btrim\(product_ncm_code\), ''\), \$2\)/u);
+  assert.deepEqual(update.params.slice(0, 5), [product.id, "40169990", "Hangzhou Shunhesheng", "Hangzhou", "BR"]);
+
+  const before = queries.filter(query => query.sql.includes("UPDATE catalog.entry")).length;
+  const { client: fullClient, queries: fullQueries } = invoiceImportClient({ catalogProduct: { ...product,
+    manufacturer: "Other", manufacturer_address: "Somewhere" } });
+  const fullApp = await invoiceImportApp(t, fullClient);
+  const payload = invoicePayload();
+  payload.invoice.metadata.catalogUpdates = { products: [fill] };
+  const unchanged = await fullApp.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-product-complete" }, payload });
+  assert.equal(unchanged.statusCode, 201, unchanged.body);
+  assert.equal(fullQueries.some(query => query.sql.includes("UPDATE catalog.entry")), false);
+  assert.equal(before, 1);
 });

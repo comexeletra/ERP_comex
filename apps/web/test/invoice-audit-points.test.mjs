@@ -92,3 +92,14 @@ test("an Exporter alias of the PO supplier removes the supplier point; a short o
   assert.equal(invoiceExporterAliasSuggestion(withAddress.exporter), "HEXING ELECTRICAL CO.,LTD");
   assert.equal(invoiceExporterAliasSuggestion("  Exporter Ltd, Shangcheng  "), "Exporter Ltd, Shangcheng");
 });
+
+test("the invoice only fills product fields that are still empty in the catalog", async () => {
+  const { invoiceProductFillFields } = await import("../lib/china-invoice-mapping.ts");
+  const line = { ncm: "40169990", manufacturer: "Hangzhou Shunhesheng", manufacturerAddress: "Hangzhou", manufacturerCountry: "CN" };
+  const empty = { ncmCode: null, manufacturer: null, manufacturerAddress: " ", manufacturerCountry: null };
+  assert.deepEqual(invoiceProductFillFields(line, empty), ["ncm", "manufacturer", "manufacturerAddress", "manufacturerCountry"]);
+  assert.deepEqual(invoiceProductFillFields(line, { ...empty, ncmCode: "39269090", manufacturer: "Other" }),
+    ["manufacturerAddress", "manufacturerCountry"]);
+  // An NCM that is not 8 digits and blank invoice values fill nothing.
+  assert.deepEqual(invoiceProductFillFields({ ncm: "4016", manufacturer: " ", manufacturerAddress: "", manufacturerCountry: "" }, empty), []);
+});

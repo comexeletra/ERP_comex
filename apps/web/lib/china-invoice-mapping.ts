@@ -145,6 +145,22 @@ export function invoiceAuditProgress(points: readonly InvoiceAuditPoint[]): { re
 export type InvoiceComparisonField = "description" | "ncm" | "unit" | "price" | "manufacturer";
 export type InvoiceComparisonRow = { field: InvoiceComparisonField; invoice: string; poItem: string; product: string; differs: boolean };
 
+export type InvoiceProductFillField = "ncm" | "manufacturer" | "manufacturerAddress" | "manufacturerCountry";
+
+/** Catalog fields still empty that the invoice line can fill; the invoice never overwrites registered product data. */
+export function invoiceProductFillFields(
+  line: { ncm: string; manufacturer: string; manufacturerAddress: string; manufacturerCountry: string },
+  product: { ncmCode: string | null; manufacturer: string | null; manufacturerAddress: string | null; manufacturerCountry: string | null },
+): InvoiceProductFillField[] {
+  const empty = (value: string | null) => !(value ?? "").trim();
+  return ([
+    ["ncm", /^\d{8}$/u.test(line.ncm), product.ncmCode],
+    ["manufacturer", !empty(line.manufacturer), product.manufacturer],
+    ["manufacturerAddress", !empty(line.manufacturerAddress), product.manufacturerAddress],
+    ["manufacturerCountry", !empty(line.manufacturerCountry), product.manufacturerCountry],
+  ] as const).filter(([, available, current]) => available && empty(current)).map(([field]) => field);
+}
+
 export function invoiceComparisonRows(
   invoiceLine: { description: string; ncm: string; unit: string; unitPrice: string; manufacturer: string } | null,
   poItem: { description: string; unit: string; ncmCode: string | null; unitPrice: string | null; currency: string | null },

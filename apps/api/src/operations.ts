@@ -187,10 +187,10 @@ const invoiceCandidateBatch = z.object({
 }).strict();
 const invoiceCatalogUpdates = z.object({
   products: z.array(z.object({ productCode: z.string().trim().min(1).max(120),
-    name: z.string().trim().min(1).max(2000), ncmCode: z.string().regex(/^\d{8}$/u).nullable(),
+    ncmCode: z.string().regex(/^\d{8}$/u).nullable(),
     manufacturer: nullableText(240), manufacturerAddress: nullableText(500), manufacturerCountry: nullableText(120) }).strict()).max(1000),
-  poItems: z.array(z.object({ itemId: z.uuid(), description: z.string().trim().min(1).max(1000),
-    unitPrice: nonnegative, currency: z.string().regex(/^[A-Z]{3}$/u), ncmCode: z.string().regex(/^\d{8}$/u).nullable() }).strict()).max(1000),
+  // The PO comes from Protheus and the invoice is checked against it, so PO item updates are refused.
+  poItems: z.array(z.unknown()).max(1000).optional(),
 }).strict();
 const uuid = z.uuid();
 
@@ -1167,6 +1167,10 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const parsedCatalogUpdates = invoiceCatalogUpdates.safeParse(body.invoice.metadata.catalogUpdates ?? { products: [], poItems: [] });
         if (!parsedCatalogUpdates.success) throw new BusinessError(400, "INVALID_INVOICE_CATALOG_UPDATES", "Revise the selected product and PO catalog updates.");
         const catalogUpdates = parsedCatalogUpdates.data;
+        if (catalogUpdates.poItems?.length) {
+          throw new BusinessError(400, "INVOICE_PO_ITEM_UPDATE_NOT_ALLOWED",
+            "A invoice não altera a PO. Corrija a PO no Protheus e atualize-a pela planilha TOTVS.");
+        }
         const poProductCodes = new Set(invoiceAssignments.data.map(item => item.poProductCode.toLocaleUpperCase("en-US")));
         if (catalogUpdates.products.some(update => !poProductCodes.has(update.productCode.toLocaleUpperCase("en-US")))) {
           throw new BusinessError(400, "INVOICE_CATALOG_UPDATE_MISMATCH", "Catalog updates must match products and PO items selected for this invoice.");
@@ -1182,9 +1186,6 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         if (assignedTotals.size !== aggregated.size || [...aggregated].some(([itemId, total]) =>
           Math.abs(total - (assignedTotals.get(itemId) ?? Number.NaN)) > 0.00000001)) {
           throw new BusinessError(400, "INVOICE_ALLOCATION_MISMATCH", "As quantidades distribuídas não conferem com as associações da invoice.");
-        }
-        if (catalogUpdates.poItems.some(update => !aggregated.has(update.itemId))) {
-          throw new BusinessError(400, "INVOICE_CATALOG_UPDATE_MISMATCH", "PO item updates must match selected invoice allocations.");
         }
         const exporterText = typeof body.invoice.metadata.exporterText === "string"
           ? body.invoice.metadata.exporterText.trim() : "";
@@ -1456,28 +1457,21 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
               AND normalized_code = upper(btrim($1)) FOR UPDATE`, [update.productCode]);
           const product = found.rows[0];
           if (!product) throw new BusinessError(409, "PRODUCT_CATALOG_NOT_FOUND", `Product ${update.productCode} is not registered in the global product catalog.`);
+          // The invoice only completes fields still empty in the catalog; it never overwrites registered data.
+          const empty = (column: string) => !String(product[column] ?? "").trim();
+          if (![["product_ncm_code", update.ncmCode], ["manufacturer", update.manufacturer],
+            ["manufacturer_address", update.manufacturerAddress], ["manufacturer_country", update.manufacturerCountry]]
+            .some(([column, value]) => value && empty(String(column)))) continue;
           const updated = await client.query<Record<string, unknown>>(
-            `UPDATE catalog.entry SET name = $2, product_ncm_code = coalesce($3, product_ncm_code),
-               manufacturer = coalesce($4, manufacturer), manufacturer_address = coalesce($5, manufacturer_address),
-               manufacturer_country = coalesce($6, manufacturer_country), version = version + 1,
-               updated_by = $7, updated_at = now() WHERE id = $1 RETURNING *`,
-            [product.id, update.name, update.ncmCode, update.manufacturer, update.manufacturerAddress,
+            `UPDATE catalog.entry SET product_ncm_code = coalesce(nullif(btrim(product_ncm_code), ''), $2),
+               manufacturer = coalesce(nullif(btrim(manufacturer), ''), $3),
+               manufacturer_address = coalesce(nullif(btrim(manufacturer_address), ''), $4),
+               manufacturer_country = coalesce(nullif(btrim(manufacturer_country), ''), $5), version = version + 1,
+               updated_by = $6, updated_at = now() WHERE id = $1 RETURNING *`,
+            [product.id, update.ncmCode, update.manufacturer, update.manufacturerAddress,
               update.manufacturerCountry, auth.actor.userId]);
           await record(client, "CATALOG_ENTRY", String(product.id), "CATALOG_ENTRY", String(product.id), "UPDATE",
             product, updated.rows[0], auth.actor, body.process.reason);
-        }
-        for (const update of catalogUpdates.poItems) {
-          const item = byItemId.get(update.itemId);
-          if (!item) throw new BusinessError(409, "PO_ITEM_MISMATCH", "An invoice PO item update is not part of the selected allocation.");
-          const before = await client.query<Record<string, unknown>>(
-            `SELECT * FROM procurement.purchase_order_item WHERE id = $1 FOR UPDATE`, [update.itemId]);
-          const updated = await client.query<Record<string, unknown>>(
-            `UPDATE procurement.purchase_order_item SET description = $2, unit_price = $3,
-               currency_code = $4, ncm = coalesce($5, ncm), updated_at = now() WHERE id = $1 RETURNING *`,
-            [update.itemId, update.description, update.unitPrice, update.currency, update.ncmCode]);
-          await client.query(`UPDATE procurement.purchase_order SET version = version + 1, updated_at = now() WHERE id = $1`, [item.purchase_order_id]);
-          await record(client, "PURCHASE_ORDER", item.purchase_order_id, "PURCHASE_ORDER_ITEM", update.itemId, "UPDATE",
-            before.rows[0], updated.rows[0], auth.actor, body.process.reason);
         }
         await saveReceipt(client, auth.actor.userId, key, command.hash, "IP_INVOICE_IMPORT", processId);
         return { id: processId, documentId, allocations: aggregated.size, ipNumber: body.process.ipNumber,

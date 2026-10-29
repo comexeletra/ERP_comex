@@ -165,6 +165,7 @@ Se algo essencial não estiver claro, pergunte antes de supor.
 - Unidades do mesmo grupo são equivalentes para todos os fornecedores e produtos (peça `UN, UND, UNID, UNIDADE, PC, PCS, PCE, PECA, PECAS, UNIT, UNITS, EA`; quilo `KG, KGS`; metro `M, MT, MTS`). A lista fica em `apps/api/src/unit-equivalence.ts` e no espelho `apps/web/lib/china-invoice-mapping.ts`, e `test/unit-equivalence.test.mjs` falha se as duas divergirem.
 - O Exporter da invoice traz o nome seguido do endereço. Ele corresponde ao fornecedor da PO quando bate com o código ou o nome, ou quando começa com um apelido ativo desse fornecedor (`catalog.supplier_exporter_alias`, M074, ao menos 8 letras ou números). Compare sempre com o fornecedor da PO escolhida, nunca procure o apelido no cadastro inteiro: vários fornecedores têm o mesmo nome (por exemplo, EX000495, EX000767 e EX000135 da HEXING). Apelidos são editados por Master, Administrador e Compras; remover mantém o registro como `REMOVED`.
 - A API recalcula unidade e fornecedor na gravação e não confia nas confirmações enviadas pela tela.
+- A PO (vinda do Protheus) é a referência e a invoice é conferida contra ela: a carga da invoice nunca altera o item da PO (a API recusa `catalogUpdates.poItems` com `INVOICE_PO_ITEM_UPDATE_NOT_ALLOWED`; correção de PO vem do Protheus pela planilha TOTVS). No cadastro do produto, a invoice só preenche NCM, fabricante, endereço e país que estejam vazios; nunca troca a descrição nem sobrescreve dado cadastrado.
 
 ## Alíquotas por NCM (II, IPI, PIS/COFINS)
 

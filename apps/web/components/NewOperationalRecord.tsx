@@ -33,7 +33,7 @@ import { fieldLabel } from "../lib/i18n/labels";
 import PageHeader from "./PageHeader";
 import { classifyInvoiceDestination, invoiceAssignmentsFromLines, invoiceAuditPoints, InvoiceAuditPointKind, invoiceAuditProgress,
   invoiceCandidatesForProduct, invoiceComparisonRows, invoicePoCodeDiffers, invoicePoPriceDiffers, invoicePoUnitDiffers,
-  invoiceExporterAliasSuggestion, invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping";
+  invoiceExporterAliasSuggestion, invoiceProductFillFields, invoiceSupplierMatchesExporter, suggestInvoicePoItem } from "../lib/china-invoice-mapping";
 import { createExporterAlias } from "./SupplierExporterAliases";
 
 const poRoles = new Set(["Master", "Administrador", "Importação", "Compras"]);
@@ -77,7 +77,7 @@ type InvoiceItemCandidate = { id: string; lineNumber: number; productCode: strin
 type InvoiceMatch = { key: string; sourceRow: number; sourcePoNumber: string; poNumber: string; quantity: string;
   productCode: string; description: string; itemId: string; candidates: InvoiceItemCandidate[];
   poExists: boolean; poId: string | null; poStatus: "ACTIVE" | "CANCELLED" | "CLOSED" | "DELETED" | null;
-  updateProduct: boolean; updatePoItem: boolean; confirmCodeMismatch: boolean; confirmSupplierMismatch: boolean;
+  updateProduct: boolean; confirmCodeMismatch: boolean; confirmSupplierMismatch: boolean;
   confirmUnitMismatch: boolean; confirmPriceMismatch: boolean };
 type InvoiceDuplicate = { id: string; ipNumber: string; recordStatus: string; version: string;
   logisticsStatus: string | null; lifecycleStatus: string; shipped?: boolean };
@@ -559,7 +559,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         return { ...assignment, candidates, poExists: lookup?.poExists ?? false,
           poId: lookup?.purchaseOrderId ?? null, poStatus: lookup?.poStatus ?? null,
           itemId: suggestion?.id ?? "", updateProduct: false,
-          updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
+          confirmCodeMismatch: false, confirmSupplierMismatch: false,
           confirmUnitMismatch: false, confirmPriceMismatch: false };
       });
       setInvoiceMatches(matches);
@@ -603,7 +603,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       const assignments = invoiceMatches.length > 0 ? invoiceMatches : invoiceAssignmentsFromLines(invoiceDraft.lines).map(match => ({
         ...match, candidates: [] as InvoiceItemCandidate[], poExists: false, poId: null as string | null, poStatus: null,
         itemId: "", updateProduct: false,
-        updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
+        confirmCodeMismatch: false, confirmSupplierMismatch: false,
         confirmUnitMismatch: false, confirmPriceMismatch: false,
       }));
       const candidatesByPo = await loadInvoiceCandidates(importer, invoiceDraft.ipNumber,
@@ -917,19 +917,15 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           || invoiceDraft.lines.some(line => Math.abs((invoiceAllocationTotals.get(line.sourceRow) ?? 0) - Number(line.quantity)) > 0.00000001))
           throw new Error(t.reviewAllLines);
         const productUpdates = new Map<string, Record<string, unknown>>();
-        const poItemUpdates = new Map<string, Record<string, unknown>>();
         for (const match of invoiceMatches) {
           const line = invoiceDraft.lines.find(source => source.sourceRow === match.sourceRow);
           const candidate = match.candidates.find(value => value.id === match.itemId);
           if (!line || !candidate) continue;
           if (match.updateProduct && candidate.productId) productUpdates.set(candidate.productCode.toLocaleUpperCase("en-US"), {
-            productCode: candidate.productCode, name: line.description, ncmCode: /^\d{8}$/u.test(line.ncm) ? line.ncm : null,
+            productCode: candidate.productCode, ncmCode: /^\d{8}$/u.test(line.ncm) ? line.ncm : null,
             manufacturer: line.manufacturer || null, manufacturerAddress: line.manufacturerAddress || null,
             manufacturerCountry: line.manufacturerCountry || null,
           });
-          if (match.updatePoItem) poItemUpdates.set(match.itemId, { itemId: match.itemId,
-            description: line.description, unitPrice: line.unitPrice, currency: "CNY",
-            ncmCode: /^\d{8}$/u.test(line.ncm) ? line.ncm : null });
         }
         const payload = {
           confirmDuplicateInvoice: currentDuplicateIps.length > 0 && confirmDuplicateInvoice,
@@ -967,7 +963,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                   poSupplierCode: candidate.supplierCode,
                   itemId: match.itemId };
               }),
-              catalogUpdates: { products: [...productUpdates.values()], poItems: [...poItemUpdates.values()] },
+              catalogUpdates: { products: [...productUpdates.values()] },
             } },
           allocations: invoiceMatches.map(match => ({ itemId: match.itemId, quantity: match.quantity,
             notes: `Invoice ${invoiceDraft.invoiceNumber || invoiceDraft.fileName}, linha ${match.sourceRow}` })),
@@ -1279,6 +1275,10 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                   { description: selectedCandidate.description, unit: selectedCandidate.unit, ncmCode: selectedCandidate.poNcmCode,
                     unitPrice: selectedCandidate.unitPrice, currency: selectedCandidate.currency },
                   { name: selectedCandidate.productName, ncmCode: selectedCandidate.productNcmCode, manufacturer: selectedCandidate.manufacturer }) : [];
+                const productFillFields = selectedCandidate && sourceLine ? invoiceProductFillFields(sourceLine,
+                  { ncmCode: selectedCandidate.productNcmCode, manufacturer: selectedCandidate.manufacturer,
+                    manufacturerAddress: selectedCandidate.manufacturerAddress,
+                    manufacturerCountry: selectedCandidate.manufacturerCountry }) : [];
                 const destinationIssue = classifyInvoiceDestination(match.candidates, match.poExists,
                   match.productCode, match.quantity, match.itemId, match.poStatus ?? "ACTIVE");
                 return <tr key={match.key}>
@@ -1287,7 +1287,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                   <td><input aria-label={t.destinedQuantityAria(match.sourceRow)} inputMode="decimal" value={match.quantity}
                     onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
                       ? { ...item, quantity: event.target.value.replace(",", "."), itemId: "", updateProduct: false,
-                        updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
+                        confirmCodeMismatch: false, confirmSupplierMismatch: false,
                         confirmUnitMismatch: false, confirmPriceMismatch: false } : item))} />
                     <small>{formatNumber(String(allocated))} / {formatNumber(sourceLine?.quantity ?? "0")} {sourceLine?.unit}</small>
                     {!balanced && <small className="notice error">{t.sumDiffers}</small>}
@@ -1298,7 +1298,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                       if (item.key !== match.key) return item;
                       const candidate = item.candidates.find(value => value.id === selectedId);
                       return { ...item, itemId: selectedId, poNumber: candidate?.poNumber ?? "",
-                        updateProduct: false, updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
+                        updateProduct: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
                         confirmUnitMismatch: false, confirmPriceMismatch: false };
                     }))} options={match.candidates.map(candidate => ({ value: candidate.id,
                       label: t.candidate(candidate.poNumber, candidate.productCode, candidate.lineNumber, `${formatNumber(candidate.remainingQuantity)} ${candidate.unit ?? ""}`),
@@ -1351,12 +1351,11 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                       </table>
                       {comparisonRows.some(row => row.differs) && <p className="invoice-compare-legend">{t.compareLegend}</p>}
                     </details>}
-                    {match.itemId && <div className="operational-fields">
-                      <label><input type="checkbox" disabled={!match.candidates.find(candidate => candidate.id === match.itemId)?.productId}
-                        checked={match.updateProduct} onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
+                    {selectedCandidate?.productId && productFillFields.length > 0 && <div className="operational-fields">
+                      <label><input type="checkbox" checked={match.updateProduct}
+                        onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
                           ? { ...item, updateProduct: event.target.checked } : item))} />{t.updateProduct}</label>
-                      <label><input type="checkbox" checked={match.updatePoItem} onChange={event => setInvoiceMatches(current => current.map(item => item.key === match.key
-                        ? { ...item, updatePoItem: event.target.checked } : item))} />{t.updatePoItem}</label>
+                      <small>{t.updateProductFields(productFillFields.map(field => t.fillField[field]).join(", "))}</small>
                     </div>}
                   </td>
                 </tr>;
@@ -1398,7 +1397,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           setImporter(value); setConfirmImporterCnpjMismatch(false); setInvoiceDuplicate(null); setInvoiceError("");
           setDuplicateInvoiceIps([]); setConfirmDuplicateInvoice(false); setIpReferenceOtherImporter(false);
           setInvoiceMatches(current => current.map(match => ({ ...match, itemId: "", candidates: [],
-            updateProduct: false, updatePoItem: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
+            updateProduct: false, confirmCodeMismatch: false, confirmSupplierMismatch: false,
             confirmUnitMismatch: false, confirmPriceMismatch: false })));
         }} options={importers.map(value => ({ value, label: value }))} /></label>
         <label>{t.ipReference}<input required maxLength={80} readOnly={Boolean(invoiceDraft || reviewInvoiceId)}
