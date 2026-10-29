@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, readApiJson } from "../lib/api";
-import { E2E_STAGE_CODES, formatE2eDate, type E2eResult, type E2eStageCode } from "../lib/e2e-analysis";
+import { E2E_STAGE_CODES, e2eDateClass, formatE2eDate, type E2eResult, type E2eStageCode } from "../lib/e2e-analysis";
 import { buildE2eFlow, DEFAULT_E2E_FLOW_CONFIG } from "../lib/e2e-flow";
 import { formatNumber } from "../lib/format-number";
 import { statusLabel } from "../lib/i18n/labels";
@@ -338,7 +338,7 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
                 return [
                   <td key={`${code}-deadline`} className={cell}>{date(stageData?.deadline)}</td>,
                   <td key={`${code}-actual`} className={cell}><Tooltip content={stageData?.source === "forecast" ? t.forecast : undefined}>
-                    <span className={stageData?.source === "forecast" ? "e2e-date is-forecast" : "e2e-date"}>{date(stageData?.actual)}</span></Tooltip></td>,
+                    <span className={e2eDateClass(stageData)}>{date(stageData?.actual)}</span></Tooltip></td>,
                   <td key={`${code}-target`} className={cell}>{days(stageData?.targetDays)}</td>,
                   <td key={`${code}-days`} className={cell}>{days(stageData?.actualDays)}</td>,
                   <td key={`${code}-delay`} className={cell}>{delay(stageData?.delayDays)}</td>,

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { analyzePurchaseOrderE2e, e2eDaysBetween, e2eToday, formatE2eDate } from "../lib/e2e-analysis.ts";
+import { analyzePurchaseOrderE2e, e2eDateClass, e2eDaysBetween, e2eToday, formatE2eDate } from "../lib/e2e-analysis.ts";
 
 const stage = (deadline, actual, source, targetDays, actualDays, delayDays) =>
   ({ deadline, actual, source, targetDays, actualDays, delayDays });
@@ -74,6 +74,26 @@ test("the timeline spans T0 to the last date and draws the actual and planned ba
   // Planned: T0 deadline plus the total target of the line.
   assert.ok(Math.abs(air.plannedBar.width - 73 / 133 * 100) < 1e-9);
   assert.deepEqual(ip("C").bars.slice(-2).map(bar => [bar.code, bar.source]), [["T4", "forecast"], ["T5", "forecast"]]);
+});
+
+test("an actual or forecast date past its deadline is marked late, like the delay column", () => {
+  assert.equal(e2eDateClass(stage("2026-08-01", "2026-08-01", "actual", 8, 8, 0)), "e2e-date");
+  assert.equal(e2eDateClass(stage("2026-08-01", "2026-07-30", "actual", 8, 6, -2)), "e2e-date");
+  assert.equal(e2eDateClass(stage("2026-08-01", "2026-08-03", "actual", 8, 10, 2)), "e2e-date is-late");
+  assert.equal(e2eDateClass(stage("2026-12-05", "2026-12-02", "forecast", 55, 52, -3)), "e2e-date is-forecast");
+  assert.equal(e2eDateClass(stage("2026-12-05", "2026-12-08", "forecast", 55, 58, 3)), "e2e-date is-forecast is-late");
+  // Without a date or a target there is no delay to show.
+  assert.equal(e2eDateClass(stage("2026-08-01", null, null, 8, null, null)), "e2e-date");
+  assert.equal(e2eDateClass(undefined), "e2e-date");
+});
+
+test("both end-to-end screens colour the actual date by deadline", async () => {
+  const read = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
+  const [lines, po, styles] = await Promise.all([read("components/E2eLinesView.tsx"), read("components/E2ePoAnalysis.tsx"),
+    read("app/styles/features/e2e.css")]);
+  assert.match(lines, /<span className=\{e2eDateClass\(stageData\)\}>\{date\(stageData\?\.actual\)\}<\/span>/u);
+  assert.match(po, /<span className=\{e2eDateClass\(stage\)\}>/u);
+  assert.match(styles, /\.e2e-date\.is-late \{ color: var\(--e2e-late\); \}/u);
 });
 
 test("a PO without lines yields an empty analysis instead of failing", () => {

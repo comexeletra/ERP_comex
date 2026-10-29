@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
-import { analyzePurchaseOrderE2e, E2E_STAGE_CODES, e2eToday, formatE2eDate,
+import { analyzePurchaseOrderE2e, E2E_STAGE_CODES, e2eDateClass, e2eToday, formatE2eDate,
   type E2eAnalysisInput, type E2eIpAnalysis, type E2eStage } from "../lib/e2e-analysis";
 import { statusLabel } from "../lib/i18n/labels";
 import E2eTabs from "./E2eTabs";
@@ -61,7 +61,7 @@ export default function E2ePoAnalysis({ id }: { id: string }) {
   const missingDemandType = data.shipments.filter(shipment => shipment.calculated.e2e?.demandType === "unknown").length;
   const deviation = (value: number | null) => value === null ? t.noData : t.deviation(Math.round(value * 10) / 10);
   const cell = (stage: E2eStage) => <>
-    <span className={stage.source === "forecast" ? "e2e-date is-forecast" : "e2e-date"}>
+    <span className={e2eDateClass(stage)}>
       {date(stage.actual)}{stage.source === "forecast" && <small> · {t.forecast}</small>}
     </span>
     <span className="e2e-date-planned">{t.planned(date(stage.deadline))}</span>
