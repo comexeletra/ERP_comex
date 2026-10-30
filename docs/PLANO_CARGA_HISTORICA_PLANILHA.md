@@ -190,8 +190,10 @@ Resultado no HML: 127 SCs e 6.258 das 7.553 linhas de PO com data; no End to End
 todos os gatilhos ativos: as POs encerradas e canceladas reabrem na transação e voltam com os mesmos dados de ciclo de vida. Repetir
 é recusado com `ALREADY_PROMOTED`, e a carga não substitui datas já gravadas.
 
-Ficam sem T0 por falta de fonte: 1.255 linhas, de 228 POs (219 SCs fora da planilha e 36 linhas sem SC). A planilha cobre só a
-Matriz e as necessidades de 2026 em diante.
+Ficam sem T0 por falta de fonte: 1.255 linhas, de 228 POs (219 SCs fora da planilha e 36 linhas sem SC). Somadas às 40 linhas acima,
+são 1.295: 359 de Curitiba e Fortaleza, 235 da Matriz com necessidade anterior a 2026 ou vazia e 701 da Matriz em 2026 ou 2027. A
+base da planilha filtra necessidade 2026 e 2027, Matriz, sem canceladas, Josivan e os PCM exceto Lucas Viana, Odilano e Kevin. Das
+1.295, 449 são linhas ativas em 70 POs abertas.
 
 Divergências registradas, sem alteração no sistema:
 
@@ -199,4 +201,5 @@ Divergências registradas, sem alteração no sistema:
   no MRP. A data entrou pela SC.
 - Nas SCs 020103 e 020161 a data do plano é posterior à aprovação da SC no Follow Up, e 5 linhas têm T1 negativo. Na 020161, a
   aprovação do Follow Up é 04/08/2026 e a data da SC no TOTVS é 04/09/2026.
-- 1.925 linhas com T0 não têm aprovação da SC no Follow Up: nelas o T1 e o total do End to End ficam "sem dado".
+- 2.283 linhas de PO com T0 (1.925 no End to End) não têm aprovação da SC no Follow Up: são 37 POs, todas encerradas ou canceladas.
+  Nelas T1, T2 e o total do End to End ficam "sem dado". A coluna `L` do MRP é a data da SC, não a aprovação, e não foi usada.
