@@ -193,7 +193,10 @@ todos os gatilhos ativos: as POs encerradas e canceladas reabrem na transação 
 Ficam sem T0 por falta de fonte: 1.255 linhas, de 228 POs (219 SCs fora da planilha e 36 linhas sem SC). Somadas às 40 linhas acima,
 são 1.295: 359 de Curitiba e Fortaleza, 235 da Matriz com necessidade anterior a 2026 ou vazia e 701 da Matriz em 2026 ou 2027. A
 base da planilha filtra necessidade 2026 e 2027, Matriz, sem canceladas, Josivan e os PCM exceto Lucas Viana, Odilano e Kevin. Das
-1.295, 449 são linhas ativas em 70 POs abertas.
+1.295, 449 são linhas ativas em 70 POs abertas. O usuário decidiu deixar essas linhas sem T0 por enquanto e tratar a fonte depois.
+
+Das 238 SCs sem data, só 30 têm todas as linhas canceladas no Follow Up; 18 têm parte cancelada e 190 não têm cancelamento. As 208
+restantes ficaram fora do MRP pelos filtros da planilha, salvo 12 que são a segunda SC de uma PO presente nela e 6 SCs recentes.
 
 Divergências registradas, sem alteração no sistema:
 
