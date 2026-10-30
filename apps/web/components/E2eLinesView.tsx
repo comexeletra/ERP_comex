@@ -7,7 +7,7 @@ import { E2E_STAGE_CODES, e2eDateClass, formatE2eDate, type E2eResult, type E2eS
 import { buildE2eFlow, DEFAULT_E2E_FLOW_CONFIG } from "../lib/e2e-flow";
 import { formatNumber } from "../lib/format-number";
 import { statusLabel } from "../lib/i18n/labels";
-import { activeProductLineFilterCount, e2eSummaryQuery, emptyProductLineFilters, parseE2eStageFilter, parseProductLineFilters, productLineQuery,
+import { activeProductLineFilterCount, e2eStatusColor, e2eSummaryQuery, emptyProductLineFilters, parseE2eStageFilter, parseProductLineFilters, productLineQuery,
   productLineStatuses, type E2eDeadlineStatus, type E2eDelayRange, type E2eStageFilter,
   type ProductLineFilters } from "../lib/purchase-order-lines";
 import E2eCollapsible from "./E2eCollapsible";
@@ -35,6 +35,16 @@ type StageCount = { current: number; currentLate: number; reached: number; reach
 type StageSummary = { totalCount: number; delivered: number; stages: Record<E2eStageCode, StageCount>; overview?: E2eOverview };
 const pageSize = 50;
 const stageSide = (code: E2eStageCode) => E2E_STAGE_CODES.indexOf(code) < 3 ? "side-br" : "side-cn";
+
+/** Status as in the legend of the status chart: the swatch of its colour and the name. */
+function E2eStatus({ status }: { status: string }) {
+  const { m } = useI18n();
+  const color = e2eStatusColor(status);
+  return <span className="e2e-status">
+    {color && <span className="e2e-chart-swatch" style={{ background: `var(${color})` }} />}
+    {statusLabel(m, status)}
+  </span>;
+}
 
 /**
  * The End to End screen: the reference model of the six stages above the spreadsheet with one row
@@ -346,7 +356,7 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
               })}
               <td>{days(e2e?.totalTargetDays)}</td><td>{days(e2e?.totalActualDays)}</td><td>{delay(e2e?.totalDelayDays)}</td>
               <td>{e2e?.bottleneck ?? "—"}</td>
-              <td>{e2e ? statusLabel(m, e2e.currentStatus) : "—"}</td>
+              <td>{e2e ? <E2eStatus status={e2e.currentStatus} /> : "—"}</td>
               <td>{e2e?.arrivalYearMonth ?? "—"}</td>
             </tr>;
           })}</tbody>

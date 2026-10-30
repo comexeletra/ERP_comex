@@ -5,6 +5,13 @@ export const productLineStatuses = ["A DISTRIBUIR", "AGUARDANDO PRODUÇÃO", "AG
   "AGUARDANDO CHEGADA", "DESEMBARAÇO", "ENTREGUE", "CANCELADO"] as const;
 export type ProductLineStatus = typeof productLineStatuses[number];
 
+/** Colours of the status chart, in the order of the statuses; CANCELADO stays out of the chart. */
+export const e2eStatusColors = ["--color-chart-status-1", "--color-chart-status-2", "--color-chart-status-3",
+  "--color-chart-status-4", "--color-chart-status-5", "--color-chart-status-6"] as const;
+
+export const e2eStatusColor = (status: string): string | undefined =>
+  e2eStatusColors[productLineStatuses.indexOf(status as ProductLineStatus)];
+
 export type ProductLineFilters = {
   importer: string; purchaseOrder: string; ipNumber: string; product: string;
   status: "" | ProductLineStatus; etaFrom: string; etaTo: string; situation: "open" | "all";

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { overviewShares, overviewTip, overviewTotal, rankedIndexes, type OverviewShare } from "../lib/e2e-overview-format";
 import { statusLabel } from "../lib/i18n/labels";
 import { pieSlices } from "../lib/pie-chart";
-import { e2eDeadlineStatuses, e2eDelayRanges, productLineStatuses, type E2eDeadlineStatus,
+import { e2eDeadlineStatuses, e2eDelayRanges, e2eStatusColors, productLineStatuses, type E2eDeadlineStatus,
   type E2eDelayRange } from "../lib/purchase-order-lines";
 import type { Messages } from "../lib/i18n/pt-BR";
 import { useI18n } from "./I18nProvider";
@@ -19,8 +19,6 @@ export type E2eOverview = {
 
 type ChartEntry<Key extends string> = { key: Key; label: string; color: string; part: OverviewPart; share: OverviewShare };
 const statusKeys = productLineStatuses.slice(0, -1) as readonly E2eOverviewStatus[];
-const statusColors = ["--color-chart-status-1", "--color-chart-status-2", "--color-chart-status-3",
-  "--color-chart-status-4", "--color-chart-status-5", "--color-chart-status-6"];
 const deadlineColors: Record<E2eDeadlineStatus, string> = {
   onTime: "--color-chart-on-time", onLimit: "--color-chart-on-limit",
   late: "--color-chart-late", noData: "--color-chart-no-data",
@@ -114,7 +112,7 @@ function DelayRangeBars({ entries, selected, onSelect, filterLabel, locale, m }:
 export function E2eOverviewMini({ overview, locale }: { overview: E2eOverview; locale: string }) {
   const { m } = useI18n();
   const o = m.e2eLines.overview;
-  const entries = entriesOf(statusKeys, overview.byStatus, locale, key => key, (_, index) => statusColors[index]);
+  const entries = entriesOf(statusKeys, overview.byStatus, locale, key => key, (_, index) => e2eStatusColors[index]);
   const total = overviewTotal(statusKeys.map(key => overview.byStatus[key].quantity), locale);
   return <span className="e2e-overview-mini">
     <span className="e2e-distribution e2e-distribution-mini" aria-hidden="true">
@@ -140,7 +138,7 @@ export default function E2eOverviewCharts({ overview, locale, selectedStatus, se
   const { m } = useI18n();
   const o = m.e2eLines.overview;
   const statusEntries = entriesOf(statusKeys, overview.byStatus, locale, key => statusLabel(m, key),
-    (_, index) => statusColors[index]);
+    (_, index) => e2eStatusColors[index]);
   const deadlineEntries = entriesOf(e2eDeadlineStatuses, overview.byDeadline, locale, key => o[key],
     key => deadlineColors[key]);
   const statusTotal = overviewTotal(statusKeys.map(key => overview.byStatus[key].quantity), locale);

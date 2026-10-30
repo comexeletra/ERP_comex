@@ -5,6 +5,7 @@ import { buildE2eFlow, DEFAULT_E2E_FLOW_CONFIG } from "../lib/e2e-flow.ts";
 import { en } from "../lib/i18n/en.ts";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
 import { zhCN } from "../lib/i18n/zh-CN.ts";
+import { e2eStatusColor } from "../lib/purchase-order-lines.ts";
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const [view, overview, panels, parts, tabs, page, modelPage, styles, flowLib] = await Promise.all([
@@ -12,6 +13,24 @@ const [view, overview, panels, parts, tabs, page, modelPage, styles, flowLib] = 
   read("components/E2eModelPanels.tsx"), read("components/E2eFlowParts.tsx"),
   read("components/E2eTabs.tsx"), read("app/end-to-end/page.tsx"), read("app/end-to-end/model/page.tsx"),
   read("app/styles/features/e2e.css"), read("lib/e2e-flow.ts")]);
+
+test("the current status column takes the colours of the status chart", () => {
+  assert.equal(e2eStatusColor("A DISTRIBUIR"), "--color-chart-status-1");
+  assert.equal(e2eStatusColor("AGUARDANDO PRODUÇÃO"), "--color-chart-status-2");
+  assert.equal(e2eStatusColor("AGUARDANDO EMBARQUE"), "--color-chart-status-3");
+  assert.equal(e2eStatusColor("AGUARDANDO CHEGADA"), "--color-chart-status-4");
+  assert.equal(e2eStatusColor("DESEMBARAÇO"), "--color-chart-status-5");
+  assert.equal(e2eStatusColor("ENTREGUE"), "--color-chart-status-6");
+  // Cancelled lines are outside the chart, and an unknown status has no colour to borrow.
+  assert.equal(e2eStatusColor("CANCELADO"), undefined);
+  assert.equal(e2eStatusColor("OUTRO"), undefined);
+  // The chart and the table read the same list instead of keeping a copy each.
+  assert.doesNotMatch(overview, /--color-chart-status-1/u);
+  assert.match(overview, /\(_, index\) => e2eStatusColors\[index\]/u);
+  assert.match(view, /<td>\{e2e \? <E2eStatus status=\{e2e\.currentStatus\} \/> : "—"\}<\/td>/u);
+  assert.match(view, /<span className="e2e-chart-swatch" style=\{\{ background: `var\(\$\{color\}\)` \}\} \/>/u);
+  assert.match(styles, /\.e2e-status \{/u);
+});
 
 test("the optional overview precedes the model and cross-filters by status and deadline", () => {
   assert.match(view, /overview\?: E2eOverview/u);

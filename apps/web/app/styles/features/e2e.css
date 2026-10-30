@@ -238,6 +238,7 @@
 .e2e-lines-table { font-size: var(--fs-sm); }
 .e2e-lines-table th, .e2e-lines-table td { white-space: nowrap; }
 .e2e-lines-table .e2e-deviation { font-size: var(--fs-xs); padding: 2px 8px; }
+.e2e-status { align-items: center; display: inline-flex; gap: 8px; }
 .e2e-lines-table .product-lines-description { display: inline-block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
 .e2e-stage-head { background: var(--e2e-side-soft, var(--color-surface-sunken)); border-bottom: 3px solid var(--e2e-side, var(--color-border-strong)); color: var(--e2e-side-text, var(--color-text-strong)); text-align: center; }
 /* Stage selected on the model above the table (components/E2eLinesView.tsx) */
