@@ -59,6 +59,8 @@ type PoDraft = {
   supplier: string;
   notes: string;
   demandType?: string;
+  analyst?: string;
+  siNumber?: string;
   items: PoItemDraft[];
   commonItemFields: OperationalFieldDraft;
   purchaseRequestId: string;
@@ -139,6 +141,8 @@ function isLegacyImporterOnlyDraft(draft: Partial<PoDraft>): boolean {
     && !hasDraftValue(draft.supplier)
     && !hasDraftValue(draft.notes)
     && !hasDraftValue(draft.demandType)
+    && !hasDraftValue(draft.analyst)
+    && !hasDraftValue(draft.siNumber)
     && !hasDraftValue(draft.purchaseRequestId)
     && !hasDraftValue(draft.createdPoId)
     && !hasDraftValue(draft.commonItemFields)
@@ -230,6 +234,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   const [priority, setPriority] = useState("");
   const [notes, setNotes] = useState("");
   const [demandType, setDemandType] = useState("");
+  const [analyst, setAnalyst] = useState("");
+  const [siNumber, setSiNumber] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -295,6 +301,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           setSupplier(typeof draft.supplier === "string" ? draft.supplier : "");
           setNotes(typeof draft.notes === "string" ? draft.notes : "");
           setDemandType(typeof draft.demandType === "string" ? draft.demandType : "");
+          setAnalyst(typeof draft.analyst === "string" ? draft.analyst : "");
+          setSiNumber(typeof draft.siNumber === "string" ? draft.siNumber : "");
           setItems(draft.items.map((item, index) => ({ ...item,
             draftId: typeof item.draftId === "string" && item.draftId ? item.draftId : `restored:${index}` })));
           setCommonItemFields(draft.commonItemFields ?? blankPurchaseOrderItemFields);
@@ -310,14 +318,14 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
 
   useEffect(() => {
     if (kind !== "po" || !draftReady) return;
-    const draft: PoDraft = { importer, number, supplier, notes, demandType, items, commonItemFields, purchaseRequestId, createdPoId };
+    const draft: PoDraft = { importer, number, supplier, notes, demandType, analyst, siNumber, items, commonItemFields, purchaseRequestId, createdPoId };
     const compact = { ...draft, items: items.map(item => ({ ...item, operational: blankPurchaseOrderItemFields() })) };
     try {
       setDraftStorageWarning(persistSessionDraft(sessionStorage, poDraftKey, draft, compact, getMessages()));
     } catch {
       setDraftStorageWarning(getMessages().poDraft.failed);
     }
-  }, [kind, draftReady, importer, number, supplier, notes, demandType, items, commonItemFields, purchaseRequestId, createdPoId]);
+  }, [kind, draftReady, importer, number, supplier, notes, demandType, analyst, siNumber, items, commonItemFields, purchaseRequestId, createdPoId]);
 
   useEffect(() => {
     Promise.all([apiFetch("/auth/me"), apiFetch("/api/v1/importers", { cache: "no-store" }), loadOperationalCatalog()])
@@ -746,7 +754,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       ...(preflight ? { sourceFile: totvsApplied && totvsFileName && totvsImportHash
         ? { fileName: totvsFileName, fileSha256: totvsImportHash } : null } : {}),
       ...(preflight ? { confirmDuplicateNumber, duplicateNumberJustification: duplicateNumberJustification.trim() || undefined } : {}),
-      orderDate: null, notes, demandType: demandType || null, reason: automaticAuditReason }, items: completeItems });
+      orderDate: null, notes, demandType: demandType || null, analyst: analyst || null, siNumber: siNumber || null,
+      reason: automaticAuditReason }, items: completeItems });
     let previousCommand: { payload: string; key: string } | null = null;
     try { previousCommand = JSON.parse(sessionStorage.getItem(poCommandKey) ?? "null"); } catch { /* Recria a chave. */ }
     const commandKey = previousCommand?.payload === completePayload && previousCommand.key
@@ -767,13 +776,14 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         items: ({ id: string } & Record<string, unknown>)[] }>(
         await apiFetch(`/api/v1/purchase-orders/${created.id}/followup`, { cache: "no-store" }));
       const savedHeader = await readResponse<{ supplierText: string | null; orderDate: string | null; notes: string;
-        demandType: string | null; purchaseRequestId: string | null }>(
+        demandType: string | null; analyst: string | null; siNumber: string | null; purchaseRequestId: string | null }>(
         await apiFetch(`/api/v1/purchase-orders/${created.id}/operational`, { cache: "no-store" }));
       if (!Array.isArray(created.itemIds) || created.itemIds.length !== completeItems.length ||
           !Array.isArray(followup.items) || followup.number !== number.trim() ||
           followup.importer !== importer.trim() || savedHeader.supplierText !== (supplier.trim() || null) ||
           !savedHeader.orderDate || savedHeader.notes !== notes.trim() ||
           savedHeader.demandType !== (demandType || null) ||
+          savedHeader.analyst !== (analyst || null) || savedHeader.siNumber !== (siNumber.trim() || null) ||
           savedHeader.purchaseRequestId !== (created.purchaseRequestId ?? null) ||
           completeItems.some((item, index) => {
             const saved = followup.items.find(row => row.id === created.itemIds[index]);
@@ -804,7 +814,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       method: "POST",
       headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
       body: JSON.stringify({ importer, number, supplierText: supplier || null,
-        orderDate: null, notes, demandType: demandType || null, purchaseRequestId: purchaseRequestId || null,
+        orderDate: null, notes, demandType: demandType || null, analyst: analyst || null, siNumber: siNumber || null,
+        purchaseRequestId: purchaseRequestId || null,
         ...(preflight ? { confirmDuplicateNumber, duplicateNumberJustification: duplicateNumberJustification.trim() || undefined } : {}),
         reason: automaticAuditReason }),
     }));
@@ -1005,6 +1016,10 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           </div>
           <label>{fieldLabel(m, { key: "demandType" })}<OperationalOptionSelect entity="demand_type" value={demandType} values={options}
             onChange={setDemandType} /><small className="po-field-hint">{m.poPanel.demandTypeHint}</small></label>
+          <label>{fieldLabel(m, { key: "analyst" })}<OperationalOptionSelect entity="analyst" value={analyst} values={options}
+            onChange={setAnalyst} /></label>
+          <label>{fieldLabel(m, { key: "siNumber" })}<input maxLength={120} value={siNumber}
+            onChange={event => setSiNumber(event.target.value)} /></label>
           <label>{t.orderNotes}<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
           <h3>{t.sharedAll}</h3>
           <OperationalFieldsEditor fields={purchaseOrderCommonItemFields} values={commonItemFields}

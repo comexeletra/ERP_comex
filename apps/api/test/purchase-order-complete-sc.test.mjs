@@ -164,11 +164,11 @@ test("the complete PO keeps its demand type on the PO and never on the products"
   const fixture = await createFixture(t);
   const response = await fixture.app.inject({ method: "POST", url: "/api/v1/purchase-orders/complete",
     headers: { "content-type": "application/json", "idempotency-key": "complete-demand-type" },
-    payload: { ...payload, header: { ...payload.header, demandType: "Não MTS" } } });
+    payload: { ...payload, header: { ...payload.header, demandType: "Não MTS", analyst: "JOAO", siNumber: "902, 904" } } });
   assert.equal(response.statusCode, 201, response.body);
   const insert = fixture.queries.find(query => query.sql.includes("INSERT INTO procurement.purchase_order\n"));
   assert.match(insert.sql, /demand_type/u);
-  assert.equal(insert.params.at(-1), "Não MTS");
+  assert.deepEqual(insert.params.slice(-3), ["Não MTS", "JOAO", "902, 904"]);
 
   const productType = await (await createFixture(t)).app.inject({ method: "POST", url: "/api/v1/purchase-orders/complete",
     headers: { "content-type": "application/json", "idempotency-key": "complete-product-type" },

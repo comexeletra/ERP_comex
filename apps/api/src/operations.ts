@@ -28,11 +28,12 @@ const poFields = z.object({
   supplierText: nullableText(240), orderDate: z.iso.date().nullable(), notes: z.string().trim().max(4000),
   // MTS / Não MTS: kept only on the PO and inherited by every product. Absent keeps the saved value.
   demandType: nullableText(40).optional(),
+  analyst: nullableText(160).optional(), siNumber: nullableText(120).optional(),
   confirmDuplicateNumber: z.boolean().optional(),
   duplicateNumberJustification: z.string().trim().min(3).max(1000).optional(),
   reason: z.string().trim().min(3).max(1000),
 }).strict();
-const patchPoFields = poFields.extend({ importer: z.string().trim().min(1).max(120).optional() });
+export const patchPoFields = poFields.extend({ importer: z.string().trim().min(1).max(120).optional() });
 const purchaseOrderReimportFields = z.object({
   header: z.object({ number: z.string().trim().min(1).max(80) }).strict(),
   fileName: z.string().trim().min(1).max(255),
@@ -672,7 +673,7 @@ export async function syncPurchaseRequestFromPurchaseOrder(client: PoolClient, p
     throw new BusinessError(409, "PURCHASE_REQUEST_NUMBER_LOCKED",
       "O número da SC vinculada só pode ser alterado no PCM.");
   }
-  if ("requester" in fields && !fields.requester) {
+  if ("requester" in fields && !fields.requester && request.requester) {
     throw new BusinessError(409, "PURCHASE_REQUEST_REQUESTER_REQUIRED", "A SC vinculada exige um solicitante.");
   }
   const changed = changedPurchaseRequestFields(request, fields);
@@ -1687,7 +1688,8 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
                 coalesce(supplier.code, po.supplier_text) AS "supplierText", supplier.name AS "supplierName",
                 coalesce(po.order_date, CASE WHEN po.source_kind = 'MANUAL_TOTVS_REFERENCE'
                   THEN (po.created_at AT TIME ZONE 'America/Sao_Paulo')::date END)::text AS "orderDate",
-                po.notes, po.demand_type AS "demandType", po.source_kind AS "sourceKind", po.version::text,
+                po.notes, po.demand_type AS "demandType", po.analyst, po.si_number AS "siNumber",
+                po.source_kind AS "sourceKind", po.version::text,
                 po.created_at AS "createdAt", last_restore.event AS "lastRestore",
                 po.purchase_request_id AS "purchaseRequestId",
                 CASE WHEN sc.id IS NULL THEN NULL ELSE jsonb_build_object(
@@ -1767,12 +1769,12 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const result = await client.query<Record<string, unknown>>(
           `INSERT INTO procurement.purchase_order
            (id,importer,external_number,normalized_number,identity_status,source_kind,version,
-            supplier_text,order_date,notes,purchase_request_id,demand_type)
+            supplier_text,order_date,notes,purchase_request_id,demand_type,analyst,si_number)
            VALUES ($1,$2,$3::text,upper($3::text),'MANUAL_UNVERIFIED','MANUAL_TOTVS_REFERENCE',1,$4,
-             (now() AT TIME ZONE 'America/Sao_Paulo')::date,$5,$6,$7)
+             (now() AT TIME ZONE 'America/Sao_Paulo')::date,$5,$6,$7,$8,$9)
            RETURNING id, importer, external_number AS number, order_date::text AS "orderDate", version::text`,
           [id, body.importer, body.number, body.supplierText, body.notes, body.purchaseRequestId ?? null,
-            body.demandType || null]);
+            body.demandType || null, body.analyst || null, body.siNumber || null]);
         await saveReceipt(client, auth.actor.userId, key, claim.hash, "PO", id);
         await record(client, "PURCHASE_ORDER", id, "PURCHASE_ORDER", id, "CREATE", null,
           { ...body, orderDate: result.rows[0].orderDate }, auth.actor, body.reason);
@@ -2030,11 +2032,15 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
             notes = $3, external_number = $4::text, normalized_number = upper($4::text),
             purchase_request_id = CASE WHEN $5::boolean THEN $6::uuid ELSE purchase_request_id END,
             demand_type = CASE WHEN $7::boolean THEN $8::text ELSE demand_type END,
-            importer = $9, version = version + 1, updated_at = now()
+            analyst = CASE WHEN $9::boolean THEN $10::text ELSE analyst END,
+            si_number = CASE WHEN $11::boolean THEN $12::text ELSE si_number END,
+            importer = $13, version = version + 1, updated_at = now()
            WHERE id = $1 RETURNING id, version::text`,
           [id.data, parsed.data.supplierText, parsed.data.notes, parsed.data.number,
             parsed.data.purchaseRequestId !== undefined, parsed.data.purchaseRequestId ?? null,
-            parsed.data.demandType !== undefined, parsed.data.demandType || null, destinationImporter]);
+            parsed.data.demandType !== undefined, parsed.data.demandType || null,
+            parsed.data.analyst !== undefined, parsed.data.analyst || null,
+            parsed.data.siNumber !== undefined, parsed.data.siNumber || null, destinationImporter]);
         await record(client, "PURCHASE_ORDER", id.data, "PURCHASE_ORDER", id.data, "UPDATE",
           before, { ...parsed.data, orderDate: before.order_date ?? null }, auth.actor, parsed.data.reason);
         const scFields = purchaseRequestOperationalFields(purchaseRequest);

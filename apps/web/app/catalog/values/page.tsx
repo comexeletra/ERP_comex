@@ -21,7 +21,7 @@ import { NcmRateDetail } from "../../../components/NcmRateDetail";
 
 const entities = ["importer", "incoterm", "transport_mode", "port_loading", "port_discharge", "currency", "category",
   "product_group", "group", "purpose", "demand", "demand_type", "logistics_status", "customs_channel", "container_type", "priority",
-  "unit_of_measure", "product", "ncm", "requester", "cost_center", "broker", "forwarder", "supplier",
+  "unit_of_measure", "product", "ncm", "requester", "analyst", "cost_center", "broker", "forwarder", "supplier",
 ] as const satisfies readonly (keyof Messages["entityValues"]["entities"])[];
 type Option = { id: string; entity: string; code?: string | null; value: string; importCons?: string | null; cnpj?: string | null; shortName?: string | null };
 type Supplier = { id: string; code: string; name: string; status: "ACTIVE" | "INACTIVE"; version: string };

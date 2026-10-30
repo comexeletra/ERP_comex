@@ -41,7 +41,7 @@ export const ipPostShipmentFields: IpPostShipmentField[] = [
   { key: "containerType", type: "select", entity: "container_type" },
   { key: "containerQuantity", type: "number", ipOnly: true },
   { key: "forwarder", type: "select", entity: "forwarder" },
-  { key: "documentsOk", type: "boolean" },
+  { key: "documentsOkDate", type: "date" },
   { key: "storageDueOverride", type: "date" },
   { key: "taxesPaidBrl", type: "money", ipOnly: true },
   { key: "fineBrl", type: "money", ipOnly: true },

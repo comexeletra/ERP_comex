@@ -31,7 +31,7 @@ const processLineColumns = ["id", "ip_number", "importer", "record_status", "lif
   "priority", "ip_totvs_date", "transport_mode", "incoterm", "broker", "port_loading", "port_discharge", "etd",
   "actual_port_departure_date", "bl_number", "bl_date", "eta_confirmed", "arrival_date", "duimp_number", "duimp_date",
   "customs_channel", "clearance_date", "ete_confirmed", "nf_request_date", "delivery_date", "container_number",
-  "container_type", "forwarder", "documents_ok", "storage_due_override"];
+  "container_type", "forwarder", "documents_ok_date", "storage_due_override"];
 
 const camelKey = (key: string) => key.replace(/_([a-z])/gu, (_, letter: string) => letter.toUpperCase());
 

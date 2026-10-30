@@ -40,7 +40,8 @@ type Item = { id: string; lineNumber: number; externalLineReference: string | nu
 type Allocation = { id: string; itemId: string; processId: string; ipNumber: string;
   quantity: string; notes: string; factoryShipDate: string | null; version: string; processShipped?: boolean };
 type OperationalPo = { id: string; importer: string; number: string; supplierText: string | null;
-  orderDate: string | null; notes: string; demandType: string | null; sourceKind: string; version: string;
+  orderDate: string | null; notes: string; demandType: string | null; analyst: string | null; siNumber: string | null;
+  sourceKind: string; version: string;
   lifecycleStatus?: PurchaseOrderLifecycleStatus;
   lifecycleChangedAt: string | null; lifecycleChangedBy: string | null; lifecycleReason: string | null;
   createdAt?: string | null; lastRestore?: { at: string; by: string; reason: string | null } | null;
@@ -164,6 +165,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
   const [purchaseRequestId, setPurchaseRequestId] = useState("");
   const [notes, setNotes] = useState("");
   const [demandType, setDemandType] = useState("");
+  const [analyst, setAnalyst] = useState("");
+  const [siNumber, setSiNumber] = useState("");
   const [itemDraft, setItemDraft] = useState<ItemDraft>(blankItem);
   const [itemDrafts, setItemDrafts] = useState<Record<string, ItemDraft>>({});
   const [commonOperationalDraft, setCommonOperationalDraft] = useState<OperationalFieldDraft>(blankPurchaseOrderItemFields);
@@ -232,6 +235,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
       setNumber(po.number);
       setSupplier(po.supplierText ?? ""); setOrderDate(po.orderDate ?? ""); setNotes(po.notes);
       setDemandType(po.demandType ?? "");
+      setAnalyst(po.analyst ?? "");
+      setSiNumber(po.siNumber ?? "");
       const drafts = Object.fromEntries(po.items.map(item => [item.id, {
         externalLineReference: item.externalLineReference ?? "", productCode: item.productCode,
         description: item.description, orderedQuantity: item.orderedQuantity, unit: item.unit ?? "",
@@ -383,7 +388,8 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
     event.preventDefault(); if (!data) return;
     await save(async () => {
       const header = { number, supplierText: supplier || null, orderDate: orderDate || null, notes,
-        demandType: demandType || null, purchaseRequestId: purchaseRequestId || null, reason: automaticAuditReason,
+        demandType: demandType || null, analyst: analyst || null, siNumber: siNumber || null,
+        purchaseRequestId: purchaseRequestId || null, reason: automaticAuditReason,
         ...(importer !== data.importer ? { importer } : {}) };
       if (commonFieldsTouched.size && data.items.length) {
         const fieldsToSave = purchaseOrderCommonItemFields.filter(field => commonFieldsTouched.has(field.key));
@@ -694,6 +700,10 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
               onChange={selectPurchaseRequest} />
             <label>{fieldLabel(m, { key: "demandType" })}<OperationalOptionSelect entity="demand_type" value={demandType} values={options}
               onChange={setDemandType} /><small className="po-field-hint">{t.demandTypeHint}</small></label>
+            <label>{fieldLabel(m, { key: "analyst" })}<OperationalOptionSelect entity="analyst" value={analyst} values={options}
+              onChange={setAnalyst} /></label>
+            <label>{fieldLabel(m, { key: "siNumber" })}<input maxLength={120} value={siNumber}
+              onChange={event => setSiNumber(event.target.value)} /></label>
             <label>{t.notes}<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
             <button className="button" disabled={saving}>{t.savePo}</button>
           </form>

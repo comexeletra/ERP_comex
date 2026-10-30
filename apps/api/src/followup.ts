@@ -49,7 +49,7 @@ const processFields: Record<string, [string, FieldType, number?]> = {
   freightCurrency: ["freight_currency", "text", 3], freightCost: ["freight_cost", "money"],
   containerNumber: ["container_number", "text", 120], containerType: ["container_type", "text", 80],
   containerQuantity: ["container_quantity", "integer"], forwarder: ["forwarder", "text", 160],
-  documentsOk: ["documents_ok", "boolean"], storageDueOverride: ["storage_due_override", "date"],
+  documentsOkDate: ["documents_ok_date", "date"], storageDueOverride: ["storage_due_override", "date"],
   taxesPaidBrl: ["taxes_paid_brl", "money"], fineBrl: ["fine_brl", "money"],
   storageBrl: ["storage_brl", "money"], demurrageBrl: ["demurrage_brl", "money"],
   demurrageContainerQuantity: ["demurrage_container_quantity", "integer"],
@@ -170,12 +170,12 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
         await setPurchaseOrderObservationActor(client, auth.actor);
         const createdPo = await client.query<{ orderDate: string }>(`INSERT INTO procurement.purchase_order
           (id,importer,external_number,normalized_number,identity_status,source_kind,version,
-           supplier_text,order_date,notes,purchase_request_id,demand_type)
+           supplier_text,order_date,notes,purchase_request_id,demand_type,analyst,si_number)
           VALUES ($1,$2,$3::text,upper($3::text),'MANUAL_UNVERIFIED','MANUAL_TOTVS_REFERENCE',1,$4,
-            (now() AT TIME ZONE 'America/Sao_Paulo')::date,$5,$6,$7)
+            (now() AT TIME ZONE 'America/Sao_Paulo')::date,$5,$6,$7,$8,$9)
           RETURNING order_date::text AS "orderDate"`,
           [poId, header.importer, header.number, header.supplierText, header.notes, purchaseRequestId,
-            header.demandType || null]);
+            header.demandType || null, header.analyst || null, header.siNumber || null]);
         await record(client, "PURCHASE_ORDER", poId, "PURCHASE_ORDER", poId, "CREATE",
           null, { ...header, orderDate: createdPo.rows[0].orderDate }, auth.actor, header.reason);
         const itemIds: string[] = [];
@@ -360,11 +360,15 @@ export async function registerFollowupRoutes(app: FastifyInstance, pool: Pool) {
               ELSE po.supplier_entry_id END,
             notes=$4,purchase_request_id=CASE WHEN $5::boolean THEN $6::uuid ELSE purchase_request_id END,
             demand_type=CASE WHEN $7::boolean THEN $8::text ELSE demand_type END,
-            importer=$9,
+            analyst=CASE WHEN $9::boolean THEN $10::text ELSE analyst END,
+            si_number=CASE WHEN $11::boolean THEN $12::text ELSE si_number END,
+            importer=$13,
             version=version+1,updated_at=now() WHERE id=$1 RETURNING version::text`,
           [poId.data, header.number, header.supplierText, header.notes,
             header.purchaseRequestId !== undefined, header.purchaseRequestId ?? null,
-            header.demandType !== undefined, header.demandType || null, destinationImporter]);
+            header.demandType !== undefined, header.demandType || null,
+            header.analyst !== undefined, header.analyst || null,
+            header.siNumber !== undefined, header.siNumber || null, destinationImporter]);
         await record(client, "PURCHASE_ORDER", poId.data, "PURCHASE_ORDER", poId.data, "UPDATE",
           po, { ...header, orderDate: po.order_date ?? null }, auth.actor, header.reason);
         const keys = Object.keys(fieldsToSave);
