@@ -461,20 +461,20 @@ export function purchaseRequestOperationalFields(request: Record<string, unknown
 
 export function purchaseOrderProductReferenceSql(itemAlias = "item") {
   if (!/^[a-z_][a-z0-9_]*$/iu.test(itemAlias)) throw new Error("Alias SQL inválido.");
+  // The product comes first so the filter reaches the reference view, which has one row per product and currency.
+  const productId = `(SELECT product.id FROM catalog.entry AS product
+      WHERE product.kind='PRODUCT' AND product.importer IS NULL
+        AND product.normalized_code=upper(btrim(${itemAlias}.product_code)))`;
   return `coalesce((SELECT jsonb_agg(jsonb_build_object('currency', reference.currency_code,
       'unitPrice', reference.unit_price::text, 'purchaseOrderNumber', reference.purchase_order_number,
       'observedAt', reference.observed_at) ORDER BY reference.currency_code)
     FROM catalog.product_price_reference AS reference
-    JOIN catalog.entry AS product ON product.id=reference.product_id
-    WHERE product.kind='PRODUCT' AND product.importer IS NULL
-      AND product.normalized_code=upper(btrim(${itemAlias}.product_code))), '[]'::jsonb) AS "referencePrices",
+    WHERE reference.product_id=${productId}), '[]'::jsonb) AS "referencePrices",
   (SELECT jsonb_build_object('currency', reference.currency_code,
       'unitPrice', reference.unit_price::text, 'purchaseOrderNumber', reference.purchase_order_number,
       'observedAt', reference.observed_at)
     FROM catalog.product_price_reference AS reference
-    JOIN catalog.entry AS product ON product.id=reference.product_id
-    WHERE product.kind='PRODUCT' AND product.importer IS NULL
-      AND product.normalized_code=upper(btrim(${itemAlias}.product_code))
+    WHERE reference.product_id=${productId}
       AND reference.currency_code=${itemAlias}.currency_code LIMIT 1) AS "priceReference",
   (SELECT description_reference.description
     FROM catalog.product_totvs_description_reference AS description_reference

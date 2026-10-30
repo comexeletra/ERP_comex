@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { processFollowupFieldKeys } from "../dist/followup.js";
-import { createPo, patchPoFields } from "../dist/operations.js";
+import { createPo, patchPoFields, purchaseOrderProductReferenceSql } from "../dist/operations.js";
 import { ipPostShipmentFields } from "../../web/lib/ip-post-shipment-fields.ts";
 
 const migrationsUrl = new URL("../migrations/", import.meta.url);
@@ -90,6 +90,19 @@ test("Doc ok is a date on the IP form, the API and the product lines", async () 
 test("a shared container counts as half on each IP", async () => {
   assert.match(await source("followup.ts"), /containerQuantity: \["container_quantity", "money"\]/u);
   assert.equal(ipPostShipmentFields.find(item => item.key === "containerQuantity")?.type, "money");
+});
+
+test("the IP list finds the workbook lines through an index on the expression it uses", async () => {
+  const index = (await readFile(new URL("M076_source_row_ip_lookup.sql", migrationsUrl), "utf8")).replace(/--.*$/gmu, "");
+  assert.match(index, /upper\(btrim\(raw_values->>'AB'\)\)/u);
+  assert.match(index, /WHERE sheet_name = 'Pré Embarque'/u);
+  assert.match(await source("processes.ts"), /upper\(btrim\(source\.raw_values->>'AB'\)\) = process\.normalized_ip_number/u);
+});
+
+test("the price reference filters by product before reading the reference view", async () => {
+  const sql = purchaseOrderProductReferenceSql("item");
+  assert.equal([...sql.matchAll(/reference\.product_id=\(SELECT product\.id FROM catalog\.entry AS product/gu)].length, 2);
+  assert.doesNotMatch(sql, /JOIN catalog\.entry AS product ON product\.id=reference\.product_id/u);
 });
 
 test("a linked SC without requester does not stop the PO: the data arrives gradually", async () => {
