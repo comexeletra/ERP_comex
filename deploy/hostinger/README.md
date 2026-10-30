@@ -1,5 +1,34 @@
 # API ERP na VPS Hostinger
 
+## Carga histórica da planilha Follow Up no HML (M075, M076) (2026-10-30)
+
+Regras e resultado em `docs/PLANO_CARGA_HISTORICA_PLANILHA.md`. A planilha `Follow Up Import 2026 - atualizado .xlsx` (SHA-256 `a913434489b8ba9af81803bcd0661b4cc7aa212206a3d0fbb6d1dbacd3e315bc`, abas Pré `B:BA` e Pós `B:AN`) foi carregada no `erp_po_totvs_hml`, com autorização do usuário para apagar a simulação (16 POs, 703 itens, 22 IPs, documentos, alocações e 2 SCs). O histórico de auditoria da simulação e os cadastros foram mantidos.
+
+`import-follow-up-workbook.py` não conecta ao banco: lê a planilha e uma exportação do cadastro, gera um SQL e um relatório. O SQL roda numa transação pelo `psql` como `postgres` dentro do container, recusa outro banco, exige a M075 e recusa repetir o mesmo hash. Sem `--commit` ele termina em `ROLLBACK`, com todos os gatilhos ativos. O ensaio com ROLLBACK revelou uma linha com moeda e sem preço, corrigida antes da carga. A carga levou 8 s.
+
+Backups custom, validados com `pg_restore --list` (58 tabelas com dados):
+
+| Momento | Arquivo em `/var/backups/import-erp/` | Bytes | SHA-256 |
+|---|---|---|---|
+| Antes da M075 | `erp_po_totvs_hml_m075_20261030T135015Z.dump` | 467.433.803 | `4f791e439a423bcc1ca9e6d15a705fbcf4ea3f3f2a4194bcf3daf071a9a65428` |
+| Antes da carga | `erp_po_totvs_hml_pre_follow_up_load_20261030T135918Z.dump` | 467.435.676 | `74ef4fff0a326b7c8075dbe4a39b9ec453cba83e82c9af9cc4088f7f22779911` |
+| Depois da carga | `erp_po_totvs_hml_post_follow_up_load_20261030T140731Z.dump` | 472.258.632 | `72a541f20808872951bf263b673978587255f5fc30a25229cab96e16040876e7` |
+
+M075 foi ensaiada com ROLLBACK e aplicada numa transação que recusa outro banco ou ledger diferente de 74, com checksum LF `62e5390b52cac55645acd23c50292f5e9cfc214a23d514dd7533fad553fe5d20`. M076 foi aplicada do mesmo modo, com checksum LF `b7b15afd7542399bb1ef5aca0996e758e90d7fcdef6fb82801917ff420efa699`; ledger 76/76.
+
+O release ativo é `/opt/import-erp/apps/api/hml-release-eb6edfa`, montado com `git -c core.autocrlf=false archive` (nenhuma fonte com CR), reaproveitando o `node_modules` do release anterior (lockfile igual) e ativado por drop-in; o worker foi movido com `enable-homologation-export-worker.sh eb6edfa`. Drop-ins e `ExecStart` anteriores de cada troca estão em `/var/backups/import-erp/hml-follow-up-load-<sha>-predeploy`. Rollback do banco: restaurar `..._pre_follow_up_load_...dump`, que volta a simulação. Rollback só do código não é possível para antes de `a2c62b1`: o web e a API novos usam `documentsOkDate`.
+
+`/health/live` respondeu 200 e as rotas sem sessão responderam 401. Para reconferir, rode a partir de uma pasta com os scripts:
+
+```sh
+ERP_API_RELEASE_DIR=/opt/import-erp/apps/api/hml-release-<sha> \
+  /opt/node-v24/bin/node --env-file=/etc/import-erp/homologation-db.env verify-follow-up-load.mjs load-report.json
+MIGRATION_ENV=isolated ERP_API_RELEASE_DIR=/opt/import-erp/apps/api/hml-release-<sha> \
+  /opt/node-v24/bin/node --env-file=/etc/import-erp/homologation-db.env accept-follow-up-load.mjs
+```
+
+O aceite altera e desfaz dados pelas rotas reais; depois dele, remova a alocação cancelada de teste e as observações de preço e descrição cujo `actor_id` não seja `migration:follow-up-load`. Produção, `main` e as variáveis da Vercel não foram alteradas.
+
 ## Quantidade da invoice por PO e código no HML (2026-10-29)
 
 Os commits `7c59c6c` e `744273b` implementam a etapa 2 de `docs/PLANO_INVOICE_DISTRIBUICAO_POS.md`: cada linha da invoice só vai para o item com o mesmo código na PO citada (a API recusa outro código com `INVOICE_PRODUCT_CODE_MISMATCH`), a quantidade destinada pode diferir da invoice só com confirmação e motivo em `lineDecisions`, e a rota de lote informa `otherImporters`. Não há migration. O web novo envia `lineDecisions`, que a API anterior recusava; por isso a API foi publicada antes do push.

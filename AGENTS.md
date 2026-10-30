@@ -155,6 +155,15 @@ Se algo essencial não estiver claro, pergunte antes de supor.
 - Uma tela nova com exportação segue o mesmo modelo, com catálogo próprio igual à sua tabela.
 - Os testes de cada tela comparam a tabela com o catálogo e falham quando eles divergem. Não ajuste o teste para passar: ajuste o catálogo ou a tabela.
 
+## Carga histórica da planilha Follow Up
+
+- Regras, decisões do usuário e resultado em `docs/PLANO_CARGA_HISTORICA_PLANILHA.md`. O carregador é `deploy/hostinger/import-follow-up-workbook.py`: ele não conecta ao banco, gera um SQL que só roda no HML e, sem `--commit`, termina em ROLLBACK com todos os gatilhos ativos. Ensaie sempre assim antes de gravar.
+- `migration.source_row.raw_values` fica nas chaves que as telas leem; `file_values` guarda as células do arquivo. Um layout novo entra pelo mapeamento de cabeçalhos do carregador, sem mudar as leituras. `ID Registro` é `=ROW()` e não identifica uma linha entre versões da planilha.
+- Quem altera a carga roda `verify-follow-up-load.mjs` e `accept-follow-up-load.mjs` no HML. Teste com o volume real: 6 mil linhas revelaram lentidão e limite de exportação que a simulação não mostrava.
+- O T3 real é `actual_port_departure_date` ou, na falta dela, `bl_date`; o ETD é só estimativa. Doc ok é a data `documents_ok_date`. Quantidade de contêiner é decimal: um contêiner dividido entre dois IPs conta 0,5 em cada um.
+- Fines, Storage e Demurrage não vêm da planilha: virão da futura base de despesas.
+- Ao gerar scripts pelo terminal, não escreva barra invertida em texto Python dentro de heredoc: a sequência pode chegar alterada ao arquivo. Grave o script com a ferramenta de escrita de arquivo.
+
 ## Tipo de demanda (MTS / Não MTS)
 
 - O tipo de demanda é da PO, não do produto: a HQ planeja o pedido inteiro a partir do estoque (MTS, 30 dias no T3) ou sob encomenda (Não MTS, 45 dias). Ele fica só em `procurement.purchase_order.demand_type` (M071), e todo produto da PO o herda nas leituras (`po.demand_type`). Não volte a gravá-lo no produto nem a oferecê-lo como campo do produto; as rotas de produto o recusam.

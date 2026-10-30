@@ -2,6 +2,8 @@
 
 A página `/source-audit` exibe as linhas preservadas de `migration.source_row` em uma grade ampla, semelhante a uma planilha. A planilha é a fonte histórica de verdade enquanto o ERP não for formalmente adotado como padrão da operação. Os valores históricos são reais conforme registrados; a única revisão de conteúdo pendente são células com erro de cálculo do Excel. Valores fora do padrão de colunas futuras devem continuar visíveis e inalterados. Todas as datas da interface usam `MM/DD/YYYY` (mês/dia/ano), ou `MM/DD/YYYY HH:mm` quando exibem horário. Entradas aceitam `MM/DD/YYYY` e validam uma data real. A apresentação não altera os valores históricos armazenados.
 
+A carga de 2026-10-30 usa a planilha com layout novo. Nela, `raw_values` fica nas mesmas chaves da grade, acrescidas de `BC` (SI), `BD` (Analyst) e `BE` (Group), e `file_values` guarda as células com as letras reais do arquivo.
+
 ## Uso
 
 - As abas `Pré Embarque` e `Pós Embarque` mostram as colunas extraídas nesta versão, identificadas pela letra da coluna Excel. `Todas as linhas` combina as duas abas; células que não pertencem àquela aba ficam vazias. A grade considera Pré `B:BB` e Pós `B:AS`; `BA` não tem cabeçalho e `BB` aparece identificada pela letra da coluna. O lote histórico já promovido preserva a extração anterior Pré `B:AZ`; seus dados não são alterados automaticamente. A próxima promoção versionada deve reconciliar o valor e o cabeçalho de `BB`. Novas versões da planilha também exigem inventário e reconciliação antes de ampliar a grade.
