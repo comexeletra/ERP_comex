@@ -106,6 +106,14 @@ test("the price reference filters by product before reading the reference view",
   assert.doesNotMatch(sql, /JOIN catalog\.entry AS product/u);
 });
 
+test("the product line export fits the whole history and the screens tell its limit", async () => {
+  const worker = await source("worker.ts");
+  assert.match(worker, /maxExportLines = 30_000/u);
+  assert.match(worker, /queryShipmentLines\(pool, job\.importer_scopes, filters\.data, maxExportLines \+ 1, 0\)/u);
+  assert.match(worker, /result\.totalCount > maxExportLines/u);
+  assert.match(await web("lib/i18n/pt-BR.ts"), /suporta até 30\.000 linhas/u);
+});
+
 test("a linked SC without requester does not stop the PO: the data arrives gradually", async () => {
   const operations = await source("operations.ts");
   assert.match(operations, /"requester" in fields && !fields\.requester && request\.requester/u);

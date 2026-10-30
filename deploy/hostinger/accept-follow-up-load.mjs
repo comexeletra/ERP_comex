@@ -41,7 +41,8 @@ async function open() {
   for (const [file, name] of [["followup.js", "registerFollowupRoutes"], ["operations.js", "registerOperationalRoutes"],
     ["processes.js", "registerProcessReadRoutes"], ["purchase-orders.js", "registerPurchaseOrderReadRoutes"],
     ["shipment-lines.js", "registerShipmentLineRoutes"], ["source-audit.js", "registerSourceAuditRoutes"],
-    ["data-issues.js", "registerDataIssueRoutes"], ["purchase-requests.js", "registerPurchaseRequestRoutes"]]) {
+    ["data-issues.js", "registerDataIssueRoutes"], ["purchase-requests.js", "registerPurchaseRequestRoutes"],
+    ["export-jobs.js", "registerExportJobRoutes"]]) {
     await (await dist(file))[name](app, pool);
   }
   return { app, pool };
@@ -189,6 +190,21 @@ async function run() {
       // Same importer, open IP and free quantity: the supplier is the only rule this request breaks.
       check("an IP of another supplier is refused", refused.status === 409 && /viola uma regra do pedido/u.test(JSON.stringify(refused.body)),
         `HTTP ${refused.status} ${JSON.stringify(refused.body).slice(0, 160)}`);
+    }
+
+    // The export worker is a separate service: each Excel export runs on it with the whole history.
+    for (const [name, url, payload] of [["PO portfolio export", "/api/v1/exports/purchase-orders", { lifecycle: "all" }],
+      ["product lines export", "/api/v1/exports/purchase-order-lines", { situation: "all" }]]) {
+      const queued = await call("POST", url, payload);
+      let job = queued.body;
+      const started = performance.now();
+      while (queued.status < 300 && !["completed", "failed"].includes(job?.status) && performance.now() - started < 120_000) {
+        await new Promise(done => { setTimeout(done, 2000); });
+        job = (await call("GET", `/api/v1/exports/${queued.body.id}`)).body;
+      }
+      const size = await row("SELECT octet_length(result_binary) AS bytes FROM jobs.export_job WHERE id = $1", [queued.body.id]);
+      check(name, job?.status === "completed" && Number(size?.bytes) > 0,
+        `${job?.status} ${job?.errorCode ?? ""} in ${Math.round((performance.now() - started) / 1000)} s, ${size?.bytes} bytes`);
     }
 
     // Closed PO: reopened and closed again.

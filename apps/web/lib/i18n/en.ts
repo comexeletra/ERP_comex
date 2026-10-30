@@ -1217,7 +1217,7 @@ export const en: Messages = {
     exportQueued: "Sending the export to the queue…",
     exportStartFailed: "Could not start the export.",
     exportStatusFailed: "Could not check the export progress.",
-    exportTooLarge: "The export supports up to 5,000 lines. Refine the filters and try again.",
+    exportTooLarge: "The export supports up to 30,000 lines. Refine the filters and try again.",
     exportFailed: "The export failed. Try again later.",
     exportRunning: "Generating the Excel file in the background…",
     exportWaiting: "Waiting for processing…",

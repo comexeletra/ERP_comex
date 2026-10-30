@@ -105,6 +105,9 @@ async function failJob(job: ExportJob, error: unknown): Promise<void> {
     attempt: job.attempt_count, retrying: !terminal }));
 }
 
+/** Product lines of one export. The full history already has about 7,000; the screens tell the user this limit. */
+const maxExportLines = 30_000;
+
 /** Columns chosen on the screen; undefined keeps the layout from before the choice. */
 function chosenColumns<C extends "portfolio" | "product-lines" | "end-to-end">(parameters: Record<string, unknown>,
   contexts: readonly C[], filters: Parameters<typeof resolveExportColumns>[2]) {
@@ -123,8 +126,8 @@ async function processJob(job: ExportJob): Promise<void> {
       const filters = shipmentLineQuery.safeParse(parameters);
       if (!filters.success) throw new PermanentJobError("INVALID_EXPORT_FILTERS");
       const chosen = chosenColumns({ context, columns }, ["product-lines", "end-to-end"], filters.data);
-      const result = await queryShipmentLines(pool, job.importer_scopes, filters.data, 5001, 0);
-      if (result.totalCount > 5000) throw new PermanentJobError("EXPORT_TOO_LARGE");
+      const result = await queryShipmentLines(pool, job.importer_scopes, filters.data, maxExportLines + 1, 0);
+      if (result.totalCount > maxExportLines) throw new PermanentJobError("EXPORT_TOO_LARGE");
       await completeJob(job, await purchaseOrderLinesXlsx(result.lines, chosen));
       console.info(JSON.stringify({ event: "export_job_completed", jobId: job.id, rowCount: result.lines.length }));
       return;

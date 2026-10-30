@@ -1220,7 +1220,7 @@ export const ptBR = {
     exportQueued: "Enviando exportação para a fila…",
     exportStartFailed: "Não foi possível iniciar a exportação.",
     exportStatusFailed: "Não foi possível consultar o andamento da exportação.",
-    exportTooLarge: "A exportação suporta até 5.000 linhas. Refine os filtros e tente novamente.",
+    exportTooLarge: "A exportação suporta até 30.000 linhas. Refine os filtros e tente novamente.",
     exportFailed: "A exportação falhou. Tente novamente mais tarde.",
     exportRunning: "Gerando arquivo Excel em segundo plano…",
     exportWaiting: "Aguardando processamento…",

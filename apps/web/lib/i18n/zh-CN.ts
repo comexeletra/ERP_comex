@@ -1217,7 +1217,7 @@ export const zhCN: Messages = {
     exportQueued: "正在将导出任务加入队列…",
     exportStartFailed: "无法开始导出。",
     exportStatusFailed: "无法查询导出进度。",
-    exportTooLarge: "导出最多支持 5000 行。请缩小筛选范围后重试。",
+    exportTooLarge: "导出最多支持 30000 行。请缩小筛选范围后重试。",
     exportFailed: "导出失败。请稍后重试。",
     exportRunning: "正在后台生成 Excel 文件…",
     exportWaiting: "等待处理…",

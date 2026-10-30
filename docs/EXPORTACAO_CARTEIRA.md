@@ -15,7 +15,7 @@ As telas **Carteira de POs** (`/`), **Carteira por produto** (`/purchase-orders/
 O arquivo respeita os filtros aplicados e o escopo do usuário. Na carteira de POs, inclusive o filtro de ciclo (ativas,
 encerradas, canceladas, excluídas ou todas). A carteira de POs não inclui saldos nem valores monetários.
 
-Os valores (status, datas) saem como a API os guarda, em português. Cada exportação é limitada a 5.000 linhas. A tela
+Os valores (status, datas) saem como a API os guarda, em português. Cada exportação é limitada a 5.000 POs ou 30.000 linhas de produto. A tela
 acompanha a tarefa na fila e baixa o arquivo quando o worker termina. As planilhas ficam disponíveis por 24 horas.
 
 **Regra:** a exportação acompanha a tabela. Ao mudar uma coluna de dado numa dessas tabelas, atualize o catálogo da API
