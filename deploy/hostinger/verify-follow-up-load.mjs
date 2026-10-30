@@ -2,7 +2,9 @@
 // session and through the release's own queries. It writes nothing.
 //
 //   ERP_API_RELEASE_DIR=/opt/import-erp/apps/api/hml-release-<sha> \
-//     /opt/node-v24/bin/node --env-file=/etc/import-erp/homologation-db.env verify-follow-up-load.mjs <report.json>
+//     /opt/node-v24/bin/node --env-file=/etc/import-erp/homologation-db.env verify-follow-up-load.mjs <report.json> [<plan-report.json>]
+//
+// The second report is the one of import-commercial-plan-dates.py, which adds an SC after this load.
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
@@ -24,9 +26,10 @@ const selectorColumns = [
   ["imports.import_process", "forwarder", "FORWARDER"], ["imports.import_process", "priority", "PRIORITY"],
 ];
 
-async function run(reportPath) {
+async function run(reportPath, planReportPath) {
   assertHmlDatabase();
   const report = JSON.parse(readFileSync(reportPath, "utf8"));
+  const plan = planReportPath ? JSON.parse(readFileSync(planReportPath, "utf8")) : { createdRequests: 0, linkedOrders: 0 };
   const releaseDir = resolve(process.env.ERP_API_RELEASE_DIR ?? "");
   const releaseRequire = createRequire(join(releaseDir, "package.json"));
   const { default: pg } = await import(pathToFileURL(releaseRequire.resolve("pg")).href);
@@ -48,7 +51,8 @@ async function run(reportPath) {
       [report.mappingVersion]);
     check("batch", [batch?.file_sha256, batch?.state, batch?.source_row_count], [report.sha256, "PROMOTED", report.sourceRows]);
 
-    for (const [table, expected] of [["migration.source_row", report.sourceRows], ["procurement.purchase_request", report.purchaseRequests],
+    for (const [table, expected] of [["migration.source_row", report.sourceRows],
+      ["procurement.purchase_request", report.purchaseRequests + plan.createdRequests],
       ["procurement.purchase_order", report.purchaseOrders], ["procurement.purchase_order_item", report.items],
       ["imports.import_process", report.importProcesses], ["procurement.po_item_allocation", report.allocations],
       ["procurement.process_purchase_order", report.links], ["costs.process_cost", report.costs]]) {
@@ -61,7 +65,8 @@ async function run(reportPath) {
       .map(row => [row.lifecycle_status, row.total]));
     check("PO lifecycles", lifecycles, Object.fromEntries(Object.entries(report.lifecycles).sort()));
     check("PO numbers with other than 6 digits", await count("procurement.purchase_order WHERE external_number !~ '^[0-9]{6}$'"), 0);
-    check("PO links to an SC", await count("procurement.purchase_order WHERE purchase_request_id IS NOT NULL"), report.ordersLinkedToSc);
+    check("PO links to an SC", await count("procurement.purchase_order WHERE purchase_request_id IS NOT NULL"),
+      report.ordersLinkedToSc + plan.linkedOrders);
     const noSupplier = (await pool.query(
       "SELECT external_number FROM procurement.purchase_order WHERE supplier_entry_id IS NULL ORDER BY 1")).rows.map(row => row.external_number);
     check("POs without supplier", noSupplier, report.ordersWithoutSupplier);
@@ -124,7 +129,7 @@ async function run(reportPath) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]).endsWith("verify-follow-up-load.mjs")) {
-  run(process.argv[2]).catch(error => {
+  run(process.argv[2], process.argv[3]).catch(error => {
     console.error(error);
     process.exitCode = 1;
   });

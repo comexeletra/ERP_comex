@@ -1,7 +1,7 @@
 # Tarefa: carga histórica da planilha Follow Up (Pré e Pós Embarque)
 
-Status: **carregada no HML em 2026-10-30, aguardando validação do usuário no Preview**. Pendência externa: o arquivo
-`Status PO's`, que o usuário enviará para associar o T0 às SCs. Produção não foi alterada.
+Status: **carregada no HML em 2026-10-30, com o T0 da planilha MRP, aguardando validação do usuário no Preview**. Produção não foi
+alterada.
 
 Arquivo: `Follow Up Import 2026 - atualizado .xlsx`, SHA-256
 `a913434489b8ba9af81803bcd0661b4cc7aa212206a3d0fbb6d1dbacd3e315bc`, confirmado pelo usuário como a versão a carregar.
@@ -41,7 +41,7 @@ HML. O sistema deixa de depender da planilha e o End to End passa a ser calculad
 |---|---|
 | Colunas | Pré `B:BA`; Pós `B:AN`. Fines, Storage e Demurrage ficam fora: virão da futura base de despesas |
 | Aba End-to-End | Não usar; o End to End deriva dos dados do sistema |
-| T0 | Virá do arquivo `Status PO's`, associado pela SC |
+| T0 | Vem da planilha MRP pela SC; regras na seção "Data do plano comercial" |
 | T3 real | A data do BL é a saída real; o ETD é só estimativa |
 | ETA e ETE | Só os digitados entram como confirmados (59 e 12); os demais o sistema calcula. Regra validada: 161 de 161 ETA e 208 de 208 ETE em fórmula batem com o cálculo |
 | Doc ok | Passa a ser um campo de data (`documents_ok_date`); a coluna antiga fica só para linhas anteriores |
@@ -139,7 +139,7 @@ Paridade significa valor igual ao ignorar maiúsculas, acentos, espaços e pontu
 4. Carregador: transformação pura, testes, relatório de simulação e `--apply` só no HML.
 5. Backup, limpeza da simulação, ensaio em cópia restaurada e conferência.
 6. Aplicação no HML, publicação da API e do web e validação no Preview.
-7. Associação do T0 pela SC, quando o arquivo `Status PO's` chegar.
+7. Associação do T0 pela SC, com a planilha MRP (feita).
 
 ## Resultado no HML (2026-10-30)
 
@@ -168,5 +168,35 @@ rotas reais (listas, edição de PO e IP históricos, correção de fornecedor, 
 de moeda e exportações), desfazendo cada alteração.
 
 Divergências que ficam registradas: em 3 IPs (`H-CWB008/2026`, `H-CWB009A/2026` e `H-CWB009B/2026`) o Due Storage da planilha é
-de 4 dias, enquanto o sistema calcula 9. Sem T0, o total do End to End do histórico aparece "sem dado" até a associação do arquivo
-`Status PO's`.
+de 4 dias, enquanto o sistema calcula 9.
+
+## Data do plano comercial (T0)
+
+Arquivo: `FUP POS - MRP.xlsx`, aba `Status PO's`, SHA-256 `af53694122423aedcbe34649e4062a605081427fc56b0e901fabf31ef98544bf`.
+Carregador: `deploy/hostinger/import-commercial-plan-dates.py`; conferência: `deploy/hostinger/verify-commercial-plan-dates.mjs`.
+
+| Tema | Decisão do usuário |
+|---|---|
+| Fonte de verdade | O Follow Up manda nas POs e SCs; o MRP só fornece a data de recebimento do plano comercial |
+| Chave e data | SC na coluna `Q`, data na coluna `J` |
+| Onde fica | No cadastro da SC. Como o End to End lê o produto, a data é copiada para os produtos da SC, como faz a edição da SC |
+| Prazo do T0 | Continua necessidade − 4 meses, meta de 8 dias. A coluna `P` (5 meses antes, dia 5) não é usada |
+| SC fora da coluna `Q` | Sem data. 40 linhas de 11 POs ficam sem T0, mesmo com a PO na planilha |
+| SC 020328 | Não existia: a PO 031362 está sem SC no Follow Up. A SC foi criada e ligada à PO e às suas 51 linhas |
+| SC 019725 | Duas datas: cada linha fica com a da sua PO (029570 = 05/07/2026, 029165 = 17/07/2026), e o cadastro da SC com 05/07/2026, da PO com mais linhas |
+| Linha cancelada da PO 030243 | Duas SCs com datas diferentes: fica com a data da PO, 10/08/2026 |
+
+Resultado no HML: 127 SCs e 6.258 das 7.553 linhas de PO com data; no End to End, 5.822 das 6.882 linhas têm T0. A carga passou com
+todos os gatilhos ativos: as POs encerradas e canceladas reabrem na transação e voltam com os mesmos dados de ciclo de vida. Repetir
+é recusado com `ALREADY_PROMOTED`, e a carga não substitui datas já gravadas.
+
+Ficam sem T0 por falta de fonte: 1.255 linhas, de 228 POs (219 SCs fora da planilha e 36 linhas sem SC). A planilha cobre só a
+Matriz e as necessidades de 2026 em diante.
+
+Divergências registradas, sem alteração no sistema:
+
+- O Follow Up tem a PO 018737 na SC 012968, e o MRP e o TOTVS têm a 019460. O mesmo ocorre na SC 020326: 032030 no Follow Up, 031346
+  no MRP. A data entrou pela SC.
+- Nas SCs 020103 e 020161 a data do plano é posterior à aprovação da SC no Follow Up, e 5 linhas têm T1 negativo. Na 020161, a
+  aprovação do Follow Up é 04/08/2026 e a data da SC no TOTVS é 04/09/2026.
+- 1.925 linhas com T0 não têm aprovação da SC no Follow Up: nelas o T1 e o total do End to End ficam "sem dado".

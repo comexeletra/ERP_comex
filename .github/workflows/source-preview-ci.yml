@@ -7,6 +7,8 @@ on:
       - "deploy/hostinger/test_preview_historical_workbook.py"
       - "deploy/hostinger/import-follow-up-workbook.py"
       - "deploy/hostinger/test_import_follow_up_workbook.py"
+      - "deploy/hostinger/import-commercial-plan-dates.py"
+      - "deploy/hostinger/test_import_commercial_plan_dates.py"
       - ".github/workflows/source-preview-ci.yml"
   push:
     branches: [main]
@@ -15,6 +17,8 @@ on:
       - "deploy/hostinger/test_preview_historical_workbook.py"
       - "deploy/hostinger/import-follow-up-workbook.py"
       - "deploy/hostinger/test_import_follow_up_workbook.py"
+      - "deploy/hostinger/import-commercial-plan-dates.py"
+      - "deploy/hostinger/test_import_commercial_plan_dates.py"
       - ".github/workflows/source-preview-ci.yml"
 
 permissions:
@@ -34,3 +38,5 @@ jobs:
         run: python -m unittest discover -s deploy/hostinger -p test_preview_historical_workbook.py -v
       - name: Test the Follow Up workbook load
         run: python -m unittest discover -s deploy/hostinger -p test_import_follow_up_workbook.py -v
+      - name: Test the commercial plan dates load
+        run: python -m unittest discover -s deploy/hostinger -p test_import_commercial_plan_dates.py -v

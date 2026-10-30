@@ -1,5 +1,16 @@
 # API ERP na VPS Hostinger
 
+## Data do plano comercial no HML (2026-10-30)
+
+Regras em `docs/PLANO_CARGA_HISTORICA_PLANILHA.md`. `import-commercial-plan-dates.py` não conecta ao banco: lê a aba `Status PO's` de `FUP POS - MRP.xlsx` (SHA-256 `af53694122423aedcbe34649e4062a605081427fc56b0e901fabf31ef98544bf`) e gera um SQL que recusa outro banco, recusa repetir e não substitui datas gravadas. `--expected-items` é obrigatório, e qualquer outro total de linhas interrompe a carga. Sem `--commit`, termina em `ROLLBACK`.
+
+Depois do ensaio com ROLLBACK, a carga gravou 127 SCs e 6.258 linhas, com a release `hml-release-eb6edfa`, sem mudar a API nem o web. `verify-commercial-plan-dates.mjs`, `verify-follow-up-load.mjs` e `accept-follow-up-load.mjs` passaram, e `cleanup` retirou os resíduos do aceite. A repetição foi recusada com `ALREADY_PROMOTED`. Na reconferência, passe o relatório da carga do plano como segundo argumento de `verify-follow-up-load.mjs`, porque a SC 020328 foi criada depois da carga do Follow Up.
+
+| Momento | Arquivo em `/var/backups/import-erp/` | Bytes | SHA-256 |
+|---|---|---|---|
+| Antes da carga | `erp_po_totvs_hml_pre_commercial_plan_20261030T185958Z.dump` | 474.150.793 | `aa688d4cc6d8cae36f8308a7b384df22e477e47f1add4e8c809a69a276466e8b` |
+| Depois da carga | `erp_po_totvs_hml_post_commercial_plan_20261030T185958Z.dump` | 476.279.088 | `afd238969852ad4ef06af3487c40ea3a2536c52a5975dc5c7cc2ef3e954e08b9` |
+
 ## Carga histórica da planilha Follow Up no HML (M075, M076) (2026-10-30)
 
 Regras e resultado em `docs/PLANO_CARGA_HISTORICA_PLANILHA.md`. A planilha `Follow Up Import 2026 - atualizado .xlsx` (SHA-256 `a913434489b8ba9af81803bcd0661b4cc7aa212206a3d0fbb6d1dbacd3e315bc`, abas Pré `B:BA` e Pós `B:AN`) foi carregada no `erp_po_totvs_hml`, com autorização do usuário para apagar a simulação (16 POs, 703 itens, 22 IPs, documentos, alocações e 2 SCs). O histórico de auditoria da simulação e os cadastros foram mantidos.
