@@ -186,7 +186,8 @@ async function run() {
     if (blocked) {
       const refused = await call("POST", `${poRoute(blocked.purchase_order_id)}/allocations`, { itemId: blocked.id, processId: blocked.process_id,
         quantity: blocked.quantity, factoryShipDate: null, notes: "", reason }, { "Idempotency-Key": `acceptance-${randomUUID()}` });
-      check("an IP of another supplier is refused by the supplier rule", refused.status === 409 && /fornecedor|supplier/iu.test(JSON.stringify(refused.body)),
+      // Same importer, open IP and free quantity: the supplier is the only rule this request breaks.
+      check("an IP of another supplier is refused", refused.status === 409 && /viola uma regra do pedido/u.test(JSON.stringify(refused.body)),
         `HTTP ${refused.status} ${JSON.stringify(refused.body).slice(0, 160)}`);
     }
 

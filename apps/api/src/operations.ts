@@ -478,19 +478,13 @@ export function purchaseOrderProductReferenceSql(itemAlias = "item") {
       AND reference.currency_code=${itemAlias}.currency_code LIMIT 1) AS "priceReference",
   (SELECT description_reference.description
     FROM catalog.product_totvs_description_reference AS description_reference
-    JOIN catalog.entry AS product ON product.id=description_reference.product_id
-    WHERE product.kind='PRODUCT' AND product.importer IS NULL
-      AND product.normalized_code=upper(btrim(${itemAlias}.product_code)) LIMIT 1) AS "latestTotvsDescription",
+    WHERE description_reference.product_id=${productId} LIMIT 1) AS "latestTotvsDescription",
   (SELECT description_reference.purchase_order_number
     FROM catalog.product_totvs_description_reference AS description_reference
-    JOIN catalog.entry AS product ON product.id=description_reference.product_id
-    WHERE product.kind='PRODUCT' AND product.importer IS NULL
-      AND product.normalized_code=upper(btrim(${itemAlias}.product_code)) LIMIT 1) AS "latestTotvsDescriptionPurchaseOrderNumber",
+    WHERE description_reference.product_id=${productId} LIMIT 1) AS "latestTotvsDescriptionPurchaseOrderNumber",
   (SELECT description_reference.observed_at
     FROM catalog.product_totvs_description_reference AS description_reference
-    JOIN catalog.entry AS product ON product.id=description_reference.product_id
-    WHERE product.kind='PRODUCT' AND product.importer IS NULL
-      AND product.normalized_code=upper(btrim(${itemAlias}.product_code)) LIMIT 1) AS "latestTotvsDescriptionObservedAt"`;
+    WHERE description_reference.product_id=${productId} LIMIT 1) AS "latestTotvsDescriptionObservedAt"`;
 }
 
 export async function lockedPo(client: PoolClient, id: string, scopes: string[]) {

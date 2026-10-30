@@ -101,8 +101,9 @@ test("the IP list finds the workbook lines through an index on the expression it
 
 test("the price reference filters by product before reading the reference view", async () => {
   const sql = purchaseOrderProductReferenceSql("item");
-  assert.equal([...sql.matchAll(/reference\.product_id=\(SELECT product\.id FROM catalog\.entry AS product/gu)].length, 2);
-  assert.doesNotMatch(sql, /JOIN catalog\.entry AS product ON product\.id=reference\.product_id/u);
+  assert.equal([...sql.matchAll(/\breference\.product_id=\(SELECT product\.id FROM catalog\.entry AS product/gu)].length, 2);
+  assert.equal([...sql.matchAll(/description_reference\.product_id=\(SELECT product\.id FROM catalog\.entry AS product/gu)].length, 3);
+  assert.doesNotMatch(sql, /JOIN catalog\.entry AS product/u);
 });
 
 test("a linked SC without requester does not stop the PO: the data arrives gradually", async () => {
