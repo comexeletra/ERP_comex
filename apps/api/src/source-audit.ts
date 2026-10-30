@@ -4,11 +4,11 @@ import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
 import { shipmentStatusSql } from "./shipment-lines.js";
 
-const preColumns = excelColumns("B", "BB");
+const preColumns = excelColumns("B", "BE");
 const postColumns = excelColumns("B", "AS");
 const allowedColumns = new Set([...preColumns, ...postColumns]);
 const preHeaders = ["Necessity", "Priority", "Alert", "Status", "Importer", "Demand", "Requester", "SC Totvs", "SC Appr. Date", "Finalidade", "Cost Center", "Draft PO", "PO Totvs", "PO Date", "PO Appr. Date", "PO Sent Date", "Supplier", "Category", "Product Code", "Product Description", "NCM", "Qty", "Unit Price", "Total Price", "Currency", "Remarks", "IP Number", "IP Date Totvs", "Mode", "Incoterm", "Broker", "POL", "POD", "ETD", "ETA", "Transit Time", "Invoice", "BL Number", "BL Date", "Arrival", "Duimp", "Duimp Date", "Channel", "Clearance", "ETE", "NF Request", "NF", "NF Issue Date", "Delivery Date", "LT Total", "Rupture Risk"];
-preHeaders.push("(sem cabeçalho)", "Coluna BB");
+preHeaders.push("(sem cabeçalho)", "Coluna BB", "SI", "Analyst", "Group");
 const postHeaders = ["IP Number", "Priority", "Alert", "Status", "Importer", "Supplier", "Invoice", "Currency", "Total Amount", "Mode", "Incoterm", "POL", "POD", "Broker", "BL Number", "ETD", "Transit Time", "ETA", "ETE Eletra", "BL Date", "Freight Ccy.", "Freight Cost", "Container", "Ctnr Type", "Ctnr Qty", "Forwarder", "Doc ok", "Arrival", "Due Storage", "Taxes Paid (R$)", "Duimp", "Duimp Date", "Channel", "Clearance", "NF Request", "NF", "NF Issue Date", "NF Homolog.", "Delivery Date", "(sem cabeçalho)", "Fines R$", "Storage R$", "Demurrage R$", "Qty Ctnr Dem"];
 const querySchema = z.object({
   sheet: z.enum(["all", "Pré Embarque", "Pós Embarque"]).default("all"),

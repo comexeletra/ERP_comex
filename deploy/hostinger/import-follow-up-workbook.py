@@ -410,7 +410,7 @@ def build_load(pre_rows: list[tuple[int, dict]], post_rows: list[tuple[int, dict
             raise ValueError(f"Pre row {line['number']}: PO line needs a product code and a positive quantity")
         price = decimal_value(pre(row, "Unit Price"))
         currency_text = text(pre(row, "Currency")).upper()
-        currency = currency_text if currency_text in registered.get("CURRENCY", []) else None
+        currency = currency_text if price is not None and currency_text in registered.get("CURRENCY", []) else None
         if price is not None and not currency:
             add_issue(source_id, "PRICE_WITHOUT_CURRENCY", "Z", {"purchaseOrder": order["number"], "productCode": code,
                                                                  "unitPrice": str(price),

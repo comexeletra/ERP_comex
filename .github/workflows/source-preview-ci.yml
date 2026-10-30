@@ -5,12 +5,16 @@ on:
     paths:
       - "deploy/hostinger/preview-historical-workbook.py"
       - "deploy/hostinger/test_preview_historical_workbook.py"
+      - "deploy/hostinger/import-follow-up-workbook.py"
+      - "deploy/hostinger/test_import_follow_up_workbook.py"
       - ".github/workflows/source-preview-ci.yml"
   push:
     branches: [main]
     paths:
       - "deploy/hostinger/preview-historical-workbook.py"
       - "deploy/hostinger/test_preview_historical_workbook.py"
+      - "deploy/hostinger/import-follow-up-workbook.py"
+      - "deploy/hostinger/test_import_follow_up_workbook.py"
       - ".github/workflows/source-preview-ci.yml"
 
 permissions:
@@ -28,3 +32,5 @@ jobs:
         run: python -m pip install openpyxl==3.1.5
       - name: Test read-only inventory and comparison
         run: python -m unittest discover -s deploy/hostinger -p test_preview_historical_workbook.py -v
+      - name: Test the Follow Up workbook load
+        run: python -m unittest discover -s deploy/hostinger -p test_import_follow_up_workbook.py -v

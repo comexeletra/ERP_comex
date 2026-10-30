@@ -226,6 +226,12 @@ class Lines(unittest.TestCase):
         self.assertEqual([item["currency"] for item in load["items"]], [None, None])
         self.assertEqual(len(issues(load, "PRICE_WITHOUT_CURRENCY")), 2)
 
+    def test_a_currency_without_price_is_not_kept_on_the_item(self):
+        load = build([pre_row(**{"Unit Price": None})])
+        self.assertIsNone(load["items"][0]["price"])
+        self.assertIsNone(load["items"][0]["currency"])
+        self.assertEqual(load["sources"][0]["file_values"]["AC"], "CNY")
+
     def test_description_falls_back_to_the_code(self):
         self.assertEqual(build([pre_row(**{"Product Description": None})])["items"][0]["description"], "ABC")
 
