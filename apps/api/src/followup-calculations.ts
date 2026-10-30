@@ -173,7 +173,7 @@ export function calculateE2e(item: Row, process: Row, status: string, targets: E
   const mode = text(process.transportMode)?.toUpperCase() ?? null;
   const air = mode === null ? null : /^(AIR|AEREO|AÉREO|COURIER)$/u.test(mode);
   const { eta, ete } = shipmentDates(process);
-  const shipped = date(process.actualPortDepartureDate) ?? (date(process.blDate) ? date(process.etd) ?? date(process.blDate) : null);
+  const shipped = date(process.actualPortDepartureDate) ?? date(process.blDate);
   const ends: [string | null, string | null][] = [
     [date(item.commercialPlanReceivedDate), null],
     [date(item.scApprovalDate), null],

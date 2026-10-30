@@ -322,3 +322,15 @@ test("E2E accumulated delay adds the stage delays from T0 and stops at the first
   const noMode = calculateFollowup(resistor, { ...shippedBySea, transportMode: null }, invoice, "2026-10-26").e2e;
   assert.deepEqual(["T3", "T4", "T5"].map(code => noMode.stages[code].accumulatedDelayDays), [7, null, null]);
 });
+
+test("the actual T3 end is the BL date: the ETD is only an estimate", () => {
+  const item = { necessityDate: "2026-12-01", scApprovalDate: "2026-06-01", poSentDate: "2026-06-10" };
+  const shipped = calculateE2e(item, { transportMode: "SEA", etd: "2026-08-20", blDate: "2026-08-25" }, "AGUARDANDO CHEGADA",
+    DEFAULT_E2E_TARGET_SET, null, "2026-09-01");
+  assert.equal(shipped.stages.T3.actual, "2026-08-25");
+  assert.equal(shipped.stages.T3.source, "actual");
+  const estimated = calculateE2e(item, { transportMode: "SEA", etd: "2026-08-20" }, "AGUARDANDO EMBARQUE",
+    DEFAULT_E2E_TARGET_SET, null, "2026-08-01");
+  assert.equal(estimated.stages.T3.actual, "2026-08-20");
+  assert.equal(estimated.stages.T3.source, "forecast");
+});
