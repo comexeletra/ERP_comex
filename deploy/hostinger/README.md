@@ -10,6 +10,10 @@ Depois do ensaio com ROLLBACK, a carga gravou 127 SCs e 6.258 linhas, com a rele
 |---|---|---|---|
 | Antes da carga | `erp_po_totvs_hml_pre_commercial_plan_20261030T185958Z.dump` | 474.150.793 | `aa688d4cc6d8cae36f8308a7b384df22e477e47f1add4e8c809a69a276466e8b` |
 | Depois da carga | `erp_po_totvs_hml_post_commercial_plan_20261030T185958Z.dump` | 476.279.088 | `afd238969852ad4ef06af3487c40ea3a2536c52a5975dc5c7cc2ef3e954e08b9` |
+| Antes da data pela PO | `erp_po_totvs_hml_pre_plan_by_po_20261030T202414Z.dump` | 476.279.092 | `479d1ed403a92b056c36c6c091e6d169f4b691c3eee3930bd4c54783a6180086` |
+| Depois da data pela PO | `erp_po_totvs_hml_post_plan_by_po_20261030T202414Z.dump` | 478.261.136 | `c694d9d56e56ea323eb3c9eac96a7fd62784b366c48ee7744bdd898dd510cb75` |
+
+O segundo passo, `--by-po`, exige `--expected-requests`, recusa rodar antes do primeiro e recusa repetir. Com ele, o HML ficou com 144 SCs e 6.299 linhas com data. O ensaio com ROLLBACK, as conferências e o aceite passaram na release `hml-release-d47d9ca`, ativada por drop-in com a regra do T0 (necessidade − 4 meses + 4 dias), e o worker foi movido com `enable-homologation-export-worker.sh d47d9ca`. Drop-ins e `ExecStart` anteriores estão em `/var/backups/import-erp/hml-follow-up-load-d47d9ca-predeploy`.
 
 ## Carga histórica da planilha Follow Up no HML (M075, M076) (2026-10-30)
 
@@ -27,7 +31,7 @@ Backups custom, validados com `pg_restore --list` (58 tabelas com dados):
 
 M075 foi ensaiada com ROLLBACK e aplicada numa transação que recusa outro banco ou ledger diferente de 74, com checksum LF `62e5390b52cac55645acd23c50292f5e9cfc214a23d514dd7533fad553fe5d20`. M076 foi aplicada do mesmo modo, com checksum LF `b7b15afd7542399bb1ef5aca0996e758e90d7fcdef6fb82801917ff420efa699`; ledger 76/76.
 
-O release ativo é `/opt/import-erp/apps/api/hml-release-eb6edfa`, montado com `git -c core.autocrlf=false archive` (nenhuma fonte com CR), reaproveitando o `node_modules` do release anterior (lockfile igual) e ativado por drop-in; o worker foi movido com `enable-homologation-export-worker.sh eb6edfa`. Drop-ins e `ExecStart` anteriores de cada troca estão em `/var/backups/import-erp/hml-follow-up-load-<sha>-predeploy`. Rollback do banco: restaurar `..._pre_follow_up_load_...dump`, que volta a simulação. Rollback só do código não é possível para antes de `a2c62b1`: o web e a API novos usam `documentsOkDate`.
+O release desta carga foi `/opt/import-erp/apps/api/hml-release-eb6edfa`, montado com `git -c core.autocrlf=false archive` (nenhuma fonte com CR), reaproveitando o `node_modules` do release anterior (lockfile igual) e ativado por drop-in; o worker foi movido com `enable-homologation-export-worker.sh eb6edfa`. Drop-ins e `ExecStart` anteriores de cada troca estão em `/var/backups/import-erp/hml-follow-up-load-<sha>-predeploy`. Rollback do banco: restaurar `..._pre_follow_up_load_...dump`, que volta a simulação. Rollback só do código não é possível para antes de `a2c62b1`: o web e a API novos usam `documentsOkDate`.
 
 `/health/live` respondeu 200 e as rotas sem sessão responderam 401. Para reconferir, rode a partir de uma pasta com os scripts:
 

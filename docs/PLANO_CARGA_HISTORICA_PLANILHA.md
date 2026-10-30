@@ -180,23 +180,27 @@ Carregador: `deploy/hostinger/import-commercial-plan-dates.py`; conferência: `d
 | Fonte de verdade | O Follow Up manda nas POs e SCs; o MRP só fornece a data de recebimento do plano comercial |
 | Chave e data | SC na coluna `Q`, data na coluna `J` |
 | Onde fica | No cadastro da SC. Como o End to End lê o produto, a data é copiada para os produtos da SC, como faz a edição da SC |
-| Prazo do T0 | Continua necessidade − 4 meses, meta de 8 dias. A coluna `P` (5 meses antes, dia 5) não é usada |
-| SC fora da coluna `Q` | Sem data. 40 linhas de 11 POs ficam sem T0, mesmo com a PO na planilha |
+| Prazo do T0 | Necessidade − 4 meses + 4 dias, meta de 8 dias, como na aba `End-to-End`. A coluna `P` (5 meses antes, dia 5) não é usada |
+| SC fora da coluna `Q` | Recebe a data que a sua PO tem na planilha, no cadastro da SC e nas linhas dela. A SC do Follow Up não muda |
 | SC 020328 | Não existia: a PO 031362 está sem SC no Follow Up. A SC foi criada e ligada à PO e às suas 51 linhas |
 | SC 019725 | Duas datas: cada linha fica com a da sua PO (029570 = 05/07/2026, 029165 = 17/07/2026), e o cadastro da SC com 05/07/2026, da PO com mais linhas |
 | Linha cancelada da PO 030243 | Duas SCs com datas diferentes: fica com a data da PO, 10/08/2026 |
 
-Resultado no HML: 127 SCs e 6.258 das 7.553 linhas de PO com data; no End to End, 5.822 das 6.882 linhas têm T0. A carga passou com
+Resultado no HML: 144 SCs (127 da coluna `Q` e 17 pela PO) e 6.299 das 7.553 linhas de PO com data; no End to End, 5.856 das 6.882
+linhas têm T0 e 3.317 têm o total calculado. Ao entrar no cadastro, a data da SC 015237 alcançou também uma linha cancelada da PO
+026338, que não está no MRP. As SCs 012610, 014746, 019186 e 020118 só receberam a data no cadastro: suas linhas já tinham data pela
+outra SC da célula. A carga passou com
 todos os gatilhos ativos: as POs encerradas e canceladas reabrem na transação e voltam com os mesmos dados de ciclo de vida. Repetir
 é recusado com `ALREADY_PROMOTED`, e a carga não substitui datas já gravadas.
 
-Ficam sem T0 por falta de fonte: 1.255 linhas, de 228 POs (219 SCs fora da planilha e 36 linhas sem SC). Somadas às 40 linhas acima,
-são 1.295: 359 de Curitiba e Fortaleza, 235 da Matriz com necessidade anterior a 2026 ou vazia e 701 da Matriz em 2026 ou 2027. A
-base da planilha filtra necessidade 2026 e 2027, Matriz, sem canceladas, Josivan e os PCM exceto Lucas Viana, Odilano e Kevin. Das
-1.295, 449 são linhas ativas em 70 POs abertas. O usuário decidiu deixar essas linhas sem T0 por enquanto e tratar a fonte depois.
+Ficam sem T0 por falta de fonte: 1.254 linhas, sendo 36 sem SC: 359 de Curitiba e Fortaleza, 235 da Matriz com necessidade anterior a
+2026 ou vazia e 660 da Matriz em 2026 ou 2027. A base da planilha filtra necessidade 2026 e 2027, Matriz, sem canceladas, Josivan e
+os PCM exceto Lucas Viana, Odilano e Kevin. Das 1.254, 429 são linhas ativas em 65 POs abertas. O usuário decidiu deixar essas linhas
+sem T0 por enquanto e tratar a fonte depois.
 
-Das 238 SCs sem data, só 30 têm todas as linhas canceladas no Follow Up; 18 têm parte cancelada e 190 não têm cancelamento. As 208
-restantes ficaram fora do MRP pelos filtros da planilha, salvo 12 que são a segunda SC de uma PO presente nela e 6 SCs recentes.
+Das 221 SCs sem data, só 27 têm todas as linhas canceladas no Follow Up; 16 têm parte cancelada e 178 não têm cancelamento. Nenhuma
+delas está na aba `Base Comex` do MRP: 186 caem nos filtros de importadora, necessidade ou solicitante, 6 são SCs recentes e a 014350
+está ligada à PO 023218, que a planilha retira.
 
 Comparação com a aba `End-to-End` do Follow Up (2026-10-30): a coluna `N` é um `XLOOKUP` exato da SC na coluna `Q` do mesmo
 `FUP POS - MRP.xlsx`, com as mesmas 127 SCs. Nas 7.403 linhas da aba, 6.132 têm a mesma data no sistema e nenhuma tem data só na aba.
@@ -204,14 +208,16 @@ O sistema tem 124 datas a mais (73 linhas com duas SCs na célula, que o `XLOOKU
 a PO 029165, em que a aba pega a primeira ocorrência da SC 019725 e o sistema usa a data da PO, por decisão do usuário. A aba
 `Versão MRP` não serve de fonte: a data dela só bate com a coluna `J` em 25 de 301 linhas.
 
+Depois da regra do `+4` e da data pela PO, nas linhas em que aba e sistema têm T0, as 5.697 com a mesma data têm prazo, dias e atraso
+iguais aos da aba, sem nenhuma divergência. A única data diferente segue sendo a da PO 029165. As 11 últimas linhas da aba estão sem
+o prazo na coluna `M`, porque a fórmula não foi estendida até elas.
+
 Divergências registradas, sem alteração no sistema:
 
-- O prazo do T0 na aba `End-to-End` é necessidade − 4 meses + 4 dias, e no sistema é necessidade − 4 meses. O atraso do T0 difere em
-  4 dias em todas as linhas.
 
 - O Follow Up tem a PO 018737 na SC 012968, e o MRP e o TOTVS têm a 019460. O mesmo ocorre na SC 020326: 032030 no Follow Up, 031346
   no MRP. A data entrou pela SC.
 - Nas SCs 020103 e 020161 a data do plano é posterior à aprovação da SC no Follow Up, e 5 linhas têm T1 negativo. Na 020161, a
   aprovação do Follow Up é 04/08/2026 e a data da SC no TOTVS é 04/09/2026.
-- 2.283 linhas de PO com T0 (1.925 no End to End) não têm aprovação da SC no Follow Up: são 37 POs, todas encerradas ou canceladas.
+- 2.288 linhas de PO com T0 (1.929 no End to End) não têm aprovação da SC no Follow Up: são 38 POs, todas encerradas ou canceladas.
   Nelas T1, T2 e o total do End to End ficam "sem dado". A coluna `L` do MRP é a data da SC, não a aprovação, e não foi usada.
