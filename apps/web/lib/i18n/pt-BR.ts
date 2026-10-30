@@ -1566,7 +1566,7 @@ export const ptBR = {
   e2eLines: {
     eyebrow: "Supply chain Brasil ⇄ China",
     title: "End to End",
-    intro: "Uma linha por produto e IP com prazo, data real, meta, dias reais e atraso de cada etapa. O T0 vence 4 meses antes da necessidade; cada etapa seguinte vence no fim real da anterior mais a sua meta. Atraso = dias reais − meta. Datas em itálico são previsões (ETD, ETA e ETE).",
+    intro: "Uma linha por produto e IP com prazo, data real, meta, dias reais e atraso de cada etapa. O T0 vence 4 meses antes da necessidade mais 4 dias; cada etapa seguinte vence no fim real da anterior mais a sua meta. Atraso = dias reais − meta. Datas em itálico são previsões (ETD, ETA e ETE).",
     necessity: "Necessidade",
     sc: "SC",
     purpose: "Finalidade",

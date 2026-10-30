@@ -32,17 +32,21 @@ async function run(reportPath) {
 
     const dates = new Map();
     for (const entry of report.plan) dates.set(entry.sc, [...(dates.get(entry.sc) ?? []), entry.received]);
+    const poDates = new Map(report.plan.map(entry => [entry.po, entry.received]));
     const requests = await query(`SELECT normalized_sc_number AS sc, commercial_plan_received_date::text AS received
       FROM procurement.purchase_request WHERE commercial_plan_received_date IS NOT NULL`);
     check("SCs with date", requests.length, report.requests);
-    check("SC dates outside the sheet", requests.filter(row => !dates.get(row.sc)?.includes(row.received)).map(row => row.sc), []);
+    const requestDates = new Map(requests.map(row => [row.sc, row.received]));
 
     const items = await query(`SELECT item.id, po.normalized_number AS po, item.sc_number AS sc, item.commercial_plan_received_date::text AS received,
         ${scList} AS numbers FROM procurement.purchase_order_item AS item
       JOIN procurement.purchase_order AS po ON po.id = item.purchase_order_id`);
+    check("SC dates outside the sheet", requests.filter(row => !dates.get(row.sc)?.includes(row.received)
+      && !items.some(item => item.numbers?.includes(row.sc) && poDates.get(item.po) === row.received)).map(row => row.sc), []);
     const dated = items.filter(row => row.received);
     check("lines with date", dated.length, report.items);
-    const planned = row => (row.numbers ?? []).flatMap(number => dates.get(number) ?? []);
+    const planned = row => (row.numbers ?? []).flatMap(number => [...(dates.get(number) ?? []),
+      ...(requestDates.has(number) ? [requestDates.get(number)] : [])]);
     check("lines with a date that none of their SCs has", dated.filter(row => !planned(row).includes(row.received)).map(row => row.id), []);
     check("lines whose SC has a date and stayed empty", items.filter(row => !row.received && planned(row).length).map(row => row.id), []);
     const byPo = new Map(report.plan.map(entry => [`${entry.po}|${entry.sc}`, entry.received]));

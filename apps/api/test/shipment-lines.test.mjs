@@ -10,7 +10,7 @@ const itemId = "00000000-0000-4000-8000-000000000042";
 const processId = "00000000-0000-4000-8000-000000000043";
 const allocationId = "00000000-0000-4000-8000-000000000044";
 const item = { id: itemId, lineNumber: 1, productCode: "P-1", description: "Produto 1", orderedQuantity: "100.00000000",
-  unit: "UN", unitPrice: "2.00000000", currencyCode: "USD", necessityDate: "2026-12-01", sourceStatus: null };
+  unit: "UN", unitPrice: "2.00000000", currencyCode: "USD", necessityDate: "2026-11-28", sourceStatus: null };
 const purchaseOrder = { id: poId, number: "PO-1", importer: "ELETRA MATRIZ", supplierText: "SUP-1" };
 
 const defaultRows = [
@@ -124,7 +124,7 @@ test("the web status lists match the statuses the API calculates", async () => {
 });
 
 // E2E stage filters. Dates far in the past or future keep "late" independent of the day the test runs.
-const pastItem = { ...item, id: "00000000-0000-4000-8000-000000000052", necessityDate: "2020-12-01",
+const pastItem = { ...item, id: "00000000-0000-4000-8000-000000000052", necessityDate: "2020-11-28",
   commercialPlanReceivedDate: "2020-08-03", scApprovalDate: "2020-08-21", poSentDate: "2020-08-24", demandType: "MTS" };
 const futureItem = { ...item, id: "00000000-0000-4000-8000-000000000053", necessityDate: "2099-12-01" };
 const shipped = { importer: "ELETRA MATRIZ", transport_mode: "SEA", etd: "2020-09-28", bl_date: "2020-09-29",

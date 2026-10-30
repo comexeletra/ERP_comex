@@ -1563,7 +1563,7 @@ export const en: Messages = {
   e2eLines: {
     eyebrow: "Supply chain Brazil ⇄ China",
     title: "End to End",
-    intro: "One line per product and IP with the deadline, actual date, target, actual days and delay of each stage. T0 is due four months before the need date; every later stage is due at the previous actual end plus its target. Delay = actual days − target. Dates in italics are forecasts (ETD, ETA and ETE).",
+    intro: "One line per product and IP with the deadline, actual date, target, actual days and delay of each stage. T0 is due four months before the need date plus four days; every later stage is due at the previous actual end plus its target. Delay = actual days − target. Dates in italics are forecasts (ETD, ETA and ETE).",
     necessity: "Need date",
     sc: "SC",
     purpose: "Purpose",

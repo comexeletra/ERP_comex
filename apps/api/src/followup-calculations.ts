@@ -160,7 +160,7 @@ function demandTypeKind(value: unknown): "mts" | "notMts" | "unknown" {
 
 /**
  * End to End stages of the original spreadsheet for one product line. T0 is due four months
- * before the need date; every later stage is due at the previous stage's actual end plus its
+ * before the need date plus four days; every later stage is due at the previous stage's actual end plus its
  * target. Stages not reached yet end at the forecast (ETD, ETA, ETE) and say so in `source`.
  * Delay = actual days − target days (T0: actual days = plan received − T0 deadline).
  * The line is in the stage after its last actual date (a missing date in the middle does not
@@ -191,7 +191,7 @@ export function calculateE2e(item: Row, process: Row, status: string, targets: E
     const [actualEnd, forecastEnd] = ends[index];
     const end = actualEnd ?? forecastEnd;
     const target = targetDays[index];
-    const deadline = index === 0 ? monthShift(item.necessityDate, -4) : target === null ? null : addDays(previousEnd, target);
+    const deadline = index === 0 ? addDays(monthShift(item.necessityDate, -4), 4) : target === null ? null : addDays(previousEnd, target);
     const actualDays = index === 0 ? daysBetween(deadline, end) : daysBetween(previousEnd, end);
     const delayDays = actualDays === null || target === null ? null : actualDays - target;
     accumulated = accumulated === null || delayDays === null ? null : accumulated + delayDays;

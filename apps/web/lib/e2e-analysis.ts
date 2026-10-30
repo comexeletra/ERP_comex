@@ -1,6 +1,6 @@
 /**
  * End to End of the original spreadsheet, as calculated by the API for each product line
- * (`calculated.e2e`): T0 due four months before the need date, each later stage due at the
+ * (`calculated.e2e`): T0 due four months before the need date plus four days, each later stage due at the
  * previous actual end plus its target, delay = actual days − target days. This module only
  * formats and aggregates those lines; it never recalculates the rules.
  */

@@ -228,7 +228,7 @@ test("keeps historical inconsistencies as warnings so the IP can still be edited
   assert.deepEqual(checkShipmentDates({ arrivalDate: "2026-10-01" }, { clearanceDate: "2026-09-30" }).errors, []);
 });
 
-// End to End (planilha original): prazo = fim real da etapa anterior + meta; T0 = necessidade − 4 meses.
+// End to End (aba End-to-End do Follow Up): prazo = fim real da etapa anterior + meta; T0 = necessidade − 4 meses + 4 dias.
 const resistor = { id: "line-b", necessityDate: "2026-12-01", commercialPlanReceivedDate: "2026-08-03",
   scApprovalDate: "2026-08-21", poSentDate: "2026-08-24", demandType: "MTS" };
 const shippedBySea = { transportMode: "SEA", etd: "2026-09-28", blDate: "2026-09-29", actualPortDepartureDate: "2026-09-30" };
@@ -238,13 +238,13 @@ test("E2E stages chain each deadline on the previous actual date and use forecas
   const { e2e } = calculateFollowup(resistor, shippedBySea, invoice, "2026-10-26");
   const row = code => { const stage = e2e.stages[code];
     return [stage.deadline, stage.actual, stage.source, stage.targetDays, stage.actualDays, stage.delayDays]; };
-  assert.deepEqual(row("T0"), ["2026-08-01", "2026-08-03", "actual", 8, 2, -6]);
+  assert.deepEqual(row("T0"), ["2026-08-05", "2026-08-03", "actual", 8, -2, -10]);
   assert.deepEqual(row("T1"), ["2026-08-11", "2026-08-21", "actual", 8, 18, 10]);
   assert.deepEqual(row("T2"), ["2026-08-28", "2026-08-24", "actual", 7, 3, -4]);
   assert.deepEqual(row("T3"), ["2026-09-23", "2026-09-30", "actual", 30, 37, 7]);
   assert.deepEqual(row("T4"), ["2026-11-24", "2026-11-22", "forecast", 55, 53, -2]);
   assert.deepEqual(row("T5"), ["2026-12-02", "2026-12-02", "forecast", 10, 10, 0]);
-  assert.deepEqual([e2e.totalTargetDays, e2e.totalActualDays, e2e.totalDelayDays, e2e.bottleneck], [118, 123, 5, "T1"]);
+  assert.deepEqual([e2e.totalTargetDays, e2e.totalActualDays, e2e.totalDelayDays, e2e.bottleneck], [118, 119, 1, "T1"]);
   assert.deepEqual([e2e.demandType, e2e.air, e2e.currentStatus, e2e.arrivalYearMonth, e2e.targetSetValidFrom],
     ["mts", false, "AGUARDANDO CHEGADA", "2026-11", DEFAULT_E2E_TARGET_SET.validFrom]);
 });
@@ -318,9 +318,22 @@ test("E2E lines delivered or cancelled leave the flow; a stage without deadline 
 
 test("E2E accumulated delay adds the stage delays from T0 and stops at the first unknown delay", () => {
   const { e2e } = calculateFollowup(resistor, shippedBySea, invoice, "2026-10-26");
-  assert.deepEqual(["T0", "T1", "T2", "T3", "T4", "T5"].map(code => e2e.stages[code].accumulatedDelayDays), [-6, 4, 0, 7, 5, 5]);
+  assert.deepEqual(["T0", "T1", "T2", "T3", "T4", "T5"].map(code => e2e.stages[code].accumulatedDelayDays), [-10, 0, -4, 3, 1, 1]);
   const noMode = calculateFollowup(resistor, { ...shippedBySea, transportMode: null }, invoice, "2026-10-26").e2e;
-  assert.deepEqual(["T3", "T4", "T5"].map(code => noMode.stages[code].accumulatedDelayDays), [7, null, null]);
+  assert.deepEqual(["T3", "T4", "T5"].map(code => noMode.stages[code].accumulatedDelayDays), [3, null, null]);
+});
+
+test("E2E T0 is due four months before the need date plus four days, as on the End-to-End sheet", () => {
+  const deadline = necessityDate => calculateE2e({ necessityDate }, {}, "A DISTRIBUIR", DEFAULT_E2E_TARGET_SET, null, "2026-10-26").stages.T0.deadline;
+  assert.equal(deadline("2026-01-01"), "2025-09-05");
+  // The month keeps the need day when it exists; the four days can cross into the next month.
+  assert.equal(deadline("2026-06-30"), "2026-03-04");
+  assert.equal(deadline("2026-06-28"), "2026-03-04");
+  assert.equal(deadline(null), null);
+  // The sheet's row: need 2026-01-01, plan received 2025-08-05, actual -31 and delay -39 days.
+  const { stages } = calculateE2e({ necessityDate: "2026-01-01", commercialPlanReceivedDate: "2025-08-05" }, {}, "A DISTRIBUIR",
+    DEFAULT_E2E_TARGET_SET, null, "2026-10-26");
+  assert.deepEqual([stages.T0.actualDays, stages.T0.delayDays], [-31, -39]);
 });
 
 test("the actual T3 end is the BL date: the ETD is only an estimate", () => {

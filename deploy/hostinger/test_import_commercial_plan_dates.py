@@ -115,5 +115,48 @@ class Sql(unittest.TestCase):
         self.assertLess(sql.index("purchase_request (id, importer"), sql.index("CREATE TEMP TABLE plan_item"))
 
 
+class SqlByPo(unittest.TestCase):
+    plan = [{"po": "014619", "sc": "011413", "received": "2025-07-05"}]
+
+    def render(self, commit=False):
+        return loader.render_by_po_sql(self.plan, "a" * 64, 20, 5, commit)
+
+    def test_rehearsal_is_the_default_and_triggers_stay_active(self):
+        self.assertTrue(self.render().endswith("ROLLBACK;\n"))
+        self.assertTrue(self.render(True).endswith("COMMIT;\n"))
+        self.assertNotIn("session_replication_role", self.render())
+        self.assertIn("current_database() <> 'erp_po_totvs_hml'", self.render())
+
+    def test_it_needs_the_first_step_and_runs_once(self):
+        sql = self.render()
+        self.assertIn("The dates by SC must be loaded first", sql)
+        self.assertIn("ALREADY_PROMOTED: the dates by PO were already loaded", sql)
+        self.assertNotEqual(loader.uuid5(loader.NAMESPACE, "a" * 64), loader.uuid5(loader.NAMESPACE, ("a" * 64) + "|by-po"))
+
+    def test_it_only_fills_scs_and_lines_without_date(self):
+        sql = self.render()
+        self.assertIn("WHERE request.commercial_plan_received_date IS NULL", sql)
+        self.assertIn("item.sc_number IS NOT NULL AND item.commercial_plan_received_date IS NULL", sql)
+
+    def test_the_date_comes_from_the_po_and_reaches_every_line_of_the_sc(self):
+        sql = self.render()
+        self.assertIn("ON plan.po = item_sc.po_number", sql)
+        self.assertIn("WHERE request.sc = ANY (string_to_array(replace(item.sc_number, ' ', ''), ','))", sql)
+
+    def test_two_dates_use_the_po_of_the_line_or_stop_the_load(self):
+        sql = self.render()
+        self.assertIn("WHEN cardinality(po_dates) = 1 THEN po_dates[1]", sql)
+        self.assertIn("A line has two dates and no date of its own PO", sql)
+
+    def test_it_never_changes_the_sc_of_a_line(self):
+        self.assertNotIn("SET sc_number", self.render())
+
+    def test_closed_pos_return_and_totals_are_reconciled(self):
+        sql = self.render()
+        self.assertIn("SET lifecycle_status = state.lifecycle_status", sql)
+        self.assertIn("Expected 20 lines with date", sql)
+        self.assertIn("Expected 5 SCs with date", sql)
+
+
 if __name__ == "__main__":
     unittest.main()
