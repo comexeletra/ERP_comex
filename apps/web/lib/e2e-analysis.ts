@@ -57,9 +57,14 @@ export function formatE2eDate(value: string | null | undefined, locale: string):
   return date === null ? "—" : new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", year: "2-digit", timeZone: "UTC" })
     .format(new Date(time(date)));
 }
-/** Class of a stage's actual date: italic when forecast, red when past its deadline (the delay column above zero). */
+/**
+ * Class of a stage's actual date: italic when forecast, red when after the deadline shown beside it. It compares
+ * the dates instead of reading the delay because the T0 delay subtracts the target from the days past the deadline.
+ */
 export function e2eDateClass(stage: E2eStage | null | undefined): string {
-  return `e2e-date${stage?.source === "forecast" ? " is-forecast" : ""}${(stage?.delayDays ?? 0) > 0 ? " is-late" : ""}`;
+  const actual = isoDate(stage?.actual); const deadline = isoDate(stage?.deadline);
+  const late = actual !== null && deadline !== null && actual > deadline;
+  return `e2e-date${stage?.source === "forecast" ? " is-forecast" : ""}${late ? " is-late" : ""}`;
 }
 /** Today in Brasília, the reference for what is actual and what is still a forecast. */
 export function e2eToday(now = new Date()): string {

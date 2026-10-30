@@ -76,14 +76,19 @@ test("the timeline spans T0 to the last date and draws the actual and planned ba
   assert.deepEqual(ip("C").bars.slice(-2).map(bar => [bar.code, bar.source]), [["T4", "forecast"], ["T5", "forecast"]]);
 });
 
-test("an actual or forecast date past its deadline is marked late, like the delay column", () => {
+test("an actual or forecast date after the deadline shown beside it is marked late, in every stage", () => {
   assert.equal(e2eDateClass(stage("2026-08-01", "2026-08-01", "actual", 8, 8, 0)), "e2e-date");
   assert.equal(e2eDateClass(stage("2026-08-01", "2026-07-30", "actual", 8, 6, -2)), "e2e-date");
   assert.equal(e2eDateClass(stage("2026-08-01", "2026-08-03", "actual", 8, 10, 2)), "e2e-date is-late");
   assert.equal(e2eDateClass(stage("2026-12-05", "2026-12-02", "forecast", 55, 52, -3)), "e2e-date is-forecast");
   assert.equal(e2eDateClass(stage("2026-12-05", "2026-12-08", "forecast", 55, 58, 3)), "e2e-date is-forecast is-late");
-  // Without a date or a target there is no delay to show.
+  // T0 counts its actual days from the deadline, so its delay subtracts the target: a plan received two days
+  // after the deadline has a delay of -6 (HML lines seen with every filter), but the date is still past the deadline.
+  assert.equal(e2eDateClass(stage("2026-08-01", "2026-08-03", "actual", 8, 2, -6)), "e2e-date is-late");
+  assert.equal(e2eDateClass(stage("2026-08-01", "2026-08-01T00:00:00.000Z", "actual", 8, 0, -8)), "e2e-date");
+  // Without the date or the deadline there is nothing to compare.
   assert.equal(e2eDateClass(stage("2026-08-01", null, null, 8, null, null)), "e2e-date");
+  assert.equal(e2eDateClass(stage(null, "2026-08-03", "forecast", null, null, null)), "e2e-date is-forecast");
   assert.equal(e2eDateClass(undefined), "e2e-date");
 });
 
