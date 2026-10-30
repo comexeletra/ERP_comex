@@ -76,17 +76,19 @@ test("the timeline spans T0 to the last date and draws the actual and planned ba
   assert.deepEqual(ip("C").bars.slice(-2).map(bar => [bar.code, bar.source]), [["T4", "forecast"], ["T5", "forecast"]]);
 });
 
-test("an actual or forecast date after the deadline shown beside it is marked late, in every stage", () => {
-  assert.equal(e2eDateClass(stage("2026-08-01", "2026-08-01", "actual", 8, 8, 0)), "e2e-date");
-  assert.equal(e2eDateClass(stage("2026-08-01", "2026-07-30", "actual", 8, 6, -2)), "e2e-date");
+test("an actual or forecast date is blue up to the deadline shown beside it and red after it, in every stage", () => {
+  assert.equal(e2eDateClass(stage("2026-08-01", "2026-08-01", "actual", 8, 8, 0)), "e2e-date is-on-time");
+  assert.equal(e2eDateClass(stage("2026-08-01", "2026-07-30", "actual", 8, 6, -2)), "e2e-date is-on-time");
   assert.equal(e2eDateClass(stage("2026-08-01", "2026-08-03", "actual", 8, 10, 2)), "e2e-date is-late");
-  assert.equal(e2eDateClass(stage("2026-12-05", "2026-12-02", "forecast", 55, 52, -3)), "e2e-date is-forecast");
+  // The forecast keeps its italics and takes the colour of its deadline, like the T4 lines due 16/11 and 24/10.
+  assert.equal(e2eDateClass(stage("2026-11-16", "2026-11-16", "forecast", 55, 55, 0)), "e2e-date is-forecast is-on-time");
+  assert.equal(e2eDateClass(stage("2026-10-24", "2026-10-22", "actual", 55, 53, -2)), "e2e-date is-on-time");
   assert.equal(e2eDateClass(stage("2026-12-05", "2026-12-08", "forecast", 55, 58, 3)), "e2e-date is-forecast is-late");
   // T0 counts its actual days from the deadline, so its delay subtracts the target: a plan received two days
   // after the deadline has a delay of -6 (HML lines seen with every filter), but the date is still past the deadline.
   assert.equal(e2eDateClass(stage("2026-08-01", "2026-08-03", "actual", 8, 2, -6)), "e2e-date is-late");
-  assert.equal(e2eDateClass(stage("2026-08-01", "2026-08-01T00:00:00.000Z", "actual", 8, 0, -8)), "e2e-date");
-  // Without the date or the deadline there is nothing to compare.
+  assert.equal(e2eDateClass(stage("2026-08-01", "2026-08-01T00:00:00.000Z", "actual", 8, 0, -8)), "e2e-date is-on-time");
+  // Without the date or the deadline there is nothing to compare, so the date keeps the neutral colour.
   assert.equal(e2eDateClass(stage("2026-08-01", null, null, 8, null, null)), "e2e-date");
   assert.equal(e2eDateClass(stage(null, "2026-08-03", "forecast", null, null, null)), "e2e-date is-forecast");
   assert.equal(e2eDateClass(undefined), "e2e-date");
@@ -98,6 +100,9 @@ test("both end-to-end screens colour the actual date by deadline", async () => {
     read("app/styles/features/e2e.css")]);
   assert.match(lines, /<span className=\{e2eDateClass\(stageData\)\}>\{date\(stageData\?\.actual\)\}<\/span>/u);
   assert.match(po, /<span className=\{e2eDateClass\(stage\)\}>/u);
+  // The colour says only the deadline; the forecast is told apart by its italics and tooltip.
+  assert.match(styles, /\.e2e-date\.is-forecast \{ font-style: italic; \}/u);
+  assert.match(styles, /\.e2e-date\.is-on-time \{ color: var\(--e2e-cn-text\); \}/u);
   assert.match(styles, /\.e2e-date\.is-late \{ color: var\(--e2e-late\); \}/u);
 });
 

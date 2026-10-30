@@ -231,7 +231,8 @@
 .e2e-gantt-need { background: var(--color-danger); bottom: -3px; position: absolute; top: -3px; width: 2px; }
 .e2e-gantt-today { border-left: 2px dotted var(--color-text-strong); bottom: -3px; position: absolute; top: -3px; width: 0; }
 .e2e-date { color: var(--color-text-strong); display: block; font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
-.e2e-date.is-forecast { color: var(--e2e-cn-text); font-style: italic; }
+.e2e-date.is-forecast { font-style: italic; }
+.e2e-date.is-on-time { color: var(--e2e-cn-text); }
 .e2e-date.is-late { color: var(--e2e-late); }
 .e2e-date-planned { color: var(--color-text-muted); display: block; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .e2e-lines-table { font-size: var(--fs-sm); }
