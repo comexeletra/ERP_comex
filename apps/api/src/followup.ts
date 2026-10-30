@@ -48,7 +48,7 @@ const processFields: Record<string, [string, FieldType, number?]> = {
   nfRequestDate: ["nf_request_date", "date"], deliveryDate: ["delivery_date", "date"],
   freightCurrency: ["freight_currency", "text", 3], freightCost: ["freight_cost", "money"],
   containerNumber: ["container_number", "text", 120], containerType: ["container_type", "text", 80],
-  containerQuantity: ["container_quantity", "integer"], forwarder: ["forwarder", "text", 160],
+  containerQuantity: ["container_quantity", "money"], forwarder: ["forwarder", "text", 160],
   documentsOkDate: ["documents_ok_date", "date"], storageDueOverride: ["storage_due_override", "date"],
   taxesPaidBrl: ["taxes_paid_brl", "money"], fineBrl: ["fine_brl", "money"],
   storageBrl: ["storage_brl", "money"], demurrageBrl: ["demurrage_brl", "money"],

@@ -15,6 +15,7 @@ const header = { number: "030201", supplierText: "HEXING", orderDate: null, note
 test("M075 adds the fields of the historical load without touching existing data", async () => {
   const sql = await migration();
   assert.match(sql, /ADD COLUMN documents_ok_date date/u);
+  assert.match(sql, /ALTER COLUMN container_quantity TYPE numeric\(10,2\)/u);
   assert.match(sql, /ADD COLUMN analyst varchar\(160\)/u);
   assert.match(sql, /ADD COLUMN si_number varchar\(120\)/u);
   assert.match(sql, /analyst IS NULL OR length\(btrim\(analyst\)\) > 0/u);
@@ -84,6 +85,11 @@ test("Doc ok is a date on the IP form, the API and the product lines", async () 
   assert.equal(ipPostShipmentFields.some(item => item.key === "documentsOk"), false);
   assert.match(await source("shipment-lines.ts"), /"documents_ok_date"/u);
   assert.doesNotMatch(await source("followup.ts"), /documents_ok"/u);
+});
+
+test("a shared container counts as half on each IP", async () => {
+  assert.match(await source("followup.ts"), /containerQuantity: \["container_quantity", "money"\]/u);
+  assert.equal(ipPostShipmentFields.find(item => item.key === "containerQuantity")?.type, "money");
 });
 
 test("a linked SC without requester does not stop the PO: the data arrives gradually", async () => {

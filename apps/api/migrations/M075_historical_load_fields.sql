@@ -5,6 +5,9 @@
 -- before this migration; the API and the forms no longer use it.
 ALTER TABLE imports.import_process ADD COLUMN documents_ok_date date;
 
+-- A container shared by two IPs counts as 0.5 on each of them, so the quantity is not an integer.
+ALTER TABLE imports.import_process ALTER COLUMN container_quantity TYPE numeric(10,2);
+
 -- Optional PO fields. The analyst comes from the ANALYST list; the SI is free text.
 ALTER TABLE procurement.purchase_order
   ADD COLUMN analyst varchar(160),
