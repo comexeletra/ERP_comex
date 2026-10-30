@@ -185,7 +185,7 @@ test("the complete PO save applies an approved importer change with its shared f
 test("the demand type (MTS / Não MTS) is saved on the PO and kept when a save leaves it out", async t => {
   const header = { number: "PO-030201", supplierText: "SUP-1", orderDate: null, notes: "", purchaseRequestId: null,
     reason: "Tipo de demanda da PO" };
-  const demandParams = query => query.params.slice(-3, -1);
+  const demandParams = query => query.params.slice(6, 8);
 
   const created = await appWithState(t);
   const post = await created.app.inject({ method: "POST", url: "/api/v1/purchase-orders",
@@ -194,7 +194,7 @@ test("the demand type (MTS / Não MTS) is saved on the PO and kept when a save l
   assert.equal(post.statusCode, 201, post.body);
   const insert = created.queries.find(query => query.sql.includes("INSERT INTO procurement.purchase_order\n"));
   assert.match(insert.sql, /demand_type/u);
-  assert.equal(insert.params.at(-1), "Não MTS");
+  assert.equal(insert.params[6], "Não MTS");
 
   for (const [demandType, expected] of [["MTS", [true, "MTS"]], [null, [true, null]], [undefined, [false, null]]]) {
     const { app, queries } = await appWithState(t);
@@ -227,4 +227,24 @@ test("a product never gets a demand type of its own", async t => {
     assert.equal(response.json().code, "INVALID_FOLLOWUP");
   }
   assert.equal(queries.some(query => query.sql.includes("UPDATE procurement.purchase_order_item")), false);
+});
+
+test("the analyst and the SI are saved on the PO and kept when a save leaves them out", async t => {
+  const header = { number: "PO-030201", supplierText: "SUP-1", orderDate: null, notes: "", purchaseRequestId: null,
+    reason: "Analista e SI da PO" };
+  const optionalParams = query => query.params.slice(8, 12);
+  for (const [fields, expected] of [
+    [{ analyst: "JOAO", siNumber: "902, 904" }, [true, "JOAO", true, "902, 904"]],
+    [{ analyst: null, siNumber: null }, [true, null, true, null]],
+    [{}, [false, null, false, null]],
+  ]) {
+    const { app, queries } = await appWithState(t);
+    const patch = await app.inject({ method: "PATCH", url: `/api/v1/purchase-orders/${poId}`,
+      headers: { "x-record-version": "3" }, payload: { ...header, ...fields } });
+    assert.equal(patch.statusCode, 200, patch.body);
+    const update = queries.find(query => query.sql.includes("UPDATE procurement.purchase_order AS po SET supplier_text"));
+    assert.match(update.sql, /analyst = CASE WHEN \$9::boolean THEN \$10::text ELSE analyst END/u);
+    assert.match(update.sql, /si_number = CASE WHEN \$11::boolean THEN \$12::text ELSE si_number END/u);
+    assert.deepEqual(optionalParams(update), expected);
+  }
 });
