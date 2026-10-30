@@ -198,7 +198,16 @@ base da planilha filtra necessidade 2026 e 2027, Matriz, sem canceladas, Josivan
 Das 238 SCs sem data, só 30 têm todas as linhas canceladas no Follow Up; 18 têm parte cancelada e 190 não têm cancelamento. As 208
 restantes ficaram fora do MRP pelos filtros da planilha, salvo 12 que são a segunda SC de uma PO presente nela e 6 SCs recentes.
 
+Comparação com a aba `End-to-End` do Follow Up (2026-10-30): a coluna `N` é um `XLOOKUP` exato da SC na coluna `Q` do mesmo
+`FUP POS - MRP.xlsx`, com as mesmas 127 SCs. Nas 7.403 linhas da aba, 6.132 têm a mesma data no sistema e nenhuma tem data só na aba.
+O sistema tem 124 datas a mais (73 linhas com duas SCs na célula, que o `XLOOKUP` não acha, e 51 da PO 031362), e uma linha difere:
+a PO 029165, em que a aba pega a primeira ocorrência da SC 019725 e o sistema usa a data da PO, por decisão do usuário. A aba
+`Versão MRP` não serve de fonte: a data dela só bate com a coluna `J` em 25 de 301 linhas.
+
 Divergências registradas, sem alteração no sistema:
+
+- O prazo do T0 na aba `End-to-End` é necessidade − 4 meses + 4 dias, e no sistema é necessidade − 4 meses. O atraso do T0 difere em
+  4 dias em todas as linhas.
 
 - O Follow Up tem a PO 018737 na SC 012968, e o MRP e o TOTVS têm a 019460. O mesmo ocorre na SC 020326: 032030 no Follow Up, 031346
   no MRP. A data entrou pela SC.
