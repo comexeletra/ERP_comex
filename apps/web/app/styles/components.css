@@ -116,7 +116,7 @@ table :is(input, select, textarea, [contenteditable]) { cursor: auto; }
 .stack-form textarea { min-height: 88px; }
 .stack-form > button { justify-self: start; min-width: 170px; }
 .quality-filter, .review-form { display: grid; gap: 14px; }
-.quality-filter { align-items: end; grid-template-columns: 180px minmax(180px, 1fr) auto; }
+.quality-filter { align-items: end; grid-template-columns: 180px minmax(180px, 1fr) minmax(180px, 1fr) auto; }
 .portfolio-filter { align-items: end; display: grid; gap: 16px; grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .quality-filter label, .review-form label, .portfolio-filter label, .request-line label {
   color: var(--color-text-muted); display: grid; font-size: var(--fs-md); font-weight: 700; gap: 6px;
