@@ -58,7 +58,9 @@ IP 1, e 0 para distribuído acima do pedido, IP com fornecedor diferente da PO e
 9. Módulo `apps/api/src/quality-rules.ts` com um catálogo de regras. Cada regra tem código, grupo, tipo de entidade
    (`PURCHASE_ORDER`, `PURCHASE_ORDER_ITEM`, `IMPORT_PROCESS`, `PURCHASE_REQUEST`) e uma consulta SQL que devolve
    entidade, importadora, rótulos (PO, item, produto, IP, SC) e os valores conferidos.
-10. Regras, todas ignorando PO `CANCELLED`, item com `source_status = 'CANCELLED'` e IP excluído ou não `ACTIVE`:
+10. Regras, todas ignorando PO `CANCELLED` ou `DELETED`, item com `source_status = 'CANCELLED'` e IP excluído ou com
+    `record_status` diferente de `ACTIVE`. "Distribuído acima do pedido" não entra: os gatilhos
+    `check_po_item_allocation` e `check_po_item_quantity` (M018) já impedem esse estado no banco.
 
     | Grupo | Código | Condição |
     |---|---|---|
@@ -72,7 +74,6 @@ IP 1, e 0 para distribuído acima do pedido, IP com fornecedor diferente da PO e
     | | `IP_CLEARED_BEFORE_ARRIVAL` | desembaraço anterior à chegada |
     | Vínculos e quantidades | `IP_WITHOUT_PO` | IP sem PO vinculada |
     | | `ITEM_SHIPPED_WITHOUT_IP` | item em `WAITING SHIPMENT`, `WAITING ARRIVAL`, `CUSTOMS CLEARANCE` ou `DELIVERED` sem distribuição ativa |
-    | | `ITEM_OVER_ALLOCATED` | soma das distribuições ativas maior que a quantidade pedida |
     | | `IP_PO_SUPPLIER_MISMATCH` | fornecedor cadastrado do IP diferente do fornecedor cadastrado de uma PO vinculada |
     | | `SC_MULTIPLE_SUPPLIERS` | POs não canceladas da mesma SC com fornecedores cadastrados diferentes |
 
@@ -80,16 +81,18 @@ IP 1, e 0 para distribuído acima do pedido, IP com fornecedor diferente da PO e
     `page` e `pageSize` (até 200). Responde `countsByRule: { rule, group, open, waived }[]`, `totalCount` e `items` com
     `rule`, `group`, `entityType`, `entityId`, `importer`, `labels`, `values`, `links` e `waiver` (quando houver). Não
     grava nada. Escopo de importadora igual às demais rotas; Master vê tudo.
-12. Dispensa ("dado correto"): `POST /api/v1/quality/current/waivers` com `rule`, `entityId`, `reason` (1 a 2000) e
-    `Idempotency-Key`; `DELETE /api/v1/quality/current/waivers/:id` com `reason` desfaz. Ambas exigem
+12. Dispensa ("dado correto"): `POST /api/v1/quality/current/waivers` com `rule`, `entityId`, `reason` (8 a 2000) e
+    `Idempotency-Key` (recibo em `procurement.operational_command_receipt`, como nas demais operações);
+    `POST /api/v1/quality/current/waivers/:id/revoke` com `reason` desfaz. Ambas exigem
     `quality.resolve` e a entidade visível no escopo. A API recalcula a regra na gravação e recusa dispensar o que não
     está em erro (`QUALITY_RULE_NOT_VIOLATED`). Grava `audit.audit_log` e `audit.outbox_message` na mesma transação.
 13. A dispensa guarda o SHA-256 dos valores conferidos (JSON canônico). Se os valores mudarem, a dispensa deixa de valer
     e o erro volta como aberto; a dispensa antiga continua no histórico.
 14. Tabela nova na M077, `migration.quality_rule_waiver`: `id`, `rule_code`, `entity_type`, `entity_id`, `importer`,
-    `values_sha256`, `values`, `reason`, `status` (`ACTIVE`/`REVOKED`), `created_by`, `created_at`, `revoked_by`,
-    `revoked_at`, `revoke_reason`, `reviewer_user_id`, `idempotency_key`, `payload_sha256`. Índice único parcial de
-    dispensa `ACTIVE` por regra e entidade. Grants no padrão da M074 para o papel da API. Aplicada só no HML.
+    `checked_values`, `values_sha256`, `reason`, `status` (`ACTIVE`/`REVOKED`), `version`, `created_by`, `created_at`,
+    `revoked_by`, `revoked_at`, `revoke_reason`. Índice único parcial de dispensa `ACTIVE` por regra e entidade; uma
+    dispensa nova sobre valores que mudaram revoga a anterior na mesma transação. Grants no padrão da M074 para o papel
+    da API. Aplicada só no HML.
 15. Cada regra tem ficha nos três dicionários (`quality.ruleTypes.<CODE>`) com título, significado, impacto e correção,
     e cada grupo tem nome traduzido.
 16. A tela ganha duas abas (`.tabs`/`.tab`): "Dados atuais" (padrão), com resumo por grupo e regra, lista, links e
