@@ -9,6 +9,7 @@ import { registerPurchaseOrderReadRoutes } from "./purchase-orders.js";
 import { registerProcessReadRoutes } from "./processes.js";
 import { registerDataIssueRoutes } from "./data-issues.js";
 import { registerQualityRuleRoutes } from "./quality-rules.js";
+import { registerQualityFixRoutes } from "./quality-fixes.js";
 import { registerAdminUserRoutes } from "./admin-users.js";
 import { registerCatalogRoutes } from "./catalog.js";
 import { registerTaxTreatmentRoutes } from "./tax-treatments.js";
@@ -94,6 +95,7 @@ await registerPurchaseOrderReadRoutes(app, pool);
 await registerProcessReadRoutes(app, pool);
 await registerDataIssueRoutes(app, pool);
 await registerQualityRuleRoutes(app, pool);
+await registerQualityFixRoutes(app, pool);
 await registerAdminUserRoutes(app, pool);
 await registerCatalogRoutes(app, pool, { ncmAutoRefreshTime });
 await registerTaxTreatmentRoutes(app, pool, {

@@ -7,6 +7,7 @@ import { registerPurchaseOrderReadRoutes } from "../dist/purchase-orders.js";
 import { registerProcessReadRoutes } from "../dist/processes.js";
 import { registerDataIssueRoutes } from "../dist/data-issues.js";
 import { registerQualityRuleRoutes } from "../dist/quality-rules.js";
+import { registerQualityFixRoutes } from "../dist/quality-fixes.js";
 import { registerAdminUserRoutes } from "../dist/admin-users.js";
 import { registerCatalogRoutes } from "../dist/catalog.js";
 import { registerTaxTreatmentRoutes } from "../dist/tax-treatments.js";
@@ -91,7 +92,7 @@ const webRoutes = [
   ["DELETE", "/api/v1/operational-values/:id"],
   ["GET", "/api/v1/data-issues"], ["POST", "/api/v1/data-issues/:id/resolve"],
   ["GET", "/api/v1/quality/current"], ["POST", "/api/v1/quality/current/waivers"],
-  ["POST", "/api/v1/quality/current/waivers/:id/revoke"],
+  ["POST", "/api/v1/quality/current/waivers/:id/revoke"], ["POST", "/api/v1/quality/current/fixes"],
   ["GET", "/api/v1/source-rows"], ["GET", "/api/v1/source-rows/column-values"],
   ["GET", "/api/v1/reports/summary"],
   ["GET", "/api/v1/e2e-targets"], ["POST", "/api/v1/e2e-targets"], ["PATCH", "/api/v1/e2e-targets/:id"],
@@ -127,6 +128,7 @@ test("all Next.js API calls have a registered API method and path", async t => {
   await registerProcessReadRoutes(app, unusedPool);
   await registerDataIssueRoutes(app, unusedPool);
   await registerQualityRuleRoutes(app, unusedPool);
+  await registerQualityFixRoutes(app, unusedPool);
   await registerAdminUserRoutes(app, unusedPool);
   await registerCatalogRoutes(app, unusedPool);
   await registerTaxTreatmentRoutes(app, unusedPool);

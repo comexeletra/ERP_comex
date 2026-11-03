@@ -88,7 +88,7 @@ export const qualityRules: readonly QualityRule[] = [
 ];
 
 const ruleCodes = qualityRules.map(rule => rule.code) as [string, ...string[]];
-const ruleByCode = new Map(qualityRules.map(rule => [rule.code, rule]));
+export const ruleByCode = new Map(qualityRules.map(rule => [rule.code, rule]));
 const valuesHash = "encode(sha256(convert_to(found.checked::text, 'UTF8')), 'hex')";
 
 const listQuery = z.object({
@@ -121,7 +121,7 @@ export function qualityFindingsSql(rules: readonly QualityRule[] = qualityRules)
 }
 
 /** Re-runs one rule for one record inside a write transaction. */
-async function currentFinding(client: PoolClient, rule: QualityRule, entityId: string, scopes: string[], master: boolean) {
+export async function currentFinding(client: PoolClient, rule: QualityRule, entityId: string, scopes: string[], master: boolean) {
   const scope = master ? { sql: "TRUE", values: [] } : importerScopePredicate("found.importer", 2, scopes);
   const result = await client.query<{ entity_id: string; importer: string | null; checked: Record<string, unknown>;
     values_sha256: string }>(

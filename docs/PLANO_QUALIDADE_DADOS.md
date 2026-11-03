@@ -98,37 +98,45 @@ IP 1, e 0 para distribuído acima do pedido, IP com fornecedor diferente da PO e
 16. A tela ganha duas abas (`.tabs`/`.tab`): "Dados atuais" (padrão), com resumo por grupo e regra, lista, links e
     dispensa por `ConfirmDialog` com justificativa; e "Carga da planilha", com o conteúdo da entrega 1.
 
-### Entrega 3 — Correções em massa
+### Entrega 3 — Correções de cadastro no cartão e em massa
 
-Medição no HML (2026-11-03): produto sem cadastro em 389 itens (371 códigos); preço sem moeda em 77 itens de 5 POs,
-todas `ACTIVE`, e em 76 deles o fornecedor usa uma única moeda nas demais POs; item sem NCM em 484 itens (469
-produtos; 402 em POs `ACTIVE` e 82 em `CLOSED`), nenhum dos 1.529 produtos do cadastro tem NCM e em 103 itens outro
-item do mesmo produto tem NCM; NCM não cadastrada em 14 códigos; 86 `MISSING_PO` da carga.
+Medição no HML (2026-11-03): produto sem cadastro em 388 itens; preço sem moeda em 77 itens de 5 POs, todas `ACTIVE`,
+e em 76 deles o fornecedor usa uma única moeda nas demais POs; item sem NCM em 484 itens (402 em POs `ACTIVE`),
+nenhum dos 1.529 produtos do cadastro tem NCM e em 103 itens outro item do mesmo produto tem NCM; NCM não cadastrada
+em 57 itens.
 
-17. Toda ação em massa segue dois passos com a mesma rota: `preview: true` devolve, por registro, o valor atual, o valor
-    proposto e se será aplicado ou recusado (com o motivo); `preview: false` com `Idempotency-Key` e `reason` (8 a 500)
-    grava numa transação única. A API recalcula tudo na gravação e não confia na prévia: registro que mudou, saiu do
-    escopo ou deixou de estar em erro é recusado e listado no resultado (`applied`, `skipped` com motivo). Até 500
-    registros por chamada.
-18. A tela permite marcar cartões (um a um, "marcar todos do filtro" até 500) e mostra as ações disponíveis para a
-    regra filtrada. A prévia abre em `ConfirmDialog` com a lista do que muda e o campo de justificativa.
-19. Ações e regras:
+17. O cartão de cada erro de cadastro tem a correção ali mesmo, sem abrir a PO. Marcando vários cartões da mesma regra
+    (um a um ou "marcar todos da página"), a mesma correção vale para todos. Datas, vínculos e a marcação de dado
+    correto em lote ficam fora desta entrega.
+18. `POST /api/v1/quality/current/fixes` (`purchase-orders.write`) com `action`, `entityIds` (1 a 500, sem repetição),
+    `value`, `reason` (8 a 500) e `preview`. Com `preview: true` a API executa a correção numa transação que sempre
+    termina em `ROLLBACK` e devolve o que mudaria; com `preview: false` exige `Idempotency-Key` (recibo em
+    `procurement.operational_command_receipt`) e grava numa transação, com `SAVEPOINT` por registro. A resposta lista
+    `applied` (`entityId`, valor anterior e novo) e `skipped` (`entityId`, `code`). A API recalcula a regra de cada
+    registro e não confia na prévia.
+19. Ações:
 
-    | Ação | Regra | Permissão | O que grava |
+    | `action` | Regra | `value` | O que grava |
     |---|---|---|---|
-    | Cadastrar produtos | `ITEM_PRODUCT_NOT_REGISTERED` | `catalog.write` (produto) | produto global `ACTIVE` com o código e a descrição mais frequente dos itens; código já cadastrado é pulado |
-    | Cadastrar NCMs oficiais | `ITEM_NCM_NOT_REGISTERED` | `catalog.write` (NCM, global) | entrada `NCM` pela mesma lógica de `import-official`, usando o catálogo oficial em cache; código não vigente ou ausente é recusado; com a fonte em espera (`503`), nada é gravado e a tela mostra o horário de nova tentativa |
-    | Aplicar moeda | `ITEM_PRICE_WITHOUT_CURRENCY` | `purchase-orders.write` | `currency_code` do item; proposta = moeda única do fornecedor nas outras POs, ou a moeda escolhida (valor de `CURRENCY` cadastrado) |
-    | Copiar NCM de outro item | `ITEM_WITHOUT_NCM` | `purchase-orders.write` | `ncm` do item com o NCM único já usado em outro item do mesmo produto; produto com mais de um NCM é recusado |
-    | Informar NCM do produto | `ITEM_WITHOUT_NCM` | `catalog.write` e `purchase-orders.write` | `product_ncm_code` do produto só se vazio (mesma regra da invoice) e `ncm` dos itens vazios desse produto; NCM precisa estar cadastrada e `ACTIVE` |
-    | Dispensar em lote | qualquer regra atual | `quality.resolve` | uma dispensa por registro, com a mesma justificativa |
-    | Resolver em lote | pendências da carga | `quality.resolve` | uma revisão por pendência, com a mesma referência e justificativa |
+    | `ITEM_CURRENCY` | `ITEM_PRICE_WITHOUT_CURRENCY` | `currency` opcional | `currency_code` do item; sem `currency`, usa a moeda única do fornecedor nos itens das outras POs |
+    | `ITEM_PRICE` | `ITEM_WITHOUT_PRICE` | `unitPrice` (> 0) e `currency` | `unit_price` e `currency_code` do item |
+    | `ITEM_NCM` | `ITEM_WITHOUT_NCM` | `ncm` opcional (8 dígitos) e `alsoProduct` | `ncm` do item; sem `ncm`, usa a NCM do produto ou a NCM única de outros itens do mesmo produto; com `alsoProduct`, preenche `product_ncm_code` do produto se estiver vazio |
+    | `PO_SUPPLIER` | `PO_WITHOUT_SUPPLIER` | `supplierCode` | `supplier_text` da PO; o gatilho da M041 liga o fornecedor do cadastro |
 
-20. Itens de PO só mudam em PO `ACTIVE` (mesma regra de `assertPoActive`); os demais aparecem na prévia como recusados
-    ("PO encerrada"). Cada PO alterada tem a versão incrementada uma vez. A gravação grava `audit.audit_log` por
-    registro, com o mesmo `correlation_id` para o lote, e um evento de outbox por lote.
-21. As ações em massa nunca alteram quantidade, preço, produto, descrição ou fornecedor de item ou PO, nem sobrescrevem
-    NCM ou moeda já preenchidos.
+    Moeda precisa existir em `CURRENCY`; NCM precisa estar cadastrada e `ACTIVE`; fornecedor precisa ser global e
+    `ACTIVE`; `alsoProduct` exige papel que escreve produtos (Master, Administrador, Compras).
+20. Motivos de recusa por registro: `NOT_VIOLATED` (não está mais em erro ou fora do escopo), `PO_NOT_ACTIVE` (PO
+    encerrada, mesma regra de `assertPoActive`), `NO_SUGGESTION` (sem moeda ou NCM única para sugerir),
+    `PO_HAS_SC` (o fornecedor vem da SC) e `DATABASE_REFUSED` (gatilho ou restrição do banco).
+21. Cada registro alterado grava `audit.audit_log` e `audit.outbox_message` pela função `record` e incrementa uma vez a
+    versão da PO. As ações nunca alteram quantidade, produto, descrição, datas ou vínculos, nem sobrescrevem moeda, preço,
+    NCM ou fornecedor já preenchidos.
+22. "Produto sem cadastro" e "NCM não cadastrada" usam as rotas de cadastro que já existem: `POST /api/v1/products/bulk`
+    (código e descrição do item, até 500) e `POST /api/v1/ncms/import-official` (uma chamada por código, com o catálogo
+    oficial em cache; em espera do Siscomex a tela mostra o horário de nova tentativa). As permissões são as do
+    cadastro.
+23. A prévia em massa abre em `ConfirmDialog` com o que muda e o que será recusado (com o motivo), e o campo de
+    justificativa; depois da gravação a tela mostra o resultado e recarrega a lista.
 
 ## Restrições
 
@@ -137,7 +145,7 @@ item do mesmo produto tem NCM; NCM não cadastrada em 14 códigos; 86 `MISSING_P
 - Funções de `lib/` recebem `m: Messages` por parâmetro e não importam valores de outros módulos de `lib/`.
 - Layout: componentes padrão (`PageHeader`, `.badge`, `.notice`, `.tabs`, `ConfirmDialog`, `Tooltip`), cores só por
   tokens, regras novas em `app/styles/features/analysis.css`, sem classes sem regra.
-- As regras só leem. Só as ações em massa da entrega 3 gravam, e apenas os campos listados no requisito 19.
+- As regras só leem. Só as correções da entrega 3 gravam, e apenas os campos listados no requisito 19.
 - `migration.data_issue` e o script de carga não mudam. As pendências da carga continuam com o fluxo de revisão atual.
 - Migrations e testes de banco só no HML (`erp_po_totvs_hml`), com backup antes de aplicar a M077 e pacote gerado com
   `git -c core.autocrlf=false archive`.
@@ -156,14 +164,15 @@ item do mesmo produto tem NCM; NCM não cadastrada em 14 códigos; 86 `MISSING_P
 9. Dispensa grava auditoria e outbox, é idempotente, recusa regra não violada, e perde efeito quando o valor muda
    (teste da API).
 10. No HML, as contagens da rota batem com consultas SQL independentes feitas na validação.
-11. Cada ação em massa tem teste de prévia, de gravação, de recusa (PO encerrada, valor já preenchido, registro
-    alterado entre prévia e gravação, fora do escopo, sem permissão) e de idempotência (teste da API).
-12. As ações em massa nunca tocam campos fora do requisito 19 (teste da API sobre o SQL gerado).
+11. Cada correção tem teste de prévia (sempre `ROLLBACK`), de gravação, de recusa (PO encerrada, registro que deixou de
+    estar em erro, sem sugestão, fora do escopo, sem permissão) e de idempotência (teste da API), e um caso real no HML
+    dentro de transação desfeita.
+12. As correções nunca tocam campos fora do requisito 19 (teste da API sobre o SQL gerado).
 13. Testes, lint, type-check e build passam em `apps/api` e `apps/web`; Preview `Ready` e API HML respondendo à rota nova.
 
 ## Fora do escopo
 
-- Corrigir dados além das ações do requisito 19 (por exemplo, fornecedor da PO, datas ou vínculos).
+- Corrigir dados além das ações do requisito 19 (por exemplo, datas ou vínculos) e marcar dado correto em lote.
 - Alterar PO encerrada ou cancelada.
 - Alterar o script de carga ou as pendências gravadas por ele.
 - Regras tributárias ou de despacho.
@@ -180,7 +189,6 @@ item do mesmo produto tem NCM; NCM não cadastrada em 14 códigos; 86 `MISSING_P
 5. Entrega 2, API: `quality-rules.ts`, rota de leitura, dispensas, testes.
 6. Entrega 2, web: aba "Dados atuais", fichas das regras, dispensa, testes.
 7. Verificação, commit, push, deploy da API, conferência das contagens no HML e validação no Preview.
-8. Entrega 3, API: rotas de ação em massa com prévia e gravação, testes.
-9. Entrega 3, web: seleção, prévia, confirmação e resultado, testes.
-10. Verificação, commit, push, deploy da API e validação no HML com uma ação em massa pequena e reversível, conferindo
-    auditoria e contagens.
+8. Entrega 3, API: rota de correções com prévia e gravação, testes.
+9. Entrega 3, web: correção no cartão, seleção em massa, prévia, confirmação e resultado, testes.
+10. Verificação, commit, push, deploy da API e teste HML das correções em transação desfeita.
