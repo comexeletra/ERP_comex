@@ -9,8 +9,9 @@ import { qualityEvidenceFields, qualityIssueCodes, qualityIssueText, qualityOutc
   qualitySeverityLabel, qualityStatusLabel } from "../lib/quality-issues.ts";
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
+// The workbook load queue is the second tab of /quality.
 const [page, analysisCss, componentsCss, authorization] = await Promise.all([
-  read("app/quality/page.tsx"), read("app/styles/features/analysis.css"), read("app/styles/components.css"),
+  read("components/QualityLoadQueue.tsx"), read("app/styles/features/analysis.css"), read("app/styles/components.css"),
   read("../api/src/authorization.ts")]);
 
 test("every load issue code has a complete explanation in the three languages", () => {
@@ -88,7 +89,7 @@ test("the card shows the explained title and translated status instead of raw co
 test("the type summary filters by code and clicking the selected type clears it", () => {
   assert.match(page, /data\?\.countsByCode/u);
   assert.match(page, /aria-pressed=\{code === entry\.code\}/u);
-  assert.match(page, /setCode\(code === entry\.code \? "" : entry\.code\)/u);
+  assert.match(page, /changeCode\(code === entry\.code \? "" : entry\.code\)/u);
   assert.match(page, /query\.set\("search", search\.trim\(\)\)/u);
   assert.doesNotMatch(page, /EXCEL_ERROR/u);
 });

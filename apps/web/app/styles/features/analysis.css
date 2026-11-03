@@ -36,6 +36,9 @@
 .quality-explain dd { line-height: 1.5; margin: 0; max-width: 860px; }
 .quality-item-content h3 { color: var(--color-text-strong); font-size: var(--fs-md); margin: 0 0 10px; }
 .quality-links { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 0; }
+.quality-pager { align-items: center; display: flex; gap: 12px; justify-content: center; margin: 20px 0; }
+.quality-pager span { color: var(--color-text-muted); font-size: var(--fs-md); }
+.quality-filter label.quality-waived-toggle { align-items: center; align-self: center; display: flex; gap: 8px; }
 .quality-heading { align-items: center; display: flex; gap: 16px; justify-content: space-between; }
 .quality-heading h2 { font-size: var(--fs-lg); margin: 4px 0 0; }
 

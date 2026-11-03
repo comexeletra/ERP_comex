@@ -2,21 +2,22 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
-import { apiFetch } from "../../lib/api";
-import { formatUsDateTime } from "../../lib/date-format";
-import { canResolveQuality } from "../../lib/quality-permissions";
+import { apiFetch } from "../lib/api";
+import { formatUsDateTime } from "../lib/date-format";
+import { canResolveQuality } from "../lib/quality-permissions";
 import { qualityEvidenceFields, qualityIssueText, qualityOutcomeLabel, qualityResolutionPayload, qualitySeverityLabel,
-  qualityStatusLabel } from "../../lib/quality-issues";
-import { getMessages, useI18n } from "../../components/I18nProvider";
-import PageHeader from "../../components/PageHeader";
-import { SearchableSelect } from "../../components/SearchableSelect";
+  qualityStatusLabel } from "../lib/quality-issues";
+import { getMessages, useI18n } from "./I18nProvider";
+import QualityPager from "./QualityPager";
+import { SearchableSelect } from "./SearchableSelect";
 
 type Review = { id: string; outcome: string; reviewer: string; notes: string; evidence: Record<string, unknown>; proposedPurchaseOrder?: string; proposedIpNumber?: string; recordedAt: string };
 type QualityLinks = { purchaseOrderId?: string; processId?: string };
 type QualityItem = { id: string; sourceRowId: string; code: string; severity: string; status: string; evidence: Record<string, unknown>; fieldName?: string; sheetName?: string; sourceRowNumber?: number; sourceValues: Record<string, unknown>; sourceColumnHeaders: Record<string, string>; links?: QualityLinks; latestReview?: Review; reviewHistory?: Review[] };
 type QualityPageData = { page: number; pageSize: number; totalCount: number; openCount: number; resolvedCount: number; countsByCode?: Array<{ code: string; count: number }>; items: QualityItem[] };
 
-export default function QualityPage() {
+/** Issues recorded by the workbook loads, reviewed one by one (second tab of /quality). */
+export default function QualityLoadQueue() {
   const { m } = useI18n();
   const t = m.quality;
   const [data, setData] = useState<QualityPageData>();
@@ -28,11 +29,13 @@ export default function QualityPage() {
   const [reviewing, setReviewing] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState<string>();
+  const [pageNumber, setPageNumber] = useState(1);
 
   const load = () => {
     setError(undefined);
     setRoles(undefined);
     const query = new URLSearchParams({ status, pageSize: "50" });
+    query.set("page", String(pageNumber));
     if (code) query.set("code", code);
     if (search.trim()) query.set("search", search.trim());
     return Promise.all([
@@ -49,8 +52,13 @@ export default function QualityPage() {
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : getMessages().common.unexpectedError));
   };
-  useEffect(() => { void load(); }, [status, code]);
-  function applyFilter(event: FormEvent<HTMLFormElement>) { event.preventDefault(); void load(); }
+  useEffect(() => { void load(); }, [status, code, pageNumber]);
+  const changeStatus = (value: string) => { setStatus(value); setPageNumber(1); };
+  const changeCode = (value: string) => { setCode(value); setPageNumber(1); };
+  function applyFilter(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (pageNumber === 1) void load(); else setPageNumber(1);
+  }
   async function submitReview(item: QualityItem, form: HTMLFormElement) {
     if (!canResolveQuality(roles ?? [])) return;
     const fields = new FormData(form);
@@ -72,21 +80,21 @@ export default function QualityPage() {
   }
 
   const counts = data?.countsByCode ?? [];
-  return <main className="shell">
-    <PageHeader eyebrow={t.eyebrow} title={t.title}><p>{t.intro}</p></PageHeader>
+  return <>
+    <p className="muted">{t.intro}</p>
     {error && <p className="notice error">{error}</p>}
     {roles && !canResolveQuality(roles) && <p className="notice">{t.readOnly}</p>}
     <section className="metric-grid" aria-label={t.summary}><Metric label={t.open} value={data?.openCount ?? "…"} /><Metric label={t.resolved} value={data?.resolvedCount ?? "…"} /><Metric label={t.inFilter} value={data?.totalCount ?? "…"} /></section>
     {counts.length > 0 && <section className="card quality-type-summary" aria-label={t.byType}>
       <h2>{t.byType}</h2>
       <div>{counts.map(entry => <button type="button" className="quality-type-chip" key={entry.code} aria-pressed={code === entry.code}
-        onClick={() => setCode(code === entry.code ? "" : entry.code)}>
+        onClick={() => changeCode(code === entry.code ? "" : entry.code)}>
         {t.typeCount(qualityIssueText(m, entry.code).title, entry.count)}</button>)}</div>
     </section>}
     <section className="card"><form className="quality-filter" onSubmit={applyFilter}>
-      <label>{t.status}<SearchableSelect ariaLabel={t.status} placeholder="" value={status} onChange={setStatus}
+      <label>{t.status}<SearchableSelect ariaLabel={t.status} placeholder="" value={status} onChange={changeStatus}
         options={[{ value: "open", label: t.statusOpen }, { value: "resolved", label: t.statusResolved }, { value: "all", label: t.statusAll }]} /></label>
-      <label>{t.type}<SearchableSelect ariaLabel={t.type} placeholder={t.allTypes} value={code} onChange={setCode}
+      <label>{t.type}<SearchableSelect ariaLabel={t.type} placeholder={t.allTypes} value={code} onChange={changeCode}
         options={[{ value: "", label: t.allTypes }, ...counts.map(entry => ({ value: entry.code, label: qualityIssueText(m, entry.code).title }))]} /></label>
       <label>{t.search}<input value={search} maxLength={80} onChange={event => setSearch(event.target.value)} placeholder={t.searchPlaceholder} /></label>
       <button className="button" type="submit">{t.filter}</button>
@@ -134,7 +142,8 @@ export default function QualityPage() {
         </div>
       </details>;
     })}
-  </main>;
+    {data && <QualityPager page={data.page} pageSize={data.pageSize} total={data.totalCount} onPage={setPageNumber} />}
+  </>;
 }
 
 function Metric({ label, value }: { label: string; value: number | string }) { return <section className="metric"><span>{label}</span><strong>{value}</strong></section>; }
