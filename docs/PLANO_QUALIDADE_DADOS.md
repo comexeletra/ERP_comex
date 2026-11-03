@@ -40,9 +40,9 @@ IP 1, e 0 para distribuído acima do pedido, IP com fornecedor diferente da PO e
    encontrado, coluna). Cada chave conhecida da evidência tem rótulo nos três idiomas; chave desconhecida aparece com o
    próprio nome. O JSON bruto e os valores preservados da origem continuam em "Detalhes técnicos".
 4. PO e IP da evidência viram links para `/purchase-orders/[id]` e `/processes/[id]` quando existem no sistema dentro do
-   escopo da pessoa. A API resolve os ids pela linha de origem (observação da PO e vínculo da linha com o IP) ou, sem
-   vínculo, pelo número normalizado dentro da importadora da linha, e devolve `links: { purchaseOrderId?, processId? }`
-   por item. Sem correspondência única, não há link.
+   escopo da pessoa. A API resolve a PO pela observação da linha de origem (`procurement.po_line_observation`) e o IP
+   pelo número da evidência (`ipNumber`, normalizado como em `normalized_ip_number`, IP não excluído), e devolve
+   `links: { purchaseOrderId?, processId? }` por item. Sem correspondência única no escopo, não há link.
 5. Uma faixa de resumo mostra a contagem por tipo no filtro de status atual; clicar num tipo filtra a lista e clicar de
    novo remove o filtro. A API devolve `countsByCode: { code, count }[]`, respeitando escopo e status.
 6. O filtro de código digitado vira uma lista com os tipos existentes; entra uma busca por texto (`search`, até 80
