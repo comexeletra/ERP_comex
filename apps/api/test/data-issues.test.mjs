@@ -36,7 +36,7 @@ function resolutionHash(issueId, body) {
 }
 
 async function createApp({ failOutbox = false } = {}) {
-  const state = { issueStatus: "OPEN", reviews: new Map(), queries: [], commits: 0, rollbacks: 0, listSql: "" };
+  const state = { issueStatus: "OPEN", reviews: new Map(), queries: [], commits: 0, rollbacks: 0, listSql: "", listValues: [] };
   const issue = {
     id: issueIds.visible,
     batch_id: "00000000-0000-4000-8000-000000000010",
@@ -55,7 +55,9 @@ async function createApp({ failOutbox = false } = {}) {
         return { rows: [{ importer: "ELETRA MATRIZ" }] };
       }
       state.listSql = sql;
-      return { rows: [{ total_count: 1, open_count: 1, resolved_count: 0, items: [{ id: issue.id }] }] };
+      state.listValues = values;
+      return { rows: [{ total_count: 1, open_count: 1, resolved_count: 0, items: [{ id: issue.id }],
+        counts_by_code: [{ code: "PRICE_WITHOUT_CURRENCY", count: 2 }] }] };
     },
     async connect() {
       const staged = {};
@@ -141,6 +143,45 @@ test("quality list scopes before counts and pagination", async (t) => {
   assert.ok(state.listSql.indexOf("WHERE (EXISTS (") < state.listSql.indexOf("LIMIT $5 OFFSET $6"));
   assert.match(state.listSql, /SELECT count\(\*\)::int FROM filtered/u);
   assert.deepEqual(response.json().items, [{ id: issueIds.visible, sourceColumnHeaders: {} }]);
+});
+
+test("quality list counts by code within status and search, and links PO and IP in scope", async (t) => {
+  const { app, state } = await createApp();
+  t.after(() => app.close());
+  const response = await app.inject({ method: "GET",
+    url: "/api/v1/data-issues?status=open&search=%20031178%20", headers: { "x-test-subject": "buyerA" } });
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.json().countsByCode, [{ code: "PRICE_WITHOUT_CURRENCY", count: 2 }]);
+  // Search is a parameter, never SQL text, and matches the evidence without LIKE wildcards.
+  assert.equal(state.listValues.at(-1), "031178");
+  assert.match(state.listSql, /strpos\(lower\(issue\.evidence::text\), lower\(\$7\)\) > 0/u);
+  // Counts by code ignore the code filter so the summary keeps every type visible.
+  assert.match(state.listSql, /FROM scoped\s+WHERE \$4 = 'all'/u);
+  // PO and IP links reuse the importer scope of the caller.
+  assert.match(state.listSql, /po_line_observation AS link_obs[\s\S]*link_po\.importer = ANY\(\$1::text\[\]\)/u);
+  assert.match(state.listSql, /import_process AS link_ip[\s\S]*link_ip\.importer = ANY\(\$2::text\[\]\)/u);
+  assert.match(state.listSql, /link_ip\.deleted_at IS NULL/u);
+});
+
+test("quality list rejects a search longer than 80 characters", async (t) => {
+  const { app } = await createApp();
+  t.after(() => app.close());
+  const response = await app.inject({ method: "GET", url: `/api/v1/data-issues?search=${"x".repeat(81)}`,
+    headers: { "x-test-subject": "buyerA" } });
+  assert.equal(response.statusCode, 400);
+});
+
+test("the resolution payload built by the quality screen is accepted", async (t) => {
+  const { qualityResolutionPayload } = await import("../../web/lib/quality-issues.ts");
+  const { app } = await createApp();
+  t.after(() => app.close());
+  const payload = qualityResolutionPayload({ reference: " INV-9 ", reason: " Conferido. ",
+    proposedPurchaseOrder: " ", proposedIpNumber: "003C/2026" });
+  assert.deepEqual(payload, { evidence: { reference: "INV-9" }, reason: "Conferido.",
+    proposedPurchaseOrder: null, proposedIpNumber: "003C/2026" });
+  const response = await app.inject({ method: "POST", url: `/api/v1/data-issues/${issueIds.visible}/resolve`,
+    headers: headers("buyerA", "screen-payload-key"), payload });
+  assert.equal(response.statusCode, 201);
 });
 
 test("master can see and resolve historical issues without a PO or IP", async (t) => {

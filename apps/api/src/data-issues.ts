@@ -8,6 +8,7 @@ import { sourceColumnHeadersFor } from "./source-audit.js";
 const listQuerySchema = z.object({
   status: z.enum(["open", "resolved", "all"]).default("open"),
   code: z.string().trim().max(64).optional(),
+  search: z.string().trim().max(80).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
 });
@@ -41,7 +42,7 @@ function canonicalJson(value: unknown): string {
 }
 
 function visibleIssueSql(scopes: readonly string[], priorParameterCount = 0, master = false) {
-  if (master) return { sql: "TRUE", values: [] };
+  if (master) return { sql: "TRUE", values: [], poScopeSql: () => "TRUE", processScopeSql: () => "TRUE" };
   const poScope = importerScopePredicate("po.importer", priorParameterCount + 1, scopes);
   const processScope = importerScopePredicate("process.importer", priorParameterCount + 2, scopes);
   return {
@@ -55,11 +56,14 @@ function visibleIssueSql(scopes: readonly string[], priorParameterCount = 0, mas
       WHERE cost.source_row_id = issue.source_row_id AND ${processScope.sql}
     )`,
     values: [...poScope.values, ...processScope.values],
+    // The same parameters checked against another alias, for links shown with the issue.
+    poScopeSql: (alias: string) => importerScopePredicate(`${alias}.importer`, priorParameterCount + 1, scopes).sql,
+    processScopeSql: (alias: string) => importerScopePredicate(`${alias}.importer`, priorParameterCount + 2, scopes).sql,
   };
 }
 
 export async function registerDataIssueRoutes(app: FastifyInstance, pool: Pool): Promise<void> {
-  app.get<{ Querystring: { status?: string; code?: string; page?: string; pageSize?: string } }>(
+  app.get<{ Querystring: { status?: string; code?: string; search?: string; page?: string; pageSize?: string } }>(
     "/api/v1/data-issues",
     { config: permissionConfig("quality.read") },
     async (request, reply) => {
@@ -67,28 +71,37 @@ export async function registerDataIssueRoutes(app: FastifyInstance, pool: Pool):
       if (!parsed.success) return problem(reply, 400, "INVALID_QUERY", "Os filtros ou a paginação são inválidos.");
       const { status, page, pageSize } = parsed.data;
       const code = parsed.data.code || null;
+      const search = parsed.data.search || null;
       const scopes = request.authorizationContext?.importerScopes ?? [];
       const visible = visibleIssueSql(scopes, 0, request.authorizationContext?.roles.includes("Master") ?? false);
       const offset = (page - 1) * pageSize;
+      const statusParameter = `$${visible.values.length + 2}`;
+      const statusFilter = `${statusParameter} = 'all'
+              OR (${statusParameter} = 'open' AND status = 'OPEN')
+              OR (${statusParameter} = 'resolved' AND status = 'RESOLVED')`;
       const result = await pool.query<{
         total_count: number | string;
         open_count: number | string;
         resolved_count: number | string;
         items: Array<Record<string, unknown>>;
+        counts_by_code: Array<{ code: string; count: number }> | null;
       }>(
-        `WITH visible AS MATERIALIZED (
+        `WITH scoped AS MATERIALIZED (
            SELECT issue.id, issue.batch_id, issue.source_row_id, issue.severity,
                   issue.issue_code, issue.field_name, issue.evidence, issue.status,
                   issue.created_at, source.sheet_name, source.row_number,
                   source.raw_values AS source_values
            FROM migration.data_issue AS issue
            JOIN migration.source_row AS source ON source.id = issue.source_row_id
-           WHERE (${visible.sql}) AND ($${visible.values.length + 1}::text IS NULL OR issue.issue_code = $${visible.values.length + 1})
+           WHERE (${visible.sql})
+             AND ($${visible.values.length + 5}::text IS NULL
+                  OR strpos(lower(issue.evidence::text), lower($${visible.values.length + 5})) > 0)
+         ), visible AS MATERIALIZED (
+           SELECT * FROM scoped
+           WHERE $${visible.values.length + 1}::text IS NULL OR issue_code = $${visible.values.length + 1}
          ), filtered AS MATERIALIZED (
            SELECT * FROM visible
-           WHERE $${visible.values.length + 2} = 'all'
-              OR ($${visible.values.length + 2} = 'open' AND status = 'OPEN')
-              OR ($${visible.values.length + 2} = 'resolved' AND status = 'RESOLVED')
+           WHERE ${statusFilter}
          ), page AS (
            SELECT filtered.*,
                   (SELECT jsonb_build_object(
@@ -121,7 +134,17 @@ export async function registerDataIssueRoutes(app: FastifyInstance, pool: Pool):
                   WHERE review.data_issue_id = filtered.id
                      OR (review.data_issue_id IS NULL
                          AND review.source_row_id = filtered.source_row_id
-                         AND review.issue_code = filtered.issue_code)), '[]'::jsonb) AS review_history
+                         AND review.issue_code = filtered.issue_code)), '[]'::jsonb) AS review_history,
+                  jsonb_strip_nulls(jsonb_build_object(
+                    'purchaseOrderId', (SELECT CASE WHEN count(DISTINCT link_po.id) = 1 THEN min(link_po.id::text) END
+                      FROM procurement.po_line_observation AS link_obs
+                      JOIN procurement.purchase_order AS link_po ON link_po.id = link_obs.purchase_order_id
+                      WHERE link_obs.source_row_id = filtered.source_row_id AND ${visible.poScopeSql("link_po")}),
+                    'processId', (SELECT CASE WHEN count(*) = 1 THEN min(link_ip.id::text) END
+                      FROM imports.import_process AS link_ip
+                      WHERE link_ip.normalized_ip_number = upper(btrim(filtered.evidence->>'ipNumber'))
+                        AND link_ip.deleted_at IS NULL AND ${visible.processScopeSql("link_ip")})
+                  )) AS links
            FROM filtered
            ORDER BY created_at DESC, id
            LIMIT $${visible.values.length + 3} OFFSET $${visible.values.length + 4}
@@ -129,6 +152,10 @@ export async function registerDataIssueRoutes(app: FastifyInstance, pool: Pool):
          SELECT (SELECT count(*)::int FROM filtered) AS total_count,
                 (SELECT count(*)::int FROM visible WHERE status = 'OPEN') AS open_count,
                 (SELECT count(*)::int FROM visible WHERE status = 'RESOLVED') AS resolved_count,
+                (SELECT coalesce(jsonb_agg(jsonb_build_object('code', counted.code, 'count', counted.count)
+                   ORDER BY counted.count DESC, counted.code), '[]'::jsonb)
+                 FROM (SELECT issue_code AS code, count(*)::int AS count FROM scoped
+                       WHERE ${statusFilter} GROUP BY issue_code) AS counted) AS counts_by_code,
                 coalesce(jsonb_agg(jsonb_build_object(
                   'id', page.id,
                   'sourceRowId', page.source_row_id,
@@ -142,10 +169,11 @@ export async function registerDataIssueRoutes(app: FastifyInstance, pool: Pool):
                   'sourceRowNumber', page.row_number,
                   'sourceValues', page.source_values,
                   'latestReview', page.latest_review,
-                  'reviewHistory', page.review_history
+                  'reviewHistory', page.review_history,
+                  'links', page.links
                 ) ORDER BY page.created_at DESC, page.id) FILTER (WHERE page.id IS NOT NULL), '[]'::jsonb) AS items
          FROM page`,
-        [...visible.values, code, status, pageSize, offset],
+        [...visible.values, code, status, pageSize, offset, search],
       );
 
       return {
@@ -154,6 +182,7 @@ export async function registerDataIssueRoutes(app: FastifyInstance, pool: Pool):
         totalCount: Number(result.rows[0]?.total_count ?? 0),
         openCount: Number(result.rows[0]?.open_count ?? 0),
         resolvedCount: Number(result.rows[0]?.resolved_count ?? 0),
+        countsByCode: result.rows[0]?.counts_by_code ?? [],
         items: (result.rows[0]?.items ?? []).map(item => ({ ...item,
           sourceColumnHeaders: sourceColumnHeadersFor(String(item.sheetName ?? "")),
         })),
