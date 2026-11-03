@@ -1,5 +1,13 @@
 # API ERP na VPS Hostinger
 
+## Qualidade dos dados mais clara no HML (2026-11-03)
+
+Os commits `1ba865b` (web) e `ffe90f0` (API) fazem a entrega 1 de `docs/PLANO_QUALIDADE_DADOS.md`: `GET /api/v1/data-issues` aceita `search` (até 80 caracteres, procurado no texto da evidência) e devolve `countsByCode` e `links` (PO pela observação da linha de origem, IP pelo `ipNumber` da evidência, só com correspondência única no escopo). A rota de resolução não mudou. Não há migration, e o web novo funciona com a API anterior (sem resumo por tipo).
+
+Antes do deploy, o SQL gerado pela rota rodou no `erp_po_totvs_hml` em transação somente leitura: Master com `status=open` devolveu 174 pendências (86 `MISSING_PO`, 78 `PRICE_WITHOUT_CURRENCY`, 4 `SC_MULTIPLE_SUPPLIERS`, 3 `PO_WITHOUT_SUPPLIER`, 2 `INVALID_DATE`, 1 `PO_IP_SUPPLIER_DIVERGENCE`), 87 com link de PO e 67 com link de IP; o escopo `ELETRA INDUSTRIA E COMERCIO DE MEDIDORES ELETRICOS L` devolveu 87.
+
+O release `/opt/import-erp/apps/api/hml-release-ffe90f0` foi montado com `git -c core.autocrlf=false archive` (nenhuma fonte com CR; SHA-256 do pacote `8d84e7ad…e6e7`), reaproveitando o `node_modules` de `hml-release-d47d9ca` (`package.json` e lockfile iguais, conferidos com `cmp`), compilado na VPS e ativado pelo drop-in `zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-release-ffe90f0.conf`; o worker foi movido com `enable-homologation-export-worker.sh ffe90f0`. Drop-ins e `ExecStart` anteriores: `/var/backups/import-erp/hml-quality-clarity-ffe90f0-predeploy`. Rollback somente do código: remova o drop-in `ffe90f0`, execute `systemctl daemon-reload`, reinicie `import-erp-hml-api` (volta a `hml-release-d47d9ca`) e rode `enable-homologation-export-worker.sh d47d9ca`. `/health/live` respondeu 200 e `GET /api/v1/data-issues` sem sessão respondeu 401. O Preview do commit `ffe90f0` ficou `success` no status da Vercel no GitHub. Produção, `main` e as variáveis da Vercel não foram alteradas.
+
 ## Data do plano comercial no HML (2026-10-30)
 
 Regras em `docs/PLANO_CARGA_HISTORICA_PLANILHA.md`. `import-commercial-plan-dates.py` não conecta ao banco: lê a aba `Status PO's` de `FUP POS - MRP.xlsx` (SHA-256 `af53694122423aedcbe34649e4062a605081427fc56b0e901fabf31ef98544bf`) e gera um SQL que recusa outro banco, recusa repetir e não substitui datas gravadas. `--expected-items` é obrigatório, e qualquer outro total de linhas interrompe a carga. Sem `--commit`, termina em `ROLLBACK`.
