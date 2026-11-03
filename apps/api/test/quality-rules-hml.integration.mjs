@@ -64,8 +64,9 @@ const cases = {
     change: "UPDATE procurement.purchase_order_item SET currency_code = NULL WHERE id = $1" },
   ITEM_WITHOUT_PRICE: { pick: `SELECT item.id ${liveItem} AND item.unit_price IS NOT NULL LIMIT 1`,
     change: "UPDATE procurement.purchase_order_item SET unit_price = NULL WHERE id = $1" },
+  // A PO linked to an SC takes the SC supplier back (M041 trigger), so only a PO without SC can lose it.
   PO_WITHOUT_SUPPLIER: { pick: `SELECT po.id FROM procurement.purchase_order AS po WHERE po.lifecycle_status = 'ACTIVE'
-      AND po.supplier_entry_id IS NOT NULL LIMIT 1`,
+      AND po.supplier_entry_id IS NOT NULL AND po.purchase_request_id IS NULL LIMIT 1`,
     change: "UPDATE procurement.purchase_order SET supplier_entry_id = NULL, supplier_text = NULL WHERE id = $1" },
   ITEM_PO_APPROVED_BEFORE_SC: { pick: `SELECT item.id ${liveItem} AND (item.po_approval_date < item.sc_approval_date)
       IS NOT TRUE LIMIT 1`,
