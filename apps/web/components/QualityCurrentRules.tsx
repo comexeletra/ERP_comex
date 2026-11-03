@@ -4,10 +4,11 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { formatUsDateTime } from "../lib/date-format";
-import { canResolveQuality } from "../lib/quality-permissions";
-import { qualityEvidenceFields, qualityGroupLabel, qualityRuleCodes, qualityRuleSummary, qualityRuleText, qualityStatusLabel,
-  qualityWaiverPayload, type QualityRuleCount } from "../lib/quality-issues";
+import { canFixQuality, canResolveQuality } from "../lib/quality-permissions";
+import { qualityEvidenceFields, qualityFixAction, qualityGroupLabel, qualityRuleCodes, qualityRuleSummary, qualityRuleText,
+  qualityStatusLabel, qualityWaiverPayload, type QualityRuleCount } from "../lib/quality-issues";
 import ConfirmDialog from "./ConfirmDialog";
+import QualityFixPanel from "./QualityFixPanel";
 import { getMessages, useI18n } from "./I18nProvider";
 import QualityPager from "./QualityPager";
 import { SearchableSelect } from "./SearchableSelect";
@@ -34,6 +35,7 @@ export default function QualityCurrentRules() {
   const [revoking, setRevoking] = useState<{ waiverId: string }>();
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const load = () => {
     setError(undefined);
@@ -54,10 +56,16 @@ export default function QualityCurrentRules() {
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : getMessages().common.unexpectedError));
   };
   useEffect(() => { void load(); }, [rule, includeWaived, pageNumber]);
-  const changeRule = (value: string) => { setRule(value); setPageNumber(1); };
+  // A selection belongs to the page and filter it was made on.
+  const goToPage = (value: number) => { setPageNumber(value); setSelected(new Set()); };
+  const changeRule = (value: string) => { setRule(value); goToPage(1); };
+  function fixed(message: string) { setNotice(message); setSelected(new Set()); void load(); }
+  function toggle(entityId: string, checked: boolean) {
+    setSelected(current => { const next = new Set(current); if (checked) next.add(entityId); else next.delete(entityId); return next; });
+  }
   function applyFilter(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (pageNumber === 1) void load(); else setPageNumber(1);
+    if (pageNumber === 1) void load(); else goToPage(1);
   }
   function closeDialogs() { setWaiving(undefined); setRevoking(undefined); setReason(""); }
 
@@ -91,6 +99,9 @@ export default function QualityCurrentRules() {
   }
 
   const reviewer = canResolveQuality(roles ?? []);
+  const bulkAction = rule ? qualityFixAction(rule) : null;
+  const selectable = !!bulkAction && canFixQuality(roles ?? []) || bulkAction === "PRODUCT" || bulkAction === "NCM_OFFICIAL";
+  const selectedItems = (data?.items ?? []).filter(item => selected.has(item.entityId) && !item.waiver);
   const summary = qualityRuleSummary(data?.countsByRule ?? []);
   const totals = summary.flatMap(group => group.rules).reduce((sum, entry) => ({ open: sum.open + entry.open,
     waived: sum.waived + entry.waived }), { open: 0, waived: 0 });
@@ -115,16 +126,27 @@ export default function QualityCurrentRules() {
         options={[{ value: "", label: t.allRules }, ...qualityRuleCodes.map(code => ({ value: code, label: qualityRuleText(m, code).title }))]} /></label>
       <label>{t.search}<input value={search} maxLength={80} onChange={event => setSearch(event.target.value)} placeholder={t.searchPlaceholder} /></label>
       <label className="quality-waived-toggle"><input type="checkbox" checked={includeWaived}
-        onChange={event => { setIncludeWaived(event.target.checked); setPageNumber(1); }} />{t.showWaived}</label>
+        onChange={event => { setIncludeWaived(event.target.checked); goToPage(1); }} />{t.showWaived}</label>
       <button className="button" type="submit">{t.filter}</button>
     </form></section>
+    {roles && canFixQuality(roles) && !bulkAction && <p className="muted">{t.fixes.selectHint}</p>}
+    {selectable && !!data?.items.length && <section className="card quality-bulk-bar" aria-label={t.fixes.bulkTitle(selectedItems.length)}>
+      <p><strong>{t.fixes.selected(selectedItems.length)}</strong>
+        <button className="button secondary" type="button" onClick={() => setSelected(new Set(data.items.filter(item => !item.waiver).map(item => item.entityId)))}>{t.fixes.selectPage}</button>
+        <button className="button secondary" type="button" disabled={!selectedItems.length} onClick={() => setSelected(new Set())}>{t.fixes.clearSelection}</button></p>
+      {selectedItems.length > 0 && <><h2>{t.fixes.bulkTitle(selectedItems.length)}</h2>
+        <QualityFixPanel rule={rule} items={selectedItems} roles={roles ?? []} bulk onDone={fixed} key={[...selected].join(",")} /></>}
+    </section>}
     {!data && !error && <p role="status">{t.loading}</p>}
     {data?.items.length === 0 && <section className="card"><p>{t.noFindings}</p></section>}
     {data?.items.map(item => {
       const info = qualityRuleText(m, item.rule);
       const fields = qualityEvidenceFields(m, { ...item.labels, ...item.values }, { hideIds: true });
       const identity = qualityEvidenceFields(m, item.labels, { hideIds: true }).filter(field => field.key !== "description");
-      return <details className="card quality-item" key={`${item.rule}:${item.entityId}`}>
+      return <div className="quality-select-row" key={`${item.rule}:${item.entityId}`}>
+        {selectable && !item.waiver && <label className="quality-select"><input type="checkbox" aria-label={t.fixes.select}
+          checked={selected.has(item.entityId)} onChange={event => toggle(item.entityId, event.target.checked)} /></label>}
+        <details className="card quality-item">
         <summary className="quality-summary"><span><small>{qualityGroupLabel(m, item.group)}</small>
           <strong>{info.title}</strong><small>{identity.map(field => `${field.label}: ${field.value}`).join(" · ")}</small></span>
           <span className={item.waiver ? "badge badge-success" : "badge badge-warning"}>
@@ -141,14 +163,15 @@ export default function QualityCurrentRules() {
             {item.links.purchaseOrderId && <Link className="button secondary" href={`/purchase-orders/${item.links.purchaseOrderId}`}>{t.openPo}</Link>}
             {item.links.processId && <Link className="button secondary" href={`/processes/${item.links.processId}`}>{t.openIp}</Link>}
           </p>}
+          {!item.waiver && <QualityFixPanel rule={item.rule} items={[item]} roles={roles ?? []} onDone={fixed} />}
           {item.waiver && <p className="muted">{t.waiverBy(item.waiver.createdBy, formatUsDateTime(item.waiver.createdAt))} {item.waiver.reason}</p>}
           {reviewer && (item.waiver
             ? <button className="button secondary" type="button" onClick={() => { setReason(""); setRevoking({ waiverId: item.waiver!.id }); }}>{t.revoke}</button>
             : <button className="button" type="button" onClick={() => { setReason(""); setWaiving({ item, key: crypto.randomUUID() }); }}>{t.waive}</button>)}
         </div>
-      </details>;
+      </details></div>;
     })}
-    {data && <QualityPager page={data.page} pageSize={data.pageSize} total={data.totalCount} onPage={setPageNumber} />}
+    {data && <QualityPager page={data.page} pageSize={data.pageSize} total={data.totalCount} onPage={goToPage} />}
     <ConfirmDialog open={!!waiving} title={t.waive} confirmLabel={t.waiveConfirm} cancelLabel={t.cancel} busy={busy}
       confirmDisabled={reason.trim().length < 8} onConfirm={() => void confirmWaiver()} onCancel={closeDialogs}>
       {waiving && <p><strong>{qualityRuleText(m, waiving.item.rule).title}</strong></p>}

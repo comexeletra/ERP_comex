@@ -96,3 +96,48 @@ export function qualityResolutionPayload(form: { reference: string; reason: stri
 export function qualityWaiverPayload(rule: string, entityId: string, reason: string) {
   return { rule, entityId, reason: reason.trim() };
 }
+
+export type QualityFixAction = "ITEM_CURRENCY" | "ITEM_PRICE" | "ITEM_NCM" | "PO_SUPPLIER" | "PRODUCT" | "NCM_OFFICIAL";
+export type QualityFixForm = { currency?: string; unitPrice?: string; ncm?: string; alsoProduct?: boolean; supplierCode?: string };
+type FixableItem = { entityId: string; labels: Record<string, unknown>; values: Record<string, unknown> };
+
+/** The registration fix offered on the card of each rule, or null when the fix happens on another screen. */
+export function qualityFixAction(rule: string): QualityFixAction | null {
+  return ({ ITEM_PRICE_WITHOUT_CURRENCY: "ITEM_CURRENCY", ITEM_WITHOUT_PRICE: "ITEM_PRICE", ITEM_WITHOUT_NCM: "ITEM_NCM",
+    PO_WITHOUT_SUPPLIER: "PO_SUPPLIER", ITEM_PRODUCT_NOT_REGISTERED: "PRODUCT", ITEM_NCM_NOT_REGISTERED: "NCM_OFFICIAL",
+  } as Record<string, QualityFixAction>)[rule] ?? null;
+}
+
+/** Body of POST /api/v1/quality/current/fixes; empty fields leave the choice to the API suggestion. */
+export function qualityFixPayload(action: QualityFixAction, entityIds: string[], form: QualityFixForm, reason: string,
+  preview: boolean) {
+  const text = (value?: string) => value?.trim() || undefined;
+  const value = action === "ITEM_CURRENCY" ? { currency: text(form.currency) }
+    : action === "ITEM_PRICE" ? { unitPrice: text(form.unitPrice)?.replace(",", "."), currency: text(form.currency) }
+    : action === "ITEM_NCM" ? { ncm: text(form.ncm)?.replace(/[^0-9]/gu, ""), alsoProduct: form.alsoProduct || undefined }
+    : { supplierCode: text(form.supplierCode) };
+  return { action, entityIds, reason: reason.trim(), preview,
+    value: Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== "")) };
+}
+
+/** Products to register from the selected items: one per code, with the first description found. */
+export function qualityProductsPayload(items: readonly FixableItem[]) {
+  const byCode = new Map<string, { code: string; description: string }>();
+  for (const item of items) {
+    const code = String(item.labels.productCode ?? item.values.productCode ?? "").trim();
+    if (!code || byCode.has(code.toUpperCase())) continue;
+    const description = String(item.labels.description ?? "").trim() || code;
+    byCode.set(code.toUpperCase(), { code, description });
+  }
+  return { items: [...byCode.values()] };
+}
+
+/** Official NCM codes to register from the selected items; codes without 8 digits are left out. */
+export function qualityNcmCodes(items: readonly FixableItem[]) {
+  const codes = items.map(item => String(item.values.ncm ?? "").replace(/[^0-9]/gu, ""));
+  return [...new Set(codes.filter(code => code.length === 8))];
+}
+
+export function qualitySkipLabel(m: Messages, code: string): string {
+  return (m.quality.skipCodes as Record<string, string | undefined>)[code] ?? code;
+}

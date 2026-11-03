@@ -39,6 +39,14 @@
 .quality-pager { align-items: center; display: flex; gap: 12px; justify-content: center; margin: 20px 0; }
 .quality-pager span { color: var(--color-text-muted); font-size: var(--fs-md); }
 .quality-filter label.quality-waived-toggle { align-items: center; align-self: center; display: flex; gap: 8px; }
+.quality-fix { border-top: 1px solid var(--color-divider); margin: 16px 0; padding-top: 14px; }
+.quality-fix ul { margin: 8px 0; padding-left: 20px; }
+.quality-fix-check { align-items: center; display: flex; gap: 8px; }
+.quality-bulk-bar > p { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 12px; }
+.quality-bulk-bar h2 { font-size: var(--fs-base); margin: 0 0 8px; }
+.quality-select-row { align-items: start; display: grid; gap: 10px; grid-template-columns: auto minmax(0, 1fr); }
+.quality-select-row > .quality-item { grid-column: -2; }
+.quality-select { padding-top: 22px; }
 .quality-heading { align-items: center; display: flex; gap: 16px; justify-content: space-between; }
 .quality-heading h2 { font-size: var(--fs-lg); margin: 4px 0 0; }
 
