@@ -1,5 +1,13 @@
 # API ERP na VPS Hostinger
 
+## Correções de cadastro pela Qualidade no HML (2026-11-03)
+
+Os commits `4282ef8` (API) e `e830415` (web) fazem a entrega 3 de `docs/PLANO_QUALIDADE_DADOS.md`: `POST /api/v1/quality/current/fixes` corrige moeda, preço, NCM do item (e do produto, se vazia) e fornecedor da PO de 1 a 500 registros, com prévia que sempre termina em ROLLBACK; produto e NCM oficial usam as rotas de cadastro existentes. Não há migration. A tela nova chama a rota nova; por isso a API foi publicada antes do push.
+
+O release `/opt/import-erp/apps/api/hml-release-e830415` foi montado com `git -c core.autocrlf=false archive` (nenhuma fonte com CR), reaproveitando o `node_modules` de `hml-release-669f838` (dependências e lockfile iguais), compilado na VPS e ativado pelo drop-in `zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-release-e830415.conf`; o worker foi movido com `enable-homologation-export-worker.sh e830415`. Drop-ins e `ExecStart` anteriores: `/var/backups/import-erp/hml-quality-fixes-e830415-predeploy`. Rollback somente do código: remova o drop-in `e830415`, execute `systemctl daemon-reload`, reinicie `import-erp-hml-api` (volta a `hml-release-669f838`) e rode `enable-homologation-export-worker.sh 669f838`. `/health/live` respondeu 200 e a rota sem sessão respondeu 401.
+
+Antes da ativação, `test/quality-fixes-hml.integration.mjs` rodou a prévia sobre todos os erros reais, sem gravar nada: moeda — 77 itens, 76 com a moeda sugerida (CNY) e 1 sem sugestão; NCM — 484 itens, 54 com NCM sugerida por outros itens do mesmo produto, 82 em PO encerrada e 348 sem sugestão; fornecedor — 3 POs, todas corrigíveis. `test/quality-rules-hml.integration.mjs` continuou passando. Nenhuma correção foi gravada no HML. Produção, `main` e as variáveis da Vercel não foram alteradas.
+
 ## Regras sobre os dados atuais e dispensas (M077) no HML (2026-11-03)
 
 Os commits `69a990b` (API), `669f838` (web) e `d055235` (teste HML) fazem a entrega 2 de `docs/PLANO_QUALIDADE_DADOS.md`: 12 regras calculadas na leitura (`GET /api/v1/quality/current`) e dispensas "dado correto" (`POST /api/v1/quality/current/waivers` e `.../waivers/:id/revoke`) em `migration.quality_rule_waiver` (M077). A aba "Dados atuais" depende da rota nova; por isso a API foi publicada antes do push.
