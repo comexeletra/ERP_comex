@@ -1,5 +1,16 @@
 # API ERP na VPS Hostinger
 
+## NCM por análise estatística nos itens sem NCM do HML (2026-11-04)
+
+Com autorização do usuário, 202 dos 484 itens sem NCM receberam a NCM sugerida por uma análise estatística sobre os demais itens do `erp_po_totvs_hml`, a única fonte de NCM do banco (nenhum produto do cadastro tinha NCM). Dois métodos, validados escondendo a NCM de cada produto que já a tinha:
+
+- mesmo produto: maioria das NCMs das outras linhas do mesmo código (89,4% de acerto nos 8 dígitos). A regra da tela exige NCM única, mas 411 dos 1.525 produtos com NCM têm mais de uma, quase sempre uma dominante e erros pontuais;
+- combinação de mesma descrição, família pelo prefixo do código e descrição parecida (TF-IDF, 7 vizinhos), para produtos sem NCM em nenhuma linha (76,0% no geral, 94,5% com confiança ≥ 0,80).
+
+Entraram somente os itens da faixa alta (confiança ≥ 0,80), em PO `ACTIVE` e com NCM `ACTIVE` no cadastro: 94 pelo mesmo produto e 108 pela combinação, em 47 chamadas de `POST /api/v1/quality/current/fixes` (`ITEM_NCM`, uma NCM por chamada, `alsoProduct`, chave `ncm-estatistica-20261104-<ncm>-<método>`), feitas pelo `dist` de `hml-release-e830415` com o ator Master Francisco Matheus. A prévia aplicou 202 sem recusa e manteve as pendências; a gravação deixou "item sem NCM" em 282, preencheu a NCM de 96 produtos do cadastro e registrou 298 linhas em `audit.audit_log` e `audit.outbox_message` com o motivo `NCM sugerida pela análise estatística de 2026-11-04…`. A repetição respondeu `replayed` sem alterar nada. Ficaram de fora 36 itens da faixa alta em PO `CLOSED` (a rota recusa) e 1 com NCM fora do cadastro; as faixas média (77) e baixa (168) ficam para revisão do fiscal.
+
+Backup antes da gravação: `/var/backups/import-erp/erp_po_totvs_hml_pre_ncm_statistical_20261104T131126Z.dump` (472.546.650 bytes, SHA-256 `b6c2d6b67f87664055f634c09c40aa1716be57e719b9b5bbdd0d201ee1bc5c38`, 59 tabelas com dados no `pg_restore --list`). Script, plano e logs em `/root/claude-ncm-20261104` na VPS. Sem mudança de código, migration, produção, `main` ou variáveis da Vercel.
+
 ## Correções de cadastro pela Qualidade no HML (2026-11-03)
 
 Os commits `4282ef8` (API) e `e830415` (web) fazem a entrega 3 de `docs/PLANO_QUALIDADE_DADOS.md`: `POST /api/v1/quality/current/fixes` corrige moeda, preço, NCM do item (e do produto, se vazia) e fornecedor da PO de 1 a 500 registros, com prévia que sempre termina em ROLLBACK; produto e NCM oficial usam as rotas de cadastro existentes. Não há migration. A tela nova chama a rota nova; por isso a API foi publicada antes do push.
