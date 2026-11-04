@@ -171,6 +171,10 @@ Se algo essencial não estiver claro, pergunte antes de supor.
 - O tipo de demanda é da PO, não do produto: a HQ planeja o pedido inteiro a partir do estoque (MTS, 30 dias no T3) ou sob encomenda (Não MTS, 45 dias). Ele fica só em `procurement.purchase_order.demand_type` (M071), e todo produto da PO o herda nas leituras (`po.demand_type`). Não volte a gravá-lo no produto nem a oferecê-lo como campo do produto; as rotas de produto o recusam.
 - Ele é diferente da origem da demanda (`DEMAND`: plano comercial, pós-venda, projetos), que continua sendo campo do produto.
 
+## Fornecedor da PO e SC
+
+- Uma PO ligada a uma SC recebe o fornecedor da SC pelo gatilho `catalog.sync_supplier_entity_reference` (M041), em toda gravação; limpar ou trocar o fornecedor dessa PO não tem efeito. "PO sem fornecedor" só acontece em PO sem SC, e a correção pela Qualidade recusa PO com SC (`PO_HAS_SC`). Para testar ou corrigir o fornecedor, use uma PO sem SC ou altere a SC.
+
 ## Carga de invoice (INV)
 
 - Unidades do mesmo grupo são equivalentes para todos os fornecedores e produtos (peça `UN, UND, UNID, UNIDADE, PC, PCS, PCE, PECA, PECAS, UNIT, UNITS, EA`; quilo `KG, KGS`; metro `M, MT, MTS`). A lista fica em `apps/api/src/unit-equivalence.ts` e no espelho `apps/web/lib/china-invoice-mapping.ts`, e `test/unit-equivalence.test.mjs` falha se as duas divergirem.
@@ -195,6 +199,7 @@ Se algo essencial não estiver claro, pergunte antes de supor.
 - No desktop de casa, a chave SSH funcional fica em `.local-keys/rf06_api_9583966c3df64c5a93048c4c1fb7fe8d.key`. O alias do notebook não está configurado nele; use o host e o usuário documentados em `deploy/hostinger/README.md`, com `-o BatchMode=yes -o IdentitiesOnly=yes -o HostKeyAlias=72.60.250.212 -i .local-keys/rf06_api_9583966c3df64c5a93048c4c1fb7fe8d.key`.
 - `.local-keys/` está no `.gitignore` em ambas as máquinas. Nunca inclua uma chave no Git.
 - Neste ambiente, `ssh` no `PATH` pode apontar para um bloqueio do sandbox; o cliente OpenSSH instalado fica em `C:\Windows\System32\OpenSSH\ssh.exe`.
+- A VPS recusa novas conexões SSH por alguns minutos depois de várias seguidas (o `ssh` termina com `Connection timed out`). Junte consultas e passos de release num único script enviado com um `scp` e rodado com um `ssh`; se a conexão cair, espere alguns minutos antes de tentar de novo, sem repetir em sequência.
 - Nunca exiba, copie para logs ou inclua em commits o conteúdo da chave. O acesso SSH não autoriza escrita em produção; confirme o banco HML antes de consultar ou gravar dados.
 
 ## Retomada da carga oficial de NCM
