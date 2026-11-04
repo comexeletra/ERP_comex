@@ -93,18 +93,56 @@ test("a collapsed chart block still says it holds charts and shows their shape",
   for (const messages of [ptBR, en, zhCN]) assert.equal(typeof messages.e2eLines.overview.chartsHidden(3, "1"), "string");
 });
 
-test("the delay range bars are clickable rows sorted by quantity, with no image role", () => {
+test("the delay range bars are clickable rows in chronological order, grouped, with no image role", () => {
   assert.match(overview, /byDelayRange\?: Record<E2eDelayRange, OverviewPart>/u);
-  assert.match(overview, /rankedIndexes\(/u);
+  // Chronological groups from the format library, never sorted by quantity.
+  assert.match(overview, /delayRangeRows\(values, selected\)\.map\(group =>/u);
+  assert.doesNotMatch(overview, /rankedIndexes|\.sort\(/u);
   assert.match(overview, /<button type="button" className=\{`e2e-range-row/u);
   assert.match(overview, /aria-pressed=\{selected\.includes\(entry\.key\)\}/u);
   assert.match(overview, /filterLabel=\{o\.filterByDelayRange\}/u);
-  // The status chart spans the row; the deadline pie and the delay ranges share the next one.
+  // The early ranges share the green of the deadline chart; the late ones follow the severity ramp.
+  assert.match(overview, /inAdvance: "--color-chart-on-time-strong", onTime: "--color-chart-on-time", upTo30: "--color-chart-range-1"/u);
+  assert.match(overview, /days120Plus: "--color-chart-range-6", noData: "--color-chart-no-data"/u);
+  // An empty range draws no bar, so the minimum width only keeps tiny ranges visible.
+  assert.match(overview, /\{entry\.share\.value > 0 && <span className="e2e-range-fill"/u);
+  // The status chart spans the row; the deadline donut and the delay ranges share the next one.
   assert.match(overview, /"e2e-overview-card e2e-overview-card-wide"/u);
   assert.match(overview, /title=\{o\.statusTitle\} total=\{statusTotal\} selected=\{selectedStatuses\.length > 0\} wide/u);
   for (const messages of [ptBR, en, zhCN]) {
     assert.equal(Object.keys(messages.e2eLines.overview.delayRanges).length, 9);
+    assert.deepEqual(Object.keys(messages.e2eLines.overview.delayGroups), ["noDelay", "late", "noInfo"]);
     assert.ok(messages.e2eLines.overview.delayRangeTitle);
+  }
+});
+
+test("the status chart shows the flow steps in status order and highlights the largest one", () => {
+  assert.match(overview, /<StatusSteps entries=\{statusEntries\} top=\{top\} selected=\{selectedStatuses\} onSelect=\{onStatusSelect\}/u);
+  assert.match(overview, /const top = largestIndex\(statusEntries\.map\(entry => entry\.share\.value\)\);/u);
+  assert.match(overview, /<ol className="e2e-status-steps">/u);
+  assert.match(overview, /className=\{`e2e-status-step-tile\$\{index === top \? " is-top" : ""\}/u);
+  assert.match(overview, /<span className="e2e-status-step-note">\{o\.noItems\}<\/span>/u);
+  assert.match(overview, /label=\{o\.largestShare\} value=\{`\$\{largest\.label\} · \$\{largest\.share\.percent\}`\}/u);
+  for (const messages of [ptBR, en, zhCN]) {
+    const o = messages.e2eLines.overview;
+    assert.match(o.step(2), /2/u);
+    for (const text of [o.noItems, o.largestShare, o.over30, o.onTimeCenter]) assert.ok(text);
+  }
+  assert.equal(ptBR.e2eLines.overview.step(1), "Etapa 1");
+});
+
+test("the deadline donut shows the on-time share and the late callout reads the delay ranges", () => {
+  assert.match(overview, /donutSegments\(deadlineEntries\.map\(entry => entry\.share\.value\), \{ radius: 70, gap: 3 \}\)/u);
+  assert.match(overview, /<circle className="e2e-donut-track" cx="92" cy="92" r="70" \/>/u);
+  assert.match(overview, /<span className="e2e-donut-center" aria-hidden="true"><strong>\{onTime\.share\.percent\}<\/strong>/u);
+  // The callout and the chip above 30 days only appear when there is something late.
+  assert.match(overview, /\{insight\.late > 0 && <p className="e2e-overview-callout">/u);
+  assert.match(overview, /insight=\{insight\.over30 > 0 && <InsightChip danger/u);
+  assert.equal(ptBR.e2eLines.overview.lateUpTo30Lead("62%"), "62% dos atrasados");
+  assert.equal(ptBR.e2eLines.overview.lateUpTo30Rest("2 mil", "3 mil"), "estão em até 30 dias · 2 mil de 3 mil");
+  for (const messages of [en, zhCN]) {
+    assert.match(messages.e2eLines.overview.lateUpTo30Lead("62%"), /62%/u);
+    assert.match(messages.e2eLines.overview.lateUpTo30Rest("2", "3"), /2[\s\S]*3/u);
   }
 });
 

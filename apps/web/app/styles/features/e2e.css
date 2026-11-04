@@ -111,32 +111,71 @@
 .e2e-collapsible-toggle svg { transition: transform .2s; }
 .e2e-collapsible-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
 
-/* Item quantities by line status (distribution bar) and total deadline status (compact pie), in the style of the model indicators. */
+/* End to End overview charts: status flow (bar and steps), total deadline status (donut) and total delay ranges
+   (grouped bars), in the style of the model indicators. Each mark takes its colour from --chart-color. */
 .e2e-overview { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .e2e-overview-filters { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); margin-bottom: 16px; padding: 16px 20px; }
-.e2e-overview-card { align-content: start; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); display: grid; gap: 12px; min-width: 0; padding: 16px 20px; }
+.e2e-overview-card { align-content: start; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); display: grid; gap: 20px; min-width: 0; padding: 20px 24px; }
 .e2e-overview-card-wide { grid-column: 1 / -1; }
-.e2e-overview-card-wide .e2e-chart-legend { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.e2e-overview-head { align-items: flex-start; display: flex; gap: 12px; justify-content: space-between; }
-.e2e-overview-head > div { display: grid; gap: 4px; }
-.e2e-overview-head strong { color: var(--color-text-strong); font-size: var(--fs-xl); font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
+.e2e-overview-head { align-items: flex-end; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
+.e2e-overview-title { display: grid; gap: 6px; }
+.e2e-overview-title strong { color: var(--color-text-strong); font-size: var(--fs-xl); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.e2e-overview-head-side { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 16px; }
 .e2e-overview-clear { background: transparent; border: 0; color: var(--color-link); cursor: pointer; font: inherit; font-size: var(--fs-sm); font-weight: 700; padding: 2px 0; }
 .e2e-overview-clear:hover { text-decoration: underline; }
+.e2e-overview-chip { align-items: center; background: color-mix(in srgb, var(--chart-color) 10%, var(--color-surface)); border-radius: var(--radius-pill); color: var(--color-text-strong); display: inline-flex; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; gap: 8px; padding: 6px 12px; }
+.e2e-overview-chip.e2e-overview-chip-danger { background: var(--color-danger-bg); color: var(--color-danger-text); }
+.e2e-overview-dot { background: var(--chart-color); border-radius: 50%; flex: 0 0 8px; height: 8px; }
 .e2e-overview .is-dimmed { opacity: .35; }
-.e2e-distribution { border-radius: var(--radius-sm); display: flex; gap: 2px; height: 14px; overflow: hidden; }
-.e2e-distribution-segment { cursor: pointer; flex-basis: 0; min-width: 3px; transition: opacity .2s; }
+.e2e-overview-meter { background: var(--color-surface-sunken); border-radius: var(--radius-xs); display: block; flex: 1 1 auto; height: 4px; min-width: 0; overflow: hidden; }
+.e2e-overview-meter-fill { background: var(--chart-color); border-radius: var(--radius-xs); display: block; height: 100%; min-width: 3px; }
+.e2e-distribution { border-radius: var(--radius-xs); display: flex; gap: 3px; height: 12px; overflow: hidden; }
+.e2e-distribution-segment { cursor: pointer; flex-basis: 0; min-width: 4px; transition: opacity .2s; }
 .e2e-overview-mini { align-items: center; color: var(--color-text-muted); display: inline-flex; flex-wrap: wrap; font-size: var(--fs-sm); gap: 6px 10px; }
-.e2e-distribution.e2e-distribution-mini { height: 8px; width: 120px; }
-.e2e-distribution-mini .e2e-distribution-segment { cursor: default; }
-.e2e-chart-legend { display: grid; gap: 2px 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); list-style: none; margin: 0; padding: 0; }
-.e2e-chart-legend.e2e-chart-legend-stacked { grid-template-columns: minmax(0, 1fr); max-width: 420px; }
+.e2e-distribution.e2e-distribution-mini { gap: 2px; height: 8px; width: 120px; }
+.e2e-distribution-mini .e2e-distribution-segment { cursor: default; min-width: 3px; }
+/* The statuses in the order of the physical flow, one step each; the largest one is highlighted. */
+.e2e-status-steps { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); list-style: none; margin: 0; padding: 0; }
+.e2e-status-step { display: grid; gap: 10px; grid-template-rows: auto 1fr; min-width: 0; }
+.e2e-status-step-rail { align-items: center; display: flex; gap: 8px; }
+.e2e-status-step-dot { background: var(--chart-color); border-radius: 50%; box-shadow: 0 0 0 4px color-mix(in srgb, var(--chart-color) 18%, var(--color-surface)); flex: 0 0 12px; height: 12px; }
+.e2e-status-step-index { color: var(--color-text-muted); font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .055em; text-transform: uppercase; white-space: nowrap; }
+.e2e-status-step-line { background: var(--color-border); flex: 1 1 auto; height: 1px; }
+.e2e-status-step:last-child .e2e-status-step-line { display: none; }
+.e2e-status-step-tile { align-content: start; background: var(--color-surface-muted); border: 1px solid transparent; border-radius: var(--radius-md); color: var(--color-text); cursor: pointer; display: grid; font: inherit; gap: 6px; padding: 14px; text-align: left; transition: background .2s, opacity .2s; width: 100%; }
+.e2e-status-step-tile:hover { background: var(--color-surface-sunken); }
+.e2e-status-step-tile[aria-pressed="true"] { border-color: var(--chart-color); }
+.e2e-status-step-tile.is-top { background: color-mix(in srgb, var(--chart-color) 9%, var(--color-surface)); border-color: color-mix(in srgb, var(--chart-color) 30%, var(--color-surface)); }
+.e2e-status-step-tile.is-top .e2e-overview-meter { background: color-mix(in srgb, var(--chart-color) 18%, var(--color-surface)); }
+.e2e-status-step-label { color: var(--color-text-secondary); font-size: var(--fs-sm); font-weight: 700; }
+.e2e-status-step-value { color: var(--color-text-strong); font-size: var(--fs-lg); font-variant-numeric: tabular-nums; }
+.e2e-status-step-value.is-empty { color: var(--color-text-muted); }
+.e2e-status-step-note { color: var(--color-text-muted); font-size: var(--fs-xs); }
+.e2e-status-step-share { align-items: center; display: flex; font-size: var(--fs-xs); font-weight: 700; gap: 8px; }
+/* Deadline donut with the on-time share in the centre and a legend with meters. */
+.e2e-donut-layout { align-items: center; display: flex; flex-wrap: wrap; gap: 28px; }
+.e2e-donut { flex: 0 0 184px; height: 184px; position: relative; }
+.e2e-donut svg { display: block; height: 100%; width: 100%; }
+.e2e-donut circle { fill: none; stroke-width: 22px; }
+.e2e-donut-track { stroke: var(--color-surface-sunken); }
+.e2e-donut-segment { cursor: pointer; stroke: var(--chart-color); transition: opacity .2s; }
+.e2e-donut-center { align-content: center; display: grid; gap: 2px; inset: 0; justify-items: center; pointer-events: none; position: absolute; }
+.e2e-donut-center strong { color: var(--color-chart-on-time-strong); font-size: var(--fs-xl); font-variant-numeric: tabular-nums; }
+.e2e-donut-center span { color: var(--color-text-muted); font-size: var(--fs-xs); }
+.e2e-chart-legend { display: grid; flex: 1 1 220px; gap: 6px; list-style: none; margin: 0; min-width: 0; padding: 0; }
 .e2e-chart-legend li { min-width: 0; }
-.e2e-chart-legend-item { align-items: center; background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--color-text); cursor: pointer; display: grid; font: inherit; font-size: var(--fs-sm); gap: 8px; grid-template-columns: 10px minmax(0, 1fr) auto 3.5em; padding: 4px 6px; text-align: left; transition: opacity .2s; width: 100%; }
+.e2e-chart-legend-item { align-items: center; background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--color-text); cursor: pointer; display: grid; font: inherit; font-size: var(--fs-sm); gap: 6px 8px; grid-template-columns: 10px minmax(0, 1fr) auto 3.5em; padding: 6px 8px; text-align: left; transition: opacity .2s; width: 100%; }
 .e2e-chart-legend-item:hover, .e2e-chart-legend-item[aria-pressed="true"] { background: var(--color-surface-sunken); }
 .e2e-chart-legend-item strong { color: var(--color-text-strong); font-variant-numeric: tabular-nums; }
+.e2e-chart-legend-item.is-empty, .e2e-chart-legend-item.is-empty strong { color: var(--color-text-muted); }
+.e2e-chart-legend-item.is-empty .e2e-chart-swatch { background: transparent; border: 1.5px dashed var(--chart-color); }
 .e2e-chart-legend-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .e2e-chart-legend-share { color: var(--color-text-muted); font-variant-numeric: tabular-nums; text-align: right; }
-.e2e-chart-swatch { border-radius: var(--radius-xs); display: block; height: 10px; width: 10px; }
+.e2e-chart-legend-meter { display: flex; grid-column: 2 / -1; }
+.e2e-chart-swatch { background: var(--chart-color); border-radius: var(--radius-xs); box-sizing: border-box; display: block; height: 10px; width: 10px; }
+.e2e-overview-callout { align-items: center; background: var(--color-surface-muted); border-radius: var(--radius-md); color: var(--color-text-secondary); display: flex; font-size: var(--fs-sm); gap: 12px; margin: 0; padding: 12px 14px; }
+.e2e-overview-callout strong { color: var(--color-text-strong); }
+.e2e-overview-callout-icon { fill: none; flex: 0 0 20px; height: 20px; stroke: var(--color-chart-late); stroke-linecap: round; stroke-linejoin: round; stroke-width: 2px; }
 /* Tooltip card of the overview charts: category, full quantity, share, lines and what a click does. */
 .e2e-chart-tip { display: grid; gap: 6px; min-width: 190px; white-space: normal; }
 .e2e-chart-tip-name { align-items: center; display: flex; font-weight: 700; gap: 8px; }
@@ -145,15 +184,16 @@
 .e2e-chart-tip dt { color: var(--color-tooltip-muted); }
 .e2e-chart-tip dd { font-variant-numeric: tabular-nums; font-weight: 700; margin: 0; text-align: right; }
 .e2e-chart-tip-hint { border-top: 1px solid var(--color-tooltip-border); color: var(--color-tooltip-muted); font-size: var(--fs-xs); padding-top: 6px; }
-.e2e-pie-layout { align-items: center; display: grid; gap: 16px; grid-template-columns: 120px minmax(0, 1fr); }
-.e2e-pie { display: block; height: 120px; width: 120px; }
-.e2e-pie path { cursor: pointer; stroke: var(--color-surface); stroke-width: 2px; transition: opacity .2s; }
+/* Delay ranges in chronological order, grouped into no delay, late and no information. */
+.e2e-range-groups { display: grid; gap: 14px; }
+.e2e-range-group { display: grid; gap: 6px; }
+.e2e-range-group + .e2e-range-group { border-top: 1px solid var(--color-border); padding-top: 14px; }
 .e2e-range-bars { display: grid; gap: 2px; list-style: none; margin: 0; padding: 0; }
 .e2e-range-row { align-items: center; background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--color-text); cursor: pointer; display: grid; font: inherit; font-size: var(--fs-sm); gap: 10px; grid-template-columns: minmax(0, 9em) minmax(0, 1fr) 6.5em 3.5em; padding: 4px 6px; text-align: left; transition: opacity .2s; width: 100%; }
 .e2e-range-row:hover, .e2e-range-row[aria-pressed="true"] { background: var(--color-surface-sunken); }
 .e2e-range-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.e2e-range-track { background: var(--color-border); border-radius: var(--radius-sm); display: block; height: 10px; min-width: 0; overflow: hidden; }
-.e2e-range-fill { border-radius: var(--radius-sm); display: block; height: 100%; min-width: 3px; }
+.e2e-range-track { background: var(--color-surface-sunken); border-radius: var(--radius-sm); display: block; height: 10px; min-width: 0; overflow: hidden; }
+.e2e-range-fill { background: var(--chart-color); border-radius: var(--radius-sm); display: block; height: 100%; min-width: 6px; }
 .e2e-range-row strong { color: var(--color-text-strong); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 
 /* Lead-time ruler */
@@ -259,15 +299,13 @@
   .e2e-kpis.e2e-kpis-four, .e2e-stage-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .e2e-gantt-row { grid-template-columns: 130px minmax(0, 1fr) 110px; }
   .e2e-overview { grid-template-columns: 1fr; }
-  .e2e-overview-card-wide .e2e-chart-legend { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
   .e2e-flow .e2e-phases, .e2e-kpis, .e2e-kpis.e2e-kpis-four, .e2e-stage-list { grid-template-columns: 1fr; }
   .e2e-gantt-row { grid-template-columns: 1fr; }
   .e2e-phase { min-height: 0; }
   .e2e-detail { flex-direction: column; gap: 16px; }
-  .e2e-chart-legend, .e2e-overview-card-wide .e2e-chart-legend { grid-template-columns: minmax(0, 1fr); }}
+}
 @media (max-width: 480px) {
-  .e2e-pie-layout { grid-template-columns: 1fr; justify-items: center; }
-  .e2e-pie-layout .e2e-chart-legend { width: 100%; }
+  .e2e-donut-layout { justify-content: center; }
 }

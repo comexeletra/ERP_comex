@@ -177,7 +177,13 @@ test("End to End charts define the approved palette in both themes", () => {
     "--color-chart-on-limit": ["#a87300", "#b8841a"],
     "--color-chart-late": ["#b02a3a", "#d0384f"],
     "--color-chart-no-data": ["#4f5d65", "#b4c1c8"],
-    "--color-chart-range": ["#037599", "#2f96c2"],
+    "--color-chart-on-time-strong": ["#17805f", "#3cbf96"],
+    "--color-chart-range-1": ["#b07000", "#d49a2e"],
+    "--color-chart-range-2": ["#c4601f", "#df7d3e"],
+    "--color-chart-range-3": ["#c2452b", "#e2634a"],
+    "--color-chart-range-4": ["#ae3036", "#e44f5a"],
+    "--color-chart-range-5": ["#8a2232", "#e0526f"],
+    "--color-chart-range-6": ["#6a1828", "#d8608a"],
   };
   for (const [token, [lightValue, darkValue]] of Object.entries(expected)) {
     assert.equal(light[token], lightValue, token);
@@ -193,12 +199,29 @@ test("the End to End overview puts the status chart on its own row and two chart
   assert.match(css, /\.e2e-overview-card-wide \{[^}]*grid-column:\s*1 \/ -1;/u);
   assert.ok(css.includes(".e2e-range-row {") && css.includes(".e2e-range-fill {"));
   assert.match(css, /@media \(max-width: 1100px\) \{[^@]*\.e2e-overview \{ grid-template-columns: 1fr; \}/u);
-  for (const rule of [".e2e-distribution {", ".e2e-distribution-segment {", ".e2e-chart-legend-item {", ".e2e-pie-layout {"]) {
+  for (const rule of [".e2e-distribution {", ".e2e-distribution-segment {", ".e2e-chart-legend-item {", ".e2e-status-steps {",
+    ".e2e-donut {", ".e2e-range-groups {"]) {
     assert.ok(css.includes(rule), rule);
   }
-  // No Excel-like external labels or guide lines, and a pie no larger than the legend beside it.
-  for (const rule of [".e2e-pie-guide", ".e2e-pie-label", ".e2e-pie-action"]) assert.ok(!css.includes(rule), rule);
-  assert.match(css, /\.e2e-pie \{[^}]*height:\s*120px;[^}]*width:\s*120px;/u);
+  // Tiny shares stay visible: 4 px in the status bar, 6 px in the delay ranges.
+  assert.match(css, /\.e2e-distribution \{[^}]*gap: 3px;[^}]*height: 12px;/u);
+  assert.match(css, /\.e2e-distribution-segment \{[^}]*min-width: 4px;/u);
+  assert.match(css, /\.e2e-range-fill \{[^}]*min-width: 6px;/u);
+  // A donut instead of the pie, with the steps wrapping on narrow screens.
+  assert.match(css, /\.e2e-donut \{[^}]*flex: 0 0 184px;[^}]*height: 184px;/u);
+  assert.match(css, /\.e2e-donut circle \{[^}]*fill: none;[^}]*stroke-width: 22px;/u);
+  assert.match(css, /\.e2e-status-steps \{[^}]*grid-template-columns: repeat\(auto-fit, minmax\(160px, 1fr\)\);/u);
+  for (const rule of [".e2e-pie", ".e2e-chart-legend-stacked"]) assert.ok(!css.includes(rule), rule);
+  // Tints mix the chart colour with the surface, so they follow the dark theme.
+  const mixes = [...css.matchAll(/color-mix\(in srgb, var\((--[\w-]+)\) \d+%, var\((--[\w-]+)\)\)/gu)];
+  assert.equal(mixes.length, css.split("color-mix(").length - 1);
+  for (const mix of mixes) assert.deepEqual([mix[1], mix[2]], ["--chart-color", "--color-surface"]);
+});
+
+test("the on-time share in the donut centre is readable text in both themes", () => {
+  const light = tokenValues(":root");
+  const dark = { ...light, ...tokenValues(':root[data-theme="dark"]') };
+  for (const values of [light, dark]) assert.ok(contrast(values["--color-chart-on-time-strong"], values["--color-surface"]) >= 4.5);
 });
 
 test("font sizes, radii and layers use the token scales", () => {

@@ -82,7 +82,14 @@
   --color-chart-on-limit: #a87300;
   --color-chart-late: #b02a3a;
   --color-chart-no-data: #4f5d65;
-  --color-chart-range: #037599;
+  /* Delay ranges: the deep green of the early items, then a severity ramp from amber to wine */
+  --color-chart-on-time-strong: #17805f;
+  --color-chart-range-1: #b07000;
+  --color-chart-range-2: #c4601f;
+  --color-chart-range-3: #c2452b;
+  --color-chart-range-4: #ae3036;
+  --color-chart-range-5: #8a2232;
+  --color-chart-range-6: #6a1828;
 
   /* Navigation */
   --sidebar-bg: #0b2a37;
@@ -219,7 +226,13 @@
   --color-chart-on-limit: #b8841a;
   --color-chart-late: #d0384f;
   --color-chart-no-data: #b4c1c8;
-  --color-chart-range: #2f96c2;
+  --color-chart-on-time-strong: #3cbf96;
+  --color-chart-range-1: #d49a2e;
+  --color-chart-range-2: #df7d3e;
+  --color-chart-range-3: #e2634a;
+  --color-chart-range-4: #e44f5a;
+  --color-chart-range-5: #e0526f;
+  --color-chart-range-6: #d8608a;
 
   --sidebar-bg: #0a222d;
   --sidebar-hover: #12394a;

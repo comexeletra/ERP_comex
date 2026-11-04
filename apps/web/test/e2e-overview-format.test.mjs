@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { overviewShares, overviewTip, overviewTotal, rankedIndexes } from "../lib/e2e-overview-format.ts";
+import { delayRangeGroups, delayRangeInsight, delayRangeRows, formatShare, largestIndex, overviewShares, overviewTip, overviewTotal }
+  from "../lib/e2e-overview-format.ts";
+import { e2eDelayRanges } from "../lib/purchase-order-lines.ts";
 import { en } from "../lib/i18n/en.ts";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
 import { zhCN } from "../lib/i18n/zh-CN.ts";
@@ -44,13 +46,43 @@ test("the overview format stays free of UI text and value imports", async () => 
   assert.doesNotMatch(source, /formatNumber/u);
 });
 
-test("delay range bars go from the largest quantity down and skip empty ranges", () => {
-  // As in Power BI: sorted by value; ties keep the range order; an empty range is not drawn.
-  assert.deepEqual(rankedIndexes([807420, 189, 126244, 0, 359, 544, 60, 1, 3], -1), [0, 2, 5, 4, 1, 6, 8, 7]);
-  assert.deepEqual(rankedIndexes([5, 0, 5, 0], -1), [0, 2]);
-  // The selected range stays visible even when the other charts leave it empty.
-  assert.deepEqual(rankedIndexes([5, 0, 2], 1), [0, 2, 1]);
-  assert.deepEqual(rankedIndexes([0, 0], -1), []);
+const ranges = values => Object.fromEntries(e2eDelayRanges.map((key, index) => [key, values[index] ?? 0]));
+
+test("the delay range groups keep every range once, in chronological order", () => {
+  assert.deepEqual(delayRangeGroups.map(group => group.key), ["noDelay", "late", "noInfo"]);
+  assert.deepEqual(delayRangeGroups.flatMap(group => group.ranges), [...e2eDelayRanges]);
+});
+
+test("delay range rows go in chronological order, never by quantity, and skip empty ranges and groups", () => {
+  // inAdvance, onTime, upTo30, 30-45, 45-60, 60-90, 90-120, 120+, noData
+  const rows = delayRangeRows(ranges([0, 189, 807420, 0, 359, 544, 60, 0, 3]), []);
+  assert.deepEqual(rows.map(row => [row.key, row.ranges, row.total]), [
+    ["noDelay", ["onTime"], 189],
+    ["late", ["upTo30", "days45To60", "days60To90", "days90To120"], 808383],
+    ["noInfo", ["noData"], 3],
+  ]);
+  // A selected range stays visible even when the other charts leave it empty.
+  assert.deepEqual(delayRangeRows(ranges([0, 0, 5]), ["days120Plus"]).map(row => row.ranges), [["upTo30", "days120Plus"]]);
+  assert.deepEqual(delayRangeRows(ranges([]), []), []);
+});
+
+test("the delay range insight splits the late quantity at 30 days", () => {
+  assert.deepEqual(delayRangeInsight(ranges([4, 6, 30, 10, 5, 3, 1, 1, 40])),
+    { total: 100, late: 50, upTo30: 30, over30: 20 });
+  assert.deepEqual(delayRangeInsight(ranges([])), { total: 0, late: 0, upTo30: 0, over30: 0 });
+});
+
+test("the largest category is the first with the highest quantity, and none when all are empty", () => {
+  assert.equal(largestIndex([3, 9, 9, 1]), 1);
+  assert.equal(largestIndex([0, 0]), -1);
+  assert.equal(largestIndex([]), -1);
+});
+
+test("a share of a total uses the chart format and never divides by zero", () => {
+  assert.deepEqual(Object.entries(formatShare(1200, 4800, "pt-BR")).map(([key, value]) => [key, plain(value)]),
+    [["compact", "1,2 mil"], ["percent", "25%"]]);
+  assert.deepEqual(formatShare(0, 0, "pt-BR"), { compact: "—", percent: "—" });
+  assert.equal(formatShare(1, 20000, "pt-BR").percent, "<0,01%");
 });
 
 test("the chart tooltip card shows the full quantity, the share, the lines and what a click does", () => {
