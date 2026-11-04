@@ -39,6 +39,7 @@ const webRoutes = [
   ["PATCH", "/api/v1/icms-rates/importers/:importer"],
   ["GET", "/api/v1/purchase-orders"], ["GET", "/api/v1/purchase-orders/summary"],
   ["GET", "/api/v1/purchase-order-lines"], ["GET", "/api/v1/purchase-order-lines/e2e-stages"],
+  ["GET", "/api/v1/purchase-order-lines/filter-options"],
   ["GET", "/api/v1/purchase-orders/:id/overview"],
   ["GET", "/api/v1/purchase-orders/:id/history-items"],
   ["GET", "/api/v1/purchase-orders/:id/operational"],

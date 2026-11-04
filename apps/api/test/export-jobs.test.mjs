@@ -76,6 +76,20 @@ test("product line exports keep the End to End deadline status filter", async t 
   assert.equal(invalid.statusCode, 400, invalid.body);
 });
 
+test("product line exports keep the group, purpose and necessity filters of the End to End summary", async t => {
+  const { app, queries } = await exportApp(t);
+  const queued = await app.inject({ method: "POST", url: "/api/v1/exports/purchase-order-lines",
+    payload: { group: "Energy", purpose: "Despesa", necessityFrom: "2026-11-01", necessityTo: "2026-11-30" } });
+  assert.equal(queued.statusCode, 202, queued.body);
+  const stored = JSON.parse(queries.filter(query => query.sql.includes("INSERT INTO jobs.export_job")).at(-1).params[4]);
+  assert.deepEqual(stored, { group: "Energy", purpose: "Despesa", necessityFrom: "2026-11-01", necessityTo: "2026-11-30",
+    situation: "open" });
+  assert.equal(shipmentLineQuery.strict().safeParse(stored).success, true);
+  const invalid = await app.inject({ method: "POST", url: "/api/v1/exports/purchase-order-lines",
+    payload: { necessityFrom: "01/11/2026" } });
+  assert.equal(invalid.statusCode, 400, invalid.body);
+});
+
 test("recent exports list both PO and product line exports with their type", async t => {
   const { app, queries } = await exportApp(t);
   const response = await app.inject({ method: "GET", url: "/api/v1/exports" });

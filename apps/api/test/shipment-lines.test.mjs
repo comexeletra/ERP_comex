@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import Fastify from "fastify";
 import { registerAuthorization } from "../dist/authorization.js";
-import { registerShipmentLineRoutes, shipmentLineStatuses, shipmentStatusSql } from "../dist/shipment-lines.js";
+import { z } from "zod";
+import { registerShipmentLineRoutes, shipmentLineQuery, shipmentLineStatuses, shipmentStatusSql } from "../dist/shipment-lines.js";
 
 const actorId = "00000000-0000-4000-8000-000000000001";
 const poId = "00000000-0000-4000-8000-000000000041";
@@ -31,6 +32,9 @@ async function linesApp(t, rows = defaultRows, documents = defaultDocuments) {
     async query(sql, params = []) {
       queries.push({ sql, params });
       if (sql.includes("identity.erp_user AS u")) return { rows: [{ role: "Consulta", importer_code: "ELETRA MATRIZ" }] };
+      if (sql.includes("filter_groups")) return { rows: [{ filter_groups: ["Water", "Energy"], filter_purposes: ["Revenda", "Despesa"],
+        filter_importers: ["FOR", "ELETRA MATRIZ"], filter_purchase_orders: ["PO-10", "PO-9"], filter_ip_numbers: ["IP-2", "IP-1"],
+        filter_products: [{ code: "P-10", description: null }, { code: "P-2", description: "Produto 2" }] }] };
       if (sql.includes("line_kind")) return { rows: [{ total_count: rows.length, items: rows }] };
       if (sql.includes("FROM imports.process_document")) return { rows: documents };
       return { rows: [] };
@@ -93,6 +97,72 @@ test("filters are validated and passed to the query; open lines are the default"
   assert.ok(lines.params.includes(25) && lines.params.includes(25));
   assert.deepEqual(shipmentLineStatuses, ["A DISTRIBUIR", "AGUARDANDO PRODUÇÃO", "AGUARDANDO EMBARQUE",
     "AGUARDANDO CHEGADA", "DESEMBARAÇO", "ENTREGUE", "CANCELADO"]);
+});
+
+test("product lines filter by group, purpose and necessity period in the query", async t => {
+  const { app, queries } = await linesApp(t);
+  const filtered = await app.inject({ method: "GET",
+    url: "/api/v1/purchase-order-lines?group=Energy&purpose=Estoque%20Revenda&necessityFrom=2026-11-01&necessityTo=2026-11-30&page=2&pageSize=25" });
+  assert.equal(filtered.statusCode, 200, filtered.body);
+  const lines = queries.filter(query => query.sql.includes("line_kind")).at(-1);
+  assert.deepEqual(lines.params.slice(9, 13), ["Energy", "Estoque Revenda", "2026-11-01", "2026-11-30"]);
+  // The page stays at the end of the parameters.
+  assert.deepEqual(lines.params.slice(-2), [25, 25]);
+  assert.match(lines.sql, /lower\(btrim\(coalesce\(to_jsonb\(item\)->>'item_group', ''\)\)\) = lower\(\$10\)/u);
+  assert.match(lines.sql, /lower\(btrim\(coalesce\(item\.purpose, ''\)\)\) = lower\(\$11\)/u);
+  assert.match(lines.sql, /item\.necessity_date >= \$12::date/u);
+  assert.match(lines.sql, /item\.necessity_date <= \$13::date/u);
+  // Without them the filters stay off.
+  await app.inject({ method: "GET", url: "/api/v1/purchase-order-lines" });
+  assert.deepEqual(queries.filter(query => query.sql.includes("line_kind")).at(-1).params.slice(9, 13), [null, null, null, null]);
+  for (const query of ["necessityFrom=2026-13-01", "necessityTo=30/11/2026", `group=${"G".repeat(121)}`, `purpose=${"P".repeat(161)}`]) {
+    const invalid = await app.inject({ method: "GET", url: `/api/v1/purchase-order-lines?${query}` });
+    assert.equal(invalid.statusCode, 400, query);
+  }
+});
+
+test("the E2E summary takes the group, purpose and necessity filters", async t => {
+  const { app, queries } = await linesApp(t);
+  const response = await app.inject({ method: "GET",
+    url: "/api/v1/purchase-order-lines/e2e-stages?group=Water&purpose=Despesa&necessityFrom=2026-01-01&necessityTo=2026-12-31" });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.deepEqual(queries.filter(query => query.sql.includes("line_kind")).at(-1).params.slice(9, 13),
+    ["Water", "Despesa", "2026-01-01", "2026-12-31"]);
+  // The options of the filter form have their own route, so the summary does not repeat them at every filter.
+  assert.equal("filterOptions" in response.json(), false);
+  assert.equal(queries.some(query => query.sql.includes("filter_groups")), false);
+});
+
+test("the filter options list the values of every product line of the user's importers", async t => {
+  const { app, queries } = await linesApp(t);
+  const response = await app.inject({ method: "GET", url: "/api/v1/purchase-order-lines/filter-options" });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.equal(response.headers["cache-control"], "no-store");
+  // Sorted, numbers in numeric order, products by code.
+  assert.deepEqual(response.json(), { groups: ["Energy", "Water"], purposes: ["Despesa", "Revenda"],
+    importers: ["ELETRA MATRIZ", "FOR"], purchaseOrders: ["PO-9", "PO-10"], ipNumbers: ["IP-1", "IP-2"],
+    products: [{ code: "P-2", description: "Produto 2" }, { code: "P-10", description: null }] });
+  const options = queries.find(query => query.sql.includes("filter_groups"));
+  assert.deepEqual(options.params, [["ELETRA MATRIZ"]]);
+  assert.match(options.sql, /po\.importer = ANY\(\$1::text\[\]\)/u);
+  assert.match(options.sql, /po\.lifecycle_status IN \('ACTIVE', 'CLOSED'\)/u);
+  assert.doesNotMatch(options.sql, /\$2/u);
+});
+
+test("the End to End summary filters built by the web pass the API query schema", async () => {
+  const { e2eSummaryQuery, emptyE2eStageFilter, emptyProductLineFilters, necessityRange, productLineQuery } =
+    await import("../../web/lib/purchase-order-lines.ts");
+  const filters = { ...emptyProductLineFilters, status: "AGUARDANDO CHEGADA", group: " Energy ", purpose: "Despesa",
+    ...necessityRange("currentMonth", "2026-11-04") };
+  const stage = { ...emptyE2eStageFilter, stage: "T4", demandType: "mts" };
+  const summary = Object.fromEntries(e2eSummaryQuery(filters, stage));
+  const parsed = shipmentLineQuery.strict().safeParse(summary);
+  assert.equal(parsed.success, true, JSON.stringify(summary));
+  assert.deepEqual([parsed.data.group, parsed.data.purpose, parsed.data.necessityFrom, parsed.data.necessityTo],
+    ["Energy", "Despesa", "2026-11-01", "2026-11-30"]);
+  const page = Object.fromEntries(productLineQuery(filters, 2, 50, stage));
+  assert.equal(shipmentLineQuery.extend({ page: z.coerce.number(), pageSize: z.coerce.number() }).strict()
+    .safeParse(page).success, true, JSON.stringify(page));
 });
 
 test("the SQL status follows the same order of rules as the API calculation", () => {

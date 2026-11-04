@@ -15,6 +15,8 @@ export const shipmentLineStatuses = ["A DISTRIBUIR", "AGUARDANDO PRODUÇÃO", "A
 export type ShipmentLineFilters = {
   importer?: string; purchaseOrder?: string; ipNumber?: string; product?: string;
   status?: (typeof shipmentLineStatuses)[number]; etaFrom?: string; etaTo?: string; situation: "open" | "all";
+  /** Group and purpose of the PO product (exact, ignoring case and outer spaces) and its necessity period. */
+  group?: string; purpose?: string; necessityFrom?: string; necessityTo?: string;
   /** E2E stage: the lines now in it (`current`) or those that already have its actual date (`reached`). */
   stage?: E2eStageCode; view?: "current" | "reached"; late?: "true";
   /** Total End to End delay status (Power BI in_time_late) of the line. */
@@ -120,6 +122,10 @@ const linesSql = `WITH balance AS (
       AND ($4::text IS NULL OR strpos(lower(coalesce(p.ip_number, '')), lower($4)) > 0)
       AND ($5::text IS NULL OR strpos(lower(item.product_code), lower($5)) > 0
         OR strpos(lower(item.description), lower($5)) > 0)
+      AND ($10::text IS NULL OR lower(btrim(coalesce(to_jsonb(item)->>'item_group', ''))) = lower($10))
+      AND ($11::text IS NULL OR lower(btrim(coalesce(item.purpose, ''))) = lower($11))
+      AND ($12::date IS NULL OR item.necessity_date >= $12::date)
+      AND ($13::date IS NULL OR item.necessity_date <= $13::date)
   ), filtered AS MATERIALIZED (
     SELECT * FROM enriched
     WHERE ($6::text IS NULL OR line_status = $6)
@@ -128,7 +134,7 @@ const linesSql = `WITH balance AS (
   ), page AS (
     SELECT * FROM filtered
     ORDER BY normalized_number, po_id, line_number, line_kind, sort_ip_number NULLS LAST, line_id
-    LIMIT $10 OFFSET $11
+    LIMIT $14 OFFSET $15
   )
   SELECT (SELECT count(*)::int FROM filtered) AS total_count,
     coalesce(jsonb_agg(jsonb_build_object('line_id', page.line_id, 'line_kind', page.line_kind,
@@ -245,7 +251,8 @@ async function queryLineRows(pool: Pool, scopes: readonly string[], filters: Shi
   limit: number | null, offset: number) {
   const result = await pool.query<{ total_count: number; items: Row[] }>(linesSql, [scopes,
     filters.importer || null, filters.purchaseOrder || null, filters.ipNumber || null, filters.product || null,
-    filters.status ?? null, filters.etaFrom ?? null, filters.etaTo ?? null, filters.situation, limit, offset]);
+    filters.status ?? null, filters.etaFrom ?? null, filters.etaTo ?? null, filters.situation,
+    filters.group || null, filters.purpose || null, filters.necessityFrom ?? null, filters.necessityTo ?? null, limit, offset]);
   return { totalCount: Number(result.rows[0]?.total_count ?? 0), rows: result.rows[0]?.items ?? [] };
 }
 
@@ -265,6 +272,44 @@ export async function queryShipmentLines(pool: Pool, scopes: readonly string[], 
     .filter(line => matchesE2eStage(line, filters) && matchesDeadline(line, filters.deadline)
       && matchesDelayRange(line, filters.delayRange) && matchesScenario(line, filters));
   return { totalCount: lines.length, lines: lines.slice(offset, offset + limit) };
+}
+
+// Values of every product line of the importers for the End to End filter form; they do not
+// depend on the filters, so choosing one does not hide the others.
+const filterOptionsSql = `WITH scoped AS (
+    SELECT item.id AS item_id, po.importer, po.external_number, item.product_code, item.description,
+      to_jsonb(item)->>'item_group' AS item_group, item.purpose
+    FROM procurement.purchase_order_item AS item
+    JOIN procurement.purchase_order AS po ON po.id = item.purchase_order_id
+    WHERE po.importer = ANY($1::text[]) AND po.lifecycle_status IN ('ACTIVE', 'CLOSED')
+  )
+  SELECT
+    coalesce(array_agg(DISTINCT btrim(item_group)) FILTER (WHERE nullif(btrim(item_group), '') IS NOT NULL), '{}') AS filter_groups,
+    coalesce(array_agg(DISTINCT btrim(purpose)) FILTER (WHERE nullif(btrim(purpose), '') IS NOT NULL), '{}') AS filter_purposes,
+    coalesce(array_agg(DISTINCT importer), '{}') AS filter_importers,
+    coalesce(array_agg(DISTINCT btrim(external_number)) FILTER (WHERE nullif(btrim(external_number), '') IS NOT NULL), '{}')
+      AS filter_purchase_orders,
+    (SELECT coalesce(array_agg(DISTINCT btrim(p.ip_number)) FILTER (WHERE nullif(btrim(p.ip_number), '') IS NOT NULL), '{}')
+      FROM procurement.po_item_allocation AS a JOIN imports.import_process AS p ON p.id = a.process_id
+      WHERE a.status = 'ACTIVE' AND a.purchase_order_item_id IN (SELECT item_id FROM scoped)) AS filter_ip_numbers,
+    (SELECT coalesce(jsonb_agg(jsonb_build_object('code', product.code, 'description', product.description)), '[]')
+      FROM (SELECT btrim(product_code) AS code, min(description) AS description FROM scoped
+        WHERE nullif(btrim(product_code), '') IS NOT NULL GROUP BY 1) AS product) AS filter_products
+  FROM scoped`;
+
+type FilterOptionRow = { filter_groups: string[] | null; filter_purposes: string[] | null; filter_importers: string[] | null;
+  filter_purchase_orders: string[] | null; filter_ip_numbers: string[] | null;
+  filter_products: { code: string; description: string | null }[] | null };
+
+const byText = (a: string, b: string) => a.localeCompare(b, "pt-BR", { numeric: true });
+
+/** Groups, purposes, importers, POs, IPs and products (code and one description) of the importers, sorted. */
+export async function queryShipmentLineFilterOptions(pool: Pool, scopes: readonly string[]) {
+  const row = (await pool.query<FilterOptionRow>(filterOptionsSql, [scopes])).rows[0];
+  const sorted = (values: string[] | null | undefined) => [...(values ?? [])].sort(byText);
+  return { groups: sorted(row?.filter_groups), purposes: sorted(row?.filter_purposes), importers: sorted(row?.filter_importers),
+    purchaseOrders: sorted(row?.filter_purchase_orders), ipNumbers: sorted(row?.filter_ip_numbers),
+    products: [...(row?.filter_products ?? [])].sort((a, b) => byText(a.code, b.code)) };
 }
 
 /**
@@ -307,6 +352,8 @@ const lineFilterQuery = z.object({
   importer: optionalText(120), purchaseOrder: optionalText(80), ipNumber: optionalText(80), product: optionalText(200),
   status: z.enum(shipmentLineStatuses).optional(), etaFrom: z.iso.date().optional(), etaTo: z.iso.date().optional(),
   situation: z.enum(["open", "all"]).default("open"), deadline: z.enum(deadlineStatuses).optional(),
+  group: optionalText(120), purpose: optionalText(160),
+  necessityFrom: z.iso.date().optional(), necessityTo: z.iso.date().optional(),
   delayRange: z.enum(E2E_DELAY_RANGES).optional(),
   demandType: z.enum(["mts", "notMts"]).optional(), modal: z.enum(["sea", "air"]).optional(),
 });
@@ -334,6 +381,13 @@ export async function registerShipmentLineRoutes(app: FastifyInstance, pool: Poo
     reply.header("Cache-Control", "no-store");
     return { page, pageSize, ...result };
   });
+
+  app.get("/api/v1/purchase-order-lines/filter-options", { config: permissionConfig("purchase-orders.read") },
+    async (request, reply) => {
+      const result = await queryShipmentLineFilterOptions(pool, request.authorizationContext?.importerScopes ?? []);
+      reply.header("Cache-Control", "no-store");
+      return result;
+    });
 
   app.get("/api/v1/purchase-order-lines/e2e-stages", { config: permissionConfig("purchase-orders.read") },
     async (request, reply) => {
