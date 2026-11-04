@@ -15,6 +15,16 @@ Este plano substitui, naquele documento, a decisão D2 (pizza compacta de 120 px
 | V5 | **Cores:** os tokens de status e prazo já existentes. As faixas ganham `--color-chart-on-time-strong` (Adiantado e % do centro da rosca, texto AA) e a rampa `--color-chart-range-1` a `-6` (âmbar → vinho no tema claro; no escuro, sobe para rosa para manter o contraste). "No prazo" usa o mesmo verde da rosca. `--color-chart-range` deixou de existir. |
 | V6 | **Regras do projeto acima do pacote:** cores literais só em `tokens.css`, misturas com `color-mix(in srgb, var(--chart-color) N%, var(--color-surface))` para seguir o tema escuro, escalas `--fs-*`/`--radius-*`, classes `e2e-overview-*`/`e2e-status-step-*`/`e2e-donut-*`/`e2e-range-*` e os formatos de `overviewShares`, que respeitam o idioma. |
 
+## Movimento (pedido do usuário, 2026-11-04)
+
+| # | Decisão |
+|---|---|
+| M1 | Ao trocar um filtro ou a seleção, nada muda de uma vez: totais, quantidades e % contam do valor na tela até o novo (`useTweenedNumber`, `lib/motion.ts`); larguras, `flex-grow`, arcos da rosca e cores passam por transição. Uma duração e uma curva para tudo: `--motion-chart` (.6s) e `--ease-organic` (ease-out quint, a mesma de `easeOrganic`). |
+| M2 | Status e rosca mantêm todas as categorias desenhadas: a vazia encolhe até zero (o segmento devolve o espaço entre barras; o arco fica com comprimento 0 na sua posição) e cresce de novo quando volta. |
+| M3 | Na primeira carga: os cards sobem em sequência, as etapas entram uma após a outra (60 ms cada), as barras crescem da esquerda, a rosca se desenha e os números contam a partir de zero. O chip "Maior concentração" reaparece com fade quando outro status assume a liderança. |
+| M4 | As faixas de atraso que entram na lista sobem com fade; a que zera sai sem animação, porque faixa vazia não fica na tela. |
+| M5 | Com "reduzir movimento" no sistema, tudo troca direto: o CSS desliga animações e transições do resumo, e o contador mostra o valor final no quadro seguinte. Os `aria-label` sempre trazem o valor final, nunca o contado. |
+
 ## Onde fica
 
 - Componente: `apps/web/components/E2eOverviewCharts.tsx` (mesmas props; `E2eLinesView` não mudou).

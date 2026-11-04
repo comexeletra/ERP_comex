@@ -122,7 +122,9 @@ test("the status chart shows the flow steps in status order and highlights the l
   assert.match(overview, /<ol className="e2e-status-steps">/u);
   assert.match(overview, /className=\{`e2e-status-step-tile\$\{index === top \? " is-top" : ""\}/u);
   assert.match(overview, /<span className="e2e-status-step-note">\{o\.noItems\}<\/span>/u);
-  assert.match(overview, /label=\{o\.largestShare\} value=\{`\$\{largest\.label\} · \$\{largest\.share\.percent\}`\}/u);
+  // The chip is keyed by the largest status, so it fades in again when another one takes the lead.
+  assert.match(overview, /<InsightChip key=\{largest\.key\} color=\{largest\.color\} label=\{o\.largestShare\}/u);
+  assert.match(overview, /value=\{<>\{largest\.label\} · <Counted value=\{largest\.share\.fraction\}/u);
   for (const messages of [ptBR, en, zhCN]) {
     const o = messages.e2eLines.overview;
     assert.match(o.step(2), /2/u);
@@ -134,9 +136,10 @@ test("the status chart shows the flow steps in status order and highlights the l
 test("the deadline donut shows the on-time share and the late callout reads the delay ranges", () => {
   assert.match(overview, /donutSegments\(deadlineEntries\.map\(entry => entry\.share\.value\), \{ radius: 70, gap: 3 \}\)/u);
   assert.match(overview, /<circle className="e2e-donut-track" cx="92" cy="92" r="70" \/>/u);
-  assert.match(overview, /<span className="e2e-donut-center" aria-hidden="true"><strong>\{onTime\.share\.percent\}<\/strong>/u);
+  assert.match(overview, /<span className="e2e-donut-center" aria-hidden="true"><strong><Counted value=\{onTime\.share\.fraction\}/u);
   // The callout and the chip above 30 days only appear when there is something late.
-  assert.match(overview, /\{insight\.late > 0 && <p className="e2e-overview-callout">/u);
+  assert.match(overview, /\{insight\.late > 0 && <LateCallout upTo30=\{insight\.upTo30\} late=\{insight\.late\} \/>\}/u);
+  assert.match(overview, /<p className="e2e-overview-callout">/u);
   assert.match(overview, /insight=\{insight\.over30 > 0 && <InsightChip danger/u);
   assert.equal(ptBR.e2eLines.overview.lateUpTo30Lead("62%"), "62% dos atrasados");
   assert.equal(ptBR.e2eLines.overview.lateUpTo30Rest("2 mil", "3 mil"), "estão em até 30 dias · 2 mil de 3 mil");
@@ -240,6 +243,26 @@ test("both overview charts are clickable through their legends and keep the keyb
   assert.match(overview, /className=\{`e2e-distribution-segment/u);
   assert.match(overview, /aria-hidden="true"/u);
   assert.match(overview, /m\.e2eLines\.overview\.clearSelection/u);
+});
+
+test("the overview numbers count to their new values and every category keeps its mark", async () => {
+  const hook = await read("components/useTweenedNumber.ts");
+  // Numbers count from the value on screen, with the easing of the stylesheet, and jump with reduced motion.
+  assert.match(hook, /const from = current\.current;/u);
+  assert.match(hook, /tweenAt\(from, target, now - start, length\)/u);
+  assert.match(hook, /matchMedia\("\(prefers-reduced-motion: reduce\)"\)/u);
+  assert.match(hook, /return \(\) => window\.cancelAnimationFrame\(frame\);/u);
+  assert.match(overview, /function Counted\(\{ value, format \}/u);
+  // Totals, quantities and shares of every chart are counted; the image labels keep the final text.
+  assert.ok((overview.match(/<Counted /gu) ?? []).length >= 10);
+  assert.match(overview, /format=\{value => m\.e2eLines\.overview\.totalItems\(formatTotal\(value, locale\)\)\}/u);
+  assert.match(overview, /aria-label=\{o\.chartLabel\(o\.statusTitle, formatTotal\(statusTotal, locale\)\)\}/u);
+  // An emptied status keeps its segment so it can shrink away; the donut arcs move through the stylesheet.
+  assert.match(overview, /\{statusEntries\.map\(entry =>/u);
+  assert.match(overview, /entry\.share\.value > 0 \? "" : " is-zero"/u);
+  assert.match(overview, /strokeDasharray: segment\.dashArray, strokeDashoffset: segment\.dashOffset/u);
+  // The steps enter one after the other.
+  assert.match(overview, /"--step-index": index/u);
 });
 
 test("the first End to End screen shows the model and the product lines together", async () => {

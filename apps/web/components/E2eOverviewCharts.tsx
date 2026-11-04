@@ -1,13 +1,14 @@
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import { donutSegments } from "../lib/donut-chart";
-import { delayRangeInsight, delayRangeRows, formatShare, largestIndex, overviewShares, overviewTip, overviewTotal,
-  type OverviewShare } from "../lib/e2e-overview-format";
+import { delayRangeInsight, delayRangeRows, formatCompact, formatPercent, formatTotal, largestIndex, overviewShares, overviewTip,
+  overviewTotal, type OverviewShare } from "../lib/e2e-overview-format";
 import { statusLabel } from "../lib/i18n/labels";
 import { e2eDeadlineStatuses, e2eDelayRanges, e2eStatusColors, productLineStatuses, type E2eDeadlineStatus,
   type E2eDelayRange } from "../lib/purchase-order-lines";
 import type { Messages } from "../lib/i18n/pt-BR";
 import { useI18n } from "./I18nProvider";
 import { Tooltip } from "./Tooltip";
+import { useTweenedNumber } from "./useTweenedNumber";
 
 type OverviewPart = { quantity: string; lines: number };
 export type E2eOverviewStatus = Exclude<(typeof productLineStatuses)[number], "CANCELADO">;
@@ -38,14 +39,20 @@ const dimmed = (key: string, selected: readonly string[]) => selected.length && 
 // Ctrl+click (Cmd+click on a Mac) adds to the selection, as in Power BI.
 const additive = (event: MouseEvent<Element>) => event.ctrlKey || event.metaKey;
 
+/** A number that counts to its new value when the filters or the selection change, instead of jumping. */
+function Counted({ value, format }: { value: number; format: (value: number) => string }) {
+  return <>{format(useTweenedNumber(value))}</>;
+}
+
 /** Card in the style of the model indicators: label, total in items, an insight chip and the selection reset. */
 function OverviewCard({ title, total, selected, onClear, wide, insight, children }: {
-  title: string; total: string; selected: boolean; onClear: () => void; wide?: boolean; insight?: ReactNode; children: ReactNode;
+  title: string; total: number; selected: boolean; onClear: () => void; wide?: boolean; insight?: ReactNode; children: ReactNode;
 }) {
-  const { m } = useI18n();
+  const { m, locale } = useI18n();
   return <section className={wide ? "e2e-overview-card e2e-overview-card-wide" : "e2e-overview-card"}>
     <div className="e2e-overview-head">
-      <div className="e2e-overview-title"><span className="e2e-label">{title}</span><strong>{m.e2eLines.overview.totalItems(total)}</strong></div>
+      <div className="e2e-overview-title"><span className="e2e-label">{title}</span>
+        <strong><Counted value={total} format={value => m.e2eLines.overview.totalItems(formatTotal(value, locale))} /></strong></div>
       {(insight || selected) && <div className="e2e-overview-head-side">
         {insight}
         {selected && <button type="button" className="e2e-overview-clear" onClick={onClear}>
@@ -57,7 +64,7 @@ function OverviewCard({ title, total, selected, onClear, wide, insight, children
 }
 
 /** Chip of the card head with the fact worth reading first, such as the largest status. */
-function InsightChip({ color, label, value, danger }: { color: string; label: string; value: string; danger?: boolean }) {
+function InsightChip({ color, label, value, danger }: { color: string; label: string; value: ReactNode; danger?: boolean }) {
   return <span className={danger ? "e2e-overview-chip e2e-overview-chip-danger" : "e2e-overview-chip"} style={tint(color)}>
     <span className="e2e-overview-dot" aria-hidden="true" />
     <span>{label}: <strong>{value}</strong></span>
@@ -70,9 +77,9 @@ function Meter({ fraction }: { fraction: number }) {
 }
 
 /** Legend with quantity, share and meter; each item filters by its category, the keyboard path of the chart. */
-function Legend<Key extends string>({ entries, selected, onSelect, filterLabel }: {
+function Legend<Key extends string>({ entries, selected, onSelect, filterLabel, locale }: {
   entries: ChartEntry<Key>[]; selected: readonly string[]; onSelect: (key: Key, additive: boolean) => void;
-  filterLabel: (label: string) => string;
+  filterLabel: (label: string) => string; locale: string;
 }) {
   return <ul className="e2e-chart-legend">
     {entries.map(entry => <li key={entry.key}>
@@ -81,9 +88,9 @@ function Legend<Key extends string>({ entries, selected, onSelect, filterLabel }
         aria-label={`${filterLabel(entry.label)} (${entry.share.compact}, ${entry.share.percent})`}>
         <span className="e2e-chart-swatch" />
         <span className="e2e-chart-legend-name">{entry.label}</span>
-        <strong>{entry.share.compact}</strong>
-        <span className="e2e-chart-legend-share">{entry.share.percent}</span>
-        {entry.share.value > 0 && <span className="e2e-chart-legend-meter"><Meter fraction={entry.share.fraction} /></span>}
+        <strong><Counted value={entry.share.value} format={value => formatCompact(value, locale)} /></strong>
+        <span className="e2e-chart-legend-share"><Counted value={entry.share.fraction} format={value => formatPercent(value, locale)} /></span>
+        <span className="e2e-chart-legend-meter"><Meter fraction={entry.share.fraction} /></span>
       </button>
     </li>)}
   </ul>;
@@ -116,10 +123,11 @@ function StatusSteps({ entries, top, selected, onSelect, filterLabel }: {
   entries: ChartEntry<E2eOverviewStatus>[]; top: number; selected: readonly string[];
   onSelect: (key: E2eOverviewStatus, additive: boolean) => void; filterLabel: (label: string) => string;
 }) {
-  const { m } = useI18n();
+  const { m, locale } = useI18n();
   const o = m.e2eLines.overview;
   return <ol className="e2e-status-steps">
-    {entries.map((entry, index) => <li key={entry.key} className="e2e-status-step" style={tint(entry.color)}>
+    {entries.map((entry, index) => <li key={entry.key} className="e2e-status-step"
+      style={{ ...tint(entry.color), "--step-index": index } as CSSProperties}>
       <span className="e2e-status-step-rail" aria-hidden="true">
         <span className="e2e-status-step-dot" />
         <span className="e2e-status-step-index">{o.step(index + 1)}</span>
@@ -129,10 +137,11 @@ function StatusSteps({ entries, top, selected, onSelect, filterLabel }: {
         aria-pressed={selected.includes(entry.key)} onClick={event => onSelect(entry.key, additive(event))}
         aria-label={`${filterLabel(entry.label)} (${entry.share.compact}, ${entry.share.percent})`}>
         <span className="e2e-status-step-label">{entry.label}</span>
-        <strong className={entry.share.value > 0 ? "e2e-status-step-value" : "e2e-status-step-value is-empty"}>{entry.share.compact}</strong>
+        <strong className={entry.share.value > 0 ? "e2e-status-step-value" : "e2e-status-step-value is-empty"}>
+          <Counted value={entry.share.value} format={value => formatCompact(value, locale)} /></strong>
         {entry.share.value > 0
           ? <span className="e2e-status-step-share"><Meter fraction={entry.share.fraction} />
-            <span className="e2e-chart-legend-share">{entry.share.percent}</span></span>
+            <span className="e2e-chart-legend-share"><Counted value={entry.share.fraction} format={value => formatPercent(value, locale)} /></span></span>
           : <span className="e2e-status-step-note">{o.noItems}</span>}
       </button>
     </li>)}
@@ -154,7 +163,8 @@ function DelayRangeBars({ entries, selected, onSelect, filterLabel, locale, m }:
   return <div className="e2e-range-groups">
     {delayRangeRows(values, selected).map(group => <div key={group.key} className="e2e-range-group">
       <span className="e2e-label">{group.key === "late" && group.total > 0
-        ? `${o.delayGroups.late} · ${formatShare(group.total, group.total, locale).compact}` : o.delayGroups[group.key]}</span>
+        ? <>{o.delayGroups.late} · <Counted value={group.total} format={value => formatCompact(value, locale)} /></>
+        : o.delayGroups[group.key]}</span>
       <ul className="e2e-range-bars">
         {group.ranges.map(key => {
           const entry = entries[e2eDelayRanges.indexOf(key)];
@@ -167,8 +177,8 @@ function DelayRangeBars({ entries, selected, onSelect, filterLabel, locale, m }:
                 <span className="e2e-range-track">
                   {entry.share.value > 0 && <span className="e2e-range-fill" style={width(max > 0 ? entry.share.value / max : 0)} />}
                 </span>
-                <strong>{entry.share.compact}</strong>
-                <span className="e2e-chart-legend-share">{entry.share.percent}</span>
+                <strong><Counted value={entry.share.value} format={value => formatCompact(value, locale)} /></strong>
+                <span className="e2e-chart-legend-share"><Counted value={entry.share.fraction} format={value => formatPercent(value, locale)} /></span>
               </button>
             </Tooltip>
           </li>;
@@ -176,6 +186,19 @@ function DelayRangeBars({ entries, selected, onSelect, filterLabel, locale, m }:
       </ul>
     </div>)}
   </div>;
+}
+
+/** Callout of the deadline chart: the share of the late quantity that is up to 30 days late, counted. */
+function LateCallout({ upTo30, late }: { upTo30: number; late: number }) {
+  const { m, locale } = useI18n();
+  const o = m.e2eLines.overview;
+  const shownUpTo30 = useTweenedNumber(upTo30);
+  const shownLate = useTweenedNumber(late);
+  return <p className="e2e-overview-callout">
+    <svg className="e2e-overview-callout-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+    <span><strong>{o.lateUpTo30Lead(formatPercent(shownLate > 0 ? shownUpTo30 / shownLate : 0, locale))}</strong>{" "}
+      {o.lateUpTo30Rest(formatCompact(shownUpTo30, locale), formatCompact(shownLate, locale))}</span>
+  </p>;
 }
 
 /** Picture of the status chart kept while the charts are collapsed: a mini bar and the total in items. */
@@ -213,8 +236,9 @@ export default function E2eOverviewCharts({ overview, locale, selectedStatuses, 
     (_, index) => e2eStatusColors[index]);
   const deadlineEntries = entriesOf(e2eDeadlineStatuses, overview.byDeadline, locale, key => o[key],
     key => deadlineColors[key]);
-  const statusTotal = overviewTotal(statusKeys.map(key => overview.byStatus[key].quantity), locale);
-  const deadlineTotal = overviewTotal(e2eDeadlineStatuses.map(key => overview.byDeadline[key].quantity), locale);
+  const sum = (entries: ChartEntry<string>[]) => entries.reduce((total, entry) => total + entry.share.value, 0);
+  const statusTotal = sum(statusEntries);
+  const deadlineTotal = sum(deadlineEntries);
   const hasStatus = statusEntries.some(entry => entry.share.value > 0);
   const top = largestIndex(statusEntries.map(entry => entry.share.value));
   const largest = statusEntries[top];
@@ -223,21 +247,21 @@ export default function E2eOverviewCharts({ overview, locale, selectedStatuses, 
   const byDelayRange = overview.byDelayRange;
   const rangeEntries = byDelayRange ? entriesOf(e2eDelayRanges, byDelayRange, locale, key => o.delayRanges[key],
     key => rangeColors[key]) : [];
-  const rangeTotal = byDelayRange ? overviewTotal(e2eDelayRanges.map(key => byDelayRange[key].quantity), locale) : "";
+  const rangeTotal = sum(rangeEntries);
   const insight = delayRangeInsight(Object.fromEntries(rangeEntries.map(entry => [entry.key, entry.share.value])) as
     Record<E2eDelayRange, number>);
-  const over30 = formatShare(insight.over30, insight.total, locale);
-  const upTo30 = formatShare(insight.upTo30, insight.late, locale);
 
   return <section className="e2e-overview" aria-label={o.label}>
     <OverviewCard title={o.statusTitle} total={statusTotal} selected={selectedStatuses.length > 0} wide onClear={onStatusClear}
-      insight={largest && <InsightChip color={largest.color} label={o.largestShare} value={`${largest.label} · ${largest.share.percent}`} />}>
+      insight={largest && <InsightChip key={largest.key} color={largest.color} label={o.largestShare}
+        value={<>{largest.label} · <Counted value={largest.share.fraction} format={value => formatPercent(value, locale)} /></>} />}>
       {hasStatus
-        ? <div className="e2e-distribution" role="img" aria-label={o.chartLabel(o.statusTitle, statusTotal)}>
-          {statusEntries.filter(entry => entry.share.value > 0).map(entry =>
+        ? <div className="e2e-distribution" role="img" aria-label={o.chartLabel(o.statusTitle, formatTotal(statusTotal, locale))}>
+          {statusEntries.map(entry =>
             <Tooltip key={entry.key} content={<ChartTip entry={entry} selected={selectedStatuses} locale={locale} m={m} />}
               followCursor>
-              <div aria-hidden="true" className={`e2e-distribution-segment${dimmed(entry.key, selectedStatuses)}`}
+              <div aria-hidden="true"
+                className={`e2e-distribution-segment${entry.share.value > 0 ? "" : " is-zero"}${dimmed(entry.key, selectedStatuses)}`}
                 style={{ background: `var(${entry.color})`, flexGrow: entry.share.value }}
                 onClick={event => onStatusSelect(entry.key, additive(event))} />
             </Tooltip>)}
@@ -250,35 +274,33 @@ export default function E2eOverviewCharts({ overview, locale, selectedStatuses, 
       <div className="e2e-donut-layout">
         {segments.length
           ? <div className="e2e-donut">
-            <svg viewBox="0 0 184 184" role="img" aria-label={o.chartLabel(o.deadlineTitle, deadlineTotal)}>
+            <svg viewBox="0 0 184 184" role="img" aria-label={o.chartLabel(o.deadlineTitle, formatTotal(deadlineTotal, locale))}>
               <g transform="rotate(-90 92 92)">
                 <circle className="e2e-donut-track" cx="92" cy="92" r="70" />
                 {segments.map(segment => {
                   const entry = deadlineEntries[segment.index];
                   return <Tooltip key={entry.key} content={<ChartTip entry={entry} selected={selectedDeadlines} locale={locale} m={m} />} followCursor>
-                    <circle cx="92" cy="92" r="70" style={tint(entry.color)} strokeDasharray={segment.dashArray}
-                      strokeDashoffset={segment.dashOffset} aria-hidden="true"
+                    <circle cx="92" cy="92" r="70" aria-hidden="true"
+                      style={{ ...tint(entry.color), strokeDasharray: segment.dashArray, strokeDashoffset: segment.dashOffset }}
                       className={`e2e-donut-segment${dimmed(entry.key, selectedDeadlines)}`}
                       onClick={event => onDeadlineSelect(entry.key, additive(event))} />
                   </Tooltip>;
                 })}
               </g>
             </svg>
-            <span className="e2e-donut-center" aria-hidden="true"><strong>{onTime.share.percent}</strong><span>{o.onTimeCenter}</span></span>
+            <span className="e2e-donut-center" aria-hidden="true"><strong><Counted value={onTime.share.fraction} format={value => formatPercent(value, locale)} /></strong><span>{o.onTimeCenter}</span></span>
           </div>
           : <p className="muted">{o.empty}</p>}
-        <Legend entries={deadlineEntries} selected={selectedDeadlines} onSelect={onDeadlineSelect} filterLabel={o.filterByDeadline} />
+        <Legend entries={deadlineEntries} selected={selectedDeadlines} onSelect={onDeadlineSelect} filterLabel={o.filterByDeadline}
+          locale={locale} />
       </div>
-      {insight.late > 0 && <p className="e2e-overview-callout">
-        <svg className="e2e-overview-callout-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
-        <span><strong>{o.lateUpTo30Lead(upTo30.percent)}</strong>{" "}
-          {o.lateUpTo30Rest(upTo30.compact, formatShare(insight.late, insight.late, locale).compact)}</span>
-      </p>}
+      {insight.late > 0 && <LateCallout upTo30={insight.upTo30} late={insight.late} />}
     </OverviewCard>
     {byDelayRange && <OverviewCard title={o.delayRangeTitle} total={rangeTotal} selected={selectedDelayRanges.length > 0}
       onClear={onDelayRangeClear}
       insight={insight.over30 > 0 && <InsightChip danger color="--color-chart-late" label={o.over30}
-        value={`${over30.compact} · ${over30.percent}`} />}>
+        value={<><Counted value={insight.over30} format={value => formatCompact(value, locale)} /> · <Counted
+          value={insight.total > 0 ? insight.over30 / insight.total : 0} format={value => formatPercent(value, locale)} /></>} />}>
       {rangeEntries.some(entry => entry.share.value > 0) || selectedDelayRanges.length > 0
         ? <DelayRangeBars entries={rangeEntries} selected={selectedDelayRanges} onSelect={onDelayRangeSelect}
           filterLabel={o.filterByDelayRange} locale={locale} m={m} />

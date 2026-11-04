@@ -20,18 +20,26 @@ test("segments keep the received order and follow each other around the ring", (
 });
 
 test("a single category closes the ring without a gap", () => {
-  const [segment] = donutSegments([0, 7, 0], options);
-  assert.equal(segment.index, 1);
-  assert.equal(segment.fraction, 1);
-  assert.ok(Math.abs(lengths(segment)[0] - circumference) < .01);
+  const segments = donutSegments([0, 7, 0], options);
+  assert.equal(segments[1].fraction, 1);
+  assert.ok(Math.abs(lengths(segments[1])[0] - circumference) < .01);
 });
 
-test("a tiny share stays visible and empty values or totals draw nothing", () => {
+test("an empty category keeps a zero-length arc where it would start, so it can grow back", () => {
+  const segments = donutSegments([2, 0, 2], options);
+  assert.deepEqual(segments.map(segment => segment.index), [0, 1, 2]);
+  assert.equal(lengths(segments[1])[0], 0);
+  assert.equal(segments[1].fraction, 0);
+  // It sits between its neighbours: where the first one ends and the last one starts.
+  assert.equal(segments[1].dashOffset, segments[2].dashOffset);
+  assert.ok(Math.abs(Number(segments[2].dashOffset) + circumference / 2) < .01);
+  assert.deepEqual(donutSegments([Number.NaN, -1, 4], options).map(segment => lengths(segment)[0] > 0), [false, false, true]);
+});
+
+test("a tiny share stays visible and a zero total draws nothing", () => {
   const [, tiny] = donutSegments([99999, 1], options);
   assert.ok(lengths(tiny)[0] >= .5);
   assert.deepEqual(donutSegments([0, 0], options), []);
-  assert.deepEqual(donutSegments([2, 0, 3], options).map(segment => segment.index), [0, 2]);
-  assert.deepEqual(donutSegments([Number.NaN, -1, 4], options).map(segment => segment.index), [2]);
 });
 
 test("donut geometry stays free of UI text and value imports", async () => {

@@ -218,6 +218,30 @@ test("the End to End overview puts the status chart on its own row and two chart
   for (const mix of mixes) assert.deepEqual([mix[1], mix[2]], ["--chart-color", "--color-surface"]);
 });
 
+test("the End to End charts move with the organic easing and stand still with reduced motion", () => {
+  const css = styles["app/styles/features/e2e.css"];
+  // One duration and curve for every chart, the same as lib/motion.ts uses to count the numbers.
+  assert.match(styles[tokensPath], /^ {2}--motion-chart: \.6s;$/mu);
+  assert.match(styles[tokensPath], /^ {2}--ease-organic: cubic-bezier\(\.22, 1, \.36, 1\);$/mu);
+  const move = "var(--motion-chart) var(--ease-organic)";
+  // Sizes, positions and colours change through transitions instead of jumping.
+  for (const [selector, property] of [[".e2e-distribution-segment", "flex-grow"], [".e2e-overview-meter-fill", "width"],
+    [".e2e-range-fill", "width"], [".e2e-donut-segment", "stroke-dasharray"], [".e2e-donut-segment", "stroke-dashoffset"],
+    [".e2e-status-step-tile", "background-color"], [".e2e-status-step-tile", "border-color"], [".e2e-chart-legend-item", "opacity"],
+    [".e2e-range-row", "opacity"]]) {
+    const body = css.match(new RegExp(`\\n\\${selector} \\{([^}]*)\\}`, "u"))?.[1] ?? "";
+    assert.ok(body.includes(`${property} ${move}`), `${selector} ${property}`);
+  }
+  // The first load grows the bars, draws the donut and brings the steps in one after the other.
+  for (const name of ["e2e-chart-rise", "e2e-chart-grow", "e2e-chart-reveal", "e2e-donut-draw"]) {
+    assert.ok(css.includes(`@keyframes ${name} `), name);
+    assert.ok(css.includes(`animation: ${name} ${move} both;`), name);
+  }
+  assert.match(css, /\.e2e-status-step \{[^}]*animation-delay: calc\(var\(--step-index, 0\) \* 60ms\);/u);
+  assert.match(css, /\.e2e-distribution-segment\.is-zero \{ margin-inline-start: -3px; min-width: 0; \}/u);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{ \.e2e-overview, \.e2e-overview \* \{ animation: none !important; transition: none !important; \} \}/u);
+});
+
 test("the on-time share in the donut centre is readable text in both themes", () => {
   const light = tokenValues(":root");
   const dark = { ...light, ...tokenValues(':root[data-theme="dark"]') };

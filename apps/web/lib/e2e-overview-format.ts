@@ -19,13 +19,30 @@ const quantity = (value: string) => {
   return Number.isFinite(number) && number > 0 ? number : 0;
 };
 
-const formats = (locale: string) => ({
-  compact: new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 2 }),
-  whole: new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 0 }),
-  small: new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 2 }),
-});
-const percentOf = (fraction: number, format: ReturnType<typeof formats>) => fraction === 0 ? empty
+type Formats = { compact: Intl.NumberFormat; whole: Intl.NumberFormat; small: Intl.NumberFormat };
+// Built once per language: a transition formats every number of the charts on each frame.
+const cache = new Map<string, Formats>();
+const formats = (locale: string): Formats => {
+  let format = cache.get(locale);
+  if (!format) {
+    format = {
+      compact: new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 2 }),
+      whole: new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 0 }),
+      small: new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 2 }),
+    };
+    cache.set(locale, format);
+  }
+  return format;
+};
+const percentOf = (fraction: number, format: Formats) => fraction === 0 ? empty
   : fraction >= .01 ? format.whole.format(fraction) : fraction < .0001 ? `<${format.small.format(.0001)}` : format.small.format(fraction);
+
+/** Compact quantity of a chart category ("1,23 mi"), or a dash when empty; also for the values of a count. */
+export const formatCompact = (value: number, locale: string) => value > 0 ? formats(locale).compact.format(value) : empty;
+/** Share of a chart category ("48%", "0,37%", "<0,01%"), or a dash when empty. */
+export const formatPercent = (fraction: number, locale: string) => percentOf(fraction, formats(locale));
+/** Compact total of a chart, zero included. */
+export const formatTotal = (value: number, locale: string) => formats(locale).compact.format(value);
 
 /** Shares of the exact quantities returned by the API, formatted in the interface language. */
 export function overviewShares(quantities: readonly string[], locale: string): OverviewShare[] {
@@ -42,8 +59,7 @@ export function overviewShares(quantities: readonly string[], locale: string): O
 
 /** A part of a total in the format of the charts (the insight chips and the late callout); dashes when empty. */
 export function formatShare(value: number, total: number, locale: string): { compact: string; percent: string } {
-  const format = formats(locale);
-  return { compact: value > 0 ? format.compact.format(value) : empty, percent: percentOf(total > 0 ? value / total : 0, format) };
+  return { compact: formatCompact(value, locale), percent: formatPercent(total > 0 ? value / total : 0, locale) };
 }
 
 /** Index of the first category with the largest quantity, or -1 when every one is empty. */
@@ -86,8 +102,7 @@ export function delayRangeInsight(values: Readonly<Record<E2eDelayRange, number>
 
 /** Compact total of a chart. */
 export function overviewTotal(quantities: readonly string[], locale: string): string {
-  const total = quantities.map(quantity).reduce((sum, value) => sum + value, 0);
-  return new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 2 }).format(total);
+  return formatTotal(quantities.map(quantity).reduce((sum, value) => sum + value, 0), locale);
 }
 
 /** Tooltip card of a chart category: full quantity, share and lines, and what a click on it does. */

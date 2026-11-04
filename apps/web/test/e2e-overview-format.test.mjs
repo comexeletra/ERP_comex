@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { delayRangeGroups, delayRangeInsight, delayRangeRows, formatShare, largestIndex, overviewShares, overviewTip, overviewTotal }
+import { delayRangeGroups, delayRangeInsight, delayRangeRows, formatCompact, formatPercent, formatShare, formatTotal, largestIndex, overviewShares, overviewTip, overviewTotal }
   from "../lib/e2e-overview-format.ts";
 import { e2eDelayRanges } from "../lib/purchase-order-lines.ts";
 import { en } from "../lib/i18n/en.ts";
@@ -83,6 +83,17 @@ test("a share of a total uses the chart format and never divides by zero", () =>
     [["compact", "1,2 mil"], ["percent", "25%"]]);
   assert.deepEqual(formatShare(0, 0, "pt-BR"), { compact: "—", percent: "—" });
   assert.equal(formatShare(1, 20000, "pt-BR").percent, "<0,01%");
+});
+
+test("the numbers counted during a transition use the same format as the final ones", () => {
+  // Intermediate values of a count are not integers; they still read as the chart quantities.
+  assert.equal(plain(formatCompact(1234567.89, "pt-BR")), "1,23 mi");
+  assert.equal(formatCompact(0, "pt-BR"), "—");
+  assert.equal(formatCompact(.4, "pt-BR"), "0,4");
+  assert.equal(plain(formatTotal(616931, "pt-BR")), "616,93 mil");
+  assert.equal(formatTotal(0, "pt-BR"), "0");
+  assert.deepEqual([.4812, .0037, .00004, 0].map(fraction => formatPercent(fraction, "pt-BR")), ["48%", "0,37%", "<0,01%", "—"]);
+  assert.equal(formatPercent(.5, "en"), "50%");
 });
 
 test("the chart tooltip card shows the full quantity, the share, the lines and what a click does", () => {

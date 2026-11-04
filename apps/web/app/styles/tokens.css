@@ -145,6 +145,10 @@
   --radius-lg: 14px;
   --radius-xl: 20px;
   --radius-pill: 999px;
+
+  /* Motion of the End to End charts: values move fast and settle slowly (ease-out quint, lib/motion.ts) */
+  --motion-chart: .6s;
+  --ease-organic: cubic-bezier(.22, 1, .36, 1);
   --z-raised: 1;
   --z-sticky: 5;
   --z-sticky-corner: 8;
