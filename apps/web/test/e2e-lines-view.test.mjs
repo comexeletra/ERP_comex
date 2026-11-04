@@ -34,10 +34,12 @@ test("the current status column takes the colours of the status chart", () => {
 
 test("the optional overview precedes the model and cross-filters by status and deadline", () => {
   assert.match(view, /overview\?: E2eOverview/u);
-  assert.match(view, /\{counts\?\.overview && <E2eCollapsible title=\{t\.overview\.label\}/u);
-  // The charts sit right above the product line filters, below the model panels.
-  assert.ok(view.indexOf("<E2eModelDetails") < view.indexOf("<E2eOverviewCharts"));
-  assert.ok(view.indexOf("<E2eOverviewCharts") < view.indexOf('<form className="portfolio-filter product-lines-filter"'));
+  // The summary panel is always there with its filter form; the charts wait for the summary.
+  assert.match(view, /<E2eCollapsible title=\{t\.overview\.label\}/u);
+  assert.match(view, /\{counts\?\.overview && <E2eOverviewCharts/u);
+  // Below the model panels: the filter form, then the charts.
+  assert.ok(view.indexOf("<E2eModelDetails") < view.indexOf('<form className="portfolio-filter product-lines-filter e2e-overview-filters"'));
+  assert.ok(view.indexOf('<form className="portfolio-filter product-lines-filter e2e-overview-filters"') < view.indexOf("<E2eOverviewCharts"));
   assert.ok(view.indexOf("t.overview.loading") > view.indexOf("<E2eModelDetails"));
   // Clicking the selected category again clears it.
   assert.match(view, /const filters: ProductLineFilters = \{ \.\.\.applied, status: applied\.status === status \? "" : status \};/u);
@@ -47,35 +49,35 @@ test("the optional overview precedes the model and cross-filters by status and d
   assert.match(view, /onStatusSelect=\{filterByStatus\}/u);
   assert.match(view, /onDeadlineSelect=\{selectDeadline\}/u);
   assert.match(view, /selectedDeadline=\{deadline\}/u);
-  // Clear also removes the deadline chosen on the chart.
-  assert.match(view, /setDeadline\(""\); setDelayRange\(""\);/u);
-  assert.match(view, /applyFilters\(emptyProductLineFilters, \{ \.\.\.stage, deadline: "", delayRange: "" \}\);/u);
+  // Clear also removes the deadline and delay range chosen on the charts, the current stage and the demand type.
+  assert.match(view, /setDraft\(emptyProductLineFilters\); setDeadline\(""\); setDelayRange\(""\); setNecessityCustom\(false\);/u);
+  assert.match(view, /stepper\.goTo\(null\); setDemandType\(""\);/u);
+  assert.match(view, /applyFilters\(emptyProductLineFilters, \{ \.\.\.stage, stage: "", deadline: "", delayRange: "", demandType: "" \}\);/u);
   // The delay range bars cross-filter the same way.
   assert.match(view, /const next = delayRange === selected \? "" : selected;/u);
   assert.match(view, /setDelayRange\(next\); syncUrl\(applied, \{ \.\.\.stage, delayRange: next \}, 1\);/u);
   assert.match(view, /selectedDelayRange=\{delayRange\} onDelayRangeSelect=\{selectDelayRange\}/u);
 });
 
-test("the overview charts and the product line filters can be collapsed", () => {
+test("the summary panel holds the filter form and the charts and can be collapsed", () => {
   assert.match(view, /<E2eCollapsible title=\{t\.overview\.label\} storageKey="erp-comex-e2e-charts-collapsed"/u);
-  assert.match(view, /activeCount=\{\(applied\.status \? 1 : 0\) \+ \(deadline \? 1 : 0\) \+ \(delayRange \? 1 : 0\)\}/u);
-  assert.match(view, /<E2eCollapsible className="card" title=\{t\.panels\.filtersTitle\} storageKey="erp-comex-e2e-filters-collapsed"/u);
-  assert.match(view, /activeCount=\{activeProductLineFilterCount\(applied\)\}/u);
-  // The charts stay inside their panel, and the filter form inside the other one.
-  const charts = view.indexOf("storageKey=\"erp-comex-e2e-charts-collapsed\"");
-  const filters = view.indexOf("storageKey=\"erp-comex-e2e-filters-collapsed\"");
-  assert.ok(charts < view.indexOf("<E2eOverviewCharts") && view.indexOf("<E2eOverviewCharts") < filters);
-  assert.ok(filters < view.indexOf('<form className="portfolio-filter product-lines-filter"'));
+  // The collapsed panel counts the form filters and the chart selections.
+  assert.match(view, /activeCount=\{e2eOverviewFilterCount\(applied, stage\)\}/u);
+  // There is no separate table filter panel any more: one form filters the table and the charts.
+  assert.doesNotMatch(view, /erp-comex-e2e-filters-collapsed|panels\.filtersTitle/u);
+  assert.equal((view.match(/<form /gu) ?? []).length, 1);
+  const panel = view.indexOf("storageKey=\"erp-comex-e2e-charts-collapsed\"");
+  assert.ok(panel < view.indexOf("<form ") && view.indexOf("<E2eOverviewCharts") < view.indexOf("</E2eCollapsible>", panel));
   for (const messages of [ptBR, en, zhCN]) {
     assert.equal(typeof messages.e2eLines.panels.active(2), "string");
-    for (const key of ["filtersTitle", "show", "hide"]) assert.ok(messages.e2eLines.panels[key], key);
+    for (const key of ["show", "hide"]) assert.ok(messages.e2eLines.panels[key], key);
+    assert.equal("filtersTitle" in messages.e2eLines.panels, false);
   }
 });
 
 test("a collapsed chart block still says it holds charts and shows their shape", () => {
   assert.match(view, /storageKey="erp-comex-e2e-charts-collapsed"[\s\S]*?icon="chart"/u);
-  assert.match(view, /storageKey="erp-comex-e2e-filters-collapsed"[\s\S]*?icon="filter"/u);
-  assert.match(view, /collapsedSummary=\{<E2eOverviewMini overview=\{counts\.overview\} locale=\{locale\} \/>\}/u);
+  assert.match(view, /collapsedSummary=\{counts\?\.overview \? <E2eOverviewMini overview=\{counts\.overview\} locale=\{locale\} \/> : undefined\}/u);
   // The mini bar repeats the status colours but is only a picture: the full charts hold the filters.
   assert.match(overview, /export function E2eOverviewMini/u);
   assert.match(overview, /className="e2e-distribution e2e-distribution-mini" aria-hidden="true"/u);
@@ -110,6 +112,38 @@ test("the product and transport toggles have All and filter the data as well as 
   // Each summary loaded is kept, so the animation does not reload the charts at every stage.
   assert.match(view, /if \(summaryCached\) return undefined;/u);
   for (const messages of [ptBR, en, zhCN]) assert.ok(messages.e2e.allOption);
+});
+
+test("the filter form lists the available values with search and has the summary filters", () => {
+  const form = view.slice(view.indexOf("<form "), view.indexOf("</form>"));
+  // PO, importer, product and IP list the available values and search them, as the other screens do.
+  for (const label of ["p.poNumber", "m.processDirectory.importer", "m.followup.product", '"IP"']) {
+    assert.match(form, new RegExp(`<SearchableSelect ariaLabel=\\{?${label.replaceAll(".", "\\.")}\\}?`, "u"), label);
+  }
+  assert.doesNotMatch(form, /<input value=/u);
+  assert.match(view, /apiFetch\("\/api\/v1\/purchase-order-lines\/filter-options", \{ signal: controller\.signal \}\)/u);
+  assert.match(view, /label: product\.description \? `\$\{product\.code\} · \$\{product\.description\}` : product\.code/u);
+  // Dropdowns: status, current stage, MTS / not MTS, situation, group, purpose and necessity.
+  assert.equal((form.match(/<select /gu) ?? []).length, 7);
+  for (const label of ["m.calc.status", "f.currentStage", "f.demandType", "f.group", "f.purpose", "f.necessity"]) {
+    assert.match(form, new RegExp(`\\{${label.replaceAll(".", "\\.")}\\}<select `, "u"), label);
+  }
+  // The necessity shortcuts use today in Brasília; the custom period shows the calendar fields.
+  assert.match(view, /const today = e2eToday\(\);/u);
+  assert.match(view, /setDraft\(\{ \.\.\.draft, \.\.\.necessityRange\(value, today\) \}\)/u);
+  assert.match(form, /\{necessityShown === "custom" && <>/u);
+  assert.equal((form.match(/type="date"/gu) ?? []).length, 4);
+  // The current stage and the demand type are the stage cards and the toolbar, so they apply at once.
+  assert.match(form, /onChange=\{event => selectCurrentStage\(/u);
+  assert.match(form, /onChange=\{event => changeDemandType\(/u);
+  assert.match(view, /stepper\.goTo\(k\); setView\("current"\);/u);
+  assert.match(form, /onClick=\{clearFilters\}/u);
+  assert.match(styles, /\.e2e-overview-filters \{/u);
+  for (const messages of [ptBR, en, zhCN]) {
+    const f = messages.e2eLines.overview.filters;
+    for (const key of ["label", "currentStage", "necessity", "necessityAll", "currentMonth", "currentYear", "custom",
+      "necessityFrom", "necessityTo", "demandType", "mts", "notMts", "group", "purpose"]) assert.ok(f[key], key);
+  }
 });
 
 test("both overview charts are clickable through their legends and keep the keyboard out of the images", () => {

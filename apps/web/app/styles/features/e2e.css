@@ -113,6 +113,7 @@
 
 /* Item quantities by line status (distribution bar) and total deadline status (compact pie), in the style of the model indicators. */
 .e2e-overview { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.e2e-overview-filters { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); margin-bottom: 16px; padding: 16px 20px; }
 .e2e-overview-card { align-content: start; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); display: grid; gap: 12px; min-width: 0; padding: 16px 20px; }
 .e2e-overview-card-wide { grid-column: 1 / -1; }
 .e2e-overview-card-wide .e2e-chart-legend { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -265,8 +266,7 @@
   .e2e-gantt-row { grid-template-columns: 1fr; }
   .e2e-phase { min-height: 0; }
   .e2e-detail { flex-direction: column; gap: 16px; }
-  .e2e-chart-legend, .e2e-overview-card-wide .e2e-chart-legend { grid-template-columns: minmax(0, 1fr); }
-}
+  .e2e-chart-legend, .e2e-overview-card-wide .e2e-chart-legend { grid-template-columns: minmax(0, 1fr); }}
 @media (max-width: 480px) {
   .e2e-pie-layout { grid-template-columns: 1fr; justify-items: center; }
   .e2e-pie-layout .e2e-chart-legend { width: 100%; }

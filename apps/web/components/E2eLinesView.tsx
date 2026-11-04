@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, readApiJson } from "../lib/api";
-import { E2E_STAGE_CODES, e2eDateClass, formatE2eDate, type E2eResult, type E2eStageCode } from "../lib/e2e-analysis";
+import { E2E_STAGE_CODES, e2eDateClass, e2eToday, formatE2eDate, type E2eResult, type E2eStageCode } from "../lib/e2e-analysis";
 import { buildE2eFlow, DEFAULT_E2E_FLOW_CONFIG } from "../lib/e2e-flow";
 import { formatNumber } from "../lib/format-number";
 import { statusLabel } from "../lib/i18n/labels";
-import { activeProductLineFilterCount, e2eStatusColor, e2eSummaryQuery, emptyProductLineFilters, parseE2eStageFilter, parseProductLineFilters, productLineQuery,
-  productLineStatuses, type E2eDeadlineStatus, type E2eDelayRange, type E2eStageFilter,
-  type ProductLineFilters } from "../lib/purchase-order-lines";
+import { e2eOverviewFilterCount, e2eStatusColor, e2eSummaryQuery, emptyProductLineFilters, necessityPreset, necessityRange,
+  parseE2eStageFilter, parseProductLineFilters, productLineQuery, productLineStatuses, type E2eDeadlineStatus, type E2eDelayRange,
+  type E2eStageFilter, type NecessityPreset, type ProductLineFilters } from "../lib/purchase-order-lines";
+import type { SearchableOption } from "../lib/searchable-options";
 import E2eCollapsible from "./E2eCollapsible";
 import { E2eFlowRail, Icon, useE2eStepper } from "./E2eFlowParts";
 import { E2eModelDetails, E2eModelSummary } from "./E2eModelPanels";
@@ -18,6 +19,7 @@ import E2eTabs from "./E2eTabs";
 import ExportColumnsDialog from "./ExportColumnsDialog";
 import { getMessages, useI18n } from "./I18nProvider";
 import PageHeader from "./PageHeader";
+import { SearchableSelect } from "./SearchableSelect";
 import { Tooltip } from "./Tooltip";
 import { useProductLineExport } from "./useProductLineExport";
 
@@ -33,8 +35,15 @@ type LinesPage = { page: number; pageSize: number; totalCount: number; lines: E2
 type LinesEntry = { data?: LinesPage; error?: string };
 type StageCount = { current: number; currentLate: number; reached: number; reachedLate: number };
 type StageSummary = { totalCount: number; delivered: number; stages: Record<E2eStageCode, StageCount>; overview?: E2eOverview };
+/** Values of the user's product lines for the filter form, from GET /api/v1/purchase-order-lines/filter-options. */
+type FilterOptions = { groups: string[]; purposes: string[]; importers: string[]; purchaseOrders: string[]; ipNumbers: string[];
+  products: { code: string; description: string | null }[] };
 const pageSize = 50;
 const stageSide = (code: E2eStageCode) => E2E_STAGE_CODES.indexOf(code) < 3 ? "side-br" : "side-cn";
+// A value chosen before (for example from a link) stays in the list even when no product has it now.
+const withSelected = (values: string[] | undefined, selected: string) =>
+  selected && !(values ?? []).includes(selected) ? [selected, ...(values ?? [])] : values ?? [];
+const textOptions = (values: string[] | undefined): SearchableOption[] => (values ?? []).map(value => ({ value, label: value }));
 
 /** Status as in the legend of the status chart: the swatch of its colour and the name. */
 function E2eStatus({ status }: { status: string }) {
@@ -90,6 +99,12 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   // The same for the summaries: the charts follow the stage, and the animation does not reload them.
   const [summaries, setSummaries] = useState<Record<string, { data?: StageSummary; error?: string }>>({});
   const [lastSummary, setLastSummary] = useState<StageSummary>();
+  const today = e2eToday();
+  // "Custom" keeps the calendar fields open while their dates are still empty.
+  const [necessityCustom, setNecessityCustom] = useState(false);
+  const draftNecessity = necessityPreset(draft.necessityFrom, draft.necessityTo, today);
+  const necessityShown: NecessityPreset = draftNecessity === "custom" || necessityCustom ? "custom" : draftNecessity;
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>();
   const { exporting, exportStatus, exportError, downloadExcel } = useProductLineExport("end-to-end");
   const [choosingColumns, setChoosingColumns] = useState(false);
   const query = productLineQuery(applied, page, pageSize, stage).toString();
@@ -125,6 +140,16 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
     return () => controller.abort();
   }, [summaryQuery, summaryCached]);
 
+  // The options do not depend on the filters: loaded once. Without them the fields keep only the chosen value.
+  useEffect(() => {
+    const controller = new AbortController();
+    apiFetch("/api/v1/purchase-order-lines/filter-options", { signal: controller.signal })
+      .then(result => readApiJson<FilterOptions>(result))
+      .then(data => { if (!controller.signal.aborted) setFilterOptions(data); })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
+
   const entry = cache[query];
   const result = entry?.data;
   const error = entry?.error ?? "";
@@ -145,6 +170,21 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   function filterByStatus(status: E2eOverviewStatus) {
     const filters: ProductLineFilters = { ...applied, status: applied.status === status ? "" : status };
     setDraft(filters); applyFilters(filters);
+  }
+  // The current stage of the filter form is the stage of the cards and the animation, in the current view.
+  function selectCurrentStage(code: "" | E2eStageCode) {
+    const k = code ? E2E_STAGE_CODES.indexOf(code) : null;
+    stepper.goTo(k); setView("current");
+    syncUrl(applied, { ...stage, stage: code, view: "current" }, 1);
+  }
+  function chooseNecessity(value: NecessityPreset) {
+    setNecessityCustom(value === "custom");
+    if (value !== "custom") setDraft({ ...draft, ...necessityRange(value, today) });
+  }
+  function clearFilters() {
+    setDraft(emptyProductLineFilters); setDeadline(""); setDelayRange(""); setNecessityCustom(false);
+    stepper.goTo(null); setDemandType("");
+    applyFilters(emptyProductLineFilters, { ...stage, stage: "", deadline: "", delayRange: "", demandType: "" });
   }
   function selectDeadline(selected: E2eDeadlineStatus) {
     const next = deadline === selected ? "" : selected;
@@ -179,6 +219,10 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   const totalPages = result ? Math.ceil(result.totalCount / pageSize) : 0;
   const p = m.productLines;
   const e = m.e2e;
+  const f = t.overview.filters;
+  const all = m.processDirectory.all;
+  const productOptions: SearchableOption[] = (filterOptions?.products ?? []).map(product => ({ value: product.code,
+    label: product.description ? `${product.code} · ${product.description}` : product.code }));
 
   return <main className="shell e2e-flow" data-side={current === null ? undefined : model.phases[current].side}>
     <PageHeader eyebrow={t.eyebrow} title={t.title}><p>{t.intro}</p></PageHeader>
@@ -261,38 +305,70 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
     </div>
     <E2eModelDetails flow={model} current={current} mts={mts} air={air} />
 
-    {!counts && !summaryError && <p role="status">{t.overview.loading}</p>}
-    {counts?.overview && <E2eCollapsible title={t.overview.label} storageKey="erp-comex-e2e-charts-collapsed" icon="chart"
-      activeCount={(applied.status ? 1 : 0) + (deadline ? 1 : 0) + (delayRange ? 1 : 0)}
-      collapsedSummary={<E2eOverviewMini overview={counts.overview} locale={locale} />}>
-      <E2eOverviewCharts overview={counts.overview} locale={locale} selectedStatus={applied.status}
-        selectedDeadline={deadline} onStatusSelect={filterByStatus} onDeadlineSelect={selectDeadline}
-        selectedDelayRange={delayRange} onDelayRangeSelect={selectDelayRange} />
-    </E2eCollapsible>}
-
-    <E2eCollapsible className="card" title={t.panels.filtersTitle} storageKey="erp-comex-e2e-filters-collapsed" icon="filter"
-      activeCount={activeProductLineFilterCount(applied)}>
-      <form className="portfolio-filter product-lines-filter" onSubmit={filter}>
-        <label>{p.poNumber}<input value={draft.purchaseOrder} onChange={event => setDraft({ ...draft, purchaseOrder: event.target.value })} /></label>
-        <label>{m.processDirectory.importer}<input value={draft.importer} onChange={event => setDraft({ ...draft, importer: event.target.value })} /></label>
-        <label>{m.followup.product}<input value={draft.product} onChange={event => setDraft({ ...draft, product: event.target.value })} placeholder={p.productPlaceholder} /></label>
-        <label>IP<input value={draft.ipNumber} onChange={event => setDraft({ ...draft, ipNumber: event.target.value })} /></label>
+    <E2eCollapsible title={t.overview.label} storageKey="erp-comex-e2e-charts-collapsed" icon="chart"
+      activeCount={e2eOverviewFilterCount(applied, stage)}
+      collapsedSummary={counts?.overview ? <E2eOverviewMini overview={counts.overview} locale={locale} /> : undefined}>
+      {/* One filter form for the table and the charts. The current stage and the demand type are the stage
+          cards and the toolbar, so they apply at once; the other fields wait for Apply. */}
+      <form className="portfolio-filter product-lines-filter e2e-overview-filters" aria-label={f.label} onSubmit={filter}>
+        <label>{p.poNumber}<SearchableSelect ariaLabel={p.poNumber} placeholder={all}
+          value={draft.purchaseOrder} options={textOptions(filterOptions?.purchaseOrders)}
+          onChange={value => setDraft({ ...draft, purchaseOrder: value })} /></label>
+        <label>{m.processDirectory.importer}<SearchableSelect ariaLabel={m.processDirectory.importer} placeholder={all}
+          value={draft.importer} options={textOptions(filterOptions?.importers)}
+          onChange={value => setDraft({ ...draft, importer: value })} /></label>
+        <label>{m.followup.product}<SearchableSelect ariaLabel={m.followup.product} placeholder={all}
+          searchPlaceholder={p.productPlaceholder} value={draft.product} options={productOptions}
+          onChange={value => setDraft({ ...draft, product: value })} /></label>
+        <label>IP<SearchableSelect ariaLabel="IP" placeholder={all} value={draft.ipNumber}
+          options={textOptions(filterOptions?.ipNumbers)} onChange={value => setDraft({ ...draft, ipNumber: value })} /></label>
         <label>{m.calc.status}<select value={draft.status} onChange={event => setDraft({ ...draft, status: event.target.value as ProductLineFilters["status"] })}>
-          <option value="">{m.processDirectory.all}</option>
+          <option value="">{all}</option>
           {productLineStatuses.map(status => <option key={status} value={status}>{statusLabel(m, status)}</option>)}
         </select></label>
-        <label>{p.etaFrom}<input type="date" value={draft.etaFrom} onChange={event => setDraft({ ...draft, etaFrom: event.target.value })} /></label>
-        <label>{p.etaTo}<input type="date" value={draft.etaTo} onChange={event => setDraft({ ...draft, etaTo: event.target.value })} /></label>
+        <label>{f.currentStage}<select value={stage.stage} onChange={event => selectCurrentStage(event.target.value as "" | E2eStageCode)}>
+          <option value="">{all}</option>
+          {E2E_STAGE_CODES.map(code => <option key={code} value={code}>{t.stageTitles[code]}</option>)}
+        </select></label>
+        <label>{f.demandType}<select value={demandType}
+          onChange={event => changeDemandType(event.target.value as E2eStageFilter["demandType"])}>
+          <option value="">{all}</option>
+          <option value="mts">{f.mts}</option>
+          <option value="notMts">{f.notMts}</option>
+        </select></label>
         <label>{p.situation}<select value={draft.situation} onChange={event => setDraft({ ...draft, situation: event.target.value as ProductLineFilters["situation"] })}>
           <option value="open">{p.open}</option>
           <option value="all">{p.all}</option>
         </select></label>
+        <label>{f.group}<select value={draft.group} onChange={event => setDraft({ ...draft, group: event.target.value })}>
+          <option value="">{all}</option>
+          {withSelected(filterOptions?.groups, draft.group).map(group => <option key={group} value={group}>{group}</option>)}
+        </select></label>
+        <label>{f.purpose}<select value={draft.purpose} onChange={event => setDraft({ ...draft, purpose: event.target.value })}>
+          <option value="">{all}</option>
+          {withSelected(filterOptions?.purposes, draft.purpose).map(purpose => <option key={purpose} value={purpose}>{purpose}</option>)}
+        </select></label>
+        <label>{p.etaFrom}<input type="date" value={draft.etaFrom} onChange={event => setDraft({ ...draft, etaFrom: event.target.value })} /></label>
+        <label>{p.etaTo}<input type="date" value={draft.etaTo} onChange={event => setDraft({ ...draft, etaTo: event.target.value })} /></label>
+        <label>{f.necessity}<select value={necessityShown} onChange={event => chooseNecessity(event.target.value as NecessityPreset)}>
+          <option value="all">{f.necessityAll}</option>
+          <option value="currentMonth">{f.currentMonth}</option>
+          <option value="currentYear">{f.currentYear}</option>
+          <option value="custom">{f.custom}</option>
+        </select></label>
+        {necessityShown === "custom" && <>
+          <label>{f.necessityFrom}<input type="date" value={draft.necessityFrom} max={draft.necessityTo || undefined}
+            onChange={event => setDraft({ ...draft, necessityFrom: event.target.value })} /></label>
+          <label>{f.necessityTo}<input type="date" value={draft.necessityTo} min={draft.necessityFrom || undefined}
+            onChange={event => setDraft({ ...draft, necessityTo: event.target.value })} /></label>
+        </>}
         <div className="button-row product-lines-filter-actions"><button className="button" type="submit">{p.apply}</button>
-          <button className="button secondary" type="button" onClick={() => {
-            setDraft(emptyProductLineFilters); setDeadline(""); setDelayRange("");
-            applyFilters(emptyProductLineFilters, { ...stage, deadline: "", delayRange: "" });
-          }}>{m.processDirectory.clear}</button></div>
+          <button className="button secondary" type="button" onClick={clearFilters}>{m.processDirectory.clear}</button></div>
       </form>
+      {!counts && !summaryError && <p role="status">{t.overview.loading}</p>}
+      {counts?.overview && <E2eOverviewCharts overview={counts.overview} locale={locale} selectedStatus={applied.status}
+        selectedDeadline={deadline} onStatusSelect={filterByStatus} onDeadlineSelect={selectDeadline}
+        selectedDelayRange={delayRange} onDelayRangeSelect={selectDelayRange} />}
     </E2eCollapsible>
     <section className="card" aria-live="polite">
       {!entry && <p role="status">{p.loading}</p>}

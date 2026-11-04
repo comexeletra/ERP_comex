@@ -12,27 +12,54 @@ export const e2eStatusColors = ["--color-chart-status-1", "--color-chart-status-
 export const e2eStatusColor = (status: string): string | undefined =>
   e2eStatusColors[productLineStatuses.indexOf(status as ProductLineStatus)];
 
+/** `group`, `purpose` and the necessity period are chosen on the End to End summary filter bar. */
 export type ProductLineFilters = {
   importer: string; purchaseOrder: string; ipNumber: string; product: string;
   status: "" | ProductLineStatus; etaFrom: string; etaTo: string; situation: "open" | "all";
+  group: string; purpose: string; necessityFrom: string; necessityTo: string;
 };
 
 export const emptyProductLineFilters: ProductLineFilters = { importer: "", purchaseOrder: "", ipNumber: "", product: "",
-  status: "", etaFrom: "", etaTo: "", situation: "open" };
+  status: "", etaFrom: "", etaTo: "", situation: "open", group: "", purpose: "", necessityFrom: "", necessityTo: "" };
 
-const textKeys = ["importer", "purchaseOrder", "ipNumber", "product"] as const;
+const textKeys = ["importer", "purchaseOrder", "ipNumber", "product", "group", "purpose"] as const;
+const dateKeys = ["etaFrom", "etaTo", "necessityFrom", "necessityTo"] as const;
 const isoDate = /^\d{4}-\d{2}-\d{2}$/u;
 
 export function parseProductLineFilters(params: URLSearchParams): ProductLineFilters {
   const status = params.get("status") ?? "";
-  const etaFrom = params.get("etaFrom") ?? ""; const etaTo = params.get("etaTo") ?? "";
+  const date = (key: typeof dateKeys[number]) => { const value = params.get(key) ?? ""; return isoDate.test(value) ? value : ""; };
   return {
     importer: params.get("importer") ?? "", purchaseOrder: params.get("purchaseOrder") ?? "",
     ipNumber: params.get("ipNumber") ?? "", product: params.get("product") ?? "",
     status: (productLineStatuses as readonly string[]).includes(status) ? status as ProductLineStatus : "",
-    etaFrom: isoDate.test(etaFrom) ? etaFrom : "", etaTo: isoDate.test(etaTo) ? etaTo : "",
+    etaFrom: date("etaFrom"), etaTo: date("etaTo"),
     situation: params.get("situation") === "all" ? "all" : "open",
+    group: params.get("group") ?? "", purpose: params.get("purpose") ?? "",
+    necessityFrom: date("necessityFrom"), necessityTo: date("necessityTo"),
   };
+}
+
+/** Shortcuts of the necessity filter; `custom` is any other period chosen on the calendar. */
+export type NecessityPreset = "all" | "currentMonth" | "currentYear" | "custom";
+
+/** Period of a necessity shortcut, from today (YYYY-MM-DD in Brasília). */
+export function necessityRange(preset: Exclude<NecessityPreset, "custom">, today: string) {
+  if (preset === "all") return { necessityFrom: "", necessityTo: "" };
+  const year = today.slice(0, 4);
+  if (preset === "currentYear") return { necessityFrom: `${year}-01-01`, necessityTo: `${year}-12-31` };
+  const month = Number(today.slice(5, 7));
+  const lastDay = new Date(Date.UTC(Number(year), month, 0)).getUTCDate();
+  return { necessityFrom: `${today.slice(0, 7)}-01`, necessityTo: `${today.slice(0, 7)}-${String(lastDay).padStart(2, "0")}` };
+}
+
+/** The shortcut a necessity period corresponds to today, or `custom`. */
+export function necessityPreset(from: string, to: string, today: string): NecessityPreset {
+  for (const preset of ["all", "currentMonth", "currentYear"] as const) {
+    const range = necessityRange(preset, today);
+    if (range.necessityFrom === from && range.necessityTo === to) return preset;
+  }
+  return "custom";
 }
 
 /** End to End stages, in the order of the flow (the same codes as the API). */
@@ -91,9 +118,17 @@ export function productLineFilterBody(filters: ProductLineFilters, stage = empty
   const body: Record<string, string> = { situation: filters.situation };
   for (const key of textKeys) if (filters[key].trim()) body[key] = filters[key].trim();
   if (filters.status) body.status = filters.status;
-  if (filters.etaFrom) body.etaFrom = filters.etaFrom;
-  if (filters.etaTo) body.etaTo = filters.etaTo;
+  for (const key of dateKeys) if (filters[key]) body[key] = filters[key];
   return { ...body, ...e2eStageFilterBody(stage) };
+}
+
+/**
+ * Filters counted on the collapsed End to End summary panel: those of its filter form, the necessity
+ * period as one, and the chart selections. The stage and the demand type are also on the toolbar, which shows them.
+ */
+export function e2eOverviewFilterCount(filters: ProductLineFilters, stage: E2eStageFilter): number {
+  const bothNecessityBounds = filters.necessityFrom && filters.necessityTo ? 1 : 0;
+  return activeProductLineFilterCount(filters) - bothNecessityBounds + (stage.deadline ? 1 : 0) + (stage.delayRange ? 1 : 0);
 }
 
 /** How many applied filters change the table, shown while the filter bar is collapsed. */

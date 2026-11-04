@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { activeProductLineFilterCount, e2eDeadlineStatuses, e2eDelayRanges, e2eStageCodes, e2eStageFilterBody, e2eSummaryQuery, emptyE2eStageFilter,
-  emptyProductLineFilters, itemShipmentSummary, parseE2eStageFilter, parseProductLineFilters, productLineFilterBody,
-  productLineQuery } from "../lib/purchase-order-lines.ts";
+import { activeProductLineFilterCount, e2eDeadlineStatuses, e2eDelayRanges, e2eOverviewFilterCount, e2eStageCodes, e2eStageFilterBody,
+  e2eSummaryQuery, emptyE2eStageFilter, emptyProductLineFilters, itemShipmentSummary, necessityPreset, necessityRange,
+  parseE2eStageFilter, parseProductLineFilters, productLineFilterBody, productLineQuery } from "../lib/purchase-order-lines.ts";
 
 test("product line filters round-trip through the URL and ignore invalid values", () => {
   const filters = parseProductLineFilters(new URLSearchParams(
@@ -100,4 +100,40 @@ test("the End to End scenario filters the lines and the summary takes the same f
   const summary = e2eSummaryQuery(emptyProductLineFilters, filter);
   assert.deepEqual(Object.fromEntries(summary), { situation: "open", stage: "T4", late: "true", demandType: "mts", modal: "air" });
   assert.equal(summary.has("page"), false);
+});
+
+test("the group, purpose and necessity filters round-trip through the URL and go to the API", () => {
+  const filters = parseProductLineFilters(new URLSearchParams(
+    "group=Energy&purpose=Estoque%20Revenda&necessityFrom=2026-11-01&necessityTo=2026-11-30"));
+  assert.deepEqual([filters.group, filters.purpose, filters.necessityFrom, filters.necessityTo],
+    ["Energy", "Estoque Revenda", "2026-11-01", "2026-11-30"]);
+  const invalid = parseProductLineFilters(new URLSearchParams("necessityFrom=01/11/2026&necessityTo=2026-11"));
+  assert.deepEqual([invalid.necessityFrom, invalid.necessityTo], ["", ""]);
+  assert.deepEqual(productLineFilterBody({ ...filters, group: " Energy " }), { situation: "open", group: "Energy",
+    purpose: "Estoque Revenda", necessityFrom: "2026-11-01", necessityTo: "2026-11-30" });
+  assert.deepEqual(Object.fromEntries(e2eSummaryQuery({ ...emptyProductLineFilters, group: "  " }, emptyE2eStageFilter)), { situation: "open" });
+  for (const key of ["group", "purpose", "necessityFrom", "necessityTo"]) assert.equal(emptyProductLineFilters[key], "", key);
+});
+
+test("the necessity shortcuts become a date range and the range shows its shortcut", () => {
+  assert.deepEqual(necessityRange("all", "2026-11-04"), { necessityFrom: "", necessityTo: "" });
+  assert.deepEqual(necessityRange("currentMonth", "2026-11-04"), { necessityFrom: "2026-11-01", necessityTo: "2026-11-30" });
+  assert.deepEqual(necessityRange("currentMonth", "2028-02-10"), { necessityFrom: "2028-02-01", necessityTo: "2028-02-29" });
+  assert.deepEqual(necessityRange("currentMonth", "2026-12-31"), { necessityFrom: "2026-12-01", necessityTo: "2026-12-31" });
+  assert.deepEqual(necessityRange("currentYear", "2026-11-04"), { necessityFrom: "2026-01-01", necessityTo: "2026-12-31" });
+  assert.equal(necessityPreset("", "", "2026-11-04"), "all");
+  assert.equal(necessityPreset("2026-11-01", "2026-11-30", "2026-11-04"), "currentMonth");
+  assert.equal(necessityPreset("2026-01-01", "2026-12-31", "2026-11-04"), "currentYear");
+  // A month that is no longer the current one, or a single bound, is a custom period.
+  assert.equal(necessityPreset("2026-10-01", "2026-10-31", "2026-11-04"), "custom");
+  assert.equal(necessityPreset("2026-11-01", "", "2026-11-04"), "custom");
+});
+
+test("the summary panel counts its own filters and the chart selections", () => {
+  assert.equal(e2eOverviewFilterCount(emptyProductLineFilters, emptyE2eStageFilter), 0);
+  assert.equal(e2eOverviewFilterCount({ ...emptyProductLineFilters, status: "ENTREGUE", group: "Water", purpose: "Despesa",
+    necessityFrom: "2026-11-01", necessityTo: "2026-11-30" }, { ...emptyE2eStageFilter, deadline: "late", delayRange: "upTo30" }), 6);
+  // One bound of the necessity period is one filter; the stage and the scenario are shown on the toolbar.
+  assert.equal(e2eOverviewFilterCount({ ...emptyProductLineFilters, necessityTo: "2026-11-30" },
+    { ...emptyE2eStageFilter, stage: "T3", demandType: "mts" }), 1);
 });
