@@ -1,5 +1,11 @@
 # API ERP na VPS Hostinger
 
+## Produtos sem cadastro no HML (2026-11-04)
+
+Os 388 itens da regra "Produto sem cadastro" (370 códigos, todos em PO `ACTIVE`, quase todos HEXING/Livoltek) foram comparados com os 1.529 produtos globais em busca de erro de digitação: um caractere trocado, a mais ou a menos, inversão, separador ou sufixo, conferindo a descrição. Não houve erro a corrigir: 125 códigos têm um código cadastrado a um caractere de distância, mas são peças irmãs da numeração sequencial da Livoltek (por exemplo 2010105550, resistor 10R 50 ppm, e 2010105560, 10R 200 ppm); 205 descrições citam o próprio código e as outras 154 não têm produto cadastrado equivalente. A PO 032362 usa códigos de 12 dígitos (base de 10 mais "01" ou "02") em 9 de 12 linhas, padrão da própria PO; em 302031213901 e 302013154901 a base (3020312139 e 3020131549) já está cadastrada, e Compras deve confirmar se é o mesmo produto. Os códigos dos itens não foram alterados, porque a PO vem do Protheus.
+
+Com aprovação do usuário e o perfil Master de Francisco Matheus, `register-products.mjs` cadastrou os 370 produtos em uma chamada de `POST /api/v1/products/bulk` do `hml-release-e830415` (código do item e a descrição mais frequente das suas linhas). A conferência prévia validou o lote contra os limites da rota e não encontrou código já cadastrado. Resultado: 370 criados, 370 linhas de auditoria, outbox e alias, 1.899 produtos globais ativos e "Produto sem cadastro" em 0; a repetição respondeu 370 ignorados. Backup antes do cadastro: `/var/backups/import-erp/erp_po_totvs_hml_pre_product_register_20261104T145104Z.dump` (472.825.797 bytes, SHA-256 `dc2e2b2cc6441a13663446d594de5765c644d06c93a4f88ede81f2d4432f76df`, 59 tabelas com dados).
+
 ## NCM não cadastrada: cadastro e substituição no HML (2026-11-04)
 
 Com aprovação do usuário, os 48 itens da regra "NCM não cadastrada" foram analisados contra a tabela oficial persistida no HML e contra as outras linhas do mesmo produto. 36 tinham NCM que não existe mais na tabela vigente: extinções de 2022 (8532.23.00, 8517.70.99, 8517.70.29, 7419.80.00, 9403.20.00, 7315.11.00) ou erros de digitação (8605.50.10, 8717.62.41, 8528.33.00, 9039.90.90, 8535.30.20, 3824.99.99). 12 tinham NCM oficial e vigente ainda não cadastrada.
