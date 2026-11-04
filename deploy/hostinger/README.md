@@ -1,5 +1,24 @@
 # API ERP na VPS Hostinger
 
+## Moeda por ensaio estatístico nos itens com preço sem moeda do HML (2026-11-04)
+
+Com autorização do usuário, os 77 itens da regra "Preço sem moeda" (5 POs `ACTIVE`, 76 da HEXING e 1 da INFOVISTA) receberam a moeda definida por um ensaio estatístico, em transação somente leitura, sobre os itens com moeda do `erp_po_totvs_hml` (7.453 em CNY e 19 em USD; nenhum em BRL ou EUR). O cadastro de fornecedor não tem país, então a localidade não pôde ser testada diretamente; o fornecedor exato a substitui:
+
+- a moeda é da PO: nenhuma das 365 POs com moeda tem duas moedas;
+- cada fornecedor usa uma única moeda. Em CNY ficam HEXING (230 POs), ZLINK, NANJING HEXING e LIVOLTEK; em USD, EVE ASIA, HUBBELL (BECHWITH), D-FLOW e LONGMIX - HEXING. O nome parecido não serve, porque LONGMIX - HEXING fatura em USD;
+- a validação deixando a PO de fora acertou 7.454 de 7.454 itens pelo fornecedor, inclusive os 17 em USD. Pelo produto, acertou só 6 de 17 em USD, porque a EVE ASIA vende em USD os mesmos códigos que HEXING e ZLINK vendem em CNY;
+- o preço confirma a moeda. Comparado à mediana CNY do mesmo produto em outras POs, o item em CNY tem razão mediana 1,00 (p10–p90 0,78–1,17) e o item em USD tem 0,129 (0,10–0,15), sem sobreposição. Nos itens sem moeda com histórico, a razão mediana foi 0,95.
+
+Gravação por `POST /api/v1/quality/current/fixes` (`ITEM_CURRENCY`, moeda explícita) do `dist` de `hml-release-e830415`, com o ator Master Francisco Matheus, chamada por `apply-currency-plan.mjs`. O script monta o plano a partir da regra da tela e recusa contagem, fornecedor ou status diferentes do ensaio. Foram três chamadas:
+
+| Chave | POs | Itens | Moeda | Evidência |
+|---|---|---|---|---|
+| `moeda-estatistica-20261104-CNY-alta` | 029078, 030201, 031178 | 62 | CNY | Fornecedor e preço; os IPs de 029078 e 030201 têm total em CNY na aba Pós |
+| `moeda-estatistica-20261104-CNY-media` | 031047 | 14 | CNY | Só o fornecedor: são peças de máquina sem histórico de preço |
+| `moeda-planilha-20261104-USD` | 031462 | 1 | USD | A planilha informa `US$`; a carga só aceitava o código ISO |
+
+A prévia aplicou 77 sem recusa e manteve as pendências. A gravação zerou a regra, incrementou uma vez a versão de cada PO e registrou 77 linhas `QUALITY_FIX` em `audit.audit_log`, com o motivo `Moeda definida pelo ensaio estatístico de moeda de 2026-11-04…`, e os 77 eventos ligados em `audit.outbox_message` (`correlation_id` = `event_id`). A repetição respondeu `replayed` sem alterar nada. Ficou sem moeda só o item cancelado HXWSG100R22014-CEMIG da PO 030201, que a regra não conta. Seguem para conferência manual o preço do 5041400670 na PO 031178 (4,62 contra a mediana de 0,0585 em CNY, 79 vezes mais) e 4 itens da mesma PO com razão entre 0,26 e 0,36, abaixo do histórico mas longe do padrão de USD. Backup antes da gravação: `/var/backups/import-erp/erp_po_totvs_hml_pre_currency_statistical_20261104T165639Z.dump` (472.995.406 bytes, SHA-256 `c3b67f1ae6dd0f536a020a1d2aaff1742977a1b4b7fc6ae2f6c50ae40b83b577`, 59 tabelas com dados). Scripts, plano e logs em `/root/claude-currency-20261104` na VPS. Sem mudança de código, migration, produção, `main` ou variáveis da Vercel.
+
 ## Produtos sem cadastro no HML (2026-11-04)
 
 Os 388 itens da regra "Produto sem cadastro" (370 códigos, todos em PO `ACTIVE`, quase todos HEXING/Livoltek) foram comparados com os 1.529 produtos globais em busca de erro de digitação: um caractere trocado, a mais ou a menos, inversão, separador ou sufixo, conferindo a descrição. Não houve erro a corrigir: 125 códigos têm um código cadastrado a um caractere de distância, mas são peças irmãs da numeração sequencial da Livoltek (por exemplo 2010105550, resistor 10R 50 ppm, e 2010105560, 10R 200 ppm); 205 descrições citam o próprio código e as outras 154 não têm produto cadastrado equivalente. A PO 032362 usa códigos de 12 dígitos (base de 10 mais "01" ou "02") em 9 de 12 linhas, padrão da própria PO; em 302031213901 e 302013154901 a base (3020312139 e 3020131549) já está cadastrada, e Compras deve confirmar se é o mesmo produto. Os códigos dos itens não foram alterados, porque a PO vem do Protheus.
