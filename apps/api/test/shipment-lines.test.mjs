@@ -150,10 +150,14 @@ test("the filter options list the values of every product line of the user's imp
 });
 
 test("the End to End summary filters built by the web pass the API query schema", async () => {
-  const { e2eSummaryQuery, emptyE2eStageFilter, emptyProductLineFilters, necessityRange, productLineQuery } =
+  const { e2eSummaryQuery, emptyE2eStageFilter, emptyProductLineFilters, productLineQuery } =
     await import("../../web/lib/purchase-order-lines.ts");
+  const { formatRelativeSpec, resolveDateRange } = await import("../../web/lib/date-range.ts");
+  // "This month" from the period picker: the dates go to the API, the relative period stays on the screen.
+  const thisMonth = { unit: "month", from: 0, to: 0 };
+  const { from, to } = resolveDateRange({ kind: "relative", range: thisMonth, excludeOpen: false }, "2026-11-04");
   const filters = { ...emptyProductLineFilters, status: "AGUARDANDO CHEGADA", group: " Energy ", purpose: "Despesa",
-    ...necessityRange("currentMonth", "2026-11-04") };
+    necessityFrom: from, necessityTo: to, necessityPeriod: formatRelativeSpec(thisMonth, false) };
   const stage = { ...emptyE2eStageFilter, stage: "T4", demandType: "mts" };
   const summary = Object.fromEntries(e2eSummaryQuery(filters, stage));
   const parsed = shipmentLineQuery.strict().safeParse(summary);

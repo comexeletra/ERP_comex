@@ -12,15 +12,20 @@ export const e2eStatusColors = ["--color-chart-status-1", "--color-chart-status-
 export const e2eStatusColor = (status: string): string | undefined =>
   e2eStatusColors[productLineStatuses.indexOf(status as ProductLineStatus)];
 
-/** `group`, `purpose` and the necessity period are chosen on the End to End summary filter bar. */
+/**
+ * `group`, `purpose` and the necessity period are chosen on the End to End filter form. The API gets the
+ * necessity dates; `necessityPeriod` keeps a relative period (lib/date-range.ts) in the URL, so a link
+ * keeps "this month" as the current month, and is never sent to the API.
+ */
 export type ProductLineFilters = {
   importer: string; purchaseOrder: string; ipNumber: string; product: string;
   status: "" | ProductLineStatus; etaFrom: string; etaTo: string; situation: "open" | "all";
-  group: string; purpose: string; necessityFrom: string; necessityTo: string;
+  group: string; purpose: string; necessityFrom: string; necessityTo: string; necessityPeriod: string;
 };
 
 export const emptyProductLineFilters: ProductLineFilters = { importer: "", purchaseOrder: "", ipNumber: "", product: "",
-  status: "", etaFrom: "", etaTo: "", situation: "open", group: "", purpose: "", necessityFrom: "", necessityTo: "" };
+  status: "", etaFrom: "", etaTo: "", situation: "open", group: "", purpose: "", necessityFrom: "", necessityTo: "",
+  necessityPeriod: "" };
 
 const textKeys = ["importer", "purchaseOrder", "ipNumber", "product", "group", "purpose"] as const;
 const dateKeys = ["etaFrom", "etaTo", "necessityFrom", "necessityTo"] as const;
@@ -37,29 +42,9 @@ export function parseProductLineFilters(params: URLSearchParams): ProductLineFil
     situation: params.get("situation") === "all" ? "all" : "open",
     group: params.get("group") ?? "", purpose: params.get("purpose") ?? "",
     necessityFrom: date("necessityFrom"), necessityTo: date("necessityTo"),
+    // Checked and resolved to dates by the screen (lib/date-range.ts parseRelativeSpec).
+    necessityPeriod: (params.get("necessityPeriod") ?? "").slice(0, 24),
   };
-}
-
-/** Shortcuts of the necessity filter; `custom` is any other period chosen on the calendar. */
-export type NecessityPreset = "all" | "currentMonth" | "currentYear" | "custom";
-
-/** Period of a necessity shortcut, from today (YYYY-MM-DD in Brasília). */
-export function necessityRange(preset: Exclude<NecessityPreset, "custom">, today: string) {
-  if (preset === "all") return { necessityFrom: "", necessityTo: "" };
-  const year = today.slice(0, 4);
-  if (preset === "currentYear") return { necessityFrom: `${year}-01-01`, necessityTo: `${year}-12-31` };
-  const month = Number(today.slice(5, 7));
-  const lastDay = new Date(Date.UTC(Number(year), month, 0)).getUTCDate();
-  return { necessityFrom: `${today.slice(0, 7)}-01`, necessityTo: `${today.slice(0, 7)}-${String(lastDay).padStart(2, "0")}` };
-}
-
-/** The shortcut a necessity period corresponds to today, or `custom`. */
-export function necessityPreset(from: string, to: string, today: string): NecessityPreset {
-  for (const preset of ["all", "currentMonth", "currentYear"] as const) {
-    const range = necessityRange(preset, today);
-    if (range.necessityFrom === from && range.necessityTo === to) return preset;
-  }
-  return "custom";
 }
 
 /** End to End stages, in the order of the flow (the same codes as the API). */

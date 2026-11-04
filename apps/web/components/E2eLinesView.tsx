@@ -7,12 +7,14 @@ import { E2E_STAGE_CODES, e2eDateClass, e2eToday, formatE2eDate, type E2eResult,
 import { buildE2eFlow, DEFAULT_E2E_FLOW_CONFIG } from "../lib/e2e-flow";
 import { formatNumber } from "../lib/format-number";
 import { statusLabel } from "../lib/i18n/labels";
-import { e2eOverviewFilterCount, e2eStatusColor, e2eSummaryQuery, emptyProductLineFilters, necessityPreset, necessityRange,
-  parseE2eStageFilter, parseProductLineFilters, productLineQuery, productLineStatuses, type E2eDeadlineStatus, type E2eDelayRange,
-  type E2eStageFilter, type NecessityPreset, type ProductLineFilters } from "../lib/purchase-order-lines";
+import { dateRangeValue, formatRelativeSpec, resolveDateRange, type DateRangeValue } from "../lib/date-range";
+import { e2eOverviewFilterCount, e2eStatusColor, e2eSummaryQuery, emptyProductLineFilters, parseE2eStageFilter,
+  parseProductLineFilters, productLineQuery, productLineStatuses, type E2eDeadlineStatus, type E2eDelayRange,
+  type E2eStageFilter, type ProductLineFilters } from "../lib/purchase-order-lines";
 import type { SearchableOption } from "../lib/searchable-options";
 import E2eCollapsible from "./E2eCollapsible";
 import { E2eFlowRail, Icon, useE2eStepper } from "./E2eFlowParts";
+import DateRangeFilter from "./DateRangeFilter";
 import { E2eModelDetails, E2eModelSummary } from "./E2eModelPanels";
 import E2eOverviewCharts, { E2eOverviewMini, type E2eOverview, type E2eOverviewStatus } from "./E2eOverviewCharts";
 import E2eTabs from "./E2eTabs";
@@ -44,6 +46,14 @@ const stageSide = (code: E2eStageCode) => E2E_STAGE_CODES.indexOf(code) < 3 ? "s
 const withSelected = (values: string[] | undefined, selected: string) =>
   selected && !(values ?? []).includes(selected) ? [selected, ...(values ?? [])] : values ?? [];
 const textOptions = (values: string[] | undefined): SearchableOption[] => (values ?? []).map(value => ({ value, label: value }));
+/** The necessity filter fields of a period: its dates from today, and the relative period kept in the URL. */
+function necessityFields(value: DateRangeValue, today: string): Pick<ProductLineFilters, "necessityFrom" | "necessityTo" | "necessityPeriod"> {
+  const { from, to } = resolveDateRange(value, today);
+  return { necessityFrom: from, necessityTo: to,
+    necessityPeriod: value.kind === "relative" ? formatRelativeSpec(value.range, value.excludeOpen) : "" };
+}
+const necessityValue = (filters: ProductLineFilters) =>
+  dateRangeValue(filters.necessityPeriod, filters.necessityFrom, filters.necessityTo);
 
 /** Status as in the legend of the status chart: the swatch of its colour and the name. */
 function E2eStatus({ status }: { status: string }) {
@@ -70,7 +80,9 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
     const query = new URLSearchParams(initialQuery);
     const requestedPage = Number(query.get("page"));
     const stage = parseE2eStageFilter(query);
-    return { filters: parseProductLineFilters(query), stage,
+    const filters = parseProductLineFilters(query);
+    // A relative necessity period from a link counts from today, not from the day the link was made.
+    return { filters: { ...filters, ...necessityFields(necessityValue(filters), e2eToday()) }, stage,
       page: Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1 };
   });
   const [draft, setDraft] = useState<ProductLineFilters>(initial.filters);
@@ -100,10 +112,6 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   const [summaries, setSummaries] = useState<Record<string, { data?: StageSummary; error?: string }>>({});
   const [lastSummary, setLastSummary] = useState<StageSummary>();
   const today = e2eToday();
-  // "Custom" keeps the calendar fields open while their dates are still empty.
-  const [necessityCustom, setNecessityCustom] = useState(false);
-  const draftNecessity = necessityPreset(draft.necessityFrom, draft.necessityTo, today);
-  const necessityShown: NecessityPreset = draftNecessity === "custom" || necessityCustom ? "custom" : draftNecessity;
   const [filterOptions, setFilterOptions] = useState<FilterOptions>();
   const { exporting, exportStatus, exportError, downloadExcel } = useProductLineExport("end-to-end");
   const [choosingColumns, setChoosingColumns] = useState(false);
@@ -159,7 +167,9 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   const summaryError = summaryEntry?.error;
 
   function syncUrl(filters: ProductLineFilters, nextStage: E2eStageFilter, nextPage: number) {
-    window.history.replaceState(null, "", `/end-to-end?${productLineQuery(filters, nextPage, pageSize, nextStage)}`);
+    const url = productLineQuery(filters, nextPage, pageSize, nextStage);
+    if (filters.necessityPeriod) url.set("necessityPeriod", filters.necessityPeriod);
+    window.history.replaceState(null, "", `/end-to-end?${url}`);
   }
   function applyFilters(filters: ProductLineFilters, nextStage = stage) {
     setApplied(filters); setCache({}); setSummaries({});
@@ -177,12 +187,13 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
     stepper.goTo(k); setView("current");
     syncUrl(applied, { ...stage, stage: code, view: "current" }, 1);
   }
-  function chooseNecessity(value: NecessityPreset) {
-    setNecessityCustom(value === "custom");
-    if (value !== "custom") setDraft({ ...draft, ...necessityRange(value, today) });
+  // The period picker has its own Apply, so its choice applies at once, keeping the other fields being edited.
+  function applyNecessity(value: DateRangeValue) {
+    const fields = necessityFields(value, today);
+    setDraft({ ...draft, ...fields }); applyFilters({ ...applied, ...fields });
   }
   function clearFilters() {
-    setDraft(emptyProductLineFilters); setDeadline(""); setDelayRange(""); setNecessityCustom(false);
+    setDraft(emptyProductLineFilters); setDeadline(""); setDelayRange("");
     stepper.goTo(null); setDemandType("");
     applyFilters(emptyProductLineFilters, { ...stage, stage: "", deadline: "", delayRange: "", demandType: "" });
   }
@@ -350,18 +361,8 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
         </select></label>
         <label>{p.etaFrom}<input type="date" value={draft.etaFrom} onChange={event => setDraft({ ...draft, etaFrom: event.target.value })} /></label>
         <label>{p.etaTo}<input type="date" value={draft.etaTo} onChange={event => setDraft({ ...draft, etaTo: event.target.value })} /></label>
-        <label>{f.necessity}<select value={necessityShown} onChange={event => chooseNecessity(event.target.value as NecessityPreset)}>
-          <option value="all">{f.necessityAll}</option>
-          <option value="currentMonth">{f.currentMonth}</option>
-          <option value="currentYear">{f.currentYear}</option>
-          <option value="custom">{f.custom}</option>
-        </select></label>
-        {necessityShown === "custom" && <>
-          <label>{f.necessityFrom}<input type="date" value={draft.necessityFrom} max={draft.necessityTo || undefined}
-            onChange={event => setDraft({ ...draft, necessityFrom: event.target.value })} /></label>
-          <label>{f.necessityTo}<input type="date" value={draft.necessityTo} min={draft.necessityFrom || undefined}
-            onChange={event => setDraft({ ...draft, necessityTo: event.target.value })} /></label>
-        </>}
+        <label>{f.necessity}<DateRangeFilter ariaLabel={f.necessity} today={today} value={necessityValue(draft)}
+          onApply={applyNecessity} /></label>
         <div className="button-row product-lines-filter-actions"><button className="button" type="submit">{p.apply}</button>
           <button className="button secondary" type="button" onClick={clearFilters}>{m.processDirectory.clear}</button></div>
       </form>

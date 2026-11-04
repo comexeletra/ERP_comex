@@ -50,7 +50,7 @@ test("the optional overview precedes the model and cross-filters by status and d
   assert.match(view, /onDeadlineSelect=\{selectDeadline\}/u);
   assert.match(view, /selectedDeadline=\{deadline\}/u);
   // Clear also removes the deadline and delay range chosen on the charts, the current stage and the demand type.
-  assert.match(view, /setDraft\(emptyProductLineFilters\); setDeadline\(""\); setDelayRange\(""\); setNecessityCustom\(false\);/u);
+  assert.match(view, /setDraft\(emptyProductLineFilters\); setDeadline\(""\); setDelayRange\(""\);/u);
   assert.match(view, /stepper\.goTo\(null\); setDemandType\(""\);/u);
   assert.match(view, /applyFilters\(emptyProductLineFilters, \{ \.\.\.stage, stage: "", deadline: "", delayRange: "", demandType: "" \}\);/u);
   // The delay range bars cross-filter the same way.
@@ -123,16 +123,19 @@ test("the filter form lists the available values with search and has the summary
   assert.doesNotMatch(form, /<input value=/u);
   assert.match(view, /apiFetch\("\/api\/v1\/purchase-order-lines\/filter-options", \{ signal: controller\.signal \}\)/u);
   assert.match(view, /label: product\.description \? `\$\{product\.code\} · \$\{product\.description\}` : product\.code/u);
-  // Dropdowns: status, current stage, MTS / not MTS, situation, group, purpose and necessity.
-  assert.equal((form.match(/<select /gu) ?? []).length, 7);
-  for (const label of ["m.calc.status", "f.currentStage", "f.demandType", "f.group", "f.purpose", "f.necessity"]) {
+  // Dropdowns: status, current stage, MTS / not MTS, situation, group and purpose; ETA keeps two date fields.
+  assert.equal((form.match(/<select /gu) ?? []).length, 6);
+  for (const label of ["m.calc.status", "f.currentStage", "f.demandType", "f.group", "f.purpose"]) {
     assert.match(form, new RegExp(`\\{${label.replaceAll(".", "\\.")}\\}<select `, "u"), label);
   }
-  // The necessity shortcuts use today in Brasília; the custom period shows the calendar fields.
+  assert.equal((form.match(/type="date"/gu) ?? []).length, 2);
+  // The necessity is the period picker; its relative periods count from today in Brasília, also from a link.
+  assert.match(form, /<label>\{f\.necessity\}<DateRangeFilter ariaLabel=\{f\.necessity\} today=\{today\} value=\{necessityValue\(draft\)\}/u);
   assert.match(view, /const today = e2eToday\(\);/u);
-  assert.match(view, /setDraft\(\{ \.\.\.draft, \.\.\.necessityRange\(value, today\) \}\)/u);
-  assert.match(form, /\{necessityShown === "custom" && <>/u);
-  assert.equal((form.match(/type="date"/gu) ?? []).length, 4);
+  assert.match(view, /necessityFields\(necessityValue\(filters\), e2eToday\(\)\)/u);
+  assert.match(view, /setDraft\(\{ \.\.\.draft, \.\.\.fields \}\); applyFilters\(\{ \.\.\.applied, \.\.\.fields \}\);/u);
+  // The relative period goes to the URL only; the API gets the dates.
+  assert.match(view, /if \(filters\.necessityPeriod\) url\.set\("necessityPeriod", filters\.necessityPeriod\);/u);
   // The current stage and the demand type are the stage cards and the toolbar, so they apply at once.
   assert.match(form, /onChange=\{event => selectCurrentStage\(/u);
   assert.match(form, /onChange=\{event => changeDemandType\(/u);
@@ -141,9 +144,34 @@ test("the filter form lists the available values with search and has the summary
   assert.match(styles, /\.e2e-overview-filters \{/u);
   for (const messages of [ptBR, en, zhCN]) {
     const f = messages.e2eLines.overview.filters;
-    for (const key of ["label", "currentStage", "necessity", "necessityAll", "currentMonth", "currentYear", "custom",
-      "necessityFrom", "necessityTo", "demandType", "mts", "notMts", "group", "purpose"]) assert.ok(f[key], key);
+    for (const key of ["label", "currentStage", "necessity", "demandType", "mts", "notMts", "group", "purpose"]) assert.ok(f[key], key);
   }
+});
+
+test("the period picker has every date, a fixed period on the calendar, a relative period and the shortcuts", async () => {
+  const picker = await read("components/DateRangeFilter.tsx");
+  const components = await read("app/styles/components.css");
+  // Modes, the calendar, the unit tabs with the standard tabs and the shortcuts grouped by unit.
+  assert.match(picker, /\{option\("all", t\.allTime\)\}/u);
+  assert.match(picker, /\{option\("static", t\.staticPeriod\)\}/u);
+  assert.match(picker, /\{option\("relative", t\.relativePeriod\)\}/u);
+  assert.match(picker, /calendarWeeks\(view\.year, view\.month\)/u);
+  assert.match(picker, /onClick=\{\(\) => setFixed\(pickCalendarDay\(fixed, day\.date\)\)\}/u);
+  assert.match(picker, /className="tabs date-range-units" role="tablist"/u);
+  assert.match(picker, /className=\{unit === range\.unit \? "tab active" : "tab"\}/u);
+  assert.match(picker, /dateRangePresets\.filter\(preset => preset\.range\.unit === unit\)/u);
+  // Nothing changes until Apply; a fixed period needs both dates in order; Escape and Cancel close it.
+  assert.match(picker, /const valid = mode !== "static" \|\| \(isIsoDate\(fixed\.from\) && isIsoDate\(fixed\.to\) && fixed\.from <= fixed\.to\);/u);
+  assert.match(picker, /<button type="button" className="button" disabled=\{!valid\} onClick=\{apply\}>\{t\.apply\}<\/button>/u);
+  assert.match(picker, /<button type="button" className="button secondary" onClick=\{close\}>\{t\.cancel\}<\/button>/u);
+  assert.match(picker, /if \(event\.key === "Escape"\)/u);
+  // "Exclude open period" only for a relative period that includes the current one.
+  assert.match(picker, /const canExclude = \(mode === "relative" \|\| mode === "preset"\) && includesOpenPeriod\(range\);/u);
+  // The panel is a portal above the page, in the colours of the application.
+  assert.match(picker, /createPortal\(<div className="date-range-panel" role="dialog"/u);
+  assert.match(components, /\.date-range-panel \{[^}]*z-index: var\(--z-popover\)/u);
+  assert.match(components, /\.date-range-day\.is-edge \{ background: var\(--color-primary\); color: var\(--color-on-primary\)/u);
+  assert.match(components, /\.date-range-day\.is-in-range \{ background: var\(--color-primary-tint\)/u);
 });
 
 test("both overview charts are clickable through their legends and keep the keyboard out of the images", () => {
