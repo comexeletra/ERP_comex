@@ -41,8 +41,9 @@ test("the optional overview precedes the model and cross-filters by status and d
   assert.ok(view.indexOf("<E2eModelDetails") < view.indexOf('<form className="portfolio-filter product-lines-filter e2e-overview-filters"'));
   assert.ok(view.indexOf('<form className="portfolio-filter product-lines-filter e2e-overview-filters"') < view.indexOf("<E2eOverviewCharts"));
   assert.ok(view.indexOf("t.overview.loading") > view.indexOf("<E2eModelDetails"));
-  // Clicking the selected category again clears it.
-  assert.match(view, /const filters: ProductLineFilters = \{ \.\.\.applied, status: applied\.status === status \? "" : status \};/u);
+  // Clicking the selected category again clears it; a delivered status shows every situation.
+  assert.match(view, /const filters = withProductLineStatus\(applied, applied\.status === status \? "" : status\);/u);
+  assert.match(view, /onChange=\{event => setDraft\(withProductLineStatus\(draft, event\.target\.value as ProductLineFilters\["status"\]\)\)\}/u);
   assert.match(view, /setDraft\(filters\); applyFilters\(filters\);/u);
   assert.match(view, /const next = deadline === selected \? "" : selected;/u);
   assert.match(view, /setDeadline\(next\); syncUrl\(applied, \{ \.\.\.stage, deadline: next \}, 1\);/u);

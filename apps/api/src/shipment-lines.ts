@@ -247,11 +247,16 @@ export function summarizeE2eStages(lines: ShipmentLine[], filters: Partial<Shipm
   } };
 }
 
+/** A delivered or cancelled status asks for closed lines, so it overrides the open lines default. */
+export function lineSituation({ status, situation }: Pick<ShipmentLineFilters, "status" | "situation">): "open" | "all" {
+  return status === "ENTREGUE" || status === "CANCELADO" ? "all" : situation;
+}
+
 async function queryLineRows(pool: Pool, scopes: readonly string[], filters: ShipmentLineFilters,
   limit: number | null, offset: number) {
   const result = await pool.query<{ total_count: number; items: Row[] }>(linesSql, [scopes,
     filters.importer || null, filters.purchaseOrder || null, filters.ipNumber || null, filters.product || null,
-    filters.status ?? null, filters.etaFrom ?? null, filters.etaTo ?? null, filters.situation,
+    filters.status ?? null, filters.etaFrom ?? null, filters.etaTo ?? null, lineSituation(filters),
     filters.group || null, filters.purpose || null, filters.necessityFrom ?? null, filters.necessityTo ?? null, limit, offset]);
   return { totalCount: Number(result.rows[0]?.total_count ?? 0), rows: result.rows[0]?.items ?? [] };
 }
@@ -314,10 +319,12 @@ export async function queryShipmentLineFilterOptions(pool: Pool, scopes: readonl
 
 /**
  * Every line matching the filters, summarized by E2E stage. The status chart ignores the status
- * filter, so the database returns every status and the summary applies it to the calculated status.
+ * filter, so the database returns every status (in the situation the status implies) and the summary
+ * applies it to the calculated status.
  */
 export async function queryE2eStageSummary(pool: Pool, scopes: readonly string[], filters: ShipmentLineFilters) {
-  const { rows } = await queryLineRows(pool, scopes, { ...filters, status: undefined }, null, 0);
+  const { rows } = await queryLineRows(pool, scopes, { ...filters, status: undefined, situation: lineSituation(filters) },
+    null, 0);
   return summarizeE2eStages(await calculateLines(pool, rows), filters);
 }
 

@@ -9,8 +9,8 @@ import { formatNumber } from "../lib/format-number";
 import { statusLabel } from "../lib/i18n/labels";
 import { dateRangeValue, formatRelativeSpec, resolveDateRange, type DateRangeValue } from "../lib/date-range";
 import { e2eOverviewFilterCount, e2eStatusColor, e2eSummaryQuery, emptyProductLineFilters, parseE2eStageFilter,
-  parseProductLineFilters, productLineQuery, productLineStatuses, type E2eDeadlineStatus, type E2eDelayRange,
-  type E2eStageFilter, type ProductLineFilters } from "../lib/purchase-order-lines";
+  parseProductLineFilters, productLineQuery, productLineStatuses, withProductLineStatus, type E2eDeadlineStatus,
+  type E2eDelayRange, type E2eStageFilter, type ProductLineFilters } from "../lib/purchase-order-lines";
 import type { SearchableOption } from "../lib/searchable-options";
 import E2eCollapsible from "./E2eCollapsible";
 import { E2eFlowRail, Icon, useE2eStepper } from "./E2eFlowParts";
@@ -178,7 +178,7 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   function filter(event: FormEvent<HTMLFormElement>) { event.preventDefault(); applyFilters(draft); }
   // The overview charts cross-filter; clicking the selected category again clears it.
   function filterByStatus(status: E2eOverviewStatus) {
-    const filters: ProductLineFilters = { ...applied, status: applied.status === status ? "" : status };
+    const filters = withProductLineStatus(applied, applied.status === status ? "" : status);
     setDraft(filters); applyFilters(filters);
   }
   // The current stage of the filter form is the stage of the cards and the animation, in the current view.
@@ -333,7 +333,7 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
           onChange={value => setDraft({ ...draft, product: value })} /></label>
         <label>IP<SearchableSelect ariaLabel="IP" placeholder={all} value={draft.ipNumber}
           options={textOptions(filterOptions?.ipNumbers)} onChange={value => setDraft({ ...draft, ipNumber: value })} /></label>
-        <label>{m.calc.status}<select value={draft.status} onChange={event => setDraft({ ...draft, status: event.target.value as ProductLineFilters["status"] })}>
+        <label>{m.calc.status}<select value={draft.status} onChange={event => setDraft(withProductLineStatus(draft, event.target.value as ProductLineFilters["status"]))}>
           <option value="">{all}</option>
           {productLineStatuses.map(status => <option key={status} value={status}>{statusLabel(m, status)}</option>)}
         </select></label>

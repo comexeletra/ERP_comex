@@ -99,6 +99,25 @@ test("filters are validated and passed to the query; open lines are the default"
     "AGUARDANDO CHEGADA", "DESEMBARAÇO", "ENTREGUE", "CANCELADO"]);
 });
 
+test("a delivered or cancelled status reaches its lines even with the open lines default", async t => {
+  const { app, queries } = await linesApp(t);
+  const situationOf = () => queries.filter(query => query.sql.includes("line_kind")).at(-1).params[8];
+  for (const status of ["ENTREGUE", "CANCELADO"]) {
+    const lines = await app.inject({ method: "GET", url: `/api/v1/purchase-order-lines?status=${status}` });
+    assert.equal(lines.statusCode, 200, lines.body);
+    assert.equal(situationOf(), "all", status);
+    // The summary drops the status in the database for its status chart, but not the situation it implies.
+    const summary = await app.inject({ method: "GET", url: `/api/v1/purchase-order-lines/e2e-stages?status=${status}` });
+    assert.equal(summary.statusCode, 200, summary.body);
+    assert.equal(situationOf(), "all", status);
+  }
+  // An open status keeps the default, and without a status the open lines stay the default.
+  await app.inject({ method: "GET", url: "/api/v1/purchase-order-lines?status=DESEMBARA%C3%87O" });
+  assert.equal(situationOf(), "open");
+  await app.inject({ method: "GET", url: "/api/v1/purchase-order-lines/e2e-stages" });
+  assert.equal(situationOf(), "open");
+});
+
 test("product lines filter by group, purpose and necessity period in the query", async t => {
   const { app, queries } = await linesApp(t);
   const filtered = await app.inject({ method: "GET",

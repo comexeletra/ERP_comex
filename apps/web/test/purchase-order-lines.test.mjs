@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { activeProductLineFilterCount, e2eDeadlineStatuses, e2eDelayRanges, e2eOverviewFilterCount, e2eStageCodes, e2eStageFilterBody,
-  e2eSummaryQuery, emptyE2eStageFilter, emptyProductLineFilters, itemShipmentSummary, parseE2eStageFilter, parseProductLineFilters, productLineFilterBody, productLineQuery } from "../lib/purchase-order-lines.ts";
+  e2eSummaryQuery, emptyE2eStageFilter, emptyProductLineFilters, itemShipmentSummary, parseE2eStageFilter, parseProductLineFilters, productLineFilterBody, productLineQuery,
+  withProductLineStatus } from "../lib/purchase-order-lines.ts";
 
 test("product line filters round-trip through the URL and ignore invalid values", () => {
   const filters = parseProductLineFilters(new URLSearchParams(
@@ -18,6 +19,16 @@ test("product line filters round-trip through the URL and ignore invalid values"
   assert.equal(query.get("page"), "2");
   assert.equal(query.has("etaTo"), false);
   assert.deepEqual(productLineFilterBody(emptyProductLineFilters), { situation: "open" });
+});
+
+test("choosing a delivered or cancelled status shows every situation, as the API applies it", () => {
+  for (const status of ["ENTREGUE", "CANCELADO"]) {
+    assert.deepEqual(productLineFilterBody(withProductLineStatus(emptyProductLineFilters, status)), { situation: "all", status });
+  }
+  // An open status, or clearing the status, keeps the situation chosen on the form.
+  assert.equal(withProductLineStatus(emptyProductLineFilters, "DESEMBARAÇO").situation, "open");
+  const all = withProductLineStatus(emptyProductLineFilters, "ENTREGUE");
+  assert.deepEqual(withProductLineStatus(all, ""), { ...emptyProductLineFilters, situation: "all" });
 });
 
 test("an item split across IPs shows how much is in each status and what is left to distribute", () => {

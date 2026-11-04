@@ -11,7 +11,7 @@ import { useProductLineExport } from "./useProductLineExport";
 import PageHeader from "./PageHeader";
 import { Tooltip } from "./Tooltip";
 import { emptyE2eStageFilter, emptyProductLineFilters, parseProductLineFilters, productLineQuery,
-  productLineStatuses, type ProductLineFilters } from "../lib/purchase-order-lines";
+  productLineStatuses, withProductLineStatus, type ProductLineFilters } from "../lib/purchase-order-lines";
 
 type Value = string | number | boolean | null | undefined;
 type ProductLine = {
@@ -80,7 +80,7 @@ export default function ProductLinesView({ initialQuery }: { initialQuery: strin
         <label>{m.processDirectory.importer}<input value={draft.importer} onChange={event => setDraft({ ...draft, importer: event.target.value })} /></label>
         <label>{m.followup.product}<input value={draft.product} onChange={event => setDraft({ ...draft, product: event.target.value })} placeholder={t.productPlaceholder} /></label>
         <label>IP<input value={draft.ipNumber} onChange={event => setDraft({ ...draft, ipNumber: event.target.value })} /></label>
-        <label>{m.calc.status}<select value={draft.status} onChange={event => setDraft({ ...draft, status: event.target.value as ProductLineFilters["status"] })}>
+        <label>{m.calc.status}<select value={draft.status} onChange={event => setDraft(withProductLineStatus(draft, event.target.value as ProductLineFilters["status"]))}>
           <option value="">{m.processDirectory.all}</option>
           {productLineStatuses.map(status => <option key={status} value={status}>{statusLabel(m, status)}</option>)}
         </select></label>

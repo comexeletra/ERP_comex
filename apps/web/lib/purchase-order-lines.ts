@@ -47,6 +47,14 @@ export function parseProductLineFilters(params: URLSearchParams): ProductLineFil
   };
 }
 
+/**
+ * The filters with a new status. A delivered or cancelled status shows every situation, as the API
+ * applies it (lineSituation in shipment-lines.ts), so the form shows what the table lists.
+ */
+export function withProductLineStatus(filters: ProductLineFilters, status: ProductLineFilters["status"]): ProductLineFilters {
+  return { ...filters, status, situation: status === "ENTREGUE" || status === "CANCELADO" ? "all" : filters.situation };
+}
+
 /** End to End stages, in the order of the flow (the same codes as the API). */
 export const e2eStageCodes = ["T0", "T1", "T2", "T3", "T4", "T5"] as const satisfies readonly E2eStageCode[];
 
