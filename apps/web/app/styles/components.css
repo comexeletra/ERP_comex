@@ -161,18 +161,28 @@ table :is(input, select, textarea, [contenteditable]) { cursor: auto; }
 .searchable-select-option:hover, .searchable-select-option[aria-selected="true"] { background: var(--color-primary-soft); }
 .searchable-select-option[aria-disabled="true"] { color: var(--color-text-subtle); cursor: not-allowed; }
 .searchable-select-empty { color: var(--color-text-muted); margin: 8px; }
+/* List filter with checkboxes (components/MultiSelectFilter.tsx): the menu above, the trigger with the date filter below */
+.multi-select-option {
+  align-items: center; border-radius: var(--radius-xs); color: var(--color-text); cursor: pointer; display: flex; font-weight: 400;
+  gap: 10px; min-height: 40px; padding: 8px;
+}
+.multi-select-option:hover { background: var(--color-primary-soft); }
+.multi-select-option span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.multi-select-option input { flex: none; margin: 0; }
+.multi-select-all { border-bottom: 1px solid var(--color-border); border-radius: 0; font-weight: 600; }
 
-/* Date period filter (components/DateRangeFilter.tsx): a field-like button and its panel */
-.date-range-filter { min-width: 0; position: relative; width: 100%; }
-.date-range-trigger {
+/* Date period filter (components/DateRangeFilter.tsx) and list filter: a field-like button and its panel */
+.date-range-filter, .multi-select { min-width: 0; position: relative; width: 100%; }
+.date-range-trigger, .multi-select-trigger {
   align-items: center; background: var(--color-field-bg); border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm);
   color: var(--color-text); cursor: pointer; display: flex; font: inherit; font-weight: 400; gap: 8px; justify-content: space-between;
   min-height: 44px; min-width: 0; padding: 10px 12px; text-align: left; transition: border-color .15s ease, box-shadow .15s ease; width: 100%;
 }
-.date-range-trigger span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.date-range-trigger svg { color: var(--color-text-muted); flex: none; }
-.date-range-trigger:hover { border-color: var(--color-border-hover); }
-.date-range-trigger:focus-visible, .date-range-trigger[aria-expanded="true"] { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--focus-ring-soft); outline: 0; }
+.date-range-trigger span, .multi-select-trigger span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.date-range-trigger svg, .multi-select-trigger svg { color: var(--color-text-muted); flex: none; }
+.date-range-trigger:hover, .multi-select-trigger:hover { border-color: var(--color-border-hover); }
+.date-range-trigger:focus-visible, .date-range-trigger[aria-expanded="true"],
+.multi-select-trigger:focus-visible, .multi-select-trigger[aria-expanded="true"] { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--focus-ring-soft); outline: 0; }
 .date-range-panel {
   background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
   display: flex; flex-direction: column; max-width: calc(100vw - 16px); overflow: hidden; position: fixed; z-index: var(--z-popover);

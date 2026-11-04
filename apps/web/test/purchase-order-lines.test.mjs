@@ -1,18 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { activeProductLineFilterCount, e2eDeadlineStatuses, e2eDelayRanges, e2eOverviewFilterCount, e2eStageCodes, e2eStageFilterBody,
-  e2eSummaryQuery, emptyE2eStageFilter, emptyProductLineFilters, itemShipmentSummary, parseE2eStageFilter, parseProductLineFilters, productLineFilterBody, productLineQuery,
-  withProductLineStatus } from "../lib/purchase-order-lines.ts";
+  e2eSummaryQuery, emptyE2eStageFilter, emptyProductLineFilters, itemShipmentSummary, nextChartSelection, parseE2eStageFilter,
+  parseProductLineFilters, productLineFilterBody, productLineQuery, withE2eLists, withProductLineStatus } from "../lib/purchase-order-lines.ts";
 
 test("product line filters round-trip through the URL and ignore invalid values", () => {
   const filters = parseProductLineFilters(new URLSearchParams(
     "ipNumber=IP-1&status=AGUARDANDO%20CHEGADA&etaFrom=2026-10-01&etaTo=31/10/2026&situation=all"));
   assert.equal(filters.ipNumber, "IP-1");
-  assert.equal(filters.status, "AGUARDANDO CHEGADA");
+  assert.deepEqual(filters.status, ["AGUARDANDO CHEGADA"]);
   assert.equal(filters.etaFrom, "2026-10-01");
   assert.equal(filters.etaTo, "");
   assert.equal(filters.situation, "all");
-  assert.equal(parseProductLineFilters(new URLSearchParams("status=WAITING")).status, "");
+  assert.deepEqual(parseProductLineFilters(new URLSearchParams("status=WAITING")).status, []);
   assert.equal(parseProductLineFilters(new URLSearchParams("")).situation, "open");
   const query = productLineQuery(filters, 2, 50);
   assert.equal(query.get("status"), "AGUARDANDO CHEGADA");
@@ -21,14 +21,58 @@ test("product line filters round-trip through the URL and ignore invalid values"
   assert.deepEqual(productLineFilterBody(emptyProductLineFilters), { situation: "open" });
 });
 
+test("the list filters keep several values in the URL, repeating the key, and send them to the API", () => {
+  const filters = parseProductLineFilters(new URLSearchParams("status=ENTREGUE&status=WAITING&status=A%20DISTRIBUIR"
+    + "&status=ENTREGUE&group=Energy&group=%20Water%20&group=&importers=FOR&purchaseOrders=PO-9&purchaseOrders=PO-10"
+    + "&ipNumbers=IP-1&productCodes=P-2"));
+  // Statuses keep the order of the list; invalid, empty and repeated values are dropped.
+  assert.deepEqual(filters.status, ["A DISTRIBUIR", "ENTREGUE"]);
+  assert.deepEqual([filters.group, filters.importers, filters.purchaseOrders, filters.ipNumbers, filters.productCodes],
+    [["Energy", "Water"], ["FOR"], ["PO-9", "PO-10"], ["IP-1"], ["P-2"]]);
+  assert.deepEqual(productLineFilterBody(filters), { situation: "open", status: ["A DISTRIBUIR", "ENTREGUE"],
+    group: ["Energy", "Water"], importers: ["FOR"], purchaseOrders: ["PO-9", "PO-10"], ipNumbers: ["IP-1"], productCodes: ["P-2"] });
+  const query = productLineQuery(filters, 1, 50);
+  assert.deepEqual(query.getAll("status"), ["A DISTRIBUIR", "ENTREGUE"]);
+  assert.deepEqual(query.getAll("purchaseOrders"), ["PO-9", "PO-10"]);
+  assert.deepEqual(parseProductLineFilters(query), { ...filters, necessityPeriod: "" });
+  // "Todas" sends nothing; a list counts as one filter.
+  for (const key of ["status", "group", "purpose", "importers", "purchaseOrders", "ipNumbers", "productCodes"]) {
+    assert.deepEqual(emptyProductLineFilters[key], [], key);
+  }
+  assert.equal(activeProductLineFilterCount(filters), 6);
+});
+
 test("choosing a delivered or cancelled status shows every situation, as the API applies it", () => {
   for (const status of ["ENTREGUE", "CANCELADO"]) {
-    assert.deepEqual(productLineFilterBody(withProductLineStatus(emptyProductLineFilters, status)), { situation: "all", status });
+    assert.deepEqual(productLineFilterBody(withProductLineStatus(emptyProductLineFilters, [status])),
+      { situation: "all", status: [status] });
   }
+  assert.equal(withProductLineStatus(emptyProductLineFilters, ["DESEMBARAÇO", "ENTREGUE"]).situation, "all");
   // An open status, or clearing the status, keeps the situation chosen on the form.
-  assert.equal(withProductLineStatus(emptyProductLineFilters, "DESEMBARAÇO").situation, "open");
-  const all = withProductLineStatus(emptyProductLineFilters, "ENTREGUE");
-  assert.deepEqual(withProductLineStatus(all, ""), { ...emptyProductLineFilters, situation: "all" });
+  assert.equal(withProductLineStatus(emptyProductLineFilters, ["DESEMBARAÇO"]).situation, "open");
+  const all = withProductLineStatus(emptyProductLineFilters, ["ENTREGUE"]);
+  assert.deepEqual(withProductLineStatus(all, []), { ...emptyProductLineFilters, situation: "all" });
+  // The statuses keep the order of the list.
+  assert.deepEqual(withProductLineStatus(emptyProductLineFilters, ["ENTREGUE", "A DISTRIBUIR"]).status, ["A DISTRIBUIR", "ENTREGUE"]);
+});
+
+test("on the End to End screen a text filter from an older link becomes one value of its list", () => {
+  const filters = withE2eLists(parseProductLineFilters(new URLSearchParams(
+    "purchaseOrder=PO-1&importer=%20FOR%20&ipNumber=IP-1&ipNumbers=IP-1&product=P-2&productCodes=P-1")));
+  assert.deepEqual([filters.importer, filters.purchaseOrder, filters.ipNumber, filters.product], ["", "", "", ""]);
+  assert.deepEqual([filters.importers, filters.purchaseOrders, filters.ipNumbers, filters.productCodes],
+    [["FOR"], ["PO-1"], ["IP-1"], ["P-1", "P-2"]]);
+  assert.deepEqual(withE2eLists(emptyProductLineFilters), emptyProductLineFilters);
+});
+
+test("a chart click keeps only its category, Ctrl+click adds or removes it, as in Power BI", () => {
+  assert.deepEqual(nextChartSelection([], "ENTREGUE", false), ["ENTREGUE"]);
+  assert.deepEqual(nextChartSelection(["ENTREGUE", "DESEMBARAÇO"], "ENTREGUE", false), ["ENTREGUE"]);
+  assert.deepEqual(nextChartSelection(["DESEMBARAÇO"], "ENTREGUE", false), ["ENTREGUE"]);
+  // Clicking the only category selected clears it.
+  assert.deepEqual(nextChartSelection(["ENTREGUE"], "ENTREGUE", false), []);
+  assert.deepEqual(nextChartSelection(["DESEMBARAÇO"], "ENTREGUE", true), ["DESEMBARAÇO", "ENTREGUE"]);
+  assert.deepEqual(nextChartSelection(["DESEMBARAÇO", "ENTREGUE"], "ENTREGUE", true), ["DESEMBARAÇO"]);
 });
 
 test("an item split across IPs shows how much is in each status and what is left to distribute", () => {
@@ -71,7 +115,7 @@ test("the End to End deadline filter goes to the lines, the export and the summa
   assert.deepEqual(e2eStageFilterBody(filter), { stage: "T4", late: "true", deadline: "late" });
   assert.equal(productLineQuery(emptyProductLineFilters, 1, 50, filter).get("deadline"), "late");
   // The summary takes the same filters as the table, without the page.
-  const filters = { ...emptyProductLineFilters, status: "AGUARDANDO CHEGADA", ipNumber: " IP-1 " };
+  const filters = { ...emptyProductLineFilters, status: ["AGUARDANDO CHEGADA"], ipNumber: " IP-1 " };
   assert.deepEqual(Object.fromEntries(e2eSummaryQuery(filters, { ...emptyE2eStageFilter, deadline: "noData" })),
     { situation: "open", ipNumber: "IP-1", status: "AGUARDANDO CHEGADA", deadline: "noData" });
   assert.deepEqual(Object.fromEntries(e2eSummaryQuery(emptyProductLineFilters, emptyE2eStageFilter)), { situation: "open" });
@@ -82,7 +126,7 @@ test("the End to End deadline filter goes to the lines, the export and the summa
 test("the collapsed filter bar counts the filters that change the table", () => {
   assert.equal(activeProductLineFilterCount(emptyProductLineFilters), 0);
   assert.equal(activeProductLineFilterCount({ ...emptyProductLineFilters, ipNumber: "  " }), 0);
-  assert.equal(activeProductLineFilterCount({ ...emptyProductLineFilters, ipNumber: "IP-1", status: "ENTREGUE",
+  assert.equal(activeProductLineFilterCount({ ...emptyProductLineFilters, ipNumber: "IP-1", status: ["ENTREGUE"],
     etaFrom: "2026-10-01", situation: "all" }), 4);
 });
 
@@ -116,13 +160,13 @@ test("the group, purpose and necessity filters round-trip through the URL and go
   const filters = parseProductLineFilters(new URLSearchParams(
     "group=Energy&purpose=Estoque%20Revenda&necessityFrom=2026-11-01&necessityTo=2026-11-30"));
   assert.deepEqual([filters.group, filters.purpose, filters.necessityFrom, filters.necessityTo],
-    ["Energy", "Estoque Revenda", "2026-11-01", "2026-11-30"]);
+    [["Energy"], ["Estoque Revenda"], "2026-11-01", "2026-11-30"]);
   const invalid = parseProductLineFilters(new URLSearchParams("necessityFrom=01/11/2026&necessityTo=2026-11"));
   assert.deepEqual([invalid.necessityFrom, invalid.necessityTo], ["", ""]);
-  assert.deepEqual(productLineFilterBody({ ...filters, group: " Energy " }), { situation: "open", group: "Energy",
-    purpose: "Estoque Revenda", necessityFrom: "2026-11-01", necessityTo: "2026-11-30" });
-  assert.deepEqual(Object.fromEntries(e2eSummaryQuery({ ...emptyProductLineFilters, group: "  " }, emptyE2eStageFilter)), { situation: "open" });
-  for (const key of ["group", "purpose", "necessityFrom", "necessityTo", "necessityPeriod"]) assert.equal(emptyProductLineFilters[key], "", key);
+  assert.deepEqual(productLineFilterBody({ ...filters, group: [" Energy "] }), { situation: "open", group: ["Energy"],
+    purpose: ["Estoque Revenda"], necessityFrom: "2026-11-01", necessityTo: "2026-11-30" });
+  assert.deepEqual(Object.fromEntries(e2eSummaryQuery({ ...emptyProductLineFilters, group: ["  "] }, emptyE2eStageFilter)), { situation: "open" });
+  for (const key of ["necessityFrom", "necessityTo", "necessityPeriod"]) assert.equal(emptyProductLineFilters[key], "", key);
 });
 
 test("the relative necessity period is read from the URL but never sent to the API", () => {
@@ -138,7 +182,7 @@ test("the relative necessity period is read from the URL but never sent to the A
 
 test("the summary panel counts its own filters and the chart selections", () => {
   assert.equal(e2eOverviewFilterCount(emptyProductLineFilters, emptyE2eStageFilter), 0);
-  assert.equal(e2eOverviewFilterCount({ ...emptyProductLineFilters, status: "ENTREGUE", group: "Water", purpose: "Despesa",
+  assert.equal(e2eOverviewFilterCount({ ...emptyProductLineFilters, status: ["ENTREGUE"], group: ["Water"], purpose: ["Despesa"],
     necessityFrom: "2026-11-01", necessityTo: "2026-11-30" }, { ...emptyE2eStageFilter, deadline: "late", delayRange: "upTo30" }), 6);
   // One bound of the necessity period is one filter; the stage and the scenario are shown on the toolbar.
   assert.equal(e2eOverviewFilterCount({ ...emptyProductLineFilters, necessityTo: "2026-11-30" },

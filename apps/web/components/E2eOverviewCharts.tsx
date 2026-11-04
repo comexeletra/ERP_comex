@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { overviewShares, overviewTip, overviewTotal, rankedIndexes, type OverviewShare } from "../lib/e2e-overview-format";
 import { statusLabel } from "../lib/i18n/labels";
 import { pieSlices } from "../lib/pie-chart";
@@ -23,7 +23,11 @@ const deadlineColors: Record<E2eDeadlineStatus, string> = {
   onTime: "--color-chart-on-time", onLimit: "--color-chart-on-limit",
   late: "--color-chart-late", noData: "--color-chart-no-data",
 };
-const dimmed = (key: string, selected: string) => selected && key !== selected ? " is-dimmed" : "";
+// The selected categories of a chart; the status chart can have several, the others one at most.
+const dimmed = (key: string, selected: readonly string[]) => selected.length && !selected.includes(key) ? " is-dimmed" : "";
+const one = (selected: string): string[] => selected ? [selected] : [];
+// Ctrl+click (Cmd+click on a Mac) adds to the selection, as in Power BI.
+const additive = (event: MouseEvent<Element>) => event.ctrlKey || event.metaKey;
 
 /** Card in the style of the model indicators: label, total in items and the selection reset. */
 function OverviewCard({ title, total, selected, onClear, wide, children }: {
@@ -42,13 +46,13 @@ function OverviewCard({ title, total, selected, onClear, wide, children }: {
 
 /** Legend with quantity and share; each item filters by its category, the keyboard path of the chart. */
 function Legend<Key extends string>({ entries, selected, onSelect, filterLabel, stacked }: {
-  entries: ChartEntry<Key>[]; selected: string; onSelect: (key: Key) => void;
+  entries: ChartEntry<Key>[]; selected: readonly string[]; onSelect: (key: Key, additive: boolean) => void;
   filterLabel: (label: string) => string; stacked?: boolean;
 }) {
   return <ul className={`e2e-chart-legend${stacked ? " e2e-chart-legend-stacked" : ""}`}>
     {entries.map(entry => <li key={entry.key}>
       <button type="button" className={`e2e-chart-legend-item${dimmed(entry.key, selected)}`}
-        aria-pressed={entry.key === selected} onClick={() => onSelect(entry.key)}
+        aria-pressed={selected.includes(entry.key)} onClick={event => onSelect(entry.key, additive(event))}
         aria-label={`${filterLabel(entry.label)} (${entry.share.compact}, ${entry.share.percent})`}>
         <span className="e2e-chart-swatch" style={{ background: `var(${entry.color})` }} />
         <span className="e2e-chart-legend-name">{entry.label}</span>
@@ -59,13 +63,16 @@ function Legend<Key extends string>({ entries, selected, onSelect, filterLabel, 
   </ul>;
 }
 
-/** Tooltip card of a chart mark: the category, its quantity, share and lines, and what a click does. */
-function ChartTip({ entry, selected, locale, m }: { entry: ChartEntry<string>; selected: string; locale: string; m: Messages }) {
-  const tip = overviewTip(entry.share, entry.part.lines, entry.key === selected, locale, m);
+/** Tooltip card of a chart mark: the category, its quantity, share and lines, and what a click (and Ctrl+click) does. */
+function ChartTip({ entry, selected, multiple, locale, m }: {
+  entry: ChartEntry<string>; selected: readonly string[]; multiple?: boolean; locale: string; m: Messages;
+}) {
+  const tip = overviewTip(entry.share, entry.part.lines, selected.includes(entry.key), locale, m);
   return <div className="e2e-chart-tip">
     <div className="e2e-chart-tip-name"><span className="e2e-chart-swatch" style={{ background: `var(${entry.color})` }} />{entry.label}</div>
     <dl>{tip.rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
     <div className="e2e-chart-tip-hint">{tip.hint}</div>
+    {multiple && <div className="e2e-chart-tip-hint">{m.e2eLines.overview.tipAdd}</div>}
   </div>;
 }
 
@@ -81,18 +88,18 @@ function entriesOf<Key extends string>(keys: readonly Key[], parts: Record<Key, 
  * and each row filters by its range.
  */
 function DelayRangeBars({ entries, selected, onSelect, filterLabel, locale, m }: {
-  entries: ChartEntry<E2eDelayRange>[]; selected: string; onSelect: (key: E2eDelayRange) => void;
+  entries: ChartEntry<E2eDelayRange>[]; selected: readonly string[]; onSelect: (key: E2eDelayRange) => void;
   filterLabel: (label: string) => string; locale: string; m: Messages;
 }) {
   const values = entries.map(entry => entry.share.value);
   const max = Math.max(0, ...values);
   return <ul className="e2e-range-bars">
-    {rankedIndexes(values, entries.findIndex(entry => entry.key === selected)).map(index => {
+    {rankedIndexes(values, entries.findIndex(entry => selected.includes(entry.key))).map(index => {
       const entry = entries[index];
       const ratio = max > 0 ? entry.share.value / max : 0;
       return <li key={entry.key}>
         <Tooltip content={<ChartTip entry={entry} selected={selected} locale={locale} m={m} />} followCursor>
-          <button type="button" className={`e2e-range-row${dimmed(entry.key, selected)}`} aria-pressed={entry.key === selected}
+          <button type="button" className={`e2e-range-row${dimmed(entry.key, selected)}`} aria-pressed={selected.includes(entry.key)}
             onClick={() => onSelect(entry.key)}
             aria-label={`${filterLabel(entry.label)} (${entry.share.compact}, ${entry.share.percent})`}>
             <span className="e2e-range-label">{entry.label}</span>
@@ -129,10 +136,11 @@ export function E2eOverviewMini({ overview, locale }: { overview: E2eOverview; l
  * the other charts, the stage cards and the table, while its own chart keeps every category; clicking
  * it again clears it.
  */
-export default function E2eOverviewCharts({ overview, locale, selectedStatus, selectedDeadline, selectedDelayRange,
-  onStatusSelect, onDeadlineSelect, onDelayRangeSelect }: {
-  overview: E2eOverview; locale: string; selectedStatus: string; selectedDeadline: string; selectedDelayRange: string;
-  onStatusSelect: (status: E2eOverviewStatus) => void; onDeadlineSelect: (deadline: E2eDeadlineStatus) => void;
+export default function E2eOverviewCharts({ overview, locale, selectedStatuses, selectedDeadline, selectedDelayRange,
+  onStatusSelect, onStatusClear, onDeadlineSelect, onDelayRangeSelect }: {
+  overview: E2eOverview; locale: string; selectedStatuses: readonly string[]; selectedDeadline: string; selectedDelayRange: string;
+  onStatusSelect: (status: E2eOverviewStatus, additive: boolean) => void; onStatusClear: () => void;
+  onDeadlineSelect: (deadline: E2eDeadlineStatus) => void;
   onDelayRangeSelect: (range: E2eDelayRange) => void;
 }) {
   const { m } = useI18n();
@@ -151,19 +159,19 @@ export default function E2eOverviewCharts({ overview, locale, selectedStatus, se
   const rangeTotal = byDelayRange ? overviewTotal(e2eDelayRanges.map(key => byDelayRange[key].quantity), locale) : "";
 
   return <section className="e2e-overview" aria-label={o.label}>
-    <OverviewCard title={o.statusTitle} total={statusTotal} selected={selectedStatus !== ""} wide
-      onClear={() => onStatusSelect(selectedStatus as E2eOverviewStatus)}>
+    <OverviewCard title={o.statusTitle} total={statusTotal} selected={selectedStatuses.length > 0} wide onClear={onStatusClear}>
       {hasStatus
         ? <div className="e2e-distribution" role="img" aria-label={o.chartLabel(o.statusTitle, statusTotal)}>
           {statusEntries.filter(entry => entry.share.value > 0).map(entry =>
-            <Tooltip key={entry.key} content={<ChartTip entry={entry} selected={selectedStatus} locale={locale} m={m} />} followCursor>
-              <div aria-hidden="true" className={`e2e-distribution-segment${dimmed(entry.key, selectedStatus)}`}
+            <Tooltip key={entry.key} content={<ChartTip entry={entry} selected={selectedStatuses} multiple locale={locale} m={m} />}
+              followCursor>
+              <div aria-hidden="true" className={`e2e-distribution-segment${dimmed(entry.key, selectedStatuses)}`}
                 style={{ background: `var(${entry.color})`, flexGrow: entry.share.value }}
-                onClick={() => onStatusSelect(entry.key)} />
+                onClick={event => onStatusSelect(entry.key, additive(event))} />
             </Tooltip>)}
         </div>
         : <p className="muted">{o.empty}</p>}
-      <Legend entries={statusEntries} selected={selectedStatus} onSelect={onStatusSelect} filterLabel={o.filterByStatus} />
+      <Legend entries={statusEntries} selected={selectedStatuses} onSelect={onStatusSelect} filterLabel={o.filterByStatus} />
     </OverviewCard>
     <OverviewCard title={o.deadlineTitle} total={deadlineTotal} selected={selectedDeadline !== ""}
       onClear={() => onDeadlineSelect(selectedDeadline as E2eDeadlineStatus)}>
@@ -172,22 +180,22 @@ export default function E2eOverviewCharts({ overview, locale, selectedStatus, se
           ? <svg className="e2e-pie" viewBox="0 0 120 120" role="img" aria-label={o.chartLabel(o.deadlineTitle, deadlineTotal)}>
             {slices.map(slice => {
               const entry = deadlineEntries[slice.index];
-              return <Tooltip key={entry.key} content={<ChartTip entry={entry} selected={selectedDeadline} locale={locale} m={m} />} followCursor>
+              return <Tooltip key={entry.key} content={<ChartTip entry={entry} selected={one(selectedDeadline)} locale={locale} m={m} />} followCursor>
                 <path d={slice.d} fill={`var(${entry.color})`} aria-hidden="true"
-                  className={dimmed(entry.key, selectedDeadline).trim() || undefined}
+                  className={dimmed(entry.key, one(selectedDeadline)).trim() || undefined}
                   onClick={() => onDeadlineSelect(entry.key)} />
               </Tooltip>;
             })}
           </svg>
           : <p className="muted">{o.empty}</p>}
-        <Legend entries={deadlineEntries} selected={selectedDeadline} onSelect={onDeadlineSelect}
+        <Legend entries={deadlineEntries} selected={one(selectedDeadline)} onSelect={onDeadlineSelect}
           filterLabel={o.filterByDeadline} stacked />
       </div>
     </OverviewCard>
     {byDelayRange && <OverviewCard title={o.delayRangeTitle} total={rangeTotal} selected={selectedDelayRange !== ""}
       onClear={() => onDelayRangeSelect(selectedDelayRange as E2eDelayRange)}>
       {rangeEntries.some(entry => entry.share.value > 0) || selectedDelayRange
-        ? <DelayRangeBars entries={rangeEntries} selected={selectedDelayRange} onSelect={onDelayRangeSelect}
+        ? <DelayRangeBars entries={rangeEntries} selected={one(selectedDelayRange)} onSelect={onDelayRangeSelect}
           filterLabel={o.filterByDelayRange} locale={locale} m={m} />
         : <p className="muted">{o.empty}</p>}
     </OverviewCard>}

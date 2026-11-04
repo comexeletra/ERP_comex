@@ -48,7 +48,8 @@ test("product line exports are queued with the carteira filters", async t => {
   assert.equal(queued.statusCode, 202, queued.body);
   const insert = queries.find(query => query.sql.includes("INSERT INTO jobs.export_job"));
   assert.match(insert.sql, /'purchase-order-lines-xlsx'/u);
-  assert.deepEqual(JSON.parse(insert.params[4]), { ipNumber: "IP-1", status: "AGUARDANDO CHEGADA", situation: "open" });
+  // One status is stored as a list of one, the shape the worker parses again.
+  assert.deepEqual(JSON.parse(insert.params[4]), { ipNumber: "IP-1", status: ["AGUARDANDO CHEGADA"], situation: "open" });
   // The End to End screen exports the stage it shows; the worker parses the stored filters again.
   const staged = await app.inject({ method: "POST", url: "/api/v1/exports/purchase-order-lines",
     payload: { stage: "T3", view: "reached", late: "true" } });
@@ -66,7 +67,7 @@ test("product line exports keep the End to End deadline status filter", async t 
     payload: { status: "AGUARDANDO CHEGADA", deadline: "late", delayRange: "upTo30", demandType: "mts", modal: "air" } });
   assert.equal(queued.statusCode, 202, queued.body);
   const stored = JSON.parse(queries.filter(query => query.sql.includes("INSERT INTO jobs.export_job")).at(-1).params[4]);
-  assert.deepEqual(stored, { status: "AGUARDANDO CHEGADA", deadline: "late", delayRange: "upTo30", demandType: "mts",
+  assert.deepEqual(stored, { status: ["AGUARDANDO CHEGADA"], deadline: "late", delayRange: "upTo30", demandType: "mts",
     modal: "air", situation: "open" });
   assert.equal(shipmentLineQuery.safeParse(stored).data.modal, "air");
   assert.equal(shipmentLineQuery.safeParse(stored).data.deadline, "late");
@@ -82,9 +83,17 @@ test("product line exports keep the group, purpose and necessity filters of the 
     payload: { group: "Energy", purpose: "Despesa", necessityFrom: "2026-11-01", necessityTo: "2026-11-30" } });
   assert.equal(queued.statusCode, 202, queued.body);
   const stored = JSON.parse(queries.filter(query => query.sql.includes("INSERT INTO jobs.export_job")).at(-1).params[4]);
-  assert.deepEqual(stored, { group: "Energy", purpose: "Despesa", necessityFrom: "2026-11-01", necessityTo: "2026-11-30",
+  assert.deepEqual(stored, { group: ["Energy"], purpose: ["Despesa"], necessityFrom: "2026-11-01", necessityTo: "2026-11-30",
     situation: "open" });
   assert.equal(shipmentLineQuery.strict().safeParse(stored).success, true);
+  // The End to End lists go as arrays and are stored for the worker as they came.
+  const lists = { status: ["DESEMBARAÇO", "ENTREGUE"], group: ["Energy", "Water"], importers: ["FOR"],
+    purchaseOrders: ["PO-9", "PO-10"], ipNumbers: ["IP-1"], productCodes: ["P-2"] };
+  const listed = await app.inject({ method: "POST", url: "/api/v1/exports/purchase-order-lines", payload: lists });
+  assert.equal(listed.statusCode, 202, listed.body);
+  const storedLists = JSON.parse(queries.filter(query => query.sql.includes("INSERT INTO jobs.export_job")).at(-1).params[4]);
+  assert.deepEqual(storedLists, { ...lists, situation: "open" });
+  assert.deepEqual(shipmentLineQuery.strict().parse(storedLists), { ...lists, situation: "open" });
   const invalid = await app.inject({ method: "POST", url: "/api/v1/exports/purchase-order-lines",
     payload: { necessityFrom: "01/11/2026" } });
   assert.equal(invalid.statusCode, 400, invalid.body);

@@ -13,34 +13,43 @@ export const e2eStatusColor = (status: string): string | undefined =>
   e2eStatusColors[productLineStatuses.indexOf(status as ProductLineStatus)];
 
 /**
- * `group`, `purpose` and the necessity period are chosen on the End to End filter form. The API gets the
- * necessity dates; `necessityPeriod` keeps a relative period (lib/date-range.ts) in the URL, so a link
+ * The text fields match a part of the value (the Linhas de produto screen). `status` and the lists hold any
+ * of the values chosen on the End to End filter form, compared exactly by the API; empty is "Todas". The API
+ * gets the necessity dates; `necessityPeriod` keeps a relative period (lib/date-range.ts) in the URL, so a link
  * keeps "this month" as the current month, and is never sent to the API.
  */
 export type ProductLineFilters = {
   importer: string; purchaseOrder: string; ipNumber: string; product: string;
-  status: "" | ProductLineStatus; etaFrom: string; etaTo: string; situation: "open" | "all";
-  group: string; purpose: string; necessityFrom: string; necessityTo: string; necessityPeriod: string;
+  status: ProductLineStatus[]; etaFrom: string; etaTo: string; situation: "open" | "all";
+  group: string[]; purpose: string[]; importers: string[]; purchaseOrders: string[]; ipNumbers: string[]; productCodes: string[];
+  necessityFrom: string; necessityTo: string; necessityPeriod: string;
 };
 
 export const emptyProductLineFilters: ProductLineFilters = { importer: "", purchaseOrder: "", ipNumber: "", product: "",
-  status: "", etaFrom: "", etaTo: "", situation: "open", group: "", purpose: "", necessityFrom: "", necessityTo: "",
-  necessityPeriod: "" };
+  status: [], etaFrom: "", etaTo: "", situation: "open", group: [], purpose: [], importers: [], purchaseOrders: [],
+  ipNumbers: [], productCodes: [], necessityFrom: "", necessityTo: "", necessityPeriod: "" };
 
-const textKeys = ["importer", "purchaseOrder", "ipNumber", "product", "group", "purpose"] as const;
+const textKeys = ["importer", "purchaseOrder", "ipNumber", "product"] as const;
+const listKeys = ["group", "purpose", "importers", "purchaseOrders", "ipNumbers", "productCodes"] as const;
 const dateKeys = ["etaFrom", "etaTo", "necessityFrom", "necessityTo"] as const;
 const isoDate = /^\d{4}-\d{2}-\d{2}$/u;
 
+/** Values trimmed, without the empty and the repeated ones. */
+const cleanList = (values: readonly string[]) => [...new Set(values.map(value => value.trim()).filter(Boolean))];
+/** Valid statuses in the order of the list. */
+const statusList = (values: readonly string[]) => productLineStatuses.filter(status => values.includes(status));
+
 export function parseProductLineFilters(params: URLSearchParams): ProductLineFilters {
-  const status = params.get("status") ?? "";
   const date = (key: typeof dateKeys[number]) => { const value = params.get(key) ?? ""; return isoDate.test(value) ? value : ""; };
+  const list = (key: typeof listKeys[number]) => cleanList(params.getAll(key));
   return {
     importer: params.get("importer") ?? "", purchaseOrder: params.get("purchaseOrder") ?? "",
     ipNumber: params.get("ipNumber") ?? "", product: params.get("product") ?? "",
-    status: (productLineStatuses as readonly string[]).includes(status) ? status as ProductLineStatus : "",
+    status: statusList(params.getAll("status")),
     etaFrom: date("etaFrom"), etaTo: date("etaTo"),
     situation: params.get("situation") === "all" ? "all" : "open",
-    group: params.get("group") ?? "", purpose: params.get("purpose") ?? "",
+    group: list("group"), purpose: list("purpose"), importers: list("importers"), purchaseOrders: list("purchaseOrders"),
+    ipNumbers: list("ipNumbers"), productCodes: list("productCodes"),
     necessityFrom: date("necessityFrom"), necessityTo: date("necessityTo"),
     // Checked and resolved to dates by the screen (lib/date-range.ts parseRelativeSpec).
     necessityPeriod: (params.get("necessityPeriod") ?? "").slice(0, 24),
@@ -48,11 +57,32 @@ export function parseProductLineFilters(params: URLSearchParams): ProductLineFil
 }
 
 /**
- * The filters with a new status. A delivered or cancelled status shows every situation, as the API
+ * The filters with new statuses. A delivered or cancelled status among them shows every situation, as the API
  * applies it (lineSituation in shipment-lines.ts), so the form shows what the table lists.
  */
-export function withProductLineStatus(filters: ProductLineFilters, status: ProductLineFilters["status"]): ProductLineFilters {
-  return { ...filters, status, situation: status === "ENTREGUE" || status === "CANCELADO" ? "all" : filters.situation };
+export function withProductLineStatus(filters: ProductLineFilters, status: readonly ProductLineStatus[]): ProductLineFilters {
+  const closed = status.includes("ENTREGUE") || status.includes("CANCELADO");
+  return { ...filters, status: statusList(status), situation: closed ? "all" : filters.situation };
+}
+
+/**
+ * The End to End filters: the PO, importer, IP and product are lists there, so a text value from an older
+ * link becomes one of their values instead of a filter the form does not show.
+ */
+export function withE2eLists(filters: ProductLineFilters): ProductLineFilters {
+  const add = (list: readonly string[], text: string) => cleanList([...list, text]);
+  return { ...filters, importer: "", purchaseOrder: "", ipNumber: "", product: "",
+    importers: add(filters.importers, filters.importer), purchaseOrders: add(filters.purchaseOrders, filters.purchaseOrder),
+    ipNumbers: add(filters.ipNumbers, filters.ipNumber), productCodes: add(filters.productCodes, filters.product) };
+}
+
+/**
+ * Selection of a chart as in Power BI: a click keeps only its category (and clears it when it is the only one
+ * selected); Ctrl+click (`additive`) adds or removes it.
+ */
+export function nextChartSelection<Key extends string>(selected: readonly Key[], key: Key, additive: boolean): Key[] {
+  if (additive) return selected.includes(key) ? selected.filter(value => value !== key) : [...selected, key];
+  return selected.length === 1 && selected[0] === key ? [] : [key];
 }
 
 /** End to End stages, in the order of the flow (the same codes as the API). */
@@ -106,13 +136,26 @@ export function e2eStageFilterBody(filter: E2eStageFilter): Record<string, strin
   return body;
 }
 
-/** Filters sent to GET /api/v1/purchase-order-lines and to the product line export. */
-export function productLineFilterBody(filters: ProductLineFilters, stage = emptyE2eStageFilter): Record<string, string> {
-  const body: Record<string, string> = { situation: filters.situation };
+/** Filters sent to GET /api/v1/purchase-order-lines and to the product line export; a list is an array. */
+export function productLineFilterBody(filters: ProductLineFilters, stage = emptyE2eStageFilter): Record<string, string | string[]> {
+  const body: Record<string, string | string[]> = { situation: filters.situation };
   for (const key of textKeys) if (filters[key].trim()) body[key] = filters[key].trim();
-  if (filters.status) body.status = filters.status;
+  if (filters.status.length) body.status = statusList(filters.status);
+  for (const key of listKeys) {
+    const values = cleanList(filters[key]);
+    if (values.length) body[key] = values;
+  }
   for (const key of dateKeys) if (filters[key]) body[key] = filters[key];
   return { ...body, ...e2eStageFilterBody(stage) };
+}
+
+/** The query string of the filters: a list repeats its key, once for each value. */
+function filterSearchParams(body: Record<string, string | string[]>): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(body)) {
+    for (const item of Array.isArray(value) ? value : [value]) params.append(key, item);
+  }
+  return params;
 }
 
 /**
@@ -135,12 +178,12 @@ export function activeProductLineFilterCount(filters: ProductLineFilters): numbe
  * page, so the charts show the lines of the table. The API keeps the stage cards for every stage.
  */
 export function e2eSummaryQuery(filters: ProductLineFilters, stage: E2eStageFilter): URLSearchParams {
-  return new URLSearchParams(productLineFilterBody(filters, stage));
+  return filterSearchParams(productLineFilterBody(filters, stage));
 }
 
 export function productLineQuery(filters: ProductLineFilters, page: number, pageSize: number,
   stage = emptyE2eStageFilter): URLSearchParams {
-  const query = new URLSearchParams(productLineFilterBody(filters, stage));
+  const query = filterSearchParams(productLineFilterBody(filters, stage));
   query.set("page", String(page));
   query.set("pageSize", String(pageSize));
   return query;

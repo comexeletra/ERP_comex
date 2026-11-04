@@ -9,8 +9,8 @@ const exportHook = await readFile(new URL("../components/useProductLineExport.ts
 
 test("the product lines view reads the API lines and exports the filtered lines to Excel", () => {
   assert.match(view, /\/api\/v1\/purchase-order-lines\?/u);
-  // A delivered or cancelled status shows every situation, as the API applies it.
-  assert.match(view, /onChange=\{event => setDraft\(withProductLineStatus\(draft, event\.target\.value as ProductLineFilters\["status"\]\)\)\}/u);
+  // One status at a time here; a delivered or cancelled status shows every situation, as the API applies it.
+  assert.match(view, /<select value=\{draft\.status\[0\] \?\? ""\} onChange=\{event => setDraft\(withProductLineStatus\(draft,\s+event\.target\.value \? \[event\.target\.value as ProductLineStatus\] : \[\]\)\)\}>/u);
   // The export (queue, wait, download) is shared with the End to End screen.
   assert.match(view, /useProductLineExport\("carteira-por-produto"\)/u);
   assert.match(view, /downloadExcel\(applied, emptyE2eStageFilter, columns\)/u);

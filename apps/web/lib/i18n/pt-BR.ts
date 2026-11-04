@@ -117,6 +117,9 @@ export const ptBR = {
     currentValue: (value: string) => `${value} (valor atual)`,
     searchNamed: (name: string) => `Buscar ${name.toLocaleLowerCase("pt-BR")}`,
     searchOption: "Buscar opção",
+    selectAll: "Selecionar tudo",
+    selectedCount: (count: number) => `${count} selecionados`,
+    limit: (max: number) => `Escolha até ${max} valores ou selecione tudo.`,
   },
   dateRange: {
     allTime: "Todas as datas",
@@ -1894,6 +1897,7 @@ export const ptBR = {
       tipLines: "Linhas",
       tipFilter: "Clique para filtrar",
       tipClear: "Clique para limpar o filtro",
+      tipAdd: "Ctrl+clique para somar à seleção",
       filters: {
         label: "Filtros do resumo",
         currentStage: "Etapa atual",

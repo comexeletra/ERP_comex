@@ -114,6 +114,9 @@ export const en: Messages = {
     currentValue: (value: string) => `${value} (current value)`,
     searchNamed: (name: string) => `Search ${name.toLocaleLowerCase("en")}`,
     searchOption: "Search option",
+    selectAll: "Select all",
+    selectedCount: (count: number) => `${count} selected`,
+    limit: (max: number) => `Choose up to ${max} values, or select all.`,
   },
   dateRange: {
     allTime: "All time",
@@ -1891,6 +1894,7 @@ export const en: Messages = {
       tipLines: "Lines",
       tipFilter: "Click to filter",
       tipClear: "Click to clear the filter",
+      tipAdd: "Ctrl+click to add to the selection",
       filters: {
         label: "Summary filters",
         currentStage: "Current stage",

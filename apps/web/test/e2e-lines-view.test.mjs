@@ -41,9 +41,13 @@ test("the optional overview precedes the model and cross-filters by status and d
   assert.ok(view.indexOf("<E2eModelDetails") < view.indexOf('<form className="portfolio-filter product-lines-filter e2e-overview-filters"'));
   assert.ok(view.indexOf('<form className="portfolio-filter product-lines-filter e2e-overview-filters"') < view.indexOf("<E2eOverviewCharts"));
   assert.ok(view.indexOf("t.overview.loading") > view.indexOf("<E2eModelDetails"));
-  // Clicking the selected category again clears it; a delivered status shows every situation.
-  assert.match(view, /const filters = withProductLineStatus\(applied, applied\.status === status \? "" : status\);/u);
-  assert.match(view, /onChange=\{event => setDraft\(withProductLineStatus\(draft, event\.target\.value as ProductLineFilters\["status"\]\)\)\}/u);
+  // A click keeps only its status, Ctrl+click adds or removes it; a delivered status shows every situation.
+  assert.match(view, /const filters = withProductLineStatus\(applied, nextChartSelection\(applied\.status, status, additive\)\);/u);
+  assert.match(view, /onChange=\{values => setDraft\(withProductLineStatus\(draft, values as ProductLineStatus\[\]\)\)\}/u);
+  assert.match(view, /onStatusSelect=\{filterByStatus\} onStatusClear=\{clearStatus\}/u);
+  assert.match(overview, /const additive = \(event: MouseEvent<Element>\) => event\.ctrlKey \|\| event\.metaKey;/u);
+  assert.match(overview, /onClick=\{event => onStatusSelect\(entry\.key, additive\(event\)\)\}/u);
+  for (const messages of [ptBR, en, zhCN]) assert.ok(messages.e2eLines.overview.tipAdd);
   assert.match(view, /setDraft\(filters\); applyFilters\(filters\);/u);
   assert.match(view, /const next = deadline === selected \? "" : selected;/u);
   assert.match(view, /setDeadline\(next\); syncUrl\(applied, \{ \.\.\.stage, deadline: next \}, 1\);/u);
@@ -90,11 +94,11 @@ test("the delay range bars are clickable rows sorted by quantity, with no image 
   assert.match(overview, /byDelayRange\?: Record<E2eDelayRange, OverviewPart>/u);
   assert.match(overview, /rankedIndexes\(/u);
   assert.match(overview, /<button type="button" className=\{`e2e-range-row/u);
-  assert.match(overview, /aria-pressed=\{entry\.key === selected\}/u);
+  assert.match(overview, /aria-pressed=\{selected\.includes\(entry\.key\)\}/u);
   assert.match(overview, /filterLabel=\{o\.filterByDelayRange\}/u);
   // The status chart spans the row; the deadline pie and the delay ranges share the next one.
   assert.match(overview, /"e2e-overview-card e2e-overview-card-wide"/u);
-  assert.match(overview, /title=\{o\.statusTitle\} total=\{statusTotal\} selected=\{selectedStatus !== ""\} wide/u);
+  assert.match(overview, /title=\{o\.statusTitle\} total=\{statusTotal\} selected=\{selectedStatuses\.length > 0\} wide/u);
   for (const messages of [ptBR, en, zhCN]) {
     assert.equal(Object.keys(messages.e2eLines.overview.delayRanges).length, 9);
     assert.ok(messages.e2eLines.overview.delayRangeTitle);
@@ -117,16 +121,25 @@ test("the product and transport toggles have All and filter the data as well as 
 
 test("the filter form lists the available values with search and has the summary filters", () => {
   const form = view.slice(view.indexOf("<form "), view.indexOf("</form>"));
-  // PO, importer, product and IP list the available values and search them, as the other screens do.
-  for (const label of ["p.poNumber", "m.processDirectory.importer", "m.followup.product", '"IP"']) {
-    assert.match(form, new RegExp(`<SearchableSelect ariaLabel=\\{?${label.replaceAll(".", "\\.")}\\}?`, "u"), label);
+  // PO, importer, product, IP, status, group and purpose list the available values with checkboxes, a search
+  // and "select all", as in Power BI.
+  for (const label of ["p.poNumber", "m.processDirectory.importer", "m.followup.product", '"IP"', "m.calc.status", "f.group",
+    "f.purpose"]) {
+    assert.match(form, new RegExp(`<MultiSelectFilter ariaLabel=\\{?${label.replaceAll(".", "\\.")}\\}?`, "u"), label);
   }
-  assert.doesNotMatch(form, /<input value=/u);
+  assert.doesNotMatch(form, /<input value=|<SearchableSelect /u);
+  for (const list of ["purchaseOrders", "importers", "productCodes", "ipNumbers", "group", "purpose"]) {
+    assert.match(form, new RegExp(`values=\\{draft\\.${list}\\}`, "u"), list);
+  }
+  // Apply sends every value checked as no filter; a text filter from an older link becomes one value of its list.
+  assert.match(view, /const filters = effectiveFilters\(draft\);/u);
+  assert.match(view, /productCodes: effectiveSelection\(filters\.productCodes, \(o\?\.products \?\? \[\]\)\.map\(product => product\.code\)\)/u);
+  assert.match(view, /const filters = withE2eLists\(parseProductLineFilters\(query\)\);/u);
   assert.match(view, /apiFetch\("\/api\/v1\/purchase-order-lines\/filter-options", \{ signal: controller\.signal \}\)/u);
   assert.match(view, /label: product\.description \? `\$\{product\.code\} · \$\{product\.description\}` : product\.code/u);
-  // Dropdowns: status, current stage, MTS / not MTS, situation, group and purpose; ETA keeps two date fields.
-  assert.equal((form.match(/<select /gu) ?? []).length, 6);
-  for (const label of ["m.calc.status", "f.currentStage", "f.demandType", "f.group", "f.purpose"]) {
+  // Dropdowns of one value: current stage, MTS / not MTS and situation; ETA keeps two date fields.
+  assert.equal((form.match(/<select /gu) ?? []).length, 3);
+  for (const label of ["f.currentStage", "f.demandType", "p.situation"]) {
     assert.match(form, new RegExp(`\\{${label.replaceAll(".", "\\.")}\\}<select `, "u"), label);
   }
   assert.equal((form.match(/type="date"/gu) ?? []).length, 2);
@@ -179,9 +192,9 @@ test("both overview charts are clickable through their legends and keep the keyb
   assert.equal((overview.match(/role="img"/gu) ?? []).length, 2);
   assert.doesNotMatch(overview, /tabIndex|role="button"|formatNumber|e2e-pie-label|e2e-pie-guide/u);
   assert.match(overview, /<button type="button" className=\{`e2e-chart-legend-item/u);
-  assert.match(overview, /aria-pressed=\{entry\.key === selected\}/u);
-  assert.match(overview, /selected=\{selectedStatus\} onSelect=\{onStatusSelect\}/u);
-  assert.match(overview, /selected=\{selectedDeadline\} onSelect=\{onDeadlineSelect\}/u);
+  assert.match(overview, /aria-pressed=\{selected\.includes\(entry\.key\)\} onClick=\{event => onSelect\(entry\.key, additive\(event\)\)\}/u);
+  assert.match(overview, /selected=\{selectedStatuses\} onSelect=\{onStatusSelect\}/u);
+  assert.match(overview, /selected=\{one\(selectedDeadline\)\} onSelect=\{onDeadlineSelect\}/u);
   // Mouse shortcuts on the marks; the legend is the keyboard path.
   assert.match(overview, /className=\{`e2e-distribution-segment/u);
   assert.match(overview, /aria-hidden="true"/u);

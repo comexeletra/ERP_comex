@@ -13,10 +13,16 @@ export const shipmentLineStatuses = ["A DISTRIBUIR", "AGUARDANDO PRODUÇÃO", "A
   "AGUARDANDO CHEGADA", "DESEMBARAÇO", "ENTREGUE", "CANCELADO"] as const;
 
 export type ShipmentLineFilters = {
+  /** Parts of the importer, PO number, IP number and product code or description (the product lines screen). */
   importer?: string; purchaseOrder?: string; ipNumber?: string; product?: string;
-  status?: (typeof shipmentLineStatuses)[number]; etaFrom?: string; etaTo?: string; situation: "open" | "all";
-  /** Group and purpose of the PO product (exact, ignoring case and outer spaces) and its necessity period. */
-  group?: string; purpose?: string; necessityFrom?: string; necessityTo?: string;
+  /** Any of the statuses. */
+  status?: (typeof shipmentLineStatuses)[number][]; etaFrom?: string; etaTo?: string; situation: "open" | "all";
+  /**
+   * Any of the values (exact, ignoring case and outer spaces): group and purpose of the PO product, importers,
+   * PO numbers, IP numbers and product codes (the End to End screen); and the necessity period.
+   */
+  group?: string[]; purpose?: string[]; importers?: string[]; purchaseOrders?: string[]; ipNumbers?: string[];
+  productCodes?: string[]; necessityFrom?: string; necessityTo?: string;
   /** E2E stage: the lines now in it (`current`) or those that already have its actual date (`reached`). */
   stage?: E2eStageCode; view?: "current" | "reached"; late?: "true";
   /** Total End to End delay status (Power BI in_time_late) of the line. */
@@ -68,6 +74,10 @@ export function shipmentStatusSql(process: string, itemColumn: string | null): s
       WHEN ${process}.arrival_date IS NULL THEN 'AGUARDANDO CHEGADA'
       ELSE 'DESEMBARAÇO' END`;
 }
+
+/** SQL condition: `column` equals any value of the text array parameter `index`, ignoring case and outer spaces. */
+const anyValue = (column: string, index: number) =>
+  `($${index}::text[] IS NULL OR lower(btrim(coalesce(${column}, ''))) IN (SELECT lower(value) FROM unnest($${index}::text[]) AS value))`;
 
 const linesSql = `WITH balance AS (
     SELECT item.id AS item_id,
@@ -122,19 +132,20 @@ const linesSql = `WITH balance AS (
       AND ($4::text IS NULL OR strpos(lower(coalesce(p.ip_number, '')), lower($4)) > 0)
       AND ($5::text IS NULL OR strpos(lower(item.product_code), lower($5)) > 0
         OR strpos(lower(item.description), lower($5)) > 0)
-      AND ($10::text IS NULL OR lower(btrim(coalesce(to_jsonb(item)->>'item_group', ''))) = lower($10))
-      AND ($11::text IS NULL OR lower(btrim(coalesce(item.purpose, ''))) = lower($11))
+      AND ${anyValue("to_jsonb(item)->>'item_group'", 10)} AND ${anyValue("item.purpose", 11)}
       AND ($12::date IS NULL OR item.necessity_date >= $12::date)
       AND ($13::date IS NULL OR item.necessity_date <= $13::date)
+      AND ${anyValue("po.importer", 14)} AND ${anyValue("po.external_number", 15)}
+      AND ${anyValue("p.ip_number", 16)} AND ${anyValue("item.product_code", 17)}
   ), filtered AS MATERIALIZED (
     SELECT * FROM enriched
-    WHERE ($6::text IS NULL OR line_status = $6)
+    WHERE ($6::text[] IS NULL OR line_status = ANY($6::text[]))
       AND ($7::date IS NULL OR line_eta >= $7::date) AND ($8::date IS NULL OR line_eta <= $8::date)
       AND ($9::text = 'all' OR line_status NOT IN ('ENTREGUE', 'CANCELADO'))
   ), page AS (
     SELECT * FROM filtered
     ORDER BY normalized_number, po_id, line_number, line_kind, sort_ip_number NULLS LAST, line_id
-    LIMIT $14 OFFSET $15
+    LIMIT $18 OFFSET $19
   )
   SELECT (SELECT count(*)::int FROM filtered) AS total_count,
     coalesce(jsonb_agg(jsonb_build_object('line_id', page.line_id, 'line_kind', page.line_kind,
@@ -226,7 +237,7 @@ export function summarizeE2eStages(lines: ShipmentLine[], filters: Partial<Shipm
   const flow = lines.filter(line => inFlow(line) && matchesScenario(line, filters));
   const ofTable = (line: ShipmentLine) => (!stage && !late) || matchesE2eStage(line, { situation: "all", stage, view, late });
   const charts = flow.filter(ofTable);
-  const ofStatus = (line: ShipmentLine) => !status || lineStatus(line) === status;
+  const ofStatus = (line: ShipmentLine) => !status?.length || (status as string[]).includes(lineStatus(line));
   const ofDeadline = (line: ShipmentLine) => matchesDeadline(line, deadline);
   const ofDelayRange = (line: ShipmentLine) => matchesDelayRange(line, delayRange);
   const selected = flow.filter(line => ofStatus(line) && ofDeadline(line) && ofDelayRange(line));
@@ -247,17 +258,21 @@ export function summarizeE2eStages(lines: ShipmentLine[], filters: Partial<Shipm
   } };
 }
 
-/** A delivered or cancelled status asks for closed lines, so it overrides the open lines default. */
+/** A delivered or cancelled status among the chosen ones asks for closed lines, so it overrides the open lines default. */
 export function lineSituation({ status, situation }: Pick<ShipmentLineFilters, "status" | "situation">): "open" | "all" {
-  return status === "ENTREGUE" || status === "CANCELADO" ? "all" : situation;
+  return status?.includes("ENTREGUE") || status?.includes("CANCELADO") ? "all" : situation;
 }
+
+const values = (list: readonly string[] | undefined) => list?.length ? list : null;
 
 async function queryLineRows(pool: Pool, scopes: readonly string[], filters: ShipmentLineFilters,
   limit: number | null, offset: number) {
   const result = await pool.query<{ total_count: number; items: Row[] }>(linesSql, [scopes,
     filters.importer || null, filters.purchaseOrder || null, filters.ipNumber || null, filters.product || null,
-    filters.status ?? null, filters.etaFrom ?? null, filters.etaTo ?? null, lineSituation(filters),
-    filters.group || null, filters.purpose || null, filters.necessityFrom ?? null, filters.necessityTo ?? null, limit, offset]);
+    values(filters.status), filters.etaFrom ?? null, filters.etaTo ?? null, lineSituation(filters),
+    values(filters.group), values(filters.purpose), filters.necessityFrom ?? null, filters.necessityTo ?? null,
+    values(filters.importers), values(filters.purchaseOrders), values(filters.ipNumbers), values(filters.productCodes),
+    limit, offset]);
   return { totalCount: Number(result.rows[0]?.total_count ?? 0), rows: result.rows[0]?.items ?? [] };
 }
 
@@ -355,11 +370,19 @@ async function calculateLines(pool: Pool, rows: Row[]) {
 }
 
 const optionalText = (max: number) => z.string().trim().max(max).optional();
+/**
+ * One or more values: a key repeated in the query string (a string when it has one value) or an array
+ * in the export body. Values are trimmed; empty and repeated ones are dropped.
+ */
+const valueList = <T extends string>(value: z.ZodType<T>) => z.preprocess(input => typeof input === "string" ? [input] : input,
+  z.array(value).max(500).transform(list => [...new Set(list.filter(item => item !== ""))])).optional();
+const textList = (max: number) => valueList(z.string().trim().max(max));
 const lineFilterQuery = z.object({
   importer: optionalText(120), purchaseOrder: optionalText(80), ipNumber: optionalText(80), product: optionalText(200),
-  status: z.enum(shipmentLineStatuses).optional(), etaFrom: z.iso.date().optional(), etaTo: z.iso.date().optional(),
+  status: valueList(z.enum(shipmentLineStatuses)), etaFrom: z.iso.date().optional(), etaTo: z.iso.date().optional(),
   situation: z.enum(["open", "all"]).default("open"), deadline: z.enum(deadlineStatuses).optional(),
-  group: optionalText(120), purpose: optionalText(160),
+  group: textList(120), purpose: textList(160), importers: textList(120), purchaseOrders: textList(80),
+  ipNumbers: textList(80), productCodes: textList(200),
   necessityFrom: z.iso.date().optional(), necessityTo: z.iso.date().optional(),
   delayRange: z.enum(E2E_DELAY_RANGES).optional(),
   demandType: z.enum(["mts", "notMts"]).optional(), modal: z.enum(["sea", "air"]).optional(),

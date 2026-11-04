@@ -90,7 +90,7 @@ test("filters are validated and passed to the query; open lines are the default"
     url: "/api/v1/purchase-order-lines?status=AGUARDANDO%20CHEGADA&ipNumber=IP-1&etaFrom=2026-10-01&etaTo=2026-10-31&page=2&pageSize=25" });
   assert.equal(filtered.statusCode, 200, filtered.body);
   const lines = queries.filter(query => query.sql.includes("line_kind")).at(-1);
-  assert.ok(lines.params.includes("AGUARDANDO CHEGADA"));
+  assert.deepEqual(lines.params[5], ["AGUARDANDO CHEGADA"]);
   assert.ok(lines.params.includes("IP-1"));
   assert.ok(lines.params.includes("2026-10-01") && lines.params.includes("2026-10-31"));
   assert.ok(lines.params.includes("open"));
@@ -118,17 +118,59 @@ test("a delivered or cancelled status reaches its lines even with the open lines
   assert.equal(situationOf(), "open");
 });
 
+test("list filters take one or more exact values in the query, the summary and the export", async t => {
+  const { app, queries } = await linesApp(t);
+  const lineQuery = () => queries.filter(query => query.sql.includes("line_kind")).at(-1);
+  const response = await app.inject({ method: "GET", url: "/api/v1/purchase-order-lines?status=DESEMBARA%C3%87O"
+    + "&status=ENTREGUE&group=Energy&group=%20Water%20&purpose=Despesa&importers=FOR&importers=ELETRA%20MATRIZ"
+    + "&purchaseOrders=PO-1&ipNumbers=IP-1&ipNumbers=IP-1&productCodes=P-1&group=&page=2&pageSize=25" });
+  assert.equal(response.statusCode, 200, response.body);
+  const lines = lineQuery();
+  // Values are trimmed, repeated ones count once and empty ones are dropped.
+  assert.deepEqual(lines.params[5], ["DESEMBARAÇO", "ENTREGUE"]);
+  assert.deepEqual(lines.params.slice(9, 11), [["Energy", "Water"], ["Despesa"]]);
+  assert.deepEqual(lines.params.slice(13, 17), [["FOR", "ELETRA MATRIZ"], ["PO-1"], ["IP-1"], ["P-1"]]);
+  assert.deepEqual(lines.params.slice(-2), [25, 25]);
+  // A closed status among the chosen ones shows every situation.
+  assert.equal(lines.params[8], "all");
+  assert.match(lines.sql, /\$6::text\[\] IS NULL OR line_status = ANY\(\$6::text\[\]\)/u);
+  for (const [column, index] of [["po\\.importer", 14], ["po\\.external_number", 15], ["p\\.ip_number", 16],
+    ["item\\.product_code", 17]]) {
+    assert.match(lines.sql, new RegExp(`lower\\(btrim\\(coalesce\\(${column}, ''\\)\\)\\) IN \\(SELECT lower\\(value\\) FROM unnest\\(\\$${index}::text\\[\\]\\) AS value\\)`, "u"));
+  }
+  // Without them the lists stay off; the text filters of the product lines screen keep matching a part.
+  await app.inject({ method: "GET", url: "/api/v1/purchase-order-lines?purchaseOrder=PO-1&group=" });
+  assert.deepEqual(lineQuery().params.slice(13, 17), [null, null, null, null]);
+  assert.deepEqual([lineQuery().params[5], lineQuery().params[9]], [null, null]);
+  assert.equal(lineQuery().params[2], "PO-1");
+  // The summary takes the lists too and leaves the status to the calculation.
+  const summary = await app.inject({ method: "GET",
+    url: "/api/v1/purchase-order-lines/e2e-stages?status=ENTREGUE&status=DESEMBARA%C3%87O&importers=FOR" });
+  assert.equal(summary.statusCode, 200, summary.body);
+  assert.deepEqual([lineQuery().params[5], lineQuery().params[8], lineQuery().params[13]], [null, "all", ["FOR"]]);
+  // The export body is JSON: a list is an array, and a single string still works.
+  assert.deepEqual(shipmentLineQuery.parse({ status: ["ENTREGUE"], group: "Energy", productCodes: ["P-1", " P-2 "] }),
+    { status: ["ENTREGUE"], group: ["Energy"], productCodes: ["P-1", "P-2"], situation: "open" });
+  // Unknown statuses, values too long and more than 500 values are refused.
+  const values = count => Array.from({ length: count }, (_, index) => `importers=I-${index}`).join("&");
+  for (const query of ["status=ENTREGUE&status=QUALQUER", `productCodes=${"P".repeat(201)}`, values(501)]) {
+    const invalid = await app.inject({ method: "GET", url: `/api/v1/purchase-order-lines?${query}` });
+    assert.equal(invalid.statusCode, 400, query.slice(0, 40));
+  }
+  assert.equal((await app.inject({ method: "GET", url: `/api/v1/purchase-order-lines?${values(500)}` })).statusCode, 200);
+});
+
 test("product lines filter by group, purpose and necessity period in the query", async t => {
   const { app, queries } = await linesApp(t);
   const filtered = await app.inject({ method: "GET",
     url: "/api/v1/purchase-order-lines?group=Energy&purpose=Estoque%20Revenda&necessityFrom=2026-11-01&necessityTo=2026-11-30&page=2&pageSize=25" });
   assert.equal(filtered.statusCode, 200, filtered.body);
   const lines = queries.filter(query => query.sql.includes("line_kind")).at(-1);
-  assert.deepEqual(lines.params.slice(9, 13), ["Energy", "Estoque Revenda", "2026-11-01", "2026-11-30"]);
+  assert.deepEqual(lines.params.slice(9, 13), [["Energy"], ["Estoque Revenda"], "2026-11-01", "2026-11-30"]);
   // The page stays at the end of the parameters.
   assert.deepEqual(lines.params.slice(-2), [25, 25]);
-  assert.match(lines.sql, /lower\(btrim\(coalesce\(to_jsonb\(item\)->>'item_group', ''\)\)\) = lower\(\$10\)/u);
-  assert.match(lines.sql, /lower\(btrim\(coalesce\(item\.purpose, ''\)\)\) = lower\(\$11\)/u);
+  assert.match(lines.sql, /lower\(btrim\(coalesce\(to_jsonb\(item\)->>'item_group', ''\)\)\) IN \(SELECT lower\(value\) FROM unnest\(\$10::text\[\]\) AS value\)/u);
+  assert.match(lines.sql, /lower\(btrim\(coalesce\(item\.purpose, ''\)\)\) IN \(SELECT lower\(value\) FROM unnest\(\$11::text\[\]\) AS value\)/u);
   assert.match(lines.sql, /item\.necessity_date >= \$12::date/u);
   assert.match(lines.sql, /item\.necessity_date <= \$13::date/u);
   // Without them the filters stay off.
@@ -146,7 +188,7 @@ test("the E2E summary takes the group, purpose and necessity filters", async t =
     url: "/api/v1/purchase-order-lines/e2e-stages?group=Water&purpose=Despesa&necessityFrom=2026-01-01&necessityTo=2026-12-31" });
   assert.equal(response.statusCode, 200, response.body);
   assert.deepEqual(queries.filter(query => query.sql.includes("line_kind")).at(-1).params.slice(9, 13),
-    ["Water", "Despesa", "2026-01-01", "2026-12-31"]);
+    [["Water"], ["Despesa"], "2026-01-01", "2026-12-31"]);
   // The options of the filter form have their own route, so the summary does not repeat them at every filter.
   assert.equal("filterOptions" in response.json(), false);
   assert.equal(queries.some(query => query.sql.includes("filter_groups")), false);
@@ -175,15 +217,21 @@ test("the End to End summary filters built by the web pass the API query schema"
   // "This month" from the period picker: the dates go to the API, the relative period stays on the screen.
   const thisMonth = { unit: "month", from: 0, to: 0 };
   const { from, to } = resolveDateRange({ kind: "relative", range: thisMonth, excludeOpen: false }, "2026-11-04");
-  const filters = { ...emptyProductLineFilters, status: "AGUARDANDO CHEGADA", group: " Energy ", purpose: "Despesa",
+  const filters = { ...emptyProductLineFilters, status: ["AGUARDANDO CHEGADA", "ENTREGUE"], group: [" Energy ", "Water"],
+    purpose: ["Despesa"], importers: ["FOR"], purchaseOrders: ["PO-9", "PO-10"], ipNumbers: ["IP-1"], productCodes: ["P-2"],
     necessityFrom: from, necessityTo: to, necessityPeriod: formatRelativeSpec(thisMonth, false) };
   const stage = { ...emptyE2eStageFilter, stage: "T4", demandType: "mts" };
-  const summary = Object.fromEntries(e2eSummaryQuery(filters, stage));
+  // The query string repeats a key for each value, as Fastify reads it: one value is a string, more an array.
+  const asQuery = params => Object.fromEntries([...new Set(params.keys())].map(key =>
+    [key, params.getAll(key).length > 1 ? params.getAll(key) : params.get(key)]));
+  const summary = asQuery(e2eSummaryQuery(filters, stage));
   const parsed = shipmentLineQuery.strict().safeParse(summary);
   assert.equal(parsed.success, true, JSON.stringify(summary));
-  assert.deepEqual([parsed.data.group, parsed.data.purpose, parsed.data.necessityFrom, parsed.data.necessityTo],
-    ["Energy", "Despesa", "2026-11-01", "2026-11-30"]);
-  const page = Object.fromEntries(productLineQuery(filters, 2, 50, stage));
+  assert.deepEqual([parsed.data.status, parsed.data.group, parsed.data.purpose, parsed.data.importers,
+    parsed.data.purchaseOrders, parsed.data.ipNumbers, parsed.data.productCodes, parsed.data.necessityFrom, parsed.data.necessityTo],
+  [["AGUARDANDO CHEGADA", "ENTREGUE"], ["Energy", "Water"], ["Despesa"], ["FOR"], ["PO-9", "PO-10"], ["IP-1"], ["P-2"],
+    "2026-11-01", "2026-11-30"]);
+  const page = asQuery(productLineQuery(filters, 2, 50, stage));
   assert.equal(shipmentLineQuery.extend({ page: z.coerce.number(), pageSize: z.coerce.number() }).strict()
     .safeParse(page).success, true, JSON.stringify(page));
 });
@@ -458,4 +506,13 @@ test("each summary chart ignores its own filter and follows the other one", asyn
 
   const invalid = await app.inject({ method: "GET", url: "/api/v1/purchase-order-lines/e2e-stages?deadline=foo" });
   assert.equal(invalid.statusCode, 400, invalid.body);
+});
+
+test("the summary keeps the lines of any chosen status", async t => {
+  const { app } = await linesApp(t, stageRows, stageDocuments);
+  const response = await app.inject({ method: "GET",
+    url: "/api/v1/purchase-order-lines/e2e-stages?situation=all&status=AGUARDANDO%20CHEGADA&status=ENTREGUE" });
+  assert.equal(response.statusCode, 200, response.body);
+  // IP-SEA is arriving and IP-DONE delivered; the balance and the cancelled line stay out.
+  assert.deepEqual([response.json().totalCount, response.json().delivered], [2, 1]);
 });

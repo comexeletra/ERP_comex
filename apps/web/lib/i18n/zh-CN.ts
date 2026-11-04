@@ -114,6 +114,9 @@ export const zhCN: Messages = {
     currentValue: (value: string) => `${value}（当前值）`,
     searchNamed: (name: string) => `搜索${name}`,
     searchOption: "搜索选项",
+    selectAll: "全选",
+    selectedCount: (count: number) => `已选 ${count} 项`,
+    limit: (max: number) => `最多选择 ${max} 个值，或全选。`,
   },
   dateRange: {
     allTime: "全部日期",
@@ -1887,6 +1890,7 @@ export const zhCN: Messages = {
       tipLines: "行数",
       tipFilter: "点击筛选",
       tipClear: "点击清除筛选",
+      tipAdd: "Ctrl+点击加入选择",
       filters: {
         label: "摘要筛选",
         currentStage: "当前阶段",
