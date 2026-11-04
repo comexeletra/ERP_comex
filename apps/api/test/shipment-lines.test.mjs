@@ -516,3 +516,34 @@ test("the summary keeps the lines of any chosen status", async t => {
   // IP-SEA is arriving and IP-DONE delivered; the balance and the cancelled line stay out.
   assert.deepEqual([response.json().totalCount, response.json().delivered], [2, 1]);
 });
+
+test("the deadline and delay range filters take one or more values, in the table and the summary", async t => {
+  const { app, queries } = await linesApp(t, stageRows, stageDocuments);
+  const get = async (route, query) => {
+    const response = await app.inject({ method: "GET", url: `/api/v1/purchase-order-lines${route}?situation=all&${query}` });
+    assert.equal(response.statusCode, 200, response.body);
+    return response.json();
+  };
+  // IP-SEA and IP-DONE are late and up to 30 days; the balance has no data; the cancelled line never shows.
+  assert.deepEqual(ips(await get("", "deadline=late&deadline=noData")), ["IP-SEA", "saldo", "IP-DONE"]);
+  assert.deepEqual(ips(await get("", "deadline=onTime&deadline=noData")), ["saldo"]);
+  assert.deepEqual(ips(await get("", "delayRange=upTo30&delayRange=noData")), ["IP-SEA", "saldo", "IP-DONE"]);
+  assert.deepEqual(ips(await get("", "delayRange=inAdvance&delayRange=noData&deadline=late")), []);
+  // An empty list is no filter: the database pages the lines as without it.
+  await get("", "deadline=&delayRange=&page=1&pageSize=50");
+  assert.deepEqual(queries.filter(query => query.sql.includes("line_kind")).at(-1).params.slice(-2), [50, 0]);
+  // Each chart ignores its own list and follows the others.
+  const all = await get("/e2e-stages", "");
+  const both = await get("/e2e-stages", "deadline=late&deadline=noData");
+  assert.deepEqual(both.overview.byDeadline, all.overview.byDeadline);
+  assert.equal(both.totalCount, 3);
+  assert.equal(Object.values(both.overview.byStatus).reduce((sum, part) => sum + part.lines, 0), 3);
+  const ranges = await get("/e2e-stages", "delayRange=upTo30&delayRange=inAdvance");
+  assert.deepEqual(ranges.overview.byDelayRange, all.overview.byDelayRange);
+  assert.deepEqual(ranges.overview.byStatus["A DISTRIBUIR"], { quantity: "0", lines: 0 });
+  assert.equal(ranges.totalCount, 2);
+  for (const query of ["deadline=late&deadline=foo", "delayRange=upTo30&delayRange=late"]) {
+    const invalid = await app.inject({ method: "GET", url: `/api/v1/purchase-order-lines?${query}` });
+    assert.equal(invalid.statusCode, 400, query);
+  }
+});

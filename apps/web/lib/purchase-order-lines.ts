@@ -100,37 +100,39 @@ export type E2eDelayRange = typeof e2eDelayRanges[number];
 /**
  * End to End stage filter: the lines now in the stage (`current`) or those that already have its
  * actual date (`reached`); `late` keeps the late ones, as the API defines for each view.
- * `deadline` and `delayRange` are the total deadline status and delay range chosen on the overview charts;
- * `demandType` and `modal` the scenario of the toolbar ("" for all).
+ * `deadline` and `delayRange` are the total deadline statuses and delay ranges chosen on the overview charts
+ * (none for all); `demandType` and `modal` the scenario of the toolbar ("" for all).
  */
 export type E2eStageFilter = { stage: "" | E2eStageCode; view: "current" | "reached"; late: boolean;
-  deadline: "" | E2eDeadlineStatus; delayRange: "" | E2eDelayRange; demandType: "" | "mts" | "notMts"; modal: "" | "sea" | "air" };
-export const emptyE2eStageFilter: E2eStageFilter = { stage: "", view: "current", late: false, deadline: "", delayRange: "",
+  deadline: E2eDeadlineStatus[]; delayRange: E2eDelayRange[]; demandType: "" | "mts" | "notMts"; modal: "" | "sea" | "air" };
+export const emptyE2eStageFilter: E2eStageFilter = { stage: "", view: "current", late: false, deadline: [], delayRange: [],
   demandType: "", modal: "" };
+
+/** The valid categories of a chart among the values, in the order of the chart. */
+const inChartOrder = <Key extends string>(keys: readonly Key[], values: readonly string[]): Key[] =>
+  keys.filter(key => values.includes(key));
 
 export function parseE2eStageFilter(params: URLSearchParams): E2eStageFilter {
   const stage = params.get("stage") ?? "";
-  const deadline = params.get("deadline") ?? "";
-  const delayRange = params.get("delayRange") ?? "";
   const demandType = params.get("demandType") ?? "";
   const modal = params.get("modal") ?? "";
   return {
     stage: (e2eStageCodes as readonly string[]).includes(stage) ? stage as E2eStageCode : "",
     view: params.get("view") === "reached" ? "reached" : "current", late: params.get("late") === "true",
-    deadline: (e2eDeadlineStatuses as readonly string[]).includes(deadline) ? deadline as E2eDeadlineStatus : "",
-    delayRange: (e2eDelayRanges as readonly string[]).includes(delayRange) ? delayRange as E2eDelayRange : "",
+    deadline: inChartOrder(e2eDeadlineStatuses, params.getAll("deadline")),
+    delayRange: inChartOrder(e2eDelayRanges, params.getAll("delayRange")),
     demandType: demandType === "mts" || demandType === "notMts" ? demandType : "",
     modal: modal === "sea" || modal === "air" ? modal : "",
   };
 }
 
-export function e2eStageFilterBody(filter: E2eStageFilter): Record<string, string> {
-  const body: Record<string, string> = {};
+export function e2eStageFilterBody(filter: E2eStageFilter): Record<string, string | string[]> {
+  const body: Record<string, string | string[]> = {};
   if (filter.stage) body.stage = filter.stage;
   if (filter.view === "reached") body.view = filter.view;
   if (filter.late) body.late = "true";
-  if (filter.deadline) body.deadline = filter.deadline;
-  if (filter.delayRange) body.delayRange = filter.delayRange;
+  if (filter.deadline.length) body.deadline = inChartOrder(e2eDeadlineStatuses, filter.deadline);
+  if (filter.delayRange.length) body.delayRange = inChartOrder(e2eDelayRanges, filter.delayRange);
   if (filter.demandType) body.demandType = filter.demandType;
   if (filter.modal) body.modal = filter.modal;
   return body;
@@ -164,7 +166,8 @@ function filterSearchParams(body: Record<string, string | string[]>): URLSearchP
  */
 export function e2eOverviewFilterCount(filters: ProductLineFilters, stage: E2eStageFilter): number {
   const bothNecessityBounds = filters.necessityFrom && filters.necessityTo ? 1 : 0;
-  return activeProductLineFilterCount(filters) - bothNecessityBounds + (stage.deadline ? 1 : 0) + (stage.delayRange ? 1 : 0);
+  return activeProductLineFilterCount(filters) - bothNecessityBounds + (stage.deadline.length ? 1 : 0)
+    + (stage.delayRange.length ? 1 : 0);
 }
 
 /** How many applied filters change the table, shown while the filter bar is collapsed. */

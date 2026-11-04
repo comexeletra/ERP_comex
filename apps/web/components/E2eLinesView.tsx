@@ -102,7 +102,7 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   const stage: E2eStageFilter = { stage: current === null ? "" : E2E_STAGE_CODES[current], view, late, deadline,
     delayRange, demandType, modal };
   // The page belongs to one stage filter: a new stage (also from the animation) starts on page 1.
-  const stageKey = `${stage.stage}|${view}|${late}|${deadline}|${delayRange}|${demandType}|${modal}`;
+  const stageKey = `${stage.stage}|${view}|${late}|${deadline.join(",")}|${delayRange.join(",")}|${demandType}|${modal}`;
   const [paging, setPaging] = useState({ key: stageKey, page: initial.page });
   const page = paging.key === stageKey ? paging.page : 1;
   // Each stage loaded stays while the filters do not change, so the animation does not reload it.
@@ -211,13 +211,16 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
     setDraft({ ...draft, ...fields }); applyFilters({ ...applied, ...fields });
   }
   function clearFilters() {
-    setDraft(emptyProductLineFilters); setDeadline(""); setDelayRange("");
+    setDraft(emptyProductLineFilters); setDeadline([]); setDelayRange([]);
     stepper.goTo(null); setDemandType("");
-    applyFilters(emptyProductLineFilters, { ...stage, stage: "", deadline: "", delayRange: "", demandType: "" });
+    applyFilters(emptyProductLineFilters, { ...stage, stage: "", deadline: [], delayRange: [], demandType: "" });
   }
-  function selectDeadline(selected: E2eDeadlineStatus) {
-    const next = deadline === selected ? "" : selected;
+  // The deadline and delay range charts select like the status chart: a click keeps one, Ctrl+click adds or removes.
+  function changeDeadline(next: E2eDeadlineStatus[]) {
     setDeadline(next); syncUrl(applied, { ...stage, deadline: next }, 1);
+  }
+  function selectDeadline(selected: E2eDeadlineStatus, additive: boolean) {
+    changeDeadline(nextChartSelection(deadline, selected, additive));
   }
   function changeDemandType(next: E2eStageFilter["demandType"]) {
     setDemandType(next); syncUrl(applied, { ...stage, demandType: next }, 1);
@@ -225,9 +228,11 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   function changeModal(next: E2eStageFilter["modal"]) {
     setModal(next); syncUrl(applied, { ...stage, modal: next }, 1);
   }
-  function selectDelayRange(selected: E2eDelayRange) {
-    const next = delayRange === selected ? "" : selected;
+  function changeDelayRange(next: E2eDelayRange[]) {
     setDelayRange(next); syncUrl(applied, { ...stage, delayRange: next }, 1);
+  }
+  function selectDelayRange(selected: E2eDelayRange, additive: boolean) {
+    changeDelayRange(nextChartSelection(delayRange, selected, additive));
   }
   function select(k: number | null) {
     stepper.goTo(k);
@@ -382,8 +387,9 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
       </form>
       {!counts && !summaryError && <p role="status">{t.overview.loading}</p>}
       {counts?.overview && <E2eOverviewCharts overview={counts.overview} locale={locale} selectedStatuses={applied.status}
-        selectedDeadline={deadline} onStatusSelect={filterByStatus} onStatusClear={clearStatus} onDeadlineSelect={selectDeadline}
-        selectedDelayRange={delayRange} onDelayRangeSelect={selectDelayRange} />}
+        onStatusSelect={filterByStatus} onStatusClear={clearStatus}
+        selectedDeadlines={deadline} onDeadlineSelect={selectDeadline} onDeadlineClear={() => changeDeadline([])}
+        selectedDelayRanges={delayRange} onDelayRangeSelect={selectDelayRange} onDelayRangeClear={() => changeDelayRange([])} />}
     </E2eCollapsible>
     <section className="card" aria-live="polite">
       {!entry && <p role="status">{p.loading}</p>}

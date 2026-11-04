@@ -13,7 +13,7 @@ Os filtros de lista do End to End passam a aceitar mais de um valor, como no Pow
 3. Com texto na busca, "Selecionar tudo" marca ou desmarca só os resultados visíveis.
 4. Fechado, o campo mostra "Todas", o valor escolhido (quando é um só) ou "N selecionados".
 5. A filtragem compara o valor exato (sem diferenciar maiúsculas e espaços nas pontas) com qualquer um dos escolhidos. PO, Importadora, Produto e IP do End to End deixam de buscar por trecho.
-6. Gráfico de status: o clique escolhe só aquele status, Ctrl+clique (ou Cmd+clique) adiciona ou remove o status da seleção, e clicar no único status selecionado limpa.
+6. Nos três gráficos (status, prazo total e faixa de atraso total): o clique escolhe só aquela categoria, Ctrl+clique (ou Cmd+clique) adiciona ou remove a categoria da seleção, e clicar na única categoria selecionada limpa. Prazo e faixa entraram a pedido do usuário depois da primeira entrega (2026-11-04).
 7. Os valores se aplicam à tabela, ao resumo, aos gráficos e à exportação, e ficam na URL como chave repetida (`?group=A&group=B`).
 8. Um status fechado (ENTREGUE, CANCELADO) entre os escolhidos vale mais que a Situação "Em aberto".
 9. Textos novos nos três idiomas.
@@ -34,11 +34,11 @@ Os filtros de lista do End to End passam a aceitar mais de um valor, como no Pow
 | `status`, `group`, `purpose` | um valor | um ou mais (chave repetida na URL, array no JSON), comparação exata |
 | `importers`, `purchaseOrders`, `ipNumbers`, `productCodes` | — | listas exatas, novas |
 | `importer`, `purchaseOrder`, `ipNumber`, `product` | trecho | sem mudança (Carteira por produto) |
+| `deadline`, `delayRange` | um valor | um ou mais, aplicados depois do cálculo |
 
 ## Fora do escopo
 
 - Seleção múltipla em outras telas, em Etapa atual e em Tipo de demanda.
-- Ctrl+clique nos gráficos de prazo e de faixa de atraso.
 
 ## Plano
 

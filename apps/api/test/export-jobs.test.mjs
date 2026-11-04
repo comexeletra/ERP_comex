@@ -67,11 +67,17 @@ test("product line exports keep the End to End deadline status filter", async t 
     payload: { status: "AGUARDANDO CHEGADA", deadline: "late", delayRange: "upTo30", demandType: "mts", modal: "air" } });
   assert.equal(queued.statusCode, 202, queued.body);
   const stored = JSON.parse(queries.filter(query => query.sql.includes("INSERT INTO jobs.export_job")).at(-1).params[4]);
-  assert.deepEqual(stored, { status: ["AGUARDANDO CHEGADA"], deadline: "late", delayRange: "upTo30", demandType: "mts",
+  assert.deepEqual(stored, { status: ["AGUARDANDO CHEGADA"], deadline: ["late"], delayRange: ["upTo30"], demandType: "mts",
     modal: "air", situation: "open" });
   assert.equal(shipmentLineQuery.safeParse(stored).data.modal, "air");
-  assert.equal(shipmentLineQuery.safeParse(stored).data.deadline, "late");
-  assert.equal(shipmentLineQuery.safeParse(stored).data.delayRange, "upTo30");
+  assert.deepEqual(shipmentLineQuery.safeParse(stored).data.deadline, ["late"]);
+  assert.deepEqual(shipmentLineQuery.safeParse(stored).data.delayRange, ["upTo30"]);
+  // The charts can select several categories; the export keeps them all.
+  const several = await app.inject({ method: "POST", url: "/api/v1/exports/purchase-order-lines",
+    payload: { deadline: ["late", "noData"], delayRange: ["upTo30", "days30To45"] } });
+  assert.equal(several.statusCode, 202, several.body);
+  assert.deepEqual(JSON.parse(queries.filter(query => query.sql.includes("INSERT INTO jobs.export_job")).at(-1).params[4]),
+    { deadline: ["late", "noData"], delayRange: ["upTo30", "days30To45"], situation: "open" });
   const invalid = await app.inject({ method: "POST", url: "/api/v1/exports/purchase-order-lines",
     payload: { deadline: "foo" } });
   assert.equal(invalid.statusCode, 400, invalid.body);

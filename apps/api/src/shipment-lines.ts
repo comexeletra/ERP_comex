@@ -25,10 +25,10 @@ export type ShipmentLineFilters = {
   productCodes?: string[]; necessityFrom?: string; necessityTo?: string;
   /** E2E stage: the lines now in it (`current`) or those that already have its actual date (`reached`). */
   stage?: E2eStageCode; view?: "current" | "reached"; late?: "true";
-  /** Total End to End delay status (Power BI in_time_late) of the line. */
-  deadline?: E2eDeadlineStatus;
-  /** Range of the total End to End delay (Power BI "Faixa de atraso total") of the line. */
-  delayRange?: E2eDelayRange;
+  /** Any of the total End to End delay statuses (Power BI in_time_late) of the line. */
+  deadline?: E2eDeadlineStatus[];
+  /** Any of the ranges of the total End to End delay (Power BI "Faixa de atraso total") of the line. */
+  delayRange?: E2eDelayRange[];
   /** Demand type and transport mode of the End to End scenario; lines without them pass only when unset. */
   demandType?: "mts" | "notMts"; modal?: "sea" | "air";
 };
@@ -189,9 +189,9 @@ export function matchesE2eStage(line: ShipmentLine, { stage, view = "current", l
   return e2e.stages[stage].source === "actual" && (!late || (e2e.stages[stage].delayDays ?? 0) > 0);
 }
 
-/** Whether a line has the requested total deadline status. Cancelled lines never pass a deadline filter. */
-function matchesDeadline(line: ShipmentLine, deadline: E2eDeadlineStatus | undefined): boolean {
-  return !deadline || (inFlow(line) && e2eDeadlineStatus(lineE2e(line)) === deadline);
+/** Whether a line has any of the requested total deadline statuses. Cancelled lines never pass a deadline filter. */
+function matchesDeadline(line: ShipmentLine, deadline: readonly E2eDeadlineStatus[] | undefined): boolean {
+  return !deadline?.length || (inFlow(line) && deadline.includes(e2eDeadlineStatus(lineE2e(line))));
 }
 
 /** Whether a line has the demand type and transport mode of the chosen scenario. */
@@ -203,8 +203,8 @@ function matchesScenario(line: ShipmentLine, { demandType, modal }: Pick<Shipmen
 }
 
 /** Whether a line has the requested total delay range. Cancelled lines never pass a delay range filter. */
-function matchesDelayRange(line: ShipmentLine, delayRange: E2eDelayRange | undefined): boolean {
-  return !delayRange || (inFlow(line) && e2eDelayRange(lineE2e(line)) === delayRange);
+function matchesDelayRange(line: ShipmentLine, delayRange: readonly E2eDelayRange[] | undefined): boolean {
+  return !delayRange?.length || (inFlow(line) && delayRange.includes(e2eDelayRange(lineE2e(line))));
 }
 
 const lineStatus = (line: ShipmentLine) => (line.calculated as { status: string }).status;
@@ -283,7 +283,8 @@ async function queryLineRows(pool: Pool, scopes: readonly string[], filters: Shi
  */
 export async function queryShipmentLines(pool: Pool, scopes: readonly string[], filters: ShipmentLineFilters,
   limit: number, offset: number) {
-  if (!filters.stage && !filters.late && !filters.deadline && !filters.delayRange && !filters.demandType && !filters.modal) {
+  if (!filters.stage && !filters.late && !filters.deadline?.length && !filters.delayRange?.length && !filters.demandType
+    && !filters.modal) {
     const { totalCount, rows } = await queryLineRows(pool, scopes, filters, limit, offset);
     return { totalCount, lines: await calculateLines(pool, rows) };
   }
@@ -374,17 +375,20 @@ const optionalText = (max: number) => z.string().trim().max(max).optional();
  * One or more values: a key repeated in the query string (a string when it has one value) or an array
  * in the export body. Values are trimmed; empty and repeated ones are dropped.
  */
-const valueList = <T extends string>(value: z.ZodType<T>) => z.preprocess(input => typeof input === "string" ? [input] : input,
-  z.array(value).max(500).transform(list => [...new Set(list.filter(item => item !== ""))])).optional();
+const valueList = <T extends string>(value: z.ZodType<T>) => z.preprocess(input => {
+  const list = typeof input === "string" ? [input] : input;
+  // An empty key (`deadline=`) is no value, also for the lists of fixed options.
+  return Array.isArray(list) ? list.filter(item => item !== "") : list;
+}, z.array(value).max(500).transform(list => [...new Set(list.filter(item => item !== ""))])).optional();
 const textList = (max: number) => valueList(z.string().trim().max(max));
 const lineFilterQuery = z.object({
   importer: optionalText(120), purchaseOrder: optionalText(80), ipNumber: optionalText(80), product: optionalText(200),
   status: valueList(z.enum(shipmentLineStatuses)), etaFrom: z.iso.date().optional(), etaTo: z.iso.date().optional(),
-  situation: z.enum(["open", "all"]).default("open"), deadline: z.enum(deadlineStatuses).optional(),
+  situation: z.enum(["open", "all"]).default("open"), deadline: valueList(z.enum(deadlineStatuses)),
   group: textList(120), purpose: textList(160), importers: textList(120), purchaseOrders: textList(80),
   ipNumbers: textList(80), productCodes: textList(200),
   necessityFrom: z.iso.date().optional(), necessityTo: z.iso.date().optional(),
-  delayRange: z.enum(E2E_DELAY_RANGES).optional(),
+  delayRange: valueList(z.enum(E2E_DELAY_RANGES)),
   demandType: z.enum(["mts", "notMts"]).optional(), modal: z.enum(["sea", "air"]).optional(),
 });
 export const shipmentLineQuery = lineFilterQuery.extend({

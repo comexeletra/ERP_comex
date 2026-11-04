@@ -49,19 +49,22 @@ test("the optional overview precedes the model and cross-filters by status and d
   assert.match(overview, /onClick=\{event => onStatusSelect\(entry\.key, additive\(event\)\)\}/u);
   for (const messages of [ptBR, en, zhCN]) assert.ok(messages.e2eLines.overview.tipAdd);
   assert.match(view, /setDraft\(filters\); applyFilters\(filters\);/u);
-  assert.match(view, /const next = deadline === selected \? "" : selected;/u);
+  // The deadline pie and the delay range bars select the same way, and "clear selection" clears all of them.
+  assert.match(view, /changeDeadline\(nextChartSelection\(deadline, selected, additive\)\);/u);
   assert.match(view, /setDeadline\(next\); syncUrl\(applied, \{ \.\.\.stage, deadline: next \}, 1\);/u);
   assert.match(view, /onStatusSelect=\{filterByStatus\}/u);
-  assert.match(view, /onDeadlineSelect=\{selectDeadline\}/u);
-  assert.match(view, /selectedDeadline=\{deadline\}/u);
+  assert.match(view, /selectedDeadlines=\{deadline\} onDeadlineSelect=\{selectDeadline\} onDeadlineClear=\{\(\) => changeDeadline\(\[\]\)\}/u);
+  assert.match(overview, /onClick=\{event => onDeadlineSelect\(entry\.key, additive\(event\)\)\}/u);
   // Clear also removes the deadline and delay range chosen on the charts, the current stage and the demand type.
-  assert.match(view, /setDraft\(emptyProductLineFilters\); setDeadline\(""\); setDelayRange\(""\);/u);
+  assert.match(view, /setDraft\(emptyProductLineFilters\); setDeadline\(\[\]\); setDelayRange\(\[\]\);/u);
   assert.match(view, /stepper\.goTo\(null\); setDemandType\(""\);/u);
-  assert.match(view, /applyFilters\(emptyProductLineFilters, \{ \.\.\.stage, stage: "", deadline: "", delayRange: "", demandType: "" \}\);/u);
-  // The delay range bars cross-filter the same way.
-  assert.match(view, /const next = delayRange === selected \? "" : selected;/u);
+  assert.match(view, /applyFilters\(emptyProductLineFilters, \{ \.\.\.stage, stage: "", deadline: \[\], delayRange: \[\], demandType: "" \}\);/u);
+  assert.match(view, /changeDelayRange\(nextChartSelection\(delayRange, selected, additive\)\);/u);
   assert.match(view, /setDelayRange\(next\); syncUrl\(applied, \{ \.\.\.stage, delayRange: next \}, 1\);/u);
-  assert.match(view, /selectedDelayRange=\{delayRange\} onDelayRangeSelect=\{selectDelayRange\}/u);
+  assert.match(view, /selectedDelayRanges=\{delayRange\} onDelayRangeSelect=\{selectDelayRange\} onDelayRangeClear=\{\(\) => changeDelayRange\(\[\]\)\}/u);
+  assert.match(overview, /onClick=\{event => onSelect\(entry\.key, additive\(event\)\)\}\s+aria-label=\{`\$\{filterLabel\(entry\.label\)\}/u);
+  // Every chart tip tells that Ctrl+click adds to the selection.
+  assert.match(overview, /<div className="e2e-chart-tip-hint">\{m\.e2eLines\.overview\.tipAdd\}<\/div>/u);
 });
 
 test("the summary panel holds the filter form and the charts and can be collapsed", () => {
@@ -194,7 +197,7 @@ test("both overview charts are clickable through their legends and keep the keyb
   assert.match(overview, /<button type="button" className=\{`e2e-chart-legend-item/u);
   assert.match(overview, /aria-pressed=\{selected\.includes\(entry\.key\)\} onClick=\{event => onSelect\(entry\.key, additive\(event\)\)\}/u);
   assert.match(overview, /selected=\{selectedStatuses\} onSelect=\{onStatusSelect\}/u);
-  assert.match(overview, /selected=\{one\(selectedDeadline\)\} onSelect=\{onDeadlineSelect\}/u);
+  assert.match(overview, /selected=\{selectedDeadlines\} onSelect=\{onDeadlineSelect\}/u);
   // Mouse shortcuts on the marks; the legend is the keyboard path.
   assert.match(overview, /className=\{`e2e-distribution-segment/u);
   assert.match(overview, /aria-hidden="true"/u);
