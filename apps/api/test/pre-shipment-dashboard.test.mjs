@@ -148,6 +148,8 @@ test("the lines route pages the table and applies the status and aging selection
   assert.ok(params.some(param => JSON.stringify(param) === JSON.stringify(["AGUARDANDO PRODUÇÃO"])));
   assert.match(sql, /aging_days > 45 AND aging_days <= 60/u);
   assert.match(sql, /aging_days > 120/u);
+  // The status is a column of the query; each line of the table carries it.
+  assert.match(sql, /jsonb_agg\(line \|\| jsonb_build_object\('status', line_status\) ORDER BY/u);
   assert.deepEqual(params.slice(-2), [25, 25]);
   assert.match(sql, /ORDER BY necessity_date NULLS LAST, normalized_number, po_id, line_number, line_kind, sort_ip_number NULLS LAST, line_id/u);
 });

@@ -220,7 +220,8 @@ export async function queryPreShipmentLines(pool: Pool, scopes: readonly string[
     SELECT * FROM filtered ORDER BY ${order} LIMIT ${param(limit)} OFFSET ${param(offset)}
   )
   SELECT (SELECT count(*)::int FROM filtered) AS total_count,
-    coalesce((SELECT jsonb_agg(line ORDER BY ${order}) FROM page), '[]'::jsonb) AS lines`, params);
+    coalesce((SELECT jsonb_agg(line || jsonb_build_object('status', line_status) ORDER BY ${order}) FROM page), '[]'::jsonb)
+      AS lines`, params);
   return { totalCount: Number(result.rows[0]?.total_count ?? 0), lines: result.rows[0]?.lines ?? [] };
 }
 
