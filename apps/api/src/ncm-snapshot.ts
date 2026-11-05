@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 import {
   createOfficialNcmCatalogProvider,
+  type OfficialNcm,
   type OfficialNcmCatalog,
   type OfficialNcmCatalogProvider,
 } from "./siscomex-ncm.js";
@@ -22,6 +23,8 @@ type SnapshotItem = {
   creation_act: OfficialNcmCatalog["items"][number]["creationAct"];
   mandatory_import_attributes: OfficialNcmCatalog["items"][number]["mandatoryImportAttributes"];
 };
+
+type SnapshotInfoRow = Omit<SnapshotMetadata, "item_count">;
 
 type CachedSnapshot = { catalog: OfficialNcmCatalog; syncedAt: string };
 
@@ -118,6 +121,108 @@ export async function replaceOfficialNcmSnapshot(pool: Pool, catalog: OfficialNc
   }
 }
 
+export type OfficialNcmSnapshotInfo = {
+  source: "SISCOMEX";
+  sourceReference: string;
+  sourceUpdatedAt: string | null;
+  attributesVersion: string;
+  syncedAt: string;
+};
+
+export type OfficialNcmSearchQuery = {
+  // Already lower-cased by the caller; matched as a literal substring of the name.
+  search: string;
+  // Digits of the typed text; empty when the text has no digits.
+  codeSearch: string;
+  // Brasília date (YYYY-MM-DD) used to keep only NCMs in force.
+  today: string;
+  limit: number;
+  offset: number;
+};
+
+// Reads the persisted Siscomex snapshot one page or one code at a time. The full
+// snapshot carries more than 1 GB of attribute domains and must never be loaded
+// by a request: it exceeds the API heap and restarts the service.
+export type PersistedOfficialNcmLookup = {
+  search(query: OfficialNcmSearchQuery):
+    Promise<{ snapshot: OfficialNcmSnapshotInfo; totalCount: number; items: OfficialNcm[] } | null>;
+  find(code: string): Promise<{ snapshot: OfficialNcmSnapshotInfo; item: OfficialNcm | null } | null>;
+};
+
+const OFFICIAL_ITEM_COLUMNS = `code,name,valid_from::text AS valid_from,valid_to::text AS valid_to,
+                mandatory_import_attributes,creation_act`;
+const OFFICIAL_SEARCH_FILTER = `valid_from IS NOT NULL AND valid_from <= $1::date
+           AND (valid_to IS NULL OR valid_to >= $1::date)
+           AND (strpos(lower(name), $2) > 0 OR ($3 <> '' AND strpos(code, $3) > 0))`;
+
+function presentSnapshotItem(item: SnapshotItem): OfficialNcm {
+  return {
+    code: item.code,
+    name: item.name,
+    validFrom: item.valid_from,
+    validTo: item.valid_to,
+    creationAct: item.creation_act,
+    mandatoryImportAttributes: item.mandatory_import_attributes,
+  };
+}
+
+async function readSiscomexSnapshotInfo(pool: Pool):
+  Promise<{ info: OfficialNcmSnapshotInfo; table: string } | null> {
+  const current = await pool.query<SnapshotInfoRow>(
+    `SELECT catalog_source,source_reference,source_updated_at::text AS source_updated_at,
+            attributes_source_version,synced_at
+     FROM catalog.ncm_official_snapshot WHERE snapshot_id=1`);
+  let row = current.rows[0];
+  let table = "catalog.ncm_official_item";
+  if (row?.catalog_source === "MDIC_GECEX") {
+    const archived = await pool.query<SnapshotInfoRow>(
+      `SELECT 'SISCOMEX' AS catalog_source,
+              'Portal Único Siscomex / Classif' AS source_reference,
+              source_updated_at::text AS source_updated_at,attributes_source_version,synced_at
+       FROM catalog.ncm_last_siscomex_snapshot WHERE snapshot_id=1`);
+    row = archived.rows[0];
+    table = "catalog.ncm_last_siscomex_item";
+  }
+  if (!row || row.catalog_source !== "SISCOMEX") return null;
+  return { table, info: {
+    source: "SISCOMEX",
+    sourceReference: row.source_reference,
+    sourceUpdatedAt: row.source_updated_at,
+    attributesVersion: row.attributes_source_version,
+    syncedAt: timestamp(row.synced_at),
+  } };
+}
+
+export function createPersistedOfficialNcmLookup(pool: Pool): PersistedOfficialNcmLookup {
+  return {
+    async search(query) {
+      const snapshot = await readSiscomexSnapshotInfo(pool);
+      if (!snapshot) return null;
+      const filterValues = [query.today, query.search, query.codeSearch];
+      const counted = await pool.query<{ total_count: number }>(
+        `SELECT count(*)::int AS total_count FROM ${snapshot.table}
+         WHERE ${OFFICIAL_SEARCH_FILTER}`, filterValues);
+      const totalCount = Number(counted.rows[0]?.total_count ?? 0);
+      if (query.offset >= totalCount) return { snapshot: snapshot.info, totalCount, items: [] };
+      const page = await pool.query<SnapshotItem>(
+        `SELECT ${OFFICIAL_ITEM_COLUMNS}
+         FROM ${snapshot.table}
+         WHERE ${OFFICIAL_SEARCH_FILTER}
+         ORDER BY (code = $3) DESC, code
+         LIMIT $4 OFFSET $5`, [...filterValues, query.limit, query.offset]);
+      return { snapshot: snapshot.info, totalCount, items: page.rows.map(presentSnapshotItem) };
+    },
+    async find(code) {
+      const snapshot = await readSiscomexSnapshotInfo(pool);
+      if (!snapshot) return null;
+      const result = await pool.query<SnapshotItem>(
+        `SELECT ${OFFICIAL_ITEM_COLUMNS}
+         FROM ${snapshot.table} WHERE code = $1`, [code]);
+      return { snapshot: snapshot.info, item: result.rows[0] ? presentSnapshotItem(result.rows[0]) : null };
+    },
+  };
+}
+
 export function createPersistedOfficialNcmCatalogProvider(
   pool: Pool,
   fetchCatalog: () => Promise<OfficialNcmCatalog>,
@@ -176,14 +281,7 @@ export function createPersistedOfficialNcmCatalogProvider(
         attributesVersion: row.attributes_source_version,
         syncedAt,
         verifiedComplete: result.rows.length >= 9_000,
-        items: result.rows.map(item => ({
-          code: item.code,
-          name: item.name,
-          validFrom: item.valid_from,
-          validTo: item.valid_to,
-          creationAct: item.creation_act,
-          mandatoryImportAttributes: item.mandatory_import_attributes,
-        })),
+        items: result.rows.map(presentSnapshotItem),
       };
       await client.query("COMMIT");
       cached = { catalog, syncedAt };

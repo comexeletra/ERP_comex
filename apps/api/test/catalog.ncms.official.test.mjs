@@ -32,7 +32,7 @@ function makeEntry(code, name, overrides = {}) {
     attributes_sha256: null, synced_at: null, created_at: new Date(), updated_at: new Date(), ...overrides };
 }
 
-async function createApp({ provider = async () => official, existing = [], registeredCodes = [] } = {}) {
+async function createApp({ provider = async () => official, existing = [], registeredCodes = [], lookup } = {}) {
   const writes = [];
   const audit = [];
   const outbox = [];
@@ -126,7 +126,8 @@ async function createApp({ provider = async () => official, existing = [], regis
       request.authContext = { issuer: "test", subject: "fiscal", userId: "user:fiscal", sessionToken: "test-only" };
     }
   });
-  await registerCatalogRoutes(app, pool, { officialNcmProvider: provider });
+  await registerCatalogRoutes(app, pool, { officialNcmProvider: provider,
+    ...(lookup ? { officialNcmLookup: lookup } : {}) });
   return { app, writes, audit, outbox, existing };
 }
 
@@ -287,4 +288,48 @@ test("a second manual request shares the running update instead of downloading a
   assert.equal(calls, 1);
   resolveProvider(official);
   assert.equal((await waitForManualRefresh(app)).manualRefresh.status, "succeeded");
+});
+
+test("search and add read the persisted snapshot without loading the whole catalog", async t => {
+  let providerCalls = 0;
+  const searches = [];
+  const finds = [];
+  const snapshot = { source: "SISCOMEX", sourceReference: "Portal Único Siscomex / Classif",
+    sourceUpdatedAt: "2026-11-05", attributesVersion: "361", syncedAt: "2026-11-05T15:01:15.000Z" };
+  const lookup = {
+    async search(query) { searches.push(query); return { snapshot, totalCount: 31, items: [official.items[1]] }; },
+    async find(code) { finds.push(code); return { snapshot, item: official.items.find(item => item.code === code) ?? null }; },
+  };
+  const { app, writes } = await createApp({ lookup, registeredCodes: [selectedCode],
+    provider: async () => { providerCalls += 1; return official; } });
+  t.after(() => app.close());
+
+  const search = await app.inject({ method: "GET", url: "/api/v1/ncms/official-search?search=%20CaBo%2085.44%20&page=2&pageSize=10",
+    headers: { "x-test-subject": "fiscal" } });
+  assert.equal(search.statusCode, 200, search.body);
+  assert.equal(searches.length, 1);
+  assert.equal(searches[0].search, "cabo 85.44");
+  assert.equal(searches[0].codeSearch, "8544");
+  assert.match(searches[0].today, /^\d{4}-\d{2}-\d{2}$/u);
+  assert.equal(searches[0].limit, 10);
+  assert.equal(searches[0].offset, 10);
+  assert.deepEqual({ ...search.json(), items: undefined }, { page: 2, pageSize: 10, totalCount: 31,
+    source: "SISCOMEX", sourceReference: snapshot.sourceReference, sourceUpdatedAt: "2026-11-05",
+    attributesSourceVersion: "361", snapshotSyncedAt: snapshot.syncedAt, items: undefined });
+  assert.equal(search.json().items[0].code, selectedCode);
+  assert.equal(search.json().items[0].alreadyRegistered, true);
+  assert.deepEqual(search.json().items[0].mandatoryImportAttributes, selectedAttributes);
+
+  const added = await app.inject({ method: "POST", url: "/api/v1/ncms/import-official",
+    headers: { "x-test-subject": "fiscal", "idempotency-key": "persisted-ncm" }, payload: { code: selectedCode } });
+  assert.equal(added.statusCode, 201, added.body);
+  assert.deepEqual(finds, [selectedCode]);
+  assert.equal(added.json().attributesSourceVersion, "361");
+  const attributes = writes.find(write => write.sql.includes("INSERT INTO catalog.ncm_siscomex_data"));
+  assert.deepEqual(attributes.values.slice(1, 3), ["2026-11-05", "361"]);
+
+  const unknown = await app.inject({ method: "POST", url: "/api/v1/ncms/import-official",
+    headers: { "x-test-subject": "fiscal", "idempotency-key": "persisted-missing" }, payload: { code: "99999998" } });
+  assert.equal(unknown.statusCode, 404, unknown.body);
+  assert.equal(providerCalls, 0);
 });

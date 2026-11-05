@@ -3,7 +3,11 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
-import { createPersistedOfficialNcmCatalogProvider } from "./ncm-snapshot.js";
+import {
+  createPersistedOfficialNcmCatalogProvider,
+  createPersistedOfficialNcmLookup,
+  type PersistedOfficialNcmLookup,
+} from "./ncm-snapshot.js";
 import {
   fetchOfficialNcmCatalog,
   officialNcmAttributesHash,
@@ -194,10 +198,13 @@ function isUniqueError(error: unknown): boolean {
 }
 
 export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
-  options: { officialNcmProvider?: OfficialNcmCatalogProvider;
+  options: { officialNcmProvider?: OfficialNcmCatalogProvider; officialNcmLookup?: PersistedOfficialNcmLookup;
     ncmAutoRefreshTime?: string; logger?: Pick<FastifyInstance["log"], "info" | "error"> } = {}): Promise<void> {
   const sourceProvider = options.officialNcmProvider
     ?? createPersistedOfficialNcmCatalogProvider(pool, fetchOfficialNcmCatalog);
+  // Search and add read the persisted snapshot page by page; the whole catalog
+  // (provider) is loaded only while no snapshot has been persisted yet.
+  const officialLookup = options.officialNcmLookup ?? createPersistedOfficialNcmLookup(pool);
   const getOfficialNcms: OfficialNcmCatalogProvider = async requestOptions => {
     const catalog = await sourceProvider(requestOptions);
     if (catalog.source !== "SISCOMEX") {
@@ -735,23 +742,36 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
           page: z.coerce.number().int().min(1).default(1),
           pageSize: z.coerce.number().int().min(1).max(50).default(25) }).strict().safeParse(request.query);
         if (!parsed.success) return problem(reply, 400, "INVALID_QUERY", "Informe pelo menos dois caracteres para pesquisar NCMs oficiais.");
-        let official: OfficialNcmCatalog;
-        try { official = await getOfficialNcms(); }
-        catch (error) { return siscomexUnavailable(reply, error); }
         const search = parsed.data.search.toLocaleLowerCase("pt-BR");
         const codeSearch = parsed.data.search.replace(/\D/gu, "");
-        const searchableItems = official.source === "SISCOMEX"
-          ? official.items.filter(item => ncmIsCurrentlyValid(item))
-          : official.items;
-        const matches = searchableItems.filter(item => item.name.toLocaleLowerCase("pt-BR").includes(search)
-          || (codeSearch.length > 0 && item.code.includes(codeSearch)));
-        matches.sort((left, right) => {
-          const leftExact = left.code === codeSearch ? 0 : 1;
-          const rightExact = right.code === codeSearch ? 0 : 1;
-          return leftExact - rightExact || left.code.localeCompare(right.code);
-        });
         const { page, pageSize } = parsed.data;
-        const pageItems = matches.slice((page - 1) * pageSize, page * pageSize);
+        const persisted = await officialLookup.search({ search, codeSearch, today: currentBrasiliaDate(),
+          limit: pageSize, offset: (page - 1) * pageSize });
+        let official: Omit<OfficialNcmCatalog, "items">;
+        let totalCount: number;
+        let pageItems: OfficialNcm[];
+        if (persisted) {
+          official = persisted.snapshot;
+          totalCount = persisted.totalCount;
+          pageItems = persisted.items;
+        } else {
+          let catalog: OfficialNcmCatalog;
+          try { catalog = await getOfficialNcms(); }
+          catch (error) { return siscomexUnavailable(reply, error); }
+          const searchableItems = catalog.source === "SISCOMEX"
+            ? catalog.items.filter(item => ncmIsCurrentlyValid(item))
+            : catalog.items;
+          const matches = searchableItems.filter(item => item.name.toLocaleLowerCase("pt-BR").includes(search)
+            || (codeSearch.length > 0 && item.code.includes(codeSearch)));
+          matches.sort((left, right) => {
+            const leftExact = left.code === codeSearch ? 0 : 1;
+            const rightExact = right.code === codeSearch ? 0 : 1;
+            return leftExact - rightExact || left.code.localeCompare(right.code);
+          });
+          official = catalog;
+          totalCount = matches.length;
+          pageItems = matches.slice((page - 1) * pageSize, page * pageSize);
+        }
         const registered = pageItems.length
           ? await pool.query<{ normalized_code: string }>(
             `SELECT normalized_code FROM catalog.entry
@@ -760,7 +780,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
           : { rows: [] };
         const registeredCodes = new Set(registered.rows.map(row => row.normalized_code));
         reply.header("cache-control", "no-store");
-        return { page, pageSize, totalCount: matches.length, source: official.source,
+        return { page, pageSize, totalCount, source: official.source,
           sourceReference: official.sourceReference, sourceUpdatedAt: official.sourceUpdatedAt,
           attributesSourceVersion: official.attributesVersion, snapshotSyncedAt: official.syncedAt ?? null,
           items: pageItems.map(item => ({ ...item, alreadyRegistered: registeredCodes.has(item.code) })) };
@@ -805,10 +825,19 @@ export async function registerCatalogRoutes(app: FastifyInstance, pool: Pool,
         if (!auth || !actor) return problem(reply, 401, "AUTHENTICATION_REQUIRED", "Sessão ausente.");
         if (!canWriteKind(auth.roles, "NCM")) return problem(reply, 403, "PERMISSION_DENIED", "Perfil sem permissão para cadastrar NCMs.");
 
-        let official: OfficialNcmCatalog;
-        try { official = await getOfficialNcms(); }
-        catch (error) { return siscomexUnavailable(reply, error); }
-        const source = official.items.find(item => item.code === parsed.data.code);
+        const persisted = await officialLookup.find(parsed.data.code);
+        let official: Omit<OfficialNcmCatalog, "items">;
+        let source: OfficialNcm | undefined;
+        if (persisted) {
+          official = persisted.snapshot;
+          source = persisted.item ?? undefined;
+        } else {
+          let catalog: OfficialNcmCatalog;
+          try { catalog = await getOfficialNcms(); }
+          catch (error) { return siscomexUnavailable(reply, error); }
+          official = catalog;
+          source = catalog.items.find(item => item.code === parsed.data.code);
+        }
         if (!source) return problem(reply, 404, "OFFICIAL_NCM_NOT_FOUND", "Esse NCM não está no catálogo oficial vigente.");
         if (source.validFrom === null) {
           return problem(reply, 409, "OFFICIAL_NCM_VALIDITY_UNAVAILABLE",
