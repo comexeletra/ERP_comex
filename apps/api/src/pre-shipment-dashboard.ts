@@ -208,6 +208,26 @@ export function summarizePreShipment(rows: readonly SummaryRow[], { status, agin
   };
 }
 
+const dayMs = 86_400_000;
+/** Days from the PO sent date to today, as the SQL `today - po_sent_date`; null without a sent date. */
+const elapsedDays = (sentDate: string | null, today: string) => sentDate
+  ? Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${sentDate.slice(0, 10)}T00:00:00Z`)) / dayMs) : null;
+
+/**
+ * Pivot of the exported lines for the Resumo sheet: the dashboard summary of exactly these lines (they already
+ * carry the filters and the chart selections) and the aging of each waiting status, with the lines without a sent
+ * date as `none`.
+ */
+export function summarizePreShipmentLines(lines: readonly PreShipmentLine[], today: string) {
+  const rows: SummaryRow[] = lines.map(line => ({ line_status: line.status, aging_days: elapsedDays(line.poSentDate, today),
+    products: 1, quantity: line.quantity }));
+  const agingByStatus = Object.fromEntries(PRE_SHIPMENT_AGING_STATUSES.map(status => [status,
+    totals([...agingKeys, "none"] as const, rows.filter(row => row.line_status === status),
+      row => row.aging_days === null ? "none" : agingRange(row.aging_days))])) as
+    Record<(typeof PRE_SHIPMENT_AGING_STATUSES)[number], Record<PreShipmentAgingRange | "none", Part>>;
+  return { ...summarizePreShipment(rows, {}), agingByStatus };
+}
+
 export async function queryPreShipmentSummary(pool: Pool, scopes: readonly string[], filters: PreShipmentFilters,
   today = todayInBrasilia()) {
   const { sql, params } = dashboardSql(scopes, filters, today);

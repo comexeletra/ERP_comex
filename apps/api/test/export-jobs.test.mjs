@@ -201,7 +201,7 @@ test("the worker writes the pre-shipment export from the dashboard table query",
   const branch = worker.slice(worker.indexOf('job.job_type === "pre-shipment-xlsx"'), worker.indexOf('job.job_type !== "purchase-order-xlsx"'));
   assert.match(branch, /preShipmentQuery\.safeParse\(parameters\)/u);
   assert.match(branch, /queryPreShipmentLines\(pool, job\.importer_scopes, filters\.data, maxExportLines \+ 1, 0\)/u);
-  assert.match(branch, /preShipmentXlsx\(result\.lines, chosen\)/u);
+  assert.match(branch, /preShipmentXlsx\(result\.lines, chosen, \{ filters: filters\.data, today: todayInBrasilia\(\) \}\)/u);
 });
 
 test("the pre-shipment export body built by the web is accepted by the route", async t => {

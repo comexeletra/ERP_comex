@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { exportColumnCatalogs, exportColumnsSchema, resolveExportColumns, type ExportContext } from "./export-columns.js";
+import { todayInBrasilia } from "./followup-calculations.js";
 import { preShipmentQuery, queryPreShipmentLines } from "./pre-shipment-dashboard.js";
 import { preShipmentXlsx, queryPurchaseOrderExport, purchaseOrderExportXlsx, purchaseOrderLinesXlsx,
   type PurchaseOrderExportFilters } from "./purchase-order-exports.js";
@@ -142,7 +143,7 @@ async function processJob(job: ExportJob): Promise<void> {
           .map(column => ({ key: column.key, header: column.header })), {})!;
       const result = await queryPreShipmentLines(pool, job.importer_scopes, filters.data, maxExportLines + 1, 0);
       if (result.totalCount > maxExportLines) throw new PermanentJobError("EXPORT_TOO_LARGE");
-      await completeJob(job, await preShipmentXlsx(result.lines, chosen));
+      await completeJob(job, await preShipmentXlsx(result.lines, chosen, { filters: filters.data, today: todayInBrasilia() }));
       console.info(JSON.stringify({ event: "export_job_completed", jobId: job.id, rowCount: result.lines.length }));
       return;
     }

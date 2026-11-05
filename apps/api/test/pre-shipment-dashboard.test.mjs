@@ -214,3 +214,80 @@ test("the web lists of statuses and aging ranges match the API", async () => {
   assert.deepEqual([...preShipmentStatuses], [...shipmentLineStatuses]);
   assert.deepEqual([...preShipmentAgingRanges], PRE_SHIPMENT_AGING_RANGES.map(range => range.key));
 });
+
+const pivotLine = (status, quantity, poSentDate) => ({ ...line, status, quantity, poSentDate });
+const pivotLines = [
+  pivotLine("A DISTRIBUIR", "20.00000000", "2026-09-21"), // 45 days before 2026-11-05: up to 45
+  pivotLine("AGUARDANDO PRODUÇÃO", "10.50000000", "2026-09-20"), // 46 days: 45 to 60
+  pivotLine("AGUARDANDO PRODUÇÃO", "5.00000000", null), // no sent date
+  pivotLine("AGUARDANDO EMBARQUE", "40.00000000", "2026-07-07"), // 121 days: over 120
+  pivotLine("ENTREGUE", "1000.00000000", "2025-01-01"), // delivered: no aging
+  pivotLine("CANCELADO", "7.00000000", null),
+];
+
+test("the export summary is a pivot of the exported lines, with the aging of the dashboard", async () => {
+  const { summarizePreShipmentLines } = await import("../dist/pre-shipment-dashboard.js");
+  const pivot = summarizePreShipmentLines(pivotLines, "2026-11-05");
+  assert.equal(pivot.totalProducts, 6);
+  assert.equal(pivot.totalQuantity, "1082.5");
+  assert.deepEqual(pivot.byStatus["AGUARDANDO PRODUÇÃO"], { products: 2, quantity: "15.5" });
+  assert.deepEqual(pivot.byStatus.DESEMBARAÇO, { products: 0, quantity: "0" });
+  assert.deepEqual(Object.fromEntries(Object.entries(pivot.aging).map(([range, part]) => [range, part.products])),
+    { upTo45: 1, days45To60: 1, days60To90: 0, days90To120: 0, days120Plus: 1 });
+  assert.deepEqual(pivot.agingWithoutSentDate, { products: 1, quantity: "5" });
+  // Aging by status: the waiting statuses by range, and those without a sent date.
+  assert.deepEqual(Object.keys(pivot.agingByStatus), [...PRE_SHIPMENT_AGING_STATUSES]);
+  assert.equal(pivot.agingByStatus["A DISTRIBUIR"].upTo45.products, 1);
+  assert.equal(pivot.agingByStatus["AGUARDANDO PRODUÇÃO"].days45To60.products, 1);
+  assert.equal(pivot.agingByStatus["AGUARDANDO PRODUÇÃO"].none.products, 1);
+  assert.equal(pivot.agingByStatus["AGUARDANDO EMBARQUE"].days120Plus.products, 1);
+});
+
+test("the export has a Resumo sheet before the lines, with the filters and the pivot tables", async () => {
+  const ExcelJS = (await import("exceljs")).default;
+  const { preShipmentXlsx } = await import("../dist/purchase-order-exports.js");
+  const { resolveExportColumns } = await import("../dist/export-columns.js");
+  const columns = resolveExportColumns("pre-shipment", [{ key: "status", header: "Status" }], {});
+  const buffer = await preShipmentXlsx(pivotLines, columns, { today: "2026-11-05",
+    filters: { status: ["AGUARDANDO PRODUÇÃO", "ENTREGUE"], aging: ["days120Plus"], direct: "direct", demand: ["MRP"],
+      productCode: "3090", necessityFrom: "2026-02-01", necessityTo: "2026-02-28" } });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  assert.deepEqual(workbook.worksheets.map(sheet => sheet.name), ["Resumo", "Pré Embarque"]);
+  const summary = workbook.getWorksheet("Resumo");
+  const rows = [];
+  summary.eachRow(row => rows.push(row.values.slice(1).map(cell => cell ?? null)));
+  const find = label => rows.find(row => row[0] === label);
+  assert.equal(rows[0][0], "Resumo do Pré Embarque");
+  // The filters of the export, as the screen applied them.
+  assert.deepEqual(find("Status"), ["Status", "AGUARDANDO PRODUÇÃO, ENTREGUE"]);
+  assert.deepEqual(find("Aging"), ["Aging", "Acima de 120 dias"]);
+  assert.deepEqual(find("Direct"), ["Direct", "Direct"]);
+  assert.deepEqual(find("Demanda"), ["Demanda", "MRP"]);
+  assert.deepEqual(find("Código do produto (contém)"), ["Código do produto (contém)", "3090"]);
+  assert.deepEqual(find("Necessidade"), ["Necessidade", "2026-02-01 a 2026-02-28"]);
+  // Products and quantity by status, with shares and the total.
+  const production = find("AGUARDANDO PRODUÇÃO");
+  assert.deepEqual(production.slice(0, 5).map(value => typeof value === "number" ? Number(value.toFixed(4)) : value),
+    ["AGUARDANDO PRODUÇÃO", 2, 0.3333, 15.5, 0.0143]);
+  const totals = rows.filter(row => row[0] === "Total");
+  assert.deepEqual(totals[0].slice(0, 5), ["Total", 6, 1, 1082.5, 1]);
+  // Aging by range, out of the total the products without a PO sent date.
+  assert.deepEqual(find("Acima de 120 dias").slice(0, 2), ["Acima de 120 dias", 1]);
+  assert.deepEqual(totals[1].slice(0, 2), ["Total", 3]);
+  assert.deepEqual(find("Sem PO Sent Date").slice(0, 2), ["Sem PO Sent Date", 1]);
+  // The matrix of the waiting statuses by range.
+  const header = rows.find(row => row[0] === "Status / Faixa");
+  assert.deepEqual(header, ["Status / Faixa", "Até 45 dias", "45 a 60 dias", "60 a 90 dias", "90 a 120 dias",
+    "Acima de 120 dias", "Sem PO Sent Date", "Total"]);
+  const matrixProduction = rows.filter(row => row[0] === "AGUARDANDO PRODUÇÃO").at(-1);
+  assert.deepEqual(matrixProduction, ["AGUARDANDO PRODUÇÃO", 0, 1, 0, 0, 0, 1, 2]);
+  // The lines sheet keeps the chosen columns.
+  assert.equal(workbook.getWorksheet("Pré Embarque").actualRowCount, pivotLines.length + 1);
+});
+
+test("the worker writes the summary with the filters of the job and today in Brasília", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const worker = await readFile(new URL("../src/worker.ts", import.meta.url), "utf8");
+  assert.match(worker, /preShipmentXlsx\(result\.lines, chosen, \{ filters: filters\.data, today: todayInBrasilia\(\) \}\)/u);
+});

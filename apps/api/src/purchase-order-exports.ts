@@ -2,7 +2,8 @@ import type { Pool } from "pg";
 import ExcelJS from "exceljs";
 import { moneyProduct, type calculateE2e, type E2eStageCode } from "./followup-calculations.js";
 import type { ResolvedExportColumn } from "./export-columns.js";
-import type { PreShipmentLine } from "./pre-shipment-dashboard.js";
+import { summarizePreShipmentLines, type PreShipmentAgingRange, type PreShipmentFilters,
+  type PreShipmentLine } from "./pre-shipment-dashboard.js";
 import type { ShipmentLine } from "./shipment-lines.js";
 
 export type PurchaseOrderExportFilters = {
@@ -123,6 +124,12 @@ async function chosenColumnsXlsx<Row>(sheetName: string, columns: readonly Resol
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "ERP Comex";
   workbook.created = new Date();
+  addChosenColumnsSheet(workbook, sheetName, columns, rows);
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+function addChosenColumnsSheet<Row>(workbook: ExcelJS.Workbook, sheetName: string,
+  columns: readonly ResolvedExportColumn<Row>[], rows: readonly Row[]): void {
   const sheet = workbook.addWorksheet(sheetName, { views: [{ state: "frozen", ySplit: 1 }] });
   sheet.columns = columns.map(column => ({ header: column.header, key: column.key, width: column.width }));
   sheet.getRow(1).font = { bold: true };
@@ -133,13 +140,115 @@ async function chosenColumnsXlsx<Row>(sheetName: string, columns: readonly Resol
       if (column.forecast?.(row)) added.getCell(index + 1).font = { italic: true, color: { argb: "FF6B7280" } };
     });
   }
-  return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
-/** The Pré Embarque dashboard table with the chosen columns (every column of the table without a choice). */
+// Labels of the Resumo sheet. The API writes the file in Portuguese, as the status values.
+const agingLabels: Record<PreShipmentAgingRange, string> = {
+  upTo45: "Até 45 dias", days45To60: "45 a 60 dias", days60To90: "60 a 90 dias", days90To120: "90 a 120 dias",
+  days120Plus: "Acima de 120 dias",
+};
+const withoutSentDate = "Sem PO Sent Date";
+const listFilters: [keyof PreShipmentFilters, string][] = [["demand", "Demanda"], ["requester", "Solicitante"],
+  ["group", "Grupo"], ["supplier", "Fornecedor"], ["purpose", "Finalidade"], ["importers", "Importadora"], ["modes", "Modal"]];
+const textFilters: [keyof PreShipmentFilters, string][] = [["purchaseOrder", "PO (contém)"], ["scNumber", "SC (contém)"],
+  ["ipNumber", "IP (contém)"], ["productCode", "Código do produto (contém)"],
+  ["productDescription", "Descrição do produto (contém)"]];
+
+/** The filters of the export, one row each, in the order of the dashboard form; the chart selections first. */
+function filterRows(filters: Partial<PreShipmentFilters>): [string, string][] {
+  const rows: [string, string][] = [];
+  const list = (values: unknown) => Array.isArray(values) && values.length ? values.join(", ") : "";
+  if (filters.status?.length) rows.push(["Status", filters.status.join(", ")]);
+  if (filters.aging?.length) rows.push(["Aging", filters.aging.map(range => agingLabels[range]).join(", ")]);
+  if (filters.priority) rows.push(["Prioridade", filters.priority === "priority" ? "Prioridade" : "Normal"]);
+  if (filters.direct) rows.push(["Direct", filters.direct === "direct" ? "Direct" : "Não direct"]);
+  for (const [key, label] of listFilters) if (list(filters[key])) rows.push([label, list(filters[key])]);
+  for (const [key, label] of textFilters) {
+    const value = filters[key];
+    if (typeof value === "string" && value) rows.push([label, value]);
+  }
+  if (filters.necessityFrom || filters.necessityTo) {
+    rows.push(["Necessidade", `${filters.necessityFrom ?? "…"} a ${filters.necessityTo ?? "…"}`]);
+  }
+  return rows;
+}
+
+/**
+ * Resumo sheet of the pre-shipment export, a pivot of the exported lines: the filters, products and item
+ * quantity by status, the aging by range and the aging of each waiting status. Shares are fractions with a
+ * percent format, so they can be summed and charted in Excel.
+ */
+function addPreShipmentSummarySheet(workbook: ExcelJS.Workbook, lines: readonly PreShipmentLine[],
+  filters: Partial<PreShipmentFilters>, today: string): void {
+  const pivot = summarizePreShipmentLines(lines, today);
+  const sheet = workbook.addWorksheet("Resumo");
+  sheet.columns = [{ width: 34 }, { width: 16 }, { width: 16 }, { width: 20 }, { width: 16 }, { width: 18 }, { width: 18 },
+    { width: 14 }];
+  const bold = (row: ExcelJS.Row) => { row.font = { bold: true }; };
+  const share = (value: number, total: number) => total > 0 ? value / total : 0;
+  const percent = (row: ExcelJS.Row) => { row.getCell(3).numFmt = "0.0%"; row.getCell(5).numFmt = "0.0%"; };
+
+  sheet.addRow(["Resumo do Pré Embarque"]).font = { bold: true, size: 14 };
+  sheet.addRow(["Data de referência", today]);
+  sheet.addRow(["Produtos exportados", pivot.totalProducts]);
+  sheet.addRow([]);
+  bold(sheet.addRow(["Filtros"]));
+  const applied = filterRows(filters);
+  for (const row of applied.length ? applied : [["Nenhum filtro", "Todas as linhas do painel"]]) sheet.addRow(row);
+
+  sheet.addRow([]);
+  bold(sheet.addRow(["Produtos por status"]));
+  bold(sheet.addRow(["Status", "Produtos", "% produtos", "Quantidade de itens", "% quantidade"]));
+  const totalQuantity = Number(pivot.totalQuantity);
+  for (const [status, part] of Object.entries(pivot.byStatus)) {
+    percent(sheet.addRow([status, part.products, share(part.products, pivot.totalProducts), Number(part.quantity),
+      share(Number(part.quantity), totalQuantity)]));
+  }
+  const statusTotal = sheet.addRow(["Total", pivot.totalProducts, pivot.totalProducts > 0 ? 1 : 0, totalQuantity,
+    totalQuantity > 0 ? 1 : 0]);
+  bold(statusTotal); percent(statusTotal);
+
+  sheet.addRow([]);
+  bold(sheet.addRow(["Aging desde o envio da PO (A distribuir, Ag. produção e Ag. embarque)"]));
+  bold(sheet.addRow(["Faixa", "Produtos", "% produtos", "Quantidade de itens", "% quantidade"]));
+  const ranges = Object.keys(agingLabels) as PreShipmentAgingRange[];
+  const agingProducts = ranges.reduce((sum, range) => sum + pivot.aging[range].products, 0);
+  const agingQuantity = ranges.reduce((sum, range) => sum + Number(pivot.aging[range].quantity), 0);
+  for (const range of ranges) {
+    const part = pivot.aging[range];
+    percent(sheet.addRow([agingLabels[range], part.products, share(part.products, agingProducts), Number(part.quantity),
+      share(Number(part.quantity), agingQuantity)]));
+  }
+  const agingTotal = sheet.addRow(["Total", agingProducts, agingProducts > 0 ? 1 : 0, agingQuantity, agingQuantity > 0 ? 1 : 0]);
+  bold(agingTotal); percent(agingTotal);
+  sheet.addRow([withoutSentDate, pivot.agingWithoutSentDate.products, null, Number(pivot.agingWithoutSentDate.quantity)]);
+
+  sheet.addRow([]);
+  bold(sheet.addRow(["Aging por status (produtos)"]));
+  bold(sheet.addRow(["Status / Faixa", ...ranges.map(range => agingLabels[range]), withoutSentDate, "Total"]));
+  const columnTotals = new Array<number>(ranges.length + 2).fill(0);
+  for (const [status, parts] of Object.entries(pivot.agingByStatus)) {
+    const values = [...ranges.map(range => parts[range].products), parts.none.products];
+    const rowTotal = values.reduce((sum, value) => sum + value, 0);
+    [...values, rowTotal].forEach((value, index) => { columnTotals[index] += value; });
+    sheet.addRow([status, ...values, rowTotal]);
+  }
+  bold(sheet.addRow(["Total", ...columnTotals]));
+}
+
+/**
+ * The Pré Embarque dashboard export: the Resumo sheet (a pivot of the exported lines with the filters) and the
+ * table with the chosen columns (every column of the table without a choice).
+ */
 export async function preShipmentXlsx(lines: readonly PreShipmentLine[],
-  columns: readonly ResolvedExportColumn<PreShipmentLine>[]): Promise<Buffer> {
-  return chosenColumnsXlsx("Pré Embarque", columns, lines);
+  columns: readonly ResolvedExportColumn<PreShipmentLine>[],
+  { filters = {}, today }: { filters?: Partial<PreShipmentFilters>; today: string }): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "ERP Comex";
+  workbook.created = new Date();
+  addPreShipmentSummarySheet(workbook, lines, filters, today);
+  addChosenColumnsSheet(workbook, "Pré Embarque", columns, lines);
+  return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
 /** Without chosen columns, the layout from before the column choice (8 columns). */
