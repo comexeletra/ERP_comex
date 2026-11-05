@@ -65,17 +65,31 @@ export function parsePreShipmentFilters(params: URLSearchParams): PreShipmentFil
   return filters;
 }
 
-/** The filters as the API reads them: a list repeats its key, empty values are left out. */
+/**
+ * The filters as the API reads them, empty values left out: the body of the Excel export (a list is an array),
+ * and through filterParams the query of the summary and the table.
+ */
+export function preShipmentFilterBody(filters: PreShipmentFilters): Record<string, string | string[]> {
+  const body: Record<string, string | string[]> = {};
+  const status = inOrder(preShipmentStatuses, filters.status);
+  const aging = inOrder(preShipmentAgingRanges, filters.aging);
+  if (status.length) body.status = status;
+  if (aging.length) body.aging = aging;
+  if (filters.priority) body.priority = filters.priority;
+  if (filters.direct) body.direct = filters.direct;
+  for (const key of listKeys) { const values = cleanList(filters[key]); if (values.length) body[key] = values; }
+  for (const key of textKeys) if (filters[key].trim()) body[key] = filters[key].trim();
+  if (filters.necessityFrom) body.necessityFrom = filters.necessityFrom;
+  if (filters.necessityTo) body.necessityTo = filters.necessityTo;
+  return body;
+}
+
+/** The query string of the filters: a list repeats its key, once for each value. */
 function filterParams(filters: PreShipmentFilters): URLSearchParams {
   const params = new URLSearchParams();
-  for (const status of inOrder(preShipmentStatuses, filters.status)) params.append("status", status);
-  for (const range of inOrder(preShipmentAgingRanges, filters.aging)) params.append("aging", range);
-  if (filters.priority) params.set("priority", filters.priority);
-  if (filters.direct) params.set("direct", filters.direct);
-  for (const key of listKeys) for (const value of cleanList(filters[key])) params.append(key, value);
-  for (const key of textKeys) if (filters[key].trim()) params.set(key, filters[key].trim());
-  if (filters.necessityFrom) params.set("necessityFrom", filters.necessityFrom);
-  if (filters.necessityTo) params.set("necessityTo", filters.necessityTo);
+  for (const [key, value] of Object.entries(preShipmentFilterBody(filters))) {
+    for (const item of Array.isArray(value) ? value : [value]) params.append(key, item);
+  }
   return params;
 }
 

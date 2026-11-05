@@ -1525,6 +1525,7 @@ export const en: Messages = {
       tableLoading: "Loading the lines…",
       none: "No products for the filters.",
       pages: "Table pages",
+      export: "Export pre-shipment to Excel",
       noIp: "No IP",
       totalProducts: (total: string) => `${total} products`,
       totalItems: (total: string) => `${total} items`,

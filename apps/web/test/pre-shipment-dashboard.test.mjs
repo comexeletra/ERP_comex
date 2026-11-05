@@ -6,8 +6,9 @@ import { ptBR } from "../lib/i18n/pt-BR.ts";
 import { zhCN } from "../lib/i18n/zh-CN.ts";
 import { emptyPreShipmentFilters, formatProducts, parsePreShipmentFilters, preShipmentAgingColors, preShipmentAgingRanges,
   preShipmentFilterCount, preShipmentLinesQuery, preShipmentStatusColors, preShipmentStatuses, preShipmentSummaryQuery,
-  preShipmentUrlQuery } from "../lib/pre-shipment-dashboard.ts";
+  preShipmentFilterBody, preShipmentUrlQuery } from "../lib/pre-shipment-dashboard.ts";
 import { e2eStatusColors, productLineStatuses } from "../lib/purchase-order-lines.ts";
+import { choosableColumns, columnsBody } from "../lib/export-columns.ts";
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const [dashboard, charts, reports, page, styles] = await Promise.all([read("components/PreShipmentDashboard.tsx"),
@@ -98,4 +99,22 @@ test("the pre-shipment page shows the dashboard and keeps the load metrics in a 
     ".e2e-donut-center.pre-dashboard-center-neutral strong", ".pre-dashboard-table"]) {
     assert.ok(styles.includes(`${rule} {`), rule);
   }
+});
+
+test("the export offers the data columns of the table, in its order, with PO and product always written", () => {
+  const columns = [...dashboard.matchAll(/<th>\{c\.(\w+)\}<\/th>/gu)].map(match => ptBR.reports.dashboard.columns[match[1]]);
+  assert.deepEqual(choosableColumns("pre-shipment", {}).map(column => column.label(ptBR, {})), columns);
+  const body = columnsBody("pre-shipment", ["eta"], en, {});
+  assert.deepEqual(body, { context: "pre-shipment", columns: [{ key: "poNumber", header: "PO" }, { key: "eta", header: "ETA" },
+    { key: "productCode", header: "Product code" }] });
+});
+
+test("the export sends the filters and the chart selections of the table as the API body", () => {
+  assert.deepEqual(preShipmentFilterBody({ ...emptyPreShipmentFilters, status: ["ENTREGUE", "A DISTRIBUIR"], aging: ["upTo45"],
+    priority: "priority", demand: [" MRP ", "MRP"], scNumber: " 238 ", necessityPeriod: "month:0:0" }),
+  { status: ["A DISTRIBUIR", "ENTREGUE"], aging: ["upTo45"], priority: "priority", demand: ["MRP"], scNumber: "238" });
+  assert.deepEqual(preShipmentFilterBody(emptyPreShipmentFilters), {});
+  assert.match(dashboard, /runExport\("\/api\/v1\/exports\/pre-shipment", \{ \.\.\.preShipmentFilterBody\(applied\), \.\.\.columns \}\)/u);
+  assert.match(dashboard, /<ExportColumnsDialog context="pre-shipment"/u);
+  assert.match(dashboard, /useExcelExport\("pre-embarque"\)/u);
 });

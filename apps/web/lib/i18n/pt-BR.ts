@@ -1528,6 +1528,7 @@ export const ptBR = {
       tableLoading: "Carregando as linhas…",
       none: "Nenhum produto para os filtros.",
       pages: "Páginas da tabela",
+      export: "Exportar Excel do Pré Embarque",
       noIp: "Sem IP",
       totalProducts: (total: string) => `${total} produtos`,
       totalItems: (total: string) => `${total} itens`,

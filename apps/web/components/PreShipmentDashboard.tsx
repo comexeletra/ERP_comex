@@ -8,7 +8,7 @@ import { e2eToday, formatE2eDate } from "../lib/e2e-analysis";
 import { formatNumber } from "../lib/format-number";
 import { statusLabel } from "../lib/i18n/labels";
 import { effectiveSelection } from "../lib/multi-select";
-import { formatProducts, parsePreShipmentFilters, preShipmentFilterCount, preShipmentLinesQuery, preShipmentStatusColors,
+import { formatProducts, parsePreShipmentFilters, preShipmentFilterBody, preShipmentFilterCount, preShipmentLinesQuery, preShipmentStatusColors,
   preShipmentStatuses, preShipmentSummaryQuery, preShipmentUrlQuery, emptyPreShipmentFilters, type PreShipmentAgingRange,
   type PreShipmentFilterOptions, type PreShipmentFilters, type PreShipmentLinesPage, type PreShipmentStatus,
   type PreShipmentSummary } from "../lib/pre-shipment-dashboard";
@@ -17,11 +17,13 @@ import type { SearchableOption } from "../lib/searchable-options";
 import { fetchRetryingTransient } from "../lib/transient-retry";
 import DateRangeFilter from "./DateRangeFilter";
 import E2eCollapsible from "./E2eCollapsible";
+import ExportColumnsDialog from "./ExportColumnsDialog";
 import { getMessages, useI18n } from "./I18nProvider";
 import { MultiSelectFilter } from "./MultiSelectFilter";
 import PreShipmentCharts from "./PreShipmentCharts";
 import { Tooltip } from "./Tooltip";
 import { useDebouncedValue } from "./useDebouncedValue";
+import { useExcelExport } from "./useProductLineExport";
 
 const pageSize = 50;
 // Quiet time after the last filter or chart click before the summary and the table are requested.
@@ -88,6 +90,8 @@ export default function PreShipmentDashboard({ initialQuery }: { initialQuery: s
   const [applied, setApplied] = useState(initial.filters);
   const [page, setPage] = useState(initial.page);
   const [options, setOptions] = useState<PreShipmentFilterOptions>();
+  const { exporting, exportStatus, exportError, runExport } = useExcelExport("pre-embarque");
+  const [choosingColumns, setChoosingColumns] = useState(false);
   const summaryQuery = useDebouncedValue(preShipmentSummaryQuery(applied).toString(), fetchDelayMs);
   const linesQuery = useDebouncedValue(preShipmentLinesQuery(applied, page, pageSize).toString(), fetchDelayMs);
   const summaryLoaded = useLoaded<PreShipmentSummary>("/api/v1/reports/pre-shipment/summary", summaryQuery);
@@ -203,6 +207,14 @@ export default function PreShipmentDashboard({ initialQuery }: { initialQuery: s
       {lines?.data && <>
         <p>{d.found(formatProducts(lines.data.totalCount, locale))}
           {lines.data.totalCount > 0 && m.processDirectory.pageSuffix(page, totalPages)}</p>
+        {/* The export writes the lines of the table: the applied filters and the chart selections. */}
+        {lines.data.totalCount > 0 && <p><button className="button secondary" type="button" disabled={exporting}
+          onClick={() => setChoosingColumns(true)}>{exporting ? m.productLines.exporting : d.export}</button></p>}
+        {choosingColumns && <ExportColumnsDialog context="pre-shipment" onCancel={() => setChoosingColumns(false)}
+          onExport={columns => { setChoosingColumns(false);
+            void runExport("/api/v1/exports/pre-shipment", { ...preShipmentFilterBody(applied), ...columns }); }} />}
+        {exportStatus && <p className="muted" role="status">{exportStatus}</p>}
+        {exportError && <p className="notice error" role="alert">{exportError}</p>}
         {lines.data.totalCount === 0 && <p>{d.none}</p>}
         {lines.data.lines.length > 0 && <div className="table-scroll"><table>
           <thead><tr>

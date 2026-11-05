@@ -6,25 +6,26 @@ import { emptyE2eStageFilter, productLineFilterBody, type E2eStageFilter, type P
 import type { ExportColumnsBody } from "./ExportColumnsDialog";
 import { getMessages } from "./I18nProvider";
 
-/** Queues the product line Excel export with the chosen columns, waits for the worker and downloads the file. */
-export function useProductLineExport(filePrefix: string) {
+/**
+ * Queues an Excel export job (POST `path` with `body`), waits for the worker and downloads the file as
+ * `<filePrefix>-<date>.xlsx`. The product line screens and the pre-shipment dashboard share it.
+ */
+export function useExcelExport(filePrefix: string) {
   const [exporting, setExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState("");
   const [exportError, setExportError] = useState("");
 
-  async function downloadExcel(filters: ProductLineFilters, stage: E2eStageFilter = emptyE2eStageFilter,
-    columns?: ExportColumnsBody) {
+  async function runExport(path: string, body: Record<string, unknown>) {
     if (exporting) return;
     const t = getMessages().productLines;
     setExporting(true); setExportError(""); setExportStatus(t.exportQueued);
     try {
-      const created = await apiFetch("/api/v1/exports/purchase-order-lines", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...productLineFilterBody(filters, stage), ...columns }),
+      const created = await apiFetch(path, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
       });
       if (!created.ok) {
-        const body = await created.json().catch(() => null) as { error?: string } | null;
-        throw new Error(body?.error ?? t.exportStartFailed);
+        const error = await created.json().catch(() => null) as { error?: string } | null;
+        throw new Error(error?.error ?? t.exportStartFailed);
       }
       const { id } = await created.json() as { id: string };
       let complete = false;
@@ -53,6 +54,18 @@ export function useProductLineExport(filePrefix: string) {
     } catch (cause) {
       setExportError(cause instanceof Error ? cause.message : t.exportError);
     } finally { setExporting(false); setExportStatus(""); }
+  }
+
+  return { exporting, exportStatus, exportError, runExport };
+}
+
+/** Queues the product line Excel export with the chosen columns, waits for the worker and downloads the file. */
+export function useProductLineExport(filePrefix: string) {
+  const { exporting, exportStatus, exportError, runExport } = useExcelExport(filePrefix);
+
+  async function downloadExcel(filters: ProductLineFilters, stage: E2eStageFilter = emptyE2eStageFilter,
+    columns?: ExportColumnsBody) {
+    await runExport("/api/v1/exports/purchase-order-lines", { ...productLineFilterBody(filters, stage), ...columns });
   }
 
   return { exporting, exportStatus, exportError, downloadExcel };

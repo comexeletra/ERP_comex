@@ -1521,6 +1521,7 @@ export const zhCN: Messages = {
       tableLoading: "正在加载明细…",
       none: "没有符合筛选条件的产品。",
       pages: "表格分页",
+      export: "导出装运前 Excel",
       noIp: "无 IP",
       totalProducts: (total: string) => `${total} 个产品`,
       totalItems: (total: string) => `${total} 件`,

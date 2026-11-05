@@ -5,7 +5,7 @@ import type { Messages } from "./i18n/pt-BR";
  * the table header as label. Mirror of apps/api/src/export-columns.ts (the API test compares them);
  * a column added to, moved in or removed from one of those tables changes both in the same commit.
  */
-export type ExportContext = "portfolio" | "product-lines" | "end-to-end";
+export type ExportContext = "portfolio" | "product-lines" | "end-to-end" | "pre-shipment";
 export type ExportColumnFilters = { stage?: string; view?: string };
 
 // Modules of lib/ do not import values from each other (see AGENTS.md).
@@ -87,6 +87,26 @@ export const exportColumnCatalog: Record<ExportContext, readonly ExportColumnDef
     { key: "bottleneck", label: m => m.e2eLines.bottleneck },
     { key: "currentStatus", label: m => m.e2eLines.currentStatus },
     { key: "arrivalMonth", label: m => m.e2eLines.arrivalMonth },
+  ],
+  // components/PreShipmentDashboard.tsx, the table of the Pré Embarque dashboard.
+  "pre-shipment": [
+    { key: "necessity", label: m => m.reports.dashboard.columns.necessity },
+    { key: "mode", label: m => m.reports.dashboard.columns.mode },
+    { key: "status", label: m => m.reports.dashboard.columns.status },
+    { key: "requester", label: m => m.reports.dashboard.columns.requester },
+    { key: "scNumber", label: m => m.reports.dashboard.columns.sc },
+    { key: "poNumber", label: m => m.reports.dashboard.columns.po, required: true },
+    { key: "ipNumber", label: m => m.reports.dashboard.columns.ip },
+    { key: "etd", label: m => m.reports.dashboard.columns.etd },
+    { key: "eta", label: m => m.reports.dashboard.columns.eta },
+    { key: "ete", label: m => m.reports.dashboard.columns.ete },
+    { key: "productCode", label: m => m.reports.dashboard.columns.productCode, required: true },
+    { key: "description", label: m => m.reports.dashboard.columns.description },
+    { key: "quantity", label: m => m.reports.dashboard.columns.quantity },
+    { key: "supplier", label: m => m.reports.dashboard.columns.supplier },
+    { key: "importer", label: m => m.reports.dashboard.columns.importer },
+    { key: "purpose", label: m => m.reports.dashboard.columns.purpose },
+    { key: "poSentDate", label: m => m.reports.dashboard.columns.poSentDate },
   ],
 };
 
