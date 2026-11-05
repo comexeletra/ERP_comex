@@ -302,10 +302,18 @@ test("each stage card joins the model phase and the line counts", () => {
 
 test("the lines follow the selected stage, view and late filter on the API routes", () => {
   // Contract with GET /api/v1/purchase-order-lines (stage, view, late) and its stage summary.
-  assert.match(view, /apiFetch\(`\/api\/v1\/purchase-order-lines\?\$\{query\}`/u);
+  assert.match(view, /apiFetch\(`\/api\/v1\/purchase-order-lines\?\$\{settledQuery\}`/u);
   assert.match(view, /productLineQuery\(applied, page, pageSize, stage\)/u);
-  assert.match(view, /apiFetch\(`\/api\/v1\/purchase-order-lines\/e2e-stages\?\$\{summaryQuery\}`/u);
+  assert.match(view, /apiFetch\(`\/api\/v1\/purchase-order-lines\/e2e-stages\?\$\{settledSummaryQuery\}`/u);
   assert.match(view, /const summaryQuery = e2eSummaryQuery\(applied, stage\)\.toString\(\);/u);
+  // A burst of chart clicks settles into one request of each, and a transient failure is tried again.
+  assert.match(view, /const settledQuery = useDebouncedValue\(query, e2eFetchDelayMs\);/u);
+  assert.match(view, /const settledSummaryQuery = useDebouncedValue\(summaryQuery, e2eFetchDelayMs\);/u);
+  assert.match(view, /const e2eFetchDelayMs = 250;/u);
+  assert.equal((view.match(/fetchRetryingTransient\(\(\) => apiFetch\(/gu) ?? []).length, 2);
+  // A failure is not kept as loaded data, so the same filters can be asked again.
+  assert.match(view, /const cached = cache\[settledQuery\]\?\.data !== undefined;/u);
+  assert.match(view, /const summaryCached = summaries\[settledSummaryQuery\]\?\.data !== undefined;/u);
   assert.match(view, /const stage: E2eStageFilter = \{ stage: current === null \? "" : E2E_STAGE_CODES\[current\], view, late, deadline,\s+delayRange, demandType, modal \};/u);
   // The export downloads what the table shows.
   assert.match(view, /downloadExcel\(applied, stage, columns\)/u);

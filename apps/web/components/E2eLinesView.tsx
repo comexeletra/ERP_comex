@@ -14,6 +14,7 @@ import { e2eOverviewFilterCount, e2eStatusColor, e2eSummaryQuery, emptyProductLi
   type E2eDeadlineStatus, type E2eDelayRange, type E2eStageFilter, type ProductLineFilters,
   type ProductLineStatus } from "../lib/purchase-order-lines";
 import type { SearchableOption } from "../lib/searchable-options";
+import { fetchRetryingTransient } from "../lib/transient-retry";
 import E2eCollapsible from "./E2eCollapsible";
 import { E2eFlowRail, Icon, useE2eStepper } from "./E2eFlowParts";
 import DateRangeFilter from "./DateRangeFilter";
@@ -25,6 +26,7 @@ import { getMessages, useI18n } from "./I18nProvider";
 import { MultiSelectFilter } from "./MultiSelectFilter";
 import PageHeader from "./PageHeader";
 import { Tooltip } from "./Tooltip";
+import { useDebouncedValue } from "./useDebouncedValue";
 import { useProductLineExport } from "./useProductLineExport";
 
 type E2eLine = {
@@ -43,6 +45,8 @@ type StageSummary = { totalCount: number; delivered: number; stages: Record<E2eS
 type FilterOptions = { groups: string[]; purposes: string[]; importers: string[]; purchaseOrders: string[]; ipNumbers: string[];
   products: { code: string; description: string | null }[] };
 const pageSize = 50;
+// Quiet time after the last filter or chart change before the table and the summary are requested.
+const e2eFetchDelayMs = 250;
 const stageSide = (code: E2eStageCode) => E2E_STAGE_CODES.indexOf(code) < 3 ? "side-br" : "side-cn";
 const textOptions = (values: string[] | undefined): SearchableOption[] => (values ?? []).map(value => ({ value, label: value }));
 /** The necessity filter fields of a period: its dates from today, and the relative period kept in the URL. */
@@ -116,36 +120,45 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
   const [choosingColumns, setChoosingColumns] = useState(false);
   const query = productLineQuery(applied, page, pageSize, stage).toString();
   const summaryQuery = e2eSummaryQuery(applied, stage).toString();
-  const cached = query in cache;
-  const summaryCached = summaryQuery in summaries;
+  // Each chart click, Ctrl+click or filter applies at once on screen, but the API is only called once the
+  // choices stop for a moment: a burst of clicks becomes one table and one summary request.
+  const settledQuery = useDebouncedValue(query, e2eFetchDelayMs);
+  const settledSummaryQuery = useDebouncedValue(summaryQuery, e2eFetchDelayMs);
+  // Only loaded data counts as cached: a failure is shown, and asking for the same filters again tries again.
+  const cached = cache[settledQuery]?.data !== undefined;
+  const summaryCached = summaries[settledSummaryQuery]?.data !== undefined;
 
   useEffect(() => {
     if (cached) return undefined;
     const controller = new AbortController();
-    apiFetch(`/api/v1/purchase-order-lines?${query}`, { signal: controller.signal })
+    fetchRetryingTransient(() => apiFetch(`/api/v1/purchase-order-lines?${settledQuery}`, { signal: controller.signal }),
+      controller.signal)
       .then(result => readApiJson<LinesPage>(result))
-      .then(data => { if (!controller.signal.aborted) setCache(entries => ({ ...entries, [query]: { data } })); })
+      .then(data => { if (!controller.signal.aborted) setCache(entries => ({ ...entries, [settledQuery]: { data } })); })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) setCache(entries => ({ ...entries,
-          [query]: { error: reason instanceof Error ? reason.message : getMessages().common.unexpectedError } }));
+          [settledQuery]: { error: reason instanceof Error ? reason.message : getMessages().common.unexpectedError } }));
       });
     return () => controller.abort();
-  }, [query, cached]);
+  }, [settledQuery, cached]);
 
   useEffect(() => {
     if (summaryCached) return undefined;
     const controller = new AbortController();
-    apiFetch(`/api/v1/purchase-order-lines/e2e-stages?${summaryQuery}`, { signal: controller.signal })
+    fetchRetryingTransient(() => apiFetch(`/api/v1/purchase-order-lines/e2e-stages?${settledSummaryQuery}`,
+      { signal: controller.signal }), controller.signal)
       .then(result => readApiJson<StageSummary>(result))
       .then(data => {
-        if (!controller.signal.aborted) { setSummaries(entries => ({ ...entries, [summaryQuery]: { data } })); setLastSummary(data); }
+        if (!controller.signal.aborted) {
+          setSummaries(entries => ({ ...entries, [settledSummaryQuery]: { data } })); setLastSummary(data);
+        }
       })
       .catch(() => {
         if (!controller.signal.aborted) setSummaries(entries => ({ ...entries,
-          [summaryQuery]: { error: getMessages().e2eLines.flow.summaryFailed } }));
+          [settledSummaryQuery]: { error: getMessages().e2eLines.flow.summaryFailed } }));
       });
     return () => controller.abort();
-  }, [summaryQuery, summaryCached]);
+  }, [settledSummaryQuery, summaryCached]);
 
   // The options do not depend on the filters: loaded once. Without them the fields keep only the chosen value.
   useEffect(() => {
