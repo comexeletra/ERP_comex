@@ -107,9 +107,10 @@ function normalizeUnit(value: string): string {
   return value.normalize("NFD").replace(/[̀-ͯ]/gu, "").toLocaleUpperCase("en-US").replace(/[^A-Z0-9]/gu, "");
 }
 
-export function invoicePoUnitDiffers(invoiceUnit: string, poUnit: string): boolean {
-  const invoice = normalizeUnit(invoiceUnit), po = normalizeUnit(poUnit);
-  if (invoice === po) return false;
+/** A side without unit has nothing to compare, as in the API: PO items of the historical load have no unit. */
+export function invoicePoUnitDiffers(invoiceUnit: string | null | undefined, poUnit: string | null | undefined): boolean {
+  const invoice = normalizeUnit(invoiceUnit ?? ""), po = normalizeUnit(poUnit ?? "");
+  if (!invoice || !po || invoice === po) return false;
   return !equivalentUnitGroups.some(group => group.includes(invoice) && group.includes(po));
 }
 
@@ -147,7 +148,7 @@ export type InvoiceAuditPointKind = "QUANTITY" | "CODE" | "SUPPLIER" | "UNIT" | 
 /** `confirmed` is null for informative points that need analysis but no confirmation. */
 export type InvoiceAuditPoint = { kind: InvoiceAuditPointKind; invoiceValue: string; poValue: string; confirmed: boolean | null };
 type InvoiceAuditInvoice = { productCode: string; exporter: string; line: { unit: string; unitPrice: string } | null };
-type InvoiceAuditPoItem = { productCode: string; unit: string; unitPrice: string | null; currency: string | null;
+type InvoiceAuditPoItem = { productCode: string; unit: string | null; unitPrice: string | null; currency: string | null;
   supplierValues: readonly (string | null | undefined)[]; exporterAliases?: readonly string[] };
 type InvoiceAuditConfirmations = { supplier: boolean; unit: boolean; price: boolean };
 
@@ -197,7 +198,7 @@ export function invoiceAuditPoints(invoice: InvoiceAuditInvoice, poItem: Invoice
       poValue: poItem.supplierValues.filter(Boolean).join(" · "), confirmed: confirmations.supplier });
   }
   if (invoice.line && invoicePoUnitDiffers(invoice.line.unit, poItem.unit)) {
-    points.push({ kind: "UNIT", invoiceValue: invoice.line.unit, poValue: poItem.unit, confirmed: confirmations.unit });
+    points.push({ kind: "UNIT", invoiceValue: invoice.line.unit, poValue: poItem.unit ?? "", confirmed: confirmations.unit });
   }
   if (invoice.line && invoicePoPriceDiffers(invoice.line.unitPrice, poItem.unitPrice, poItem.currency)) {
     points.push({ kind: "PRICE", invoiceValue: `${invoice.line.unitPrice} CNY`,
@@ -303,7 +304,7 @@ export function invoiceProductFillFields(
 
 export function invoiceComparisonRows(
   invoiceLine: { description: string; ncm: string; unit: string; unitPrice: string; manufacturer: string } | null,
-  poItem: { description: string; unit: string; ncmCode: string | null; unitPrice: string | null; currency: string | null },
+  poItem: { description: string; unit: string | null; ncmCode: string | null; unitPrice: string | null; currency: string | null },
   product: { name: string | null; ncmCode: string | null; manufacturer: string | null },
 ): InvoiceComparisonRow[] {
   const ncms = new Set([invoiceLine?.ncm, poItem.ncmCode, product.ncmCode]
@@ -312,8 +313,8 @@ export function invoiceComparisonRows(
   return [
     { field: "description", invoice: invoiceLine?.description ?? "", poItem: poItem.description, product: product.name ?? "", differs: false },
     { field: "ncm", invoice: invoiceLine?.ncm ?? "", poItem: poItem.ncmCode ?? "", product: product.ncmCode ?? "", differs: ncms.size > 1 },
-    { field: "unit", invoice: invoiceLine?.unit ?? "", poItem: poItem.unit, product: "",
-      differs: Boolean(invoiceLine?.unit && poItem.unit && invoicePoUnitDiffers(invoiceLine.unit, poItem.unit)) },
+    { field: "unit", invoice: invoiceLine?.unit ?? "", poItem: poItem.unit ?? "", product: "",
+      differs: invoicePoUnitDiffers(invoiceLine?.unit, poItem.unit) },
     { field: "price", invoice: invoiceLine?.unitPrice ? `${invoiceLine.unitPrice} CNY` : "", poItem: poPrice, product: "",
       differs: Boolean(invoiceLine && invoicePoPriceDiffers(invoiceLine.unitPrice, poItem.unitPrice, poItem.currency)) },
     { field: "manufacturer", invoice: invoiceLine?.manufacturer ?? "", poItem: "", product: product.manufacturer ?? "", differs: false },

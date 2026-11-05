@@ -71,7 +71,7 @@ const poDraftKey = "new-operational-record:po:v1";
 const poCommandKey = "new-operational-record:po-command:v1";
 
 type InvoiceItemCandidate = { id: string; lineNumber: number; productCode: string; description: string;
-  unit: string; remainingQuantity: string; purchaseOrderId: string; poNumber: string;
+  unit: string | null; remainingQuantity: string; purchaseOrderId: string; poNumber: string;
   poStatus?: "ACTIVE" | "CANCELLED" | "CLOSED" | "DELETED";
   supplierEntryId: string | null; supplierText: string | null; supplierName: string | null; supplierCode: string | null;
   supplierExporterAliases?: string[]; orderedQuantity: string; unitPrice: string | null; currency: string | null; poNcmCode: string | null;

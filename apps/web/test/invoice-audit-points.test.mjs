@@ -82,6 +82,19 @@ test("equivalent units of the same measure are not a divergence", () => {
     { name: null, ncmCode: null, manufacturer: null }).find(row => row.field === "unit").differs, false);
 });
 
+// Items of the historical Follow Up load have no unit (3,071 in active HML POs); like the API, the review skips the unit check.
+test("a PO item without unit is not a unit divergence and does not break the review", () => {
+  for (const poUnit of [null, undefined, "", "  "]) {
+    assert.equal(invoicePoUnitDiffers("PCS", poUnit), false, `PCS × ${poUnit}`);
+    assert.equal(invoicePoUnitDiffers(poUnit, "UN"), false, `${poUnit} × UN`);
+  }
+  assert.deepEqual(invoiceAuditPoints(invoice, { ...poItem, unit: null }, unconfirmed).map(point => point.kind), ["SUPPLIER"]);
+  const unitRow = invoiceComparisonRows({ description: "", ncm: "", unit: "PCS", unitPrice: "1.5", manufacturer: "" },
+    { description: "", unit: null, ncmCode: null, unitPrice: "1.5", currency: "CNY" },
+    { name: null, ncmCode: null, manufacturer: null }).find(row => row.field === "unit");
+  assert.deepEqual(unitRow, { field: "unit", invoice: "PCS", poItem: "", product: "", differs: false });
+});
+
 test("an Exporter alias of the PO supplier removes the supplier point; a short one does not", () => {
   const withAddress = { ...invoice, exporter: "HEXING ELECTRICAL CO.,LTD\nSHANGCHENG INDUSTRIAL ZONE, 1418", line: null };
   assert.deepEqual(invoiceAuditPoints(withAddress, { ...poItem, exporterAliases: ["Hexing Electrical Co., Ltd"] }, unconfirmed), []);
