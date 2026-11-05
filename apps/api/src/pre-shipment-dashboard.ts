@@ -154,6 +154,16 @@ function dashboardSql(scopes: readonly string[], filters: PreShipmentFilters, to
   return { sql, params, param };
 }
 
+/** A line of the dashboard table, as GET /lines returns it (and the pre-shipment export writes it). */
+export type PreShipmentLine = {
+  lineId: string; lineKind: "ALLOCATION" | "BALANCE"; status: string; quantity: string; unit: string | null;
+  necessityDate: string | null; mode: string | null; requester: string | null; scNumber: string | null;
+  purchaseOrder: { id: string; number: string | null }; process: { id: string; ipNumber: string | null } | null;
+  etd: string | null; eta: string | null; ete: string | null; productCode: string | null; description: string | null;
+  supplier: string | null; importer: string | null; purpose: string | null; poSentDate: string | null;
+  priority: string | null; demand: string | null; group: string | null;
+};
+
 type SummaryRow = { line_status: string; aging_days: number | null; products: number; quantity: string | null };
 type Part = { products: number; quantity: string };
 
@@ -214,7 +224,7 @@ export async function queryPreShipmentLines(pool: Pool, scopes: readonly string[
   if (filters.status?.length) selection.push(`line_status = ANY(${param(filters.status)}::text[])`);
   if (filters.aging?.length) selection.push(agingRangeSql(filters.aging));
   const order = "necessity_date NULLS LAST, normalized_number, po_id, line_number, line_kind, sort_ip_number NULLS LAST, line_id";
-  const result = await pool.query<{ total_count: number; lines: unknown[] }>(`${sql}, filtered AS MATERIALIZED (
+  const result = await pool.query<{ total_count: number; lines: PreShipmentLine[] }>(`${sql}, filtered AS MATERIALIZED (
     SELECT * FROM dashboard${selection.length ? ` WHERE ${selection.join(" AND ")}` : ""}
   ), page AS (
     SELECT * FROM filtered ORDER BY ${order} LIMIT ${param(limit)} OFFSET ${param(offset)}

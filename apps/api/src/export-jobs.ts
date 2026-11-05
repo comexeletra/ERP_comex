@@ -4,6 +4,7 @@ import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
 import { exportColumnsSchema, resolveExportColumns } from "./export-columns.js";
+import { preShipmentQuery } from "./pre-shipment-dashboard.js";
 import { shipmentLineQuery } from "./shipment-lines.js";
 
 const filtersSchema = z.object({
@@ -19,9 +20,12 @@ const purchaseOrderExportBody = filtersSchema.extend({ context: z.literal("portf
 const lineExportBody = shipmentLineQuery.extend({
   context: z.enum(["product-lines", "end-to-end"]).optional(), ...columnChoice,
 }).strict();
+// The Pré Embarque dashboard: its filters and chart selections, as the table shows them.
+const preShipmentExportBody = preShipmentQuery.extend({ context: z.literal("pre-shipment").optional(), ...columnChoice }).strict();
 const jobIdSchema = z.string().uuid();
 const exportFileNames: Record<string, string> = {
   "purchase-order-xlsx": "carteira-pos.xlsx", "purchase-order-lines-xlsx": "carteira-por-produto.xlsx",
+  "pre-shipment-xlsx": "pre-embarque.xlsx",
 };
 
 function canAccessExport(
@@ -42,7 +46,7 @@ export async function registerExportJobRoutes(app: FastifyInstance, pool: Pool):
     }>(
       `SELECT id, job_type, status, importer_scopes, requested_as_master, error_code, created_at, expires_at
        FROM jobs.export_job
-       WHERE requested_by = $1 AND job_type IN ('purchase-order-xlsx', 'purchase-order-lines-xlsx')
+       WHERE requested_by = $1 AND job_type IN ('purchase-order-xlsx', 'purchase-order-lines-xlsx', 'pre-shipment-xlsx')
        ORDER BY created_at DESC LIMIT 20`,
       [request.authContext!.userId],
     );
@@ -65,6 +69,7 @@ export async function registerExportJobRoutes(app: FastifyInstance, pool: Pool):
   for (const [path, jobType, schema] of [
     ["/api/v1/exports/purchase-orders", "purchase-order-xlsx", purchaseOrderExportBody],
     ["/api/v1/exports/purchase-order-lines", "purchase-order-lines-xlsx", lineExportBody],
+    ["/api/v1/exports/pre-shipment", "pre-shipment-xlsx", preShipmentExportBody],
   ] as const) app.post(path, {
     config: permissionConfig("purchase-orders.read"),
   }, async (request, reply) => {
@@ -165,7 +170,8 @@ export async function registerExportJobRoutes(app: FastifyInstance, pool: Pool):
       result_binary: Buffer | null }>(
       `SELECT job_type, importer_scopes, requested_as_master, result_binary
        FROM jobs.export_job
-       WHERE id = $1 AND requested_by = $2 AND job_type IN ('purchase-order-xlsx', 'purchase-order-lines-xlsx')
+       WHERE id = $1 AND requested_by = $2
+         AND job_type IN ('purchase-order-xlsx', 'purchase-order-lines-xlsx', 'pre-shipment-xlsx')
          AND status = 'completed' AND expires_at > now()`,
       [parsedId.data, request.authContext!.userId],
     );

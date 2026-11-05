@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
-import { exportColumnsSchema, resolveExportColumns } from "./export-columns.js";
-import { queryPurchaseOrderExport, purchaseOrderExportXlsx, purchaseOrderLinesXlsx,
+import { exportColumnCatalogs, exportColumnsSchema, resolveExportColumns, type ExportContext } from "./export-columns.js";
+import { preShipmentQuery, queryPreShipmentLines } from "./pre-shipment-dashboard.js";
+import { preShipmentXlsx, queryPurchaseOrderExport, purchaseOrderExportXlsx, purchaseOrderLinesXlsx,
   type PurchaseOrderExportFilters } from "./purchase-order-exports.js";
 import { queryShipmentLines, shipmentLineQuery } from "./shipment-lines.js";
 
@@ -109,7 +110,7 @@ async function failJob(job: ExportJob, error: unknown): Promise<void> {
 const maxExportLines = 30_000;
 
 /** Columns chosen on the screen; undefined keeps the layout from before the choice. */
-function chosenColumns<C extends "portfolio" | "product-lines" | "end-to-end">(parameters: Record<string, unknown>,
+function chosenColumns<C extends ExportContext>(parameters: Record<string, unknown>,
   contexts: readonly C[], filters: Parameters<typeof resolveExportColumns>[2]) {
   if (parameters.columns === undefined && parameters.context === undefined) return undefined;
   const columns = exportColumnsSchema.safeParse(parameters.columns);
@@ -129,6 +130,19 @@ async function processJob(job: ExportJob): Promise<void> {
       const result = await queryShipmentLines(pool, job.importer_scopes, filters.data, maxExportLines + 1, 0);
       if (result.totalCount > maxExportLines) throw new PermanentJobError("EXPORT_TOO_LARGE");
       await completeJob(job, await purchaseOrderLinesXlsx(result.lines, chosen));
+      console.info(JSON.stringify({ event: "export_job_completed", jobId: job.id, rowCount: result.lines.length }));
+      return;
+    }
+    if (job.job_type === "pre-shipment-xlsx") {
+      const filters = preShipmentQuery.safeParse(parameters);
+      if (!filters.success) throw new PermanentJobError("INVALID_EXPORT_FILTERS");
+      // Without a choice, every column of the table with its default header.
+      const chosen = chosenColumns({ context, columns }, ["pre-shipment"], {})
+        ?? resolveExportColumns("pre-shipment", exportColumnCatalogs["pre-shipment"]
+          .map(column => ({ key: column.key, header: column.header })), {})!;
+      const result = await queryPreShipmentLines(pool, job.importer_scopes, filters.data, maxExportLines + 1, 0);
+      if (result.totalCount > maxExportLines) throw new PermanentJobError("EXPORT_TOO_LARGE");
+      await completeJob(job, await preShipmentXlsx(result.lines, chosen));
       console.info(JSON.stringify({ event: "export_job_completed", jobId: job.id, rowCount: result.lines.length }));
       return;
     }

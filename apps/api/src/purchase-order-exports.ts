@@ -2,6 +2,7 @@ import type { Pool } from "pg";
 import ExcelJS from "exceljs";
 import { moneyProduct, type calculateE2e, type E2eStageCode } from "./followup-calculations.js";
 import type { ResolvedExportColumn } from "./export-columns.js";
+import type { PreShipmentLine } from "./pre-shipment-dashboard.js";
 import type { ShipmentLine } from "./shipment-lines.js";
 
 export type PurchaseOrderExportFilters = {
@@ -133,6 +134,12 @@ async function chosenColumnsXlsx<Row>(sheetName: string, columns: readonly Resol
     });
   }
   return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+/** The Pré Embarque dashboard table with the chosen columns (every column of the table without a choice). */
+export async function preShipmentXlsx(lines: readonly PreShipmentLine[],
+  columns: readonly ResolvedExportColumn<PreShipmentLine>[]): Promise<Buffer> {
+  return chosenColumnsXlsx("Pré Embarque", columns, lines);
 }
 
 /** Without chosen columns, the layout from before the column choice (8 columns). */

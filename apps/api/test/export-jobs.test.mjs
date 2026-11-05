@@ -3,6 +3,7 @@ import test from "node:test";
 import Fastify from "fastify";
 import { registerAuthorization } from "../dist/authorization.js";
 import { registerExportJobRoutes } from "../dist/export-jobs.js";
+import { preShipmentQuery } from "../dist/pre-shipment-dashboard.js";
 import { shipmentLineQuery } from "../dist/shipment-lines.js";
 
 const actorId = "00000000-0000-4000-8000-000000000001";
@@ -105,13 +106,13 @@ test("product line exports keep the group, purpose and necessity filters of the 
   assert.equal(invalid.statusCode, 400, invalid.body);
 });
 
-test("recent exports list both PO and product line exports with their type", async t => {
+test("recent exports list the PO, product line and pre-shipment exports with their type", async t => {
   const { app, queries } = await exportApp(t);
   const response = await app.inject({ method: "GET", url: "/api/v1/exports" });
   assert.equal(response.statusCode, 200, response.body);
   assert.equal(response.json().items[0].jobType, "purchase-order-lines-xlsx");
   const list = queries.find(query => query.sql.includes("FROM jobs.export_job"));
-  assert.match(list.sql, /job_type IN \('purchase-order-xlsx', 'purchase-order-lines-xlsx'\)/u);
+  assert.match(list.sql, /job_type IN \('purchase-order-xlsx', 'purchase-order-lines-xlsx', 'pre-shipment-xlsx'\)/u);
 });
 
 test("exports store the chosen screen columns with their context and reject invalid choices", async t => {
@@ -165,4 +166,54 @@ test("the worker types the failure status once, so a failed job does not crash i
   assert.match(failJob, /SET status = \$3::text,/u);
   assert.match(failJob, /CASE WHEN \$3::text = 'queued'/u);
   assert.match(failJob, /CASE WHEN \$3::text = 'failed'/u);
+});
+
+test("pre-shipment exports store the dashboard filters, chart selections and columns for the worker", async t => {
+  const { app, queries } = await exportApp(t);
+  const post = payload => app.inject({ method: "POST", url: "/api/v1/exports/pre-shipment", payload });
+  const stored = () => JSON.parse(queries.filter(query => query.sql.includes("INSERT INTO jobs.export_job")).at(-1).params[4]);
+  const queued = await post({ status: ["AGUARDANDO PRODUÇÃO"], aging: ["days120Plus"], direct: "direct", demand: ["MRP"],
+    productDescription: "antena", context: "pre-shipment",
+    columns: [{ key: "eta", header: "ETA" }, { key: "supplier", header: "Supplier" }] });
+  assert.equal(queued.statusCode, 202, queued.body);
+  const insert = queries.filter(query => query.sql.includes("INSERT INTO jobs.export_job")).at(-1);
+  assert.match(insert.sql, /'pre-shipment-xlsx'/u);
+  const { context, columns, ...filters } = stored();
+  assert.equal(context, "pre-shipment");
+  assert.deepEqual(columns.map(column => column.key), ["eta", "supplier"]);
+  // The worker parses the stored filters again with the dashboard schema.
+  assert.deepEqual(preShipmentQuery.strict().parse(filters), { status: ["AGUARDANDO PRODUÇÃO"], aging: ["days120Plus"],
+    direct: "direct", demand: ["MRP"], productDescription: "antena" });
+  for (const payload of [
+    { aging: ["days200"] }, { situation: "all" },
+    { context: "end-to-end", columns: [{ key: "eta", header: "ETA" }] },
+    { context: "pre-shipment", columns: [{ key: "t0Deadline", header: "T0" }] },
+    { context: "pre-shipment", columns: [] },
+  ]) {
+    const response = await post(payload);
+    assert.equal(response.statusCode, 400, `${JSON.stringify(payload)}: ${response.body}`);
+  }
+});
+
+test("the worker writes the pre-shipment export from the dashboard table query", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const worker = await readFile(new URL("../src/worker.ts", import.meta.url), "utf8");
+  const branch = worker.slice(worker.indexOf('job.job_type === "pre-shipment-xlsx"'), worker.indexOf('job.job_type !== "purchase-order-xlsx"'));
+  assert.match(branch, /preShipmentQuery\.safeParse\(parameters\)/u);
+  assert.match(branch, /queryPreShipmentLines\(pool, job\.importer_scopes, filters\.data, maxExportLines \+ 1, 0\)/u);
+  assert.match(branch, /preShipmentXlsx\(result\.lines, chosen\)/u);
+});
+
+test("the pre-shipment export body built by the web is accepted by the route", async t => {
+  const { app } = await exportApp(t);
+  const { emptyPreShipmentFilters, preShipmentFilterBody } = await import("../../web/lib/pre-shipment-dashboard.ts");
+  const { columnsBody } = await import("../../web/lib/export-columns.ts");
+  const { ptBR } = await import("../../web/lib/i18n/pt-BR.ts");
+  const filters = { ...emptyPreShipmentFilters, status: ["CANCELADO"], aging: ["days45To60"], direct: "notDirect",
+    supplier: ["Hexing"], productCode: "3090", necessityFrom: "2026-02-01", necessityTo: "2026-02-28" };
+  const allKeys = ["necessity", "mode", "status", "requester", "scNumber", "ipNumber", "etd", "eta", "ete", "description",
+    "quantity", "supplier", "importer", "purpose", "poSentDate"];
+  const response = await app.inject({ method: "POST", url: "/api/v1/exports/pre-shipment",
+    payload: { ...preShipmentFilterBody(filters), ...columnsBody("pre-shipment", allKeys, ptBR, {}) } });
+  assert.equal(response.statusCode, 202, response.body);
 });

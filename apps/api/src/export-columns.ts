@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { E2E_STAGE_CODES, type E2eStageCode } from "./followup-calculations.js";
+import type { PreShipmentLine } from "./pre-shipment-dashboard.js";
 import type { PurchaseOrderExportRow } from "./purchase-order-exports.js";
 import type { ShipmentLine, ShipmentLineFilters } from "./shipment-lines.js";
 
@@ -9,7 +10,7 @@ import type { ShipmentLine, ShipmentLineFilters } from "./shipment-lines.js";
  * commit, and in the web mirror (apps/web/lib/export-columns.ts); test/export-columns.test.mjs
  * compares the two. Headers come from the web in the viewer's language; these are the fallbacks.
  */
-export const exportContexts = ["portfolio", "product-lines", "end-to-end"] as const;
+export const exportContexts = ["portfolio", "product-lines", "end-to-end", "pre-shipment"] as const;
 export type ExportContext = (typeof exportContexts)[number];
 
 type Cell = string | number | null;
@@ -124,9 +125,35 @@ const endToEndColumns: LineColumn[] = [
   line("arrivalMonth", "Chegada BR", row => text(e2e(row)?.arrivalYearMonth)),
 ];
 
-type ContextRow = { portfolio: PurchaseOrderExportRow; "product-lines": ShipmentLine; "end-to-end": ShipmentLine };
+// Pré Embarque dashboard (components/PreShipmentDashboard.tsx), the columns of the BI table.
+type PreColumn = ExportColumn<PreShipmentLine>;
+const pre = (key: string, header: string, value: (row: PreShipmentLine) => Cell, width = Math.max(12, header.length + 4),
+  extra: Partial<PreColumn> = {}): PreColumn => ({ key, header, width, value, ...extra });
+const preShipmentColumns: PreColumn[] = [
+  pre("necessity", "Necessidade", row => text(row.necessityDate)),
+  pre("mode", "Modal", row => text(row.mode)),
+  pre("status", "Status", row => text(row.status), 22),
+  pre("requester", "Solicitante", row => text(row.requester), 24),
+  pre("scNumber", "SC", row => text(row.scNumber)),
+  pre("poNumber", "PO", row => text(row.purchaseOrder.number), 18, { required: true }),
+  pre("ipNumber", "IP", row => text(row.process?.ipNumber), 18),
+  pre("etd", "ETD", row => text(row.etd)),
+  pre("eta", "ETA", row => text(row.eta)),
+  pre("ete", "ETE", row => text(row.ete)),
+  pre("productCode", "Código do produto", row => text(row.productCode), 22, { required: true }),
+  pre("description", "Descrição do produto", row => text(row.description), 40),
+  pre("quantity", "Quantidade", row => decimal(row.quantity)),
+  pre("supplier", "Fornecedor", row => text(row.supplier), 24),
+  pre("importer", "Importadora", row => text(row.importer), 24),
+  pre("purpose", "Finalidade", row => text(row.purpose), 28),
+  pre("poSentDate", "PO Sent Date", row => text(row.poSentDate)),
+];
+
+type ContextRow = { portfolio: PurchaseOrderExportRow; "product-lines": ShipmentLine; "end-to-end": ShipmentLine;
+  "pre-shipment": PreShipmentLine };
 export const exportColumnCatalogs: { [C in ExportContext]: ExportColumn<ContextRow[C]>[] } = {
   portfolio: portfolioColumns, "product-lines": productLineColumns, "end-to-end": endToEndColumns,
+  "pre-shipment": preShipmentColumns,
 };
 
 /** Columns chosen on the screen, each with its header in the viewer's language. */
