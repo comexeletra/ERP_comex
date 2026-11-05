@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import Fastify from "fastify";
 import { registerAuthorization } from "../dist/authorization.js";
@@ -546,4 +547,52 @@ test("the deadline and delay range filters take one or more values, in the table
     const invalid = await app.inject({ method: "GET", url: `/api/v1/purchase-order-lines?${query}` });
     assert.equal(invalid.statusCode, 400, query);
   }
+});
+
+test("the End to End routes run at most two calculations at once, so the pool keeps room for light requests", async t => {
+  let inFlight = 0;
+  let peak = 0;
+  const waiting = [];
+  const pool = {
+    async query(sql) {
+      if (sql.includes("identity.erp_user AS u")) return { rows: [{ role: "Consulta", importer_code: "ELETRA MATRIZ" }] };
+      if (sql.includes("line_kind")) {
+        inFlight++; peak = Math.max(peak, inFlight);
+        await new Promise(resolve => waiting.push(resolve));
+        inFlight--;
+        return { rows: [{ total_count: defaultRows.length, items: defaultRows }] };
+      }
+      if (sql.includes("FROM imports.process_document")) return { rows: defaultDocuments };
+      return { rows: [] };
+    },
+  };
+  const app = Fastify();
+  t.after(() => app.close());
+  app.decorateRequest("authContext", null);
+  await registerAuthorization(app, pool);
+  app.addHook("onRequest", async request => {
+    request.authContext = { issuer: "ci", subject: "reader", userId: actorId, displayName: null, sessionToken: "ci" };
+  });
+  await registerShipmentLineRoutes(app, pool);
+  // A burst of chart clicks: the table and the summary of each, with and without the calculated filters.
+  const urls = ["/api/v1/purchase-order-lines?situation=all", "/api/v1/purchase-order-lines/e2e-stages?situation=all",
+    "/api/v1/purchase-order-lines?situation=all&deadline=late", "/api/v1/purchase-order-lines/e2e-stages?situation=all&deadline=late",
+    "/api/v1/purchase-order-lines?situation=all&delayRange=upTo30"];
+  const responses = urls.map(url => app.inject({ method: "GET", url }));
+  const settle = () => new Promise(resolve => setTimeout(resolve, 20));
+  await settle();
+  assert.equal(inFlight, 2);
+  // Each finished calculation lets exactly one more in, in arrival order.
+  while (waiting.length) { waiting.shift()(); await settle(); }
+  for (const response of await Promise.all(responses)) assert.equal(response.statusCode, 200, response.body);
+  assert.equal(peak, 2);
+});
+
+test("a queued End to End request whose client left is dropped instead of calculated", async () => {
+  const source = await readFile(new URL("../src/shipment-lines.ts", import.meta.url), "utf8");
+  // The signal follows the response: it aborts only when the connection closes before the reply was sent.
+  assert.match(source, /reply\.raw\.once\("close", \(\) => \{ if \(!reply\.raw\.writableFinished\) controller\.abort\(\); \}\);/u);
+  assert.equal((source.match(/gate\.run\(\(\) => query/gu) ?? []).length, 2);
+  assert.equal((source.match(/if \(error instanceof WorkCancelledError\) return cancelled\(request, reply\);/gu) ?? []).length, 2);
+  assert.match(source, /export const E2E_CALCULATION_CONCURRENCY = 2;/u);
 });

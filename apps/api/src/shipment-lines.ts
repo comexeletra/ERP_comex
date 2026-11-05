@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
 import { loadE2eTargetSets } from "./e2e-targets.js";
+import { createWorkGate, WorkCancelledError, type WorkGate } from "./work-gate.js";
 import { calculateE2e, calculateFollowup, E2E_DELAY_RANGES, E2E_STAGE_CODES, e2eDeadlineStatus, e2eDelayRange,
   e2eTargetSetFor, todayInBrasilia, type E2eDeadlineStatus, type E2eDelayRange, type E2eStageCode } from "./followup-calculations.js";
 
@@ -402,7 +403,28 @@ function invalidQuery(request: FastifyRequest, reply: FastifyReply, error: z.Zod
     code: "INVALID_QUERY", errors: error.flatten().fieldErrors });
 }
 
-export async function registerShipmentLineRoutes(app: FastifyInstance, pool: Pool): Promise<void> {
+/**
+ * End to End calculations (table and summary) allowed at once. Each one runs every line of the filters through
+ * the database and the calculation; the pool has 5 connections, so 3 stay free for the session check and the
+ * other screens while a burst of chart clicks waits in the gate.
+ */
+export const E2E_CALCULATION_CONCURRENCY = 2;
+
+/** Aborts when the connection closes before the reply was sent: the screen already replaced the request. */
+function clientGone(reply: FastifyReply): AbortSignal {
+  const controller = new AbortController();
+  reply.raw.once("close", () => { if (!reply.raw.writableFinished) controller.abort(); });
+  return controller.signal;
+}
+
+function cancelled(request: FastifyRequest, reply: FastifyReply) {
+  return reply.code(503).send({ type: "about:blank", title: "Requisição cancelada", status: 503,
+    detail: "A tela fez uma consulta mais nova antes desta ser processada.", instance: request.url.split("?", 1)[0],
+    traceId: request.id, code: "REQUEST_CANCELLED" });
+}
+
+export async function registerShipmentLineRoutes(app: FastifyInstance, pool: Pool,
+  gate: WorkGate = createWorkGate(E2E_CALCULATION_CONCURRENCY)): Promise<void> {
   app.get("/api/v1/purchase-order-lines", { config: permissionConfig("purchase-orders.read") }, async (request, reply) => {
     const parsed = shipmentLineQuery.extend({
       page: z.coerce.number().int().min(1).default(1),
@@ -410,8 +432,14 @@ export async function registerShipmentLineRoutes(app: FastifyInstance, pool: Poo
     }).strict().safeParse(request.query);
     if (!parsed.success) return invalidQuery(request, reply, parsed.error);
     const { page, pageSize, ...filters } = parsed.data;
-    const result = await queryShipmentLines(pool, request.authorizationContext?.importerScopes ?? [], filters,
-      pageSize, (page - 1) * pageSize);
+    let result;
+    try {
+      result = await gate.run(() => queryShipmentLines(pool, request.authorizationContext?.importerScopes ?? [], filters,
+        pageSize, (page - 1) * pageSize), clientGone(reply));
+    } catch (error) {
+      if (error instanceof WorkCancelledError) return cancelled(request, reply);
+      throw error;
+    }
     reply.header("Cache-Control", "no-store");
     return { page, pageSize, ...result };
   });
@@ -427,7 +455,14 @@ export async function registerShipmentLineRoutes(app: FastifyInstance, pool: Poo
     async (request, reply) => {
       const parsed = shipmentLineQuery.strict().safeParse(request.query);
       if (!parsed.success) return invalidQuery(request, reply, parsed.error);
-      const result = await queryE2eStageSummary(pool, request.authorizationContext?.importerScopes ?? [], parsed.data);
+      let result;
+      try {
+        result = await gate.run(() => queryE2eStageSummary(pool, request.authorizationContext?.importerScopes ?? [], parsed.data),
+          clientGone(reply));
+      } catch (error) {
+        if (error instanceof WorkCancelledError) return cancelled(request, reply);
+        throw error;
+      }
       reply.header("Cache-Control", "no-store");
       return result;
     });
