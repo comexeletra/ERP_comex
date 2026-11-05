@@ -23,7 +23,9 @@ import { registerE2eTargetRoutes } from "./e2e-targets.js";
 import { registerFollowupRoutes } from "./followup.js";
 import { registerPurchaseRequestRoutes } from "./purchase-requests.js";
 import { registerExportJobRoutes } from "./export-jobs.js";
-import { registerShipmentLineRoutes } from "./shipment-lines.js";
+import { E2E_CALCULATION_CONCURRENCY, registerShipmentLineRoutes } from "./shipment-lines.js";
+import { registerPreShipmentDashboardRoutes } from "./pre-shipment-dashboard.js";
+import { createWorkGate } from "./work-gate.js";
 import { registerSupplierAliasRoutes } from "./supplier-aliases.js";
 import { registerApiErrorHandler } from "./api-error-response.js";
 import { gatewayTokenMatches, rateLimitKey } from "./rate-limit-key.js";
@@ -114,7 +116,10 @@ await registerFollowupRoutes(app, pool);
 await registerE2eTargetRoutes(app, pool);
 await registerPurchaseRequestRoutes(app, pool);
 await registerExportJobRoutes(app, pool);
-await registerShipmentLineRoutes(app, pool);
+// One queue for every route that recalculates all the product lines of the filters (End to End and pre-shipment).
+const lineCalculationGate = createWorkGate(E2E_CALCULATION_CONCURRENCY);
+await registerShipmentLineRoutes(app, pool, lineCalculationGate);
+await registerPreShipmentDashboardRoutes(app, pool, lineCalculationGate);
 await registerSupplierAliasRoutes(app, pool);
 
 app.get("/health/live", async () => ({ status: "ok" }));

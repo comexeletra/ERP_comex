@@ -166,13 +166,13 @@ const overviewStatuses = shipmentLineStatuses.slice(0, -1) as readonly Exclude<(
 const deadlineStatuses = ["onTime", "onLimit", "late", "noData"] as const satisfies readonly E2eDeadlineStatus[];
 const quantityScale = 100_000_000n; // procurement quantities are numeric(24,8)
 
-function scaledQuantity(value: string): bigint {
+export function scaledQuantity(value: string): bigint {
   const match = /^(\d+)(?:\.(\d{1,8}))?$/.exec(value);
   if (!match) throw new Error("Quantidade inválida no resumo End to End.");
   return BigInt(match[1]) * quantityScale + BigInt((match[2] ?? "").padEnd(8, "0"));
 }
 
-function decimalQuantity(value: bigint): string {
+export function decimalQuantity(value: bigint): string {
   const fraction = String(value % quantityScale).padStart(8, "0").replace(/0+$/u, "");
   return `${value / quantityScale}${fraction ? `.${fraction}` : ""}`;
 }
