@@ -328,6 +328,21 @@ test("the stage cards, the selected columns and the texts exist in every languag
     assert.ok(styles.includes(`${rule} {`), rule);
   }
   assert.ok(!styles.includes(".e2e-stage-card"));
+  // Each stage group (T0–T5) has its own color, on the group header, the measure headers and the values.
+  for (const code of ["T0", "T1", "T2", "T3", "T4", "T5"]) {
+    assert.ok(styles.includes(`.e2e-lines-table [data-stage="${code}"] { --e2e-stage-bg: var(--color-stage-${code.toLowerCase()}-bg);`), code);
+  }
+  // The row hover and the selected stage still show over the stage tint.
+  for (const rule of [".e2e-lines-table th[data-stage]", ".e2e-lines-table .e2e-stage-head[data-stage]",
+    ".table-scroll .e2e-lines-table tr:not(:hover) td[data-stage]",
+    ".table-scroll .e2e-lines-table tr:not(:hover) td[data-stage].is-selected"]) {
+    assert.ok(styles.includes(`${rule} {`), rule);
+  }
+  assert.match(view, /<th key=\{code\} colSpan=\{5\} scope="colgroup" data-stage=\{code\}/u);
+  assert.match(view, /<th key=\{`\$\{code\}-\$\{label\}`\} scope="col" data-stage=\{code\}>/u);
+  for (const measure of ["deadline", "actual", "target", "days", "delay"]) {
+    assert.ok(view.includes("<td key={`${code}-" + measure + "`} data-stage={code}"), measure);
+  }
   assert.equal(ptBR.e2eLines.flow.viewCurrent, "Na etapa");
   assert.equal(ptBR.e2eLines.flow.viewReached, "Acumulada");
   assert.equal(ptBR.e2eLines.flow.lateOnly, "Só atrasados");

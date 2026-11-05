@@ -91,6 +91,14 @@
   --color-chart-range-5: #8a2232;
   --color-chart-range-6: #6a1828;
 
+  /* End to End stage groups (T0–T5): header color, value tint and group line, as in the Follow Up sheet */
+  --color-stage-t0-bg: #dbeaf6; --color-stage-t0-tint: #f0f6fc; --color-stage-t0-border: #4a8cc7;
+  --color-stage-t1-bg: #e2efd9; --color-stage-t1-tint: #f3f8ef; --color-stage-t1-border: #6aa84f;
+  --color-stage-t2-bg: #fff0c2; --color-stage-t2-tint: #fff9e6; --color-stage-t2-border: #d9a400;
+  --color-stage-t3-bg: #fce0cf; --color-stage-t3-tint: #fef3ec; --color-stage-t3-border: #e5762f;
+  --color-stage-t4-bg: #f9d3dc; --color-stage-t4-tint: #fdeff2; --color-stage-t4-border: #d9577a;
+  --color-stage-t5-bg: #e3ddf4; --color-stage-t5-tint: #f4f1fb; --color-stage-t5-border: #8a75c9;
+
   /* Navigation */
   --sidebar-bg: #0b2a37;
   --sidebar-hover: #12394a;
@@ -237,6 +245,14 @@
   --color-chart-range-4: #e44f5a;
   --color-chart-range-5: #e0526f;
   --color-chart-range-6: #d8608a;
+
+  /* End to End stage groups (T0–T5) */
+  --color-stage-t0-bg: #1f3a52; --color-stage-t0-tint: #1b3042; --color-stage-t0-border: #5a9fd8;
+  --color-stage-t1-bg: #263f27; --color-stage-t1-tint: #1f3222; --color-stage-t1-border: #79b85c;
+  --color-stage-t2-bg: #43391c; --color-stage-t2-tint: #332d1c; --color-stage-t2-border: #d9ae2a;
+  --color-stage-t3-bg: #4a3220; --color-stage-t3-tint: #36291f; --color-stage-t3-border: #e68549;
+  --color-stage-t4-bg: #4a2834; --color-stage-t4-tint: #36222b; --color-stage-t4-border: #e06d8d;
+  --color-stage-t5-bg: #332d4f; --color-stage-t5-tint: #28253b; --color-stage-t5-border: #9c88d8;
 
   --sidebar-bg: #0a222d;
   --sidebar-hover: #12394a;

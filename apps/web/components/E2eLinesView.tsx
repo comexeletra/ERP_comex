@@ -425,14 +425,14 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
               <th rowSpan={2}>{t.description}</th><th rowSpan={2}>{t.modal}</th><th rowSpan={2}>{t.group}</th><th rowSpan={2}>{t.quantity}</th>
               {accumulatedStage && <th rowSpan={2} className={`e2e-stage-head ${stageSide(accumulatedStage)} is-selected`}>
                 {flow.accumulated(accumulatedStage)}</th>}
-              {E2E_STAGE_CODES.map((code, index) => <th key={code} colSpan={5} scope="colgroup"
+              {E2E_STAGE_CODES.map((code, index) => <th key={code} colSpan={5} scope="colgroup" data-stage={code}
                 className={`e2e-stage-head ${index < 3 ? "side-br" : "side-cn"}${selected(code)}`}>{t.stageTitles[code]}</th>)}
               <th colSpan={3} scope="colgroup" className="e2e-stage-head">{t.totals}</th>
               <th rowSpan={2}>{t.bottleneck}</th><th rowSpan={2}>{t.currentStatus}</th><th rowSpan={2}>{t.arrivalMonth}</th>
             </tr>
             <tr>
               {E2E_STAGE_CODES.map(code => [t.deadline, t.actual, t.target, t.days, t.delay].map(label =>
-                <th key={`${code}-${label}`} scope="col">{label}</th>))}
+                <th key={`${code}-${label}`} scope="col" data-stage={code}>{label}</th>))}
               <th scope="col">{t.target}</th><th scope="col">{t.actual}</th><th scope="col">{t.delay}</th>
             </tr>
           </thead>
@@ -456,12 +456,12 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
                 const stageData = e2e?.stages[code];
                 const cell = code === stage.stage ? `${index < 3 ? "side-br" : "side-cn"} is-selected` : undefined;
                 return [
-                  <td key={`${code}-deadline`} className={cell}>{date(stageData?.deadline)}</td>,
-                  <td key={`${code}-actual`} className={cell}><Tooltip content={stageData?.source === "forecast" ? t.forecast : undefined}>
+                  <td key={`${code}-deadline`} data-stage={code} className={cell}>{date(stageData?.deadline)}</td>,
+                  <td key={`${code}-actual`} data-stage={code} className={cell}><Tooltip content={stageData?.source === "forecast" ? t.forecast : undefined}>
                     <span className={e2eDateClass(stageData)}>{date(stageData?.actual)}</span></Tooltip></td>,
-                  <td key={`${code}-target`} className={cell}>{days(stageData?.targetDays)}</td>,
-                  <td key={`${code}-days`} className={cell}>{days(stageData?.actualDays)}</td>,
-                  <td key={`${code}-delay`} className={cell}>{delay(stageData?.delayDays)}</td>,
+                  <td key={`${code}-target`} data-stage={code} className={cell}>{days(stageData?.targetDays)}</td>,
+                  <td key={`${code}-days`} data-stage={code} className={cell}>{days(stageData?.actualDays)}</td>,
+                  <td key={`${code}-delay`} data-stage={code} className={cell}>{delay(stageData?.delayDays)}</td>,
                 ];
               })}
               <td>{days(e2e?.totalTargetDays)}</td><td>{days(e2e?.totalActualDays)}</td><td>{delay(e2e?.totalDelayDays)}</td>

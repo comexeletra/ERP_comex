@@ -321,6 +321,12 @@ test("text and controls meet WCAG AA contrast in both themes", () => {
     ["--sidebar-text", "--sidebar-bg", 4.5], ["--sidebar-muted", "--sidebar-bg", 4.5],
     ["--sidebar-text-strong", "--sidebar-active", 4.5], ["--focus-ring", "--color-page", 2.5],
     ["--color-tooltip-text", "--color-tooltip-bg", 4.5], ["--color-tooltip-muted", "--color-tooltip-bg", 4.5],
+    // End to End stage groups (T0–T5): header text on the stage color, values (dates, links, delays) on its tint.
+    ...[0, 1, 2, 3, 4, 5].flatMap(stage => [
+      ["--color-text-strong", `--color-stage-t${stage}-bg`, 4.5],
+      ...["--color-text", "--color-text-strong", "--color-link", "--color-danger-text", "--color-text-muted"]
+        .map(text => [text, `--color-stage-t${stage}-tint`, 4.5]),
+    ]),
   ];
   for (const [theme, values] of [["light", light], ["dark", dark]]) {
     for (const [foreground, background, minimum] of pairs) {

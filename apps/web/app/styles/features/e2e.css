@@ -298,6 +298,18 @@
 /* Stage selected on the model above the table (components/E2eLinesView.tsx) */
 .e2e-lines-table .is-selected { background: var(--e2e-side-tint); }
 .e2e-lines-table .e2e-stage-head.is-selected { background: var(--e2e-side); color: var(--e2e-side-on); }
+/* Each stage group (T0–T5) has its own color, as in the Follow Up sheet: the headers on the stage color,
+   the values on its tint. The row hover and the selected stage above still show over the tint. */
+.e2e-lines-table [data-stage="T0"] { --e2e-stage-bg: var(--color-stage-t0-bg); --e2e-stage-tint: var(--color-stage-t0-tint); --e2e-stage-border: var(--color-stage-t0-border); }
+.e2e-lines-table [data-stage="T1"] { --e2e-stage-bg: var(--color-stage-t1-bg); --e2e-stage-tint: var(--color-stage-t1-tint); --e2e-stage-border: var(--color-stage-t1-border); }
+.e2e-lines-table [data-stage="T2"] { --e2e-stage-bg: var(--color-stage-t2-bg); --e2e-stage-tint: var(--color-stage-t2-tint); --e2e-stage-border: var(--color-stage-t2-border); }
+.e2e-lines-table [data-stage="T3"] { --e2e-stage-bg: var(--color-stage-t3-bg); --e2e-stage-tint: var(--color-stage-t3-tint); --e2e-stage-border: var(--color-stage-t3-border); }
+.e2e-lines-table [data-stage="T4"] { --e2e-stage-bg: var(--color-stage-t4-bg); --e2e-stage-tint: var(--color-stage-t4-tint); --e2e-stage-border: var(--color-stage-t4-border); }
+.e2e-lines-table [data-stage="T5"] { --e2e-stage-bg: var(--color-stage-t5-bg); --e2e-stage-tint: var(--color-stage-t5-tint); --e2e-stage-border: var(--color-stage-t5-border); }
+.e2e-lines-table th[data-stage] { background: var(--e2e-stage-bg); color: var(--color-text-strong); }
+.e2e-lines-table .e2e-stage-head[data-stage] { border-bottom-color: var(--e2e-stage-border); }
+.table-scroll .e2e-lines-table tr:not(:hover) td[data-stage] { background: var(--e2e-stage-tint); }
+.table-scroll .e2e-lines-table tr:not(:hover) td[data-stage].is-selected { background: var(--e2e-side-tint); }
 .e2e-targets-form { align-items: end; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
 .e2e-targets-form :is(input, textarea) { min-width: 0; width: 100%; }
 .e2e-targets-form label { color: var(--color-text-muted); display: grid; font-size: var(--fs-md); font-weight: 700; gap: 6px; }
