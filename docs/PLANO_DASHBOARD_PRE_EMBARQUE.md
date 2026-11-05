@@ -65,7 +65,7 @@ cruzado do End to End (`E2eOverviewCharts`).
 
 ## Fora do escopo
 
-- Exportação Excel da tabela (pode entrar depois, com catálogo próprio em `export-columns.ts`).
+- Exportação Excel da tabela: entrou depois, em 2026-11-05 (contexto `pre-shipment`, ver `docs/PLANO_EXPORTACAO_COLUNAS.md`, seção 9).
 - Painel de Pós Embarque.
 - Dados que não existem no banco.
 

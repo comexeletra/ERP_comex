@@ -155,7 +155,7 @@ Se algo essencial não estiver claro, pergunte antes de supor.
 
 ## Exportações Excel
 
-- Exportações existentes: Carteira de POs (`/`), Carteira por produto (`/purchase-orders/lines`) e End to End (`/end-to-end`). Todas passam pela fila `jobs.export_job` e pelo worker. Mapeamento e decisões em `docs/PLANO_EXPORTACAO_COLUNAS.md`.
+- Exportações existentes: Carteira de POs (`/`), Carteira por produto (`/purchase-orders/lines`), End to End (`/end-to-end`) e Pré Embarque (`/reports/pre`, tipo `pre-shipment-xlsx`). Todas passam pela fila `jobs.export_job` e pelo worker. Mapeamento e decisões em `docs/PLANO_EXPORTACAO_COLUNAS.md`.
 - Cada exportação oferece somente as colunas de dado da tabela da sua tela, na ordem da tabela. A pessoa escolhe quais delas entram no arquivo; as obrigatórias (identificação da PO e do produto) sempre entram.
 - **A exportação acompanha a tabela.** Ao acrescentar, remover, renomear ou mover uma coluna de dado numa dessas tabelas, atualize no mesmo commit o catálogo do contexto na API (`apps/api/src/export-columns.ts`), o espelho do web (`apps/web/lib/export-columns.ts`) e os rótulos nos três dicionários. Se o valor ainda não vier da API, leve-o para a API na mesma tarefa. Colunas de ação (botões, links sem dado próprio) não entram.
 - Uma tela nova com exportação segue o mesmo modelo, com catálogo próprio igual à sua tabela.

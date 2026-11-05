@@ -250,3 +250,11 @@ Cada exportação Excel passa a conter só as colunas da tabela da sua tela, na 
 Verificações locais: API `pnpm build` e `pnpm test` passando; web `pnpm test` (214 testes), `pnpm lint` (0 erros; os avisos já existiam), `tsc --noEmit` e `pnpm build` passando.
 
 HML: release `hml-release-b56ee55` na API e no worker. `/health/live` respondeu 200 e a rota de exportação sem sessão respondeu 401. `test/export-worker-hml.integration.mjs`, executado na VPS contra `erp_po_totvs_hml` com o papel `import_erp_hml_app`, passou: os layouts antigos (8 e 92 colunas), a carteira com `lifecycle=all` e colunas escolhidas, o End to End com o atraso acumulado em T3 e a falha `INVALID_EXPORT_COLUMNS` sem derrubar o worker. Detalhes e rollback em `deploy/hostinger/README.md`.
+
+## 9. Pré Embarque (2026-11-05)
+
+O painel `/reports/pre` (`components/PreShipmentDashboard.tsx`) ganhou exportação no mesmo modelo, contexto `pre-shipment`:
+
+- Colunas: as 17 da tabela de POs do painel, na ordem dela (Necessidade, Modal, Status, Solicitante, SC, PO, IP, ETD, ETA, ETE, Código do produto, Descrição do produto, Quantidade, Fornecedor, Importadora, Finalidade, PO Sent Date). PO e Código do produto são obrigatórios.
+- `POST /api/v1/exports/pre-shipment` grava o tipo `pre-shipment-xlsx` em `jobs.export_job` com os filtros do painel (`preShipmentQuery`) e as seleções dos gráficos (status e faixa de aging); o arquivo tem as linhas da tabela. O worker lê com `queryPreShipmentLines` e escreve a aba `Pré Embarque` (`pre-embarque.xlsx`). Sem colunas escolhidas, saem todas as da tabela. Mesmo limite de 30.000 linhas.
+- A tela usa `ExportColumnsDialog` e `useExcelExport` (em `components/useProductLineExport.ts`), o mesmo acompanhamento de fila e download da Carteira por produto e do End to End.
