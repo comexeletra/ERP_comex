@@ -104,6 +104,15 @@ export function preShipmentFilterCount(filters: PreShipmentFilters): number {
   return keys.size;
 }
 
+// Built once per language: a transition formats the counts of the charts on each frame.
+const productFormats = new Map<string, Intl.NumberFormat>();
+/** Whole count of products in the interface language ("7.695"); fractions of a transition are rounded. */
+export function formatProducts(value: number, locale: string): string {
+  let format = productFormats.get(locale);
+  if (!format) { format = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }); productFormats.set(locale, format); }
+  return format.format(Math.round(value));
+}
+
 export type PreShipmentPart = { products: number; quantity: string };
 export type PreShipmentSummary = {
   totalProducts: number; totalQuantity: string;
@@ -113,7 +122,7 @@ export type PreShipmentSummary = {
 };
 
 export type PreShipmentLine = {
-  lineId: string; lineKind: "ALLOCATION" | "BALANCE"; quantity: string; unit: string | null;
+  lineId: string; lineKind: "ALLOCATION" | "BALANCE"; status: PreShipmentStatus; quantity: string; unit: string | null;
   necessityDate: string | null; mode: string | null; requester: string | null; scNumber: string | null;
   purchaseOrder: { id: string; number: string }; process: { id: string; ipNumber: string } | null;
   etd: string | null; eta: string | null; ete: string | null; productCode: string; description: string;

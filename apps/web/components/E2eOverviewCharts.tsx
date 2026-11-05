@@ -19,7 +19,7 @@ export type E2eOverview = {
   byDelayRange?: Record<E2eDelayRange, OverviewPart>;
 };
 
-type ChartEntry<Key extends string> = { key: Key; label: string; color: string; part: OverviewPart; share: OverviewShare };
+export type ChartEntry<Key extends string> = { key: Key; label: string; color: string; part: OverviewPart; share: OverviewShare };
 const statusKeys = productLineStatuses.slice(0, -1) as readonly E2eOverviewStatus[];
 const deadlineColors: Record<E2eDeadlineStatus, string> = {
   onTime: "--color-chart-on-time", onLimit: "--color-chart-on-limit",
@@ -32,15 +32,15 @@ const rangeColors: Record<E2eDelayRange, string> = {
   days90To120: "--color-chart-range-5", days120Plus: "--color-chart-range-6", noData: "--color-chart-no-data",
 };
 // The colour of a category, read by the stylesheet as --chart-color.
-const tint = (color: string) => ({ "--chart-color": `var(${color})` }) as CSSProperties;
-const width = (fraction: number) => ({ width: `${(fraction * 100).toFixed(2)}%` });
+export const tint = (color: string) => ({ "--chart-color": `var(${color})` }) as CSSProperties;
+export const width = (fraction: number) => ({ width: `${(fraction * 100).toFixed(2)}%` });
 // The selected categories of a chart: none (all), one or several.
-const dimmed = (key: string, selected: readonly string[]) => selected.length && !selected.includes(key) ? " is-dimmed" : "";
+export const dimmed = (key: string, selected: readonly string[]) => selected.length && !selected.includes(key) ? " is-dimmed" : "";
 // Ctrl+click (Cmd+click on a Mac) adds to the selection, as in Power BI.
-const additive = (event: MouseEvent<Element>) => event.ctrlKey || event.metaKey;
+export const additive = (event: MouseEvent<Element>) => event.ctrlKey || event.metaKey;
 
 /** A number that counts to its new value when the filters or the selection change, instead of jumping. */
-function Counted({ value, format }: { value: number; format: (value: number) => string }) {
+export function Counted({ value, format }: { value: number; format: (value: number) => string }) {
   return <>{format(useTweenedNumber(value))}</>;
 }
 
@@ -64,7 +64,7 @@ function OverviewCard({ title, total, selected, onClear, wide, insight, children
 }
 
 /** Chip of the card head with the fact worth reading first, such as the largest status. */
-function InsightChip({ color, label, value, danger }: { color: string; label: string; value: ReactNode; danger?: boolean }) {
+export function InsightChip({ color, label, value, danger }: { color: string; label: string; value: ReactNode; danger?: boolean }) {
   return <span className={danger ? "e2e-overview-chip e2e-overview-chip-danger" : "e2e-overview-chip"} style={tint(color)}>
     <span className="e2e-overview-dot" aria-hidden="true" />
     <span>{label}: <strong>{value}</strong></span>
@@ -72,12 +72,12 @@ function InsightChip({ color, label, value, danger }: { color: string; label: st
 }
 
 /** Thin bar of a share, under a status step and a legend item. */
-function Meter({ fraction }: { fraction: number }) {
+export function Meter({ fraction }: { fraction: number }) {
   return <span className="e2e-overview-meter" aria-hidden="true"><span className="e2e-overview-meter-fill" style={width(fraction)} /></span>;
 }
 
 /** Legend with quantity, share and meter; each item filters by its category, the keyboard path of the chart. */
-function Legend<Key extends string>({ entries, selected, onSelect, filterLabel, locale }: {
+export function Legend<Key extends string>({ entries, selected, onSelect, filterLabel, locale }: {
   entries: ChartEntry<Key>[]; selected: readonly string[]; onSelect: (key: Key, additive: boolean) => void;
   filterLabel: (label: string) => string; locale: string;
 }) {

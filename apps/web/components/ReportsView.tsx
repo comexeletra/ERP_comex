@@ -6,7 +6,9 @@ import { apiFetch } from "../lib/api";
 import { formatCount } from "../lib/format-count";
 import { identityStatusLabel, statusLabel } from "../lib/i18n/labels";
 import { getMessages, useI18n } from "./I18nProvider";
+import E2eCollapsible from "./E2eCollapsible";
 import PageHeader from "./PageHeader";
+import PreShipmentDashboard from "./PreShipmentDashboard";
 
 // Sheet names of the historical spreadsheet, used as filter values in the source audit.
 const preShipmentSheet = "Pré Embarque"; // i18n-ignore: data value
@@ -36,7 +38,7 @@ function StatusList({ items, label }: { items: MetricSet["statuses"]; label: (st
   </li>)}</ul>;
 }
 
-export default function ReportsView({ scope }: { scope: ReportScope }) {
+export default function ReportsView({ scope, initialQuery = "" }: { scope: ReportScope; initialQuery?: string }) {
   const { m } = useI18n();
   const t = m.reports;
   const [summary, setSummary] = useState<ReportsSummary>();
@@ -70,7 +72,11 @@ export default function ReportsView({ scope }: { scope: ReportScope }) {
     {error && <div className="notice error" role="alert"><p>{error}</p>
       <button className="button" onClick={() => { setError(""); setRetry(value => value + 1); }}>{m.common.retry}</button></div>}
 
-    {scope === "pre" && <section className="report-section" aria-labelledby="pre-report-title">
+    {scope === "pre" && <PreShipmentDashboard initialQuery={initialQuery} />}
+
+    {scope === "pre" && <E2eCollapsible title={t.loadSection} storageKey="erp-comex-pre-load-collapsed" icon="chart" activeCount={0}
+      className="report-section">
+    <section aria-labelledby="pre-report-title">
       <div className="report-section-heading"><div><p className="eyebrow">{t.step1}</p><h2 id="pre-report-title">{t.pre}</h2>
         <p className="muted">{t.preHelp}</p></div>
         <div className="report-actions"><Link className="button secondary" href={`/source-audit?sheet=${encodeURIComponent(preShipmentSheet)}`}>{t.fullSheet}</Link>
@@ -86,7 +92,8 @@ export default function ReportsView({ scope }: { scope: ReportScope }) {
       </div>
       <section className="card report-status-card"><h3>{t.poIdentification}</h3>
         <StatusList items={summary?.preShipment?.statuses ?? []} label={status => identityStatusLabel(m, status)} /></section>
-    </section>}
+    </section>
+    </E2eCollapsible>}
 
     {scope === "post" && <section className="report-section" aria-labelledby="post-report-title">
       <div className="report-section-heading"><div><p className="eyebrow">{t.step2}</p><h2 id="post-report-title">{t.post}</h2>
