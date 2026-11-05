@@ -26,6 +26,8 @@ export type ExportColumn<Row> = {
   value: (row: Row, filters: ColumnFilters) => Cell;
   /** True when the value is a forecast, shown in italics as on the screen. */
   forecast?: (row: Row) => boolean;
+  /** End to End stage of the column, written with the color of its stage group, as on the screen. */
+  stage?: E2eStageCode;
 };
 /** A chosen column with its header and its value bound to the export filters. */
 export type ResolvedExportColumn<Row> = Omit<ExportColumn<Row>, "value"> & { value: (row: Row) => Cell };
@@ -116,7 +118,7 @@ const endToEndColumns: LineColumn[] = [
   { available: filters => filters.view === "reached" && filters.stage !== undefined }),
   ...E2E_STAGE_CODES.flatMap(code => stageMeasures.map(([measure, header, value]) =>
     line(`${code.toLowerCase()}${measure}`, `${code} ${header}`, row => value(row, code), 14,
-      measure === "Actual" ? { forecast: row => e2eStage(row, code)?.source === "forecast" } : {}))),
+      { stage: code, ...measure === "Actual" ? { forecast: row => e2eStage(row, code)?.source === "forecast" } : {} }))),
   line("totalTarget", "Totais Meta", row => decimal(e2e(row)?.totalTargetDays)),
   line("totalActual", "Totais Real", row => decimal(e2e(row)?.totalActualDays)),
   line("totalDelay", "Totais Atraso", row => decimal(e2e(row)?.totalDelayDays)),

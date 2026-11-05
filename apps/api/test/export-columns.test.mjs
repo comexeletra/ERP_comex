@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { exportColumnCatalogs, resolveExportColumns } from "../dist/export-columns.js";
 // The web mirror is plain TypeScript data; Node 24 strips the types on import.
@@ -61,6 +62,22 @@ test("the accumulated delay exists only in the reached view of a stage, as in th
     ["poNumber", "productCode", "totalDelay"]);
   assert.deepEqual(keys(resolveExportColumns("end-to-end", requested, { stage: "T3", view: "reached" })),
     ["poNumber", "productCode", "accumulatedDelay", "totalDelay"]);
+});
+
+test("the End to End stage columns carry their stage, colored in the file as the screen tokens", async () => {
+  const { exportStageColors } = await import("../dist/purchase-order-exports.js");
+  const staged = exportColumnCatalogs["end-to-end"].filter(column => column.stage);
+  assert.deepEqual(staged.map(column => column.key), stageKeys);
+  for (const column of staged) assert.equal(column.key.slice(0, 2), column.stage.toLowerCase(), column.key);
+  // The light theme of the screen (apps/web/app/styles/tokens.css), the colors of a printed sheet.
+  const tokens = await readFile(new URL("../../web/app/styles/tokens.css", import.meta.url), "utf8");
+  const light = tokens.slice(tokens.indexOf(":root {"), tokens.indexOf(':root[data-theme="dark"]'));
+  const token = name => `FF${new RegExp(`${name}:\\s*#([0-9a-f]{6})`, "u").exec(light)[1].toUpperCase()}`;
+  for (const code of ["T0", "T1", "T2", "T3", "T4", "T5"]) {
+    const stage = code.toLowerCase();
+    assert.deepEqual(exportStageColors[code], { header: token(`--color-stage-${stage}-bg`),
+      values: token(`--color-stage-${stage}-tint`), border: token(`--color-stage-${stage}-border`) }, code);
+  }
 });
 
 test("the web catalog mirrors the API catalogs (keys, order, required and dependent columns)", () => {

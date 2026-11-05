@@ -167,4 +167,19 @@ test("product line exports write only the chosen table columns, in the table ord
   // Forecast dates are shown in italics, as on the screen.
   assert.equal(e2e.getRow(2).getCell(7).font?.italic, true);
   assert.notEqual(e2e.getRow(2).getCell(6).font?.italic, true);
+  // Each stage column takes the color of its stage group, as on the screen: the header on the stage color
+  // with the group line below, the values on its tint. Other columns stay without fill.
+  const { exportStageColors } = await import("../dist/purchase-order-exports.js");
+  for (const [column, code] of [[6, "T3"], [7, "T4"]]) {
+    const header = e2e.getRow(1).getCell(column);
+    assert.equal(header.fill?.fgColor?.argb, exportStageColors[code].header, `${code} header`);
+    assert.equal(header.border?.bottom?.color?.argb, exportStageColors[code].border, `${code} border`);
+    assert.equal(header.font?.bold, true, `${code} header bold`);
+    assert.equal(e2e.getRow(2).getCell(column).fill?.fgColor?.argb, exportStageColors[code].values, `${code} values`);
+  }
+  assert.equal(e2e.getRow(2).getCell(7).font?.italic, true);
+  for (const column of [1, 3, 5, 8]) {
+    assert.equal(e2e.getRow(1).getCell(column).fill?.fgColor, undefined, `header ${column}`);
+    assert.equal(e2e.getRow(2).getCell(column).fill?.fgColor, undefined, `values ${column}`);
+  }
 });
