@@ -1,5 +1,13 @@
 # API ERP na VPS Hostinger
 
+## Pós Embarque: tabela abaixo dos cartões e gráficos por mês com todo o histórico no HML (2026-11-06)
+
+A pedido do usuário, o commit `b1743cc` (API) faz os gráficos por mês do Pós Embarque (DSA e lead time) ignorarem o filtro Date e mostrarem todo o histórico, do mês da data de referência mais antiga ao mês de hoje; eles seguem os demais filtros e seleções. O commit `5a6773d` (web) põe a tabela de IPs logo abaixo dos cartões e os gráficos depois dela. Não há migration.
+
+O release `/opt/import-erp/apps/api/hml-release-41dfa7c` foi montado com `git -c core.autocrlf=false archive 41dfa7c:apps/api` (SHA-256 `306c70a2…ec4a`, nenhuma fonte com CR), reaproveitando o `node_modules` de `hml-release-2fcfde4` (lockfile e `package.json` iguais), compilado na VPS e ativado pelo drop-in de 68 `z` `…-release-41dfa7c.conf`; o worker foi movido com `enable-homologation-export-worker.sh 41dfa7c`. Drop-ins e `ExecStart` anteriores: `/var/backups/import-erp/hml-post-history-41dfa7c-predeploy`. Rollback somente do código: remova o drop-in `41dfa7c`, execute `systemctl daemon-reload`, reinicie `import-erp-hml-api` (volta a `hml-release-2fcfde4`) e rode `enable-homologation-export-worker.sh 2fcfde4`.
+
+No release passaram os mesmos 4 arquivos de teste (17, 12, 26 e 5). O ensaio só leitura repetiu as conferências anteriores (todas iguais ao SQL) e confirmou o histórico: meses de 2025-11 a 2026-11 (13), iguais com e sem o filtro de janeiro (que deixa 19 IPs nos cartões); lead time em tempo real por mês igual ao SQL em todo o histórico; rajada de 16 chamadas sem falha em 475 ms, heap máximo de 18 MB. `/health/live` respondeu 200, a rota sem sessão respondeu 401, e API e worker ficaram ativos no `41dfa7c`. Preview `homologacao` Ready (`erp-comex-ov1tkd1lz`). Scripts e log em `/root/claude-release-41dfa7c` na VPS. Produção, `main` e as variáveis da Vercel não foram alteradas.
+
 ## Painel de Pós Embarque no HML (2026-11-06)
 
 Os commits `a30d9a0` (API) e `db927e8` (web) trazem para `/reports/post` as métricas do painel Power BI de Pós Embarque, uma linha por IP, com os dados de pós-embarque do IP (`docs/PLANO_DASHBOARD_POS_EMBARQUE.md`): `GET /api/v1/reports/post-shipment/summary`, `/lines` e `/filter-options` (permissão `processes.read`, escopo por importadora). As rotas passam pela fila de `work-gate.ts` compartilhada com o End to End e o Pré Embarque. `shipmentDates` de `followup-calculations.ts` passou a ser exportado (mesma regra de ETA/ETE). Não há migration.
