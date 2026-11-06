@@ -22,6 +22,7 @@ import { registerE2eTargetRoutes } from "../dist/e2e-targets.js";
 import { registerPurchaseRequestRoutes } from "../dist/purchase-requests.js";
 import { registerShipmentLineRoutes } from "../dist/shipment-lines.js";
 import { registerPreShipmentDashboardRoutes } from "../dist/pre-shipment-dashboard.js";
+import { registerPostShipmentDashboardRoutes } from "../dist/post-shipment-dashboard.js";
 import { registerSupplierAliasRoutes } from "../dist/supplier-aliases.js";
 
 // Routes called by the Next.js app. Fastify's own router is checked, so a
@@ -99,6 +100,8 @@ const webRoutes = [
   ["GET", "/api/v1/reports/summary"],
   ["GET", "/api/v1/reports/pre-shipment/summary"], ["GET", "/api/v1/reports/pre-shipment/lines"],
   ["GET", "/api/v1/reports/pre-shipment/filter-options"],
+  ["GET", "/api/v1/reports/post-shipment/summary"], ["GET", "/api/v1/reports/post-shipment/lines"],
+  ["GET", "/api/v1/reports/post-shipment/filter-options"],
   ["GET", "/api/v1/e2e-targets"], ["POST", "/api/v1/e2e-targets"], ["PATCH", "/api/v1/e2e-targets/:id"],
   ["GET", "/api/v1/pending-import-items"], ["GET", "/api/v1/unassigned-po-items"],
   ["GET", "/api/v1/admin/users"], ["POST", "/api/v1/admin/users"],
@@ -147,6 +150,7 @@ test("all Next.js API calls have a registered API method and path", async t => {
   await registerPurchaseRequestRoutes(app, unusedPool);
   await registerShipmentLineRoutes(app, unusedPool);
   await registerPreShipmentDashboardRoutes(app, unusedPool);
+  await registerPostShipmentDashboardRoutes(app, unusedPool);
   await registerSupplierAliasRoutes(app, unusedPool);
   for (const [method, url] of webRoutes) {
     assert.equal(app.hasRoute({ method, url }), true, `${method} ${url} is missing`);

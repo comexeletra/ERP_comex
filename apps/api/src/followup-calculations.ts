@@ -54,7 +54,8 @@ function shipmentStatus(process: Row, hasInvoice: boolean) {
     !date(process.blDate) ? "AGUARDANDO EMBARQUE" : !date(process.arrivalDate) ? "AGUARDANDO CHEGADA" : "DESEMBARAÇO";
   return { status, statusSource: "calculated", informedStatus, cancelled: false, delivered };
 }
-function shipmentDates(process: Row) {
+/** ETA and ETE of the IP: the confirmed ones, or calculated from the ETD and the mode (also the post-shipment dashboard). */
+export function shipmentDates(process: Row) {
   const mode = text(process.transportMode) ?? "";
   const sea = /^(SEA|MARITIMO|MARÍTIMO)$/i.test(mode);
   const etaConfirmed = date(process.etaConfirmed);
