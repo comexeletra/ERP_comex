@@ -117,7 +117,7 @@ test("the summary counts the IPs, the containers, the on water share and the ave
     DESEMBARAÇO: 1, ENTREGUE: 3, CANCELADO: 0 });
   assert.deepEqual(summary.byChannel, { green: 2, yellow: 1, red: 1, gray: 0, other: 0, none: 1 });
   assert.deepEqual(summary.byPriority, { priority: 2, normal: 3 });
-  assert.deepEqual(summary.targets, { dsa: 0.7, avgLtDoc: 7, leadTime: 7 });
+  assert.deepEqual(summary.targets, { dsa: 0.7, avgLtDoc: 7, leadTime: 7, slaTxt: 20 });
   const empty = summarizePostShipment([], {}, today);
   assert.deepEqual([empty.totalIps, empty.containers, empty.dsa, empty.avgLtDoc, empty.avgSlaTxt], [0, "0", null, null, null]);
 });

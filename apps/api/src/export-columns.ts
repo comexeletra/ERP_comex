@@ -184,7 +184,8 @@ const postShipmentColumns: PostColumn[] = [
   post("ltClearance", "LT Clearance", row => decimal(row.leadTime), 16, { tone: row => row.leadTime === null ? null
     : row.leadTime <= POST_SHIPMENT_TARGETS.leadTime ? "good" : "bad" }),
   post("clearanceType", "Tipo de desembaraço", row => clearanceLabels[row.clearanceType] ?? null, 22),
-  post("slaTxt", "SLA TXT", row => decimal(row.slaTxt)),
+  post("slaTxt", "SLA TXT", row => decimal(row.slaTxt), 12, { tone: row => row.slaTxt === null ? null
+    : row.slaTxt <= POST_SHIPMENT_TARGETS.slaTxt ? "good" : "bad" }),
 ];
 
 type ContextRow = { portfolio: PurchaseOrderExportRow; "product-lines": ShipmentLine; "end-to-end": ShipmentLine;

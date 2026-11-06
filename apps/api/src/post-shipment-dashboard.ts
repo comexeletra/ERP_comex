@@ -24,8 +24,11 @@ export type PostShipmentPriority = (typeof POST_SHIPMENT_PRIORITIES)[number];
 export const POST_SHIPMENT_CLEARANCE_TYPES = ["onWater", "normal"] as const;
 export type PostShipmentClearanceType = (typeof POST_SHIPMENT_CLEARANCE_TYPES)[number];
 
-/** Targets of the BI: DSA ≥ 70%, average LT DOC ≤ 7 days and LT Clearance ≤ 7 days (green up to the target). */
-export const POST_SHIPMENT_TARGETS = { dsa: 0.7, avgLtDoc: 7, leadTime: 7 } as const;
+/**
+ * Targets of the BI: DSA ≥ 70%, average LT DOC ≤ 7 days, LT Clearance ≤ 7 days and SLA TXT ≤ 20 days (green up to
+ * the target, negatives included; the SLA TXT rule came from the BI conditional format on 2026-11-06).
+ */
+export const POST_SHIPMENT_TARGETS = { dsa: 0.7, avgLtDoc: 7, leadTime: 7, slaTxt: 20 } as const;
 
 const channelNames: Record<Exclude<PostShipmentChannel, "other" | "none">, readonly string[]> = {
   green: ["GREEN", "VERDE"], yellow: ["YELLOW", "AMARELO"], red: ["RED", "VERMELHO"], gray: ["GRAY", "GREY", "CINZA"],

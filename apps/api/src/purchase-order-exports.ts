@@ -301,7 +301,7 @@ export async function preShipmentXlsx(lines: readonly PreShipmentLine[],
 
 /**
  * The Pós Embarque dashboard export: the table of the IPs with the chosen columns (every column without a choice),
- * LT Doc, LT Clearance and priority colored as their badges on the screen.
+ * LT Doc, LT Clearance, SLA TXT and priority colored as their badges on the screen.
  */
 export async function postShipmentXlsx(lines: readonly PostShipmentIp[],
   columns: readonly ResolvedExportColumn<PostShipmentIp>[]): Promise<Buffer> {

@@ -276,7 +276,7 @@ test("the post-shipment export writes the chosen columns of the table in the Pó
   assert.deepEqual(rows, [["IP", "Status", "LT Clearance"], ["061E/2025", "ENTREGUE", 37], ["015B/2026", "DESEMBARAÇO"]]);
 });
 
-test("the post-shipment export colors LT Doc, LT Clearance and priority as the table badges", async () => {
+test("the post-shipment export colors LT Doc, LT Clearance, SLA TXT and priority as the table badges", async () => {
   const ExcelJS = (await import("exceljs")).default;
   const { readFile } = await import("node:fs/promises");
   const { exportToneColors, postShipmentXlsx } = await import("../dist/purchase-order-exports.js");
@@ -291,8 +291,8 @@ test("the post-shipment export colors LT Doc, LT Clearance and priority as the t
   const columns = resolveExportColumns("post-shipment", [{ key: "priority", header: "Prioridade" },
     { key: "ltDoc", header: "LT Doc" }, { key: "ltClearance", header: "LT Clearance" }, { key: "slaTxt", header: "SLA TXT" }], {});
   const lines = [
-    { ipNumber: "A", priority: "Prioridade", priorityKey: "priority", ltDoc: 2, ltDocOnTarget: true, leadTime: 7, slaTxt: 5 },
-    { ipNumber: "B", priority: null, priorityKey: "normal", ltDoc: 8, ltDocOnTarget: false, leadTime: 8, slaTxt: 40 },
+    { ipNumber: "A", priority: "Prioridade", priorityKey: "priority", ltDoc: 2, ltDocOnTarget: true, leadTime: 7, slaTxt: 20 },
+    { ipNumber: "B", priority: null, priorityKey: "normal", ltDoc: 8, ltDocOnTarget: false, leadTime: 8, slaTxt: 21 },
     // A courier has no LT Doc target, and without an arrival there is no LT Clearance: no color.
     { ipNumber: "C", priority: null, priorityKey: "normal", ltDoc: 20, ltDocOnTarget: null, leadTime: null, slaTxt: null },
   ];
@@ -301,10 +301,10 @@ test("the post-shipment export colors LT Doc, LT Clearance and priority as the t
   const sheet = workbook.getWorksheet("Pós Embarque");
   const fill = (row, column) => sheet.getRow(row).getCell(column).fill?.fgColor?.argb ?? null;
   const font = (row, column) => sheet.getRow(row).getCell(column).font?.color?.argb ?? null;
-  // Columns: IP, Prioridade, LT Doc, LT Clearance, SLA TXT.
+  // Columns: IP, Prioridade, LT Doc, LT Clearance, SLA TXT (green up to 20 days, red above: the BI rule).
   assert.deepEqual([2, 3, 4].map(row => [fill(row, 2), fill(row, 3), fill(row, 4), fill(row, 5)]), [
-    [exportToneColors.warning.fill, exportToneColors.good.fill, exportToneColors.good.fill, null],
-    [null, exportToneColors.bad.fill, exportToneColors.bad.fill, null],
+    [exportToneColors.warning.fill, exportToneColors.good.fill, exportToneColors.good.fill, exportToneColors.good.fill],
+    [null, exportToneColors.bad.fill, exportToneColors.bad.fill, exportToneColors.bad.fill],
     [null, null, null, null],
   ]);
   assert.deepEqual([font(2, 3), font(3, 4)], [exportToneColors.good.font, exportToneColors.bad.font]);
