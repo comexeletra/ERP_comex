@@ -131,15 +131,20 @@ seguem o modelo visual e o filtro cruzado do Pré Embarque (`docs/PLANO_DASHBOAR
 - Custos (frete, impostos, multas, armazenagem, demurrage).
 - Alterar dados de IP ou a carga histórica.
 
+## Ajustes do usuário (2026-11-06, depois da primeira entrega)
+
+- **Ordem da tela:** filtros, cartões de número, tabela de IPs e, depois, os gráficos.
+- **Gráficos por mês** (DSA e os dois de lead time): não seguem o filtro Date e mostram todo o histórico, do mês da
+  data de referência mais antiga ao mês de hoje, sem limite de meses (a área rola na horizontal). Seguem os demais
+  filtros e as seleções. Substitui a proposta anterior (ano corrente; com o filtro, os meses do período).
+
 ## Padrões adotados (2026-11-06, a revisar com o usuário)
 
 O usuário pediu para executar e rever depois estes pontos de acabamento:
 
 1. **Cor do SLA TXT:** sem cor, na tabela e no cartão Avg SLA TXT (no print, 5 e 19 verdes e 27 a 396 vermelhos,
    mas o cartão de 38,91 está verde).
-2. **Meses dos gráficos:** sem filtro Date, de janeiro do ano corrente até o mês atual; com o filtro, os meses do
-   período (no máximo os últimos 36).
-3. **Filtro Date:** usa sempre a data de referência (entrega ou hoje) em todas as medidas; o BI usa a Delivery Date
+2. **Filtro Date:** usa sempre a data de referência (entrega ou hoje) em todas as medidas; o BI usa a Delivery Date
    em algumas. Só muda o resultado quando o período inclui hoje.
 
 ## Implementação
