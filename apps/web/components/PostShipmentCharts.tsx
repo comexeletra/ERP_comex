@@ -38,14 +38,17 @@ function Tip({ entry, selected, locale, m }: { entry: Entry<string>; selected: r
   </div>;
 }
 
-/** IPs by category as rows in order, each bar scaled to the largest one; each row filters by its category. */
+/**
+ * IPs by category as rows in order, each bar scaled to the largest one; each row filters by its category. The name
+ * column is wider than in the End to End: the three waiting statuses only differ at the end of the name.
+ */
 function CountBars<Key extends string>({ entries, selected, onSelect }: {
   entries: Entry<Key>[]; selected: readonly string[]; onSelect: Select<Key>;
 }) {
   const { m, locale } = useI18n();
   const p = m.reports.postDashboard;
   const max = Math.max(0, ...entries.map(entry => entry.share.value));
-  return <ul className="e2e-range-bars">
+  return <ul className="e2e-range-bars is-wide-labels">
     {entries.map(entry => <li key={entry.key}>
       <Tooltip content={<Tip entry={entry} selected={selected} locale={locale} m={m} />} followCursor>
         <button type="button" className={`e2e-range-row${dimmed(entry.key, selected)}`} aria-pressed={selected.includes(entry.key)}

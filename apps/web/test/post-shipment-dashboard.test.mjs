@@ -85,6 +85,8 @@ test("the charts cross-filter by status, channel and priority, and the on water 
   assert.match(charts, /import \{ DashboardCard \} from "\.\/PreShipmentCharts"/u);
   assert.match(charts, /<Legend entries=\{entries\}/u);
   assert.match(charts, /e2e-status-step-tile/u);
+  // The status bars show the whole name: the three waiting statuses only differ at the end.
+  assert.match(charts, /<ul className="e2e-range-bars is-wide-labels">/u);
 });
 
 test("the screen shows the filters, the number cards, the table and then the charts", () => {
