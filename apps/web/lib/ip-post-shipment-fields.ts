@@ -44,6 +44,8 @@ export const ipPostShipmentFields: IpPostShipmentField[] = [
   { key: "documentsOkDate", type: "date" },
   { key: "storageDueOverride", type: "date" },
   { key: "taxesPaidBrl", type: "money", ipOnly: true },
+  // Typed before the registration, apart from the taxes paid (docs/PLANO_ESTIMATIVA_DESEMBARACO.md).
+  { key: "clearanceEstimateBrl", type: "money", ipOnly: true },
   { key: "fineBrl", type: "money", ipOnly: true },
   { key: "storageBrl", type: "money", ipOnly: true },
   { key: "demurrageBrl", type: "money", ipOnly: true },

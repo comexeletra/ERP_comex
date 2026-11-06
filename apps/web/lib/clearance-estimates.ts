@@ -26,11 +26,13 @@ export const emptyClearanceFilters: ClearanceFilters = { ipNumber: "", analysts:
 
 /** Where the reference date came from: the DUIMP of a registered IP, or the ETA at the port before it. */
 export type ClearanceReferenceSource = "duimp" | "eta";
+/** Where the amount came from: the estimate typed on the IP, or the taxes paid without it. */
+export type ClearanceValueSource = "estimated" | "paid";
 
 export type ClearanceEstimateLine = {
   id: string; ipNumber: string; referenceDate: string | null; referenceSource: ClearanceReferenceSource | null;
   analysts: string[]; importer: string | null; status: ClearanceStatus; supplier: string | null; eta: string | null;
-  registered: boolean; valueBrl: string | null;
+  registered: boolean; valueBrl: string | null; valueSource: ClearanceValueSource | null;
 };
 
 export type ClearanceEstimates = {

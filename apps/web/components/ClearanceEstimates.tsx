@@ -133,7 +133,8 @@ export default function ClearanceEstimates() {
             <td>{date(line.eta)}</td>
             <td><span className={line.registered ? "badge badge-success" : "badge badge-warning"}>
               {t.registeredOptions[line.registered ? "yes" : "no"]}</span></td>
-            <td className="clearance-key clearance-money">{formatBrl(line.valueBrl, locale)}</td>
+            <td className="clearance-key clearance-money">{formatBrl(line.valueBrl, locale)}{line.valueSource
+              && <span className="muted"> · {t.valueSources[line.valueSource]}</span>}</td>
           </tr>)}</tbody>
           <tfoot><tr className="clearance-total">
             <th scope="row" colSpan={8}>{t.total}</th>

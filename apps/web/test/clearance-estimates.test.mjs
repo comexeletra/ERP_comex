@@ -37,6 +37,8 @@ test("the table shows the columns of the BI, in its order, with the total of the
     "value"]);
   // The date tells whether it is the DUIMP or, before it, the ETA.
   assert.match(section, /t\.referenceSources\[line\.referenceSource\]/u);
+  // The amount tells whether it is the estimate typed on the IP or the taxes paid.
+  assert.match(section, /t\.valueSources\[line\.valueSource\]/u);
   assert.match(section, /<tfoot><tr className="clearance-total">/u);
   // The IP, the registration date and the amount are the key columns, in green as in the BI.
   assert.equal((section.match(/<th className="clearance-key[^"]*">/gu) ?? []).length, 3);
@@ -46,6 +48,7 @@ test("the table shows the columns of the BI, in its order, with the total of the
     for (const column of columns) assert.ok(t.columns[column], column);
     assert.ok(t.periods.nextWeek && t.periods.all && t.registeredOptions.yes && t.registeredOptions.no);
     assert.ok(t.referenceSources.duimp && t.referenceSources.eta);
+    assert.ok(t.valueSources.estimated && t.valueSources.paid);
     assert.match(t.nextWeekRange("09/11/2026", "15/11/2026"), /09\/11\/2026.*15\/11\/2026/u);
   }
 });

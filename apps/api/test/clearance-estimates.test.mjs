@@ -13,7 +13,8 @@ const today = "2026-11-06";
 let sequence = 0;
 /** A row of the clearance query, as PostgreSQL returns it (dates and money as text). */
 const row = overrides => ({ id: `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}`,
-  ip_number: `IP-${sequence}`, importer: "ELETRA MATRIZ", analysts: null, taxes_paid_brl: null, supplier_name: null,
+  ip_number: `IP-${sequence}`, importer: "ELETRA MATRIZ", analysts: null, clearance_estimate_brl: null,
+  taxes_paid_brl: null, supplier_name: null,
   transport_mode: "SEA", etd: null, eta_confirmed: null, ete_confirmed: null, duimp_number: null, duimp_date: null,
   status: "AGUARDANDO CHEGADA", ...overrides });
 const line = overrides => clearanceEstimateLine(row(overrides));
@@ -49,11 +50,26 @@ test("each line keeps the post-shipment data of the IP: taxes, analysts of the P
     status: "DESEMBARAÇO" });
   assert.deepEqual({ ...found, id: undefined }, { id: undefined, ipNumber: "Z-021A/2026", referenceDate: "2026-10-15",
     referenceSource: "duimp", analysts: ["EVELINE", "GABRIELA"], importer: "ELETRA MATRIZ", status: "DESEMBARAÇO",
-    supplier: "ZLINK", eta: "2026-10-18", registered: true, valueBrl: "3833400.68" });
+    supplier: "ZLINK", eta: "2026-10-18", registered: true, valueBrl: "3833400.68", valueSource: "paid" });
   // Without a DUIMP, the ETA; without a confirmed ETA, the ETA calculated from the ETD (SEA: ETD + 55 days).
   const waiting = line({ etd: "2026-09-16" });
   assert.deepEqual([waiting.referenceDate, waiting.referenceSource, waiting.registered], ["2026-11-10", "eta", false]);
   assert.equal(line({ status: "OUTRO" }).status, "AGUARDANDO PRODUÇÃO");
+});
+
+test("the amount is the estimate typed on the IP and, without it, the taxes paid, with where it came from", () => {
+  const estimated = line({ clearance_estimate_brl: "1500000.00", taxes_paid_brl: "1480000.00" });
+  assert.deepEqual([estimated.valueBrl, estimated.valueSource], ["1500000.00", "estimated"]);
+  const paid = line({ taxes_paid_brl: "11007.81" });
+  assert.deepEqual([paid.valueBrl, paid.valueSource], ["11007.81", "paid"]);
+  const none = line({});
+  assert.deepEqual([none.valueBrl, none.valueSource], [null, null]);
+  // An IP waiting for the registration with only the estimate is in the section and in the total.
+  const lines = [line({ ip_number: "026A/2026", eta_confirmed: "2026-11-10", clearance_estimate_brl: "1500000.00" }),
+    line({ ip_number: "033/2026", duimp_date: "2026-11-11", taxes_paid_brl: "11007.81" })];
+  const nextWeek = selectClearanceEstimates(lines, { period: "nextWeek" }, today);
+  assert.deepEqual(nextWeek.lines.map(item => [item.ipNumber, item.valueSource]), [["026A/2026", "estimated"], ["033/2026", "paid"]]);
+  assert.equal(nextWeek.totalBrl, "1511007.81");
 });
 
 test("the table follows the filters, in the order of the reference date (empty last) and the IP", () => {
@@ -141,8 +157,9 @@ test("the route reads the post-shipment data of the user's IPs, and keeps delete
   assert.match(sql, /LEFT JOIN catalog\.entry AS supplier ON supplier\.id = p\.supplier_entry_id/u);
   assert.match(sql, /WHEN p\.record_status = 'CANCELLED' THEN 'CANCELADO'/u);
   assert.match(sql, /WHEN p\.delivery_date IS NOT NULL THEN 'ENTREGUE'/u);
-  // No field of the removed M078 is read.
-  assert.doesNotMatch(sql, /clearance_analyst|registration_target_date|clearance_estimate_brl/u);
+  // The estimate typed on the IP (M080); the other removed fields of M078 are not read.
+  assert.match(sql, /p\.clearance_estimate_brl::text AS clearance_estimate_brl/u);
+  assert.doesNotMatch(sql, /clearance_analyst|registration_target_date/u);
   const body = response.json();
   assert.deepEqual(body.lines.map(item => item.ipNumber), ["Z-025/2026"]);
   assert.equal(body.totalBrl, "502679.69");
@@ -175,6 +192,17 @@ test("the route requires the permission to read IPs", async t => {
   assert.equal((await app.inject("/api/v1/reports/post-shipment/clearance-estimates")).statusCode, 403);
 });
 
+test("M080 adds only the clearance estimate of the IP, and the IP form accepts it", async () => {
+  const sql = (await readFile(new URL("../migrations/M080_ip_clearance_estimate_value.sql", import.meta.url), "utf8"))
+    .replace(/--.*$/gmu, "");
+  assert.match(sql, /ADD COLUMN clearance_estimate_brl numeric\(18,2\)/u);
+  assert.match(sql, /clearance_estimate_brl IS NULL OR clearance_estimate_brl >= 0/u);
+  for (const role of ["import_erp_app", "import_erp_hml_app"]) assert.match(sql, new RegExp(`TO ${role};`, "u"));
+  assert.doesNotMatch(sql, /clearance_analyst|registration_target_date/u);
+  assert.doesNotMatch(sql, /\bUPDATE imports|\bDELETE\b|INSERT INTO|DROP COLUMN|ALTER COLUMN/u);
+  assert.equal(processFollowupFieldKeys.includes("clearanceEstimateBrl"), true);
+});
+
 test("M079 removes the empty clearance fields of M078, and the IP form no longer accepts them", async () => {
   const sql = (await readFile(new URL("../migrations/M079_drop_ip_clearance_estimate.sql", import.meta.url), "utf8"))
     .replace(/--.*$/gmu, "");
@@ -184,7 +212,8 @@ test("M079 removes the empty clearance fields of M078, and the IP form no longer
   }
   assert.match(sql, /RAISE EXCEPTION/u);
   assert.doesNotMatch(sql, /\bUPDATE\b|\bDELETE\b|INSERT INTO/u);
-  for (const key of ["clearanceAnalyst", "registrationTargetDate", "clearanceEstimateBrl"]) {
+  // The estimate came back alone in M080; the planned date and the clearance analyst stay out.
+  for (const key of ["clearanceAnalyst", "registrationTargetDate"]) {
     assert.equal(processFollowupFieldKeys.includes(key), false, key);
   }
 });

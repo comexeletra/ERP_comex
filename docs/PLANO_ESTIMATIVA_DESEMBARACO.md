@@ -4,8 +4,8 @@
 
 Trazer para `/reports/post` a segunda seção do painel de Pós Embarque do BI, "Import Clearance Estimations": o que
 chega ao porto brasileiro e precisa ser registrado na próxima semana, e quanto de impostos o desembaraço envolve. A
-análise usa **somente os dados de Pós Embarque que o sistema já tem**; a aba "Import Clearance Estimations" da
-planilha Follow Up não é carregada (decisão do usuário, 2026-11-06).
+análise usa os dados de Pós Embarque do IP e uma **estimativa de impostos digitada no IP**; a aba "Import
+Clearance Estimations" da planilha Follow Up não é carregada (decisões do usuário, 2026-11-06).
 
 ## Painel de origem (Power BI)
 
@@ -28,12 +28,17 @@ Comparação dos 181 IPs que estão na aba e no HML, e dos 39 IPs ainda não ent
 
 ## Decisões do usuário (2026-11-06)
 
-- **Fonte:** só dados de Pós Embarque; nenhum campo novo nem carga da planilha. A M078 (três colunas vazias criadas
-  antes desta decisão) é removida pela M079.
+- **Fonte:** dados de Pós Embarque do IP, sem carga da planilha. A M078 (três colunas vazias criadas antes desta
+  decisão) foi removida pela M079.
+- **Estimativa (decisão posterior do mesmo dia):** os Impostos pagos só existem depois do registro, então o Value
+  Need da próxima semana precisa de um campo próprio. A M080 cria `clearance_estimate_brl` no IP ("Estimativa de
+  impostos do desembaraço (R$)"), digitado no formulário de Pós Embarque do IP por quem prepara o registro,
+  separado de `taxes_paid_brl` (valor pago).
 - **Data de referência:** a data da DUIMP para o IP registrado; sem DUIMP, o ETA porto (o registro acontece em torno
   da chegada). "Próxima semana" usa essa data, com a regra do DAX e "hoje" de Brasília (`todayInBrasilia`).
 - **Registrado:** "Sim" quando o IP tem número ou data da DUIMP; "Não" sem ela.
-- **Valor:** "Impostos pagos (R$)" do IP (`taxes_paid_brl`); IP sem valor mostra traço e não soma.
+- **Valor:** a estimativa do IP; sem estimativa, os Impostos pagos (R$), e a tela diz qual dos dois é ("estimado"
+  ou "pago"). IP sem nenhum dos dois mostra traço e não soma.
 - **Analista:** os analistas das POs ligadas ao IP (`purchase_order.analyst`, pelas alocações ativas).
 - **Importadora:** a importadora do IP (razão social), a mesma do filtro do Pós Embarque.
 - **Universo:** IPs não excluídos com data de referência (DUIMP ou ETA) ou com valor. "Todas" mostra todos eles.
@@ -46,8 +51,10 @@ Comparação dos 181 IPs que estão na aba e no HML, e dos 39 IPs ainda não ent
    seguinte e as opções dos filtros. Funções puras para a semana, a data de referência e o "registrado", testadas.
 2. Seção na tela `/reports/post`, depois dos gráficos, com os filtros e a tabela do BI, a linha de total e os textos
    nos três idiomas. A data mostra se veio da DUIMP ou do ETA. Ordem: data de referência, depois IP.
-3. M079 (só HML) remove as três colunas da M078, recusando-se a rodar se alguma tiver valor; os campos saem do
-   formulário do IP e da API; o script de carga da aba sai do repositório.
+3. M079 (só HML) remove as três colunas da M078, recusando-se a rodar se alguma tiver valor; o script de carga da
+   aba sai do repositório.
+4. M080 (só HML) cria `clearance_estimate_brl` (decimal ≥ 0) no IP; o campo entra no formulário de Pós Embarque do IP
+   (só do IP, não repetido nos produtos), com a mesma auditoria dos demais.
 
 ## Restrições
 
@@ -58,13 +65,15 @@ Comparação dos 181 IPs que estão na aba e no HML, e dos 39 IPs ainda não ent
 
 - Com hoje = sexta 06/11/2026, "Próxima semana" traz os IPs com DUIMP ou, sem ela, ETA entre 09/11 e 15/11.
 - IP com DUIMP aparece como "Sim" e usa a data da DUIMP; sem DUIMP, "Não" e o ETA.
-- O total é a soma dos Impostos pagos das linhas filtradas.
-- M079 aplicada no HML com as colunas vazias; ledger 79.
+- O valor de cada IP é a estimativa ou, sem ela, os Impostos pagos, com a origem indicada; o total soma esse valor.
+- Editar a estimativa no IP grava auditoria e aparece na seção.
+- M079 aplicada no HML com as colunas vazias; M080 aplicada; ledger 80.
 - Testes de API, web (inclusive contrato), i18n, layout, type-check, lint e build passando.
 
 ## Fora do escopo
 
-- Carga da aba "Import Clearance Estimations" e campos digitados de estimativa.
+- Carga da aba "Import Clearance Estimations"; campos digitados de data planejada e de analista do desembaraço.
+- Cálculo automático da estimativa pelas alíquotas por NCM.
 - Produção e Pull Request para `main` antes da aprovação no Preview.
 
 ## Plano
@@ -73,3 +82,4 @@ Comparação dos 181 IPs que estão na aba e no HML, e dos 39 IPs ainda não ent
 2. Retirar os campos da M078 da API, do formulário e dos dicionários; M079; reverter o script de carga.
 3. Seção na tela com a coluna de data de referência e os textos.
 4. Release da API no HML (ativar a API nova antes da M079), push e validação no Preview.
+5. M080, campo no formulário do IP e valor estimado/pago na seção; release no HML, push e Preview.

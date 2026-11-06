@@ -57,6 +57,22 @@ test("the IP post-shipment form accepts BL number and BL date as IP fields", asy
   assert.deepEqual(update.params, [processId, "BL-2026-01", "2026-10-20"]);
 });
 
+test("the IP form edits the clearance estimate, apart from the taxes paid", async t => {
+  const { app, writes } = await followupApp(t);
+  const response = await app.inject({ method: "PATCH", url: `/api/v1/processes/${processId}/followup`,
+    headers: { "x-record-version": "3" },
+    payload: { fields: { clearanceEstimateBrl: "1500000.00" }, reason: "Estimativa de impostos do desembaraço" } });
+  assert.equal(response.statusCode, 200, response.body);
+  const update = writes.find(write => write.sql.includes("UPDATE imports.import_process SET"));
+  assert.match(update.sql, /clearance_estimate_brl=\$2/u);
+  assert.doesNotMatch(update.sql, /taxes_paid_brl/u);
+  assert.deepEqual(update.params, [processId, "1500000.00"]);
+  const refused = await app.inject({ method: "PATCH", url: `/api/v1/processes/${processId}/followup`,
+    headers: { "x-record-version": "3" },
+    payload: { fields: { clearanceEstimateBrl: "-1" }, reason: "Estimativa de impostos do desembaraço" } });
+  assert.equal(refused.statusCode, 400);
+});
+
 test("BL can no longer be created or edited as a document because it belongs to the IP", async t => {
   const { app, writes } = await followupApp(t);
   const created = await app.inject({ method: "POST", url: `/api/v1/processes/${processId}/documents`,

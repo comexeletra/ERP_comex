@@ -7,9 +7,10 @@ import { optionalText, POST_SHIPMENT_STATUSES, textList, valueList, type PostShi
 import { decimalQuantity, scaledQuantity, shipmentStatusSql } from "./shipment-lines.js";
 
 /**
- * Clearance estimates: the BI "Import Clearance Estimations" section of the post-shipment dashboard, built only from
- * the post-shipment data of the IP (docs/PLANO_ESTIMATIVA_DESEMBARACO.md). The registration date is the DUIMP date of
- * a registered IP or, before the DUIMP, the ETA at the port; the amount is the taxes of the IP.
+ * Clearance estimates: the BI "Import Clearance Estimations" section of the post-shipment dashboard, built from the
+ * post-shipment data of the IP (docs/PLANO_ESTIMATIVA_DESEMBARACO.md). The registration date is the DUIMP date of a
+ * registered IP or, before the DUIMP, the ETA at the port; the amount is the estimate typed on the IP or, without it,
+ * the taxes paid.
  */
 
 /** Period filter of the BI: the next week by the reference date, or every IP. */
@@ -19,6 +20,8 @@ export type ClearancePeriod = (typeof CLEARANCE_PERIODS)[number];
 export const CLEARANCE_REGISTERED = ["yes", "no"] as const;
 /** Where the reference date came from. */
 export type ClearanceReferenceSource = "duimp" | "eta";
+/** Where the amount came from: the estimate typed on the IP, or the taxes paid without it. */
+export type ClearanceValueSource = "estimated" | "paid";
 
 const dayMs = 86_400_000;
 const shift = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * dayMs).toISOString().slice(0, 10);
@@ -49,7 +52,8 @@ export function referenceDate(duimpDate: string | null, eta: string | null):
 
 /** A row of the IP query: dates and money are text (`::text`), so no time zone or float changes them. */
 export type ClearanceEstimateRow = {
-  id: string; ip_number: string; importer: string | null; analysts: string[] | null; taxes_paid_brl: string | null;
+  id: string; ip_number: string; importer: string | null; analysts: string[] | null; clearance_estimate_brl: string | null;
+  taxes_paid_brl: string | null;
   supplier_name: string | null; transport_mode: string | null; etd: string | null; eta_confirmed: string | null;
   ete_confirmed: string | null; duimp_number: string | null; duimp_date: string | null; status: string;
 };
@@ -58,7 +62,7 @@ export type ClearanceEstimateRow = {
 export type ClearanceEstimateLine = {
   id: string; ipNumber: string; referenceDate: string | null; referenceSource: ClearanceReferenceSource | null;
   analysts: string[]; importer: string | null; status: PostShipmentStatus; supplier: string | null; eta: string | null;
-  registered: boolean; valueBrl: string | null;
+  registered: boolean; valueBrl: string | null; valueSource: ClearanceValueSource | null;
 };
 
 const nonEmpty = (value: string | null) => value?.trim() ? value.trim() : null;
@@ -76,7 +80,8 @@ export function clearanceEstimateLine(row: ClearanceEstimateRow): ClearanceEstim
     id: row.id, ipNumber: row.ip_number, referenceDate: reference.date, referenceSource: reference.source,
     analysts: distinct((row.analysts ?? []).map(nonEmpty)), importer: nonEmpty(row.importer), status,
     supplier: nonEmpty(row.supplier_name), eta, registered: isRegistered(row.duimp_number, row.duimp_date),
-    valueBrl: row.taxes_paid_brl,
+    valueBrl: row.clearance_estimate_brl ?? row.taxes_paid_brl,
+    valueSource: row.clearance_estimate_brl !== null ? "estimated" : row.taxes_paid_brl !== null ? "paid" : null,
   };
 }
 
@@ -124,7 +129,7 @@ const clearanceEstimatesSql = `WITH clearance_estimate_ip AS (
         JOIN procurement.purchase_order_item AS item ON item.id = a.purchase_order_item_id
         JOIN procurement.purchase_order AS po ON po.id = item.purchase_order_id
         WHERE a.process_id = p.id AND a.status = 'ACTIVE' AND po.analyst IS NOT NULL) AS analysts,
-      p.taxes_paid_brl::text AS taxes_paid_brl,
+      p.clearance_estimate_brl::text AS clearance_estimate_brl, p.taxes_paid_brl::text AS taxes_paid_brl,
       coalesce(nullif(btrim(supplier.name), ''), nullif(btrim(p.supplier_text), '')) AS supplier_name,
       p.transport_mode, p.etd::text AS etd, p.eta_confirmed::text AS eta_confirmed, p.ete_confirmed::text AS ete_confirmed,
       p.duimp_number, p.duimp_date::text AS duimp_date,
