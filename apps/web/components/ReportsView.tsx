@@ -8,6 +8,7 @@ import { identityStatusLabel, statusLabel } from "../lib/i18n/labels";
 import { getMessages, useI18n } from "./I18nProvider";
 import E2eCollapsible from "./E2eCollapsible";
 import PageHeader from "./PageHeader";
+import PostShipmentDashboard from "./PostShipmentDashboard";
 import PreShipmentDashboard from "./PreShipmentDashboard";
 
 // Sheet names of the historical spreadsheet, used as filter values in the source audit.
@@ -95,7 +96,11 @@ export default function ReportsView({ scope, initialQuery = "" }: { scope: Repor
     </section>
     </E2eCollapsible>}
 
-    {scope === "post" && <section className="report-section" aria-labelledby="post-report-title">
+    {scope === "post" && <PostShipmentDashboard initialQuery={initialQuery} />}
+
+    {scope === "post" && <E2eCollapsible title={t.loadSection} storageKey="erp-comex-post-load-collapsed" icon="chart" activeCount={0}
+      className="report-section">
+    <section aria-labelledby="post-report-title">
       <div className="report-section-heading"><div><p className="eyebrow">{t.step2}</p><h2 id="post-report-title">{t.post}</h2>
         <p className="muted">{t.postHelp}</p></div>
         <div className="report-actions"><Link className="button secondary" href={`/source-audit?sheet=${encodeURIComponent(postShipmentSheet)}`}>{t.fullSheet}</Link>
@@ -113,6 +118,7 @@ export default function ReportsView({ scope, initialQuery = "" }: { scope: Repor
       </div>
       <section className="card report-status-card"><h3>{t.processStatuses}</h3>
         <StatusList items={summary?.postShipment?.statuses ?? []} label={status => statusLabel(m, status)} /></section>
-    </section>}
+    </section>
+    </E2eCollapsible>}
   </main>;
 }

@@ -21,7 +21,7 @@ function entriesOf<Key extends string>(keys: readonly Key[], parts: Record<Key, 
 }
 
 /** Card of the dashboard, in the style of the End to End overview: label, total, an insight and the selection reset. */
-function DashboardCard({ title, total, selected, onClear, wide, insight, children }: {
+export function DashboardCard({ title, total, selected, onClear, wide, insight, children }: {
   title: string; total: ReactNode; selected: boolean; onClear: () => void; wide?: boolean; insight?: ReactNode; children: ReactNode;
 }) {
   const { m } = useI18n();

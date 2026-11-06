@@ -150,6 +150,9 @@
 .e2e-status-step-tile { align-content: start; background: var(--color-surface-muted); border: 1px solid transparent; border-radius: var(--radius-md); color: var(--color-text); cursor: pointer; display: grid; font: inherit; gap: 6px; padding: 14px; text-align: left; transition: background-color var(--motion-chart) var(--ease-organic), border-color var(--motion-chart) var(--ease-organic), box-shadow var(--motion-chart) var(--ease-organic), opacity var(--motion-chart) var(--ease-organic), filter var(--motion-chart) var(--ease-organic), transform var(--motion-chart) var(--ease-organic); width: 100%; }
 .e2e-status-step-tile:hover { background: var(--color-surface-sunken); transform: translateY(-2px); }
 .e2e-status-step-tile[aria-pressed="true"] { border-color: var(--chart-color); }
+/* A tile that only shows a number (the post-shipment cards): no pointer and no lift. */
+.e2e-status-step-tile.is-static { cursor: default; }
+.e2e-status-step-tile.is-static:hover { background: var(--color-surface-muted); transform: none; }
 .e2e-status-step-tile.is-top { background: color-mix(in srgb, var(--chart-color) 9%, var(--color-surface)); border-color: color-mix(in srgb, var(--chart-color) 30%, var(--color-surface)); }
 .e2e-status-step-tile.is-top .e2e-overview-meter { background: color-mix(in srgb, var(--chart-color) 18%, var(--color-surface)); }
 .e2e-status-step-label { color: var(--color-text-secondary); font-size: var(--fs-sm); font-weight: 700; }

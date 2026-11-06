@@ -104,6 +104,9 @@ export function postShipmentFilterCount(filters: PostShipmentFilters): number {
   return keys.size;
 }
 
+/** Targets of the BI, the same the API returns in the summary: LT Clearance up to 7 days is green. */
+export const postShipmentLeadTimeTarget = 7;
+
 export type PostShipmentTone = "good" | "bad";
 /** Green up to the target, red above it (LT DOC average and LT Clearance); null without a value. */
 export const atMostTone = (value: number | null, target: number): PostShipmentTone | null =>
