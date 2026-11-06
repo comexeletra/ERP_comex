@@ -8,7 +8,7 @@
 export const clearanceStatuses = ["AGUARDANDO PRODUÇÃO", "AGUARDANDO EMBARQUE", "AGUARDANDO CHEGADA",
   "DESEMBARAÇO", "ENTREGUE", "CANCELADO"] as const;
 export type ClearanceStatus = typeof clearanceStatuses[number];
-/** The BI period: the next week by the date to register (Monday to Sunday), or every IP with an estimate. */
+/** The BI period: the next week by the reference date (Monday to Sunday), or every IP of the section. */
 export const clearancePeriods = ["nextWeek", "all"] as const;
 export type ClearancePeriod = typeof clearancePeriods[number];
 /** Registered: the IP has a DUIMP. */
@@ -24,9 +24,13 @@ export type ClearanceFilters = {
 export const emptyClearanceFilters: ClearanceFilters = { ipNumber: "", analysts: [], importers: [], status: [],
   suppliers: [], registered: [], period: "all" };
 
+/** Where the reference date came from: the DUIMP of a registered IP, or the ETA at the port before it. */
+export type ClearanceReferenceSource = "duimp" | "eta";
+
 export type ClearanceEstimateLine = {
-  id: string; ipNumber: string; registrationTargetDate: string | null; analyst: string | null; importer: string | null;
-  status: ClearanceStatus; supplier: string | null; eta: string | null; registered: boolean; estimateBrl: string | null;
+  id: string; ipNumber: string; referenceDate: string | null; referenceSource: ClearanceReferenceSource | null;
+  analysts: string[]; importer: string | null; status: ClearanceStatus; supplier: string | null; eta: string | null;
+  registered: boolean; valueBrl: string | null;
 };
 
 export type ClearanceEstimates = {
@@ -46,7 +50,7 @@ export function clearanceEstimatesQueryParams(filters: ClearanceFilters): URLSea
 }
 
 const moneyFormats = new Map<string, Intl.NumberFormat>();
-/** Money in reais with two decimals ("R$ 834.389,97"); an empty estimate is a dash. */
+/** Money in reais with two decimals ("R$ 834.389,97"); an empty value is a dash. */
 export function formatBrl(value: string | null, locale: string): string {
   if (value === null || value === "") return "—";
   let format = moneyFormats.get(locale);

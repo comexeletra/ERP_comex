@@ -57,24 +57,6 @@ test("the IP post-shipment form accepts BL number and BL date as IP fields", asy
   assert.deepEqual(update.params, [processId, "BL-2026-01", "2026-10-20"]);
 });
 
-test("the IP form edits the clearance estimate: analyst, date to register and estimated amount", async t => {
-  const { app, writes } = await followupApp(t);
-  const response = await app.inject({ method: "PATCH", url: `/api/v1/processes/${processId}/followup`,
-    headers: { "x-record-version": "3" },
-    payload: { fields: { clearanceAnalyst: " Leisiane ", registrationTargetDate: "2026-11-10",
-      clearanceEstimateBrl: "834389.97" }, reason: "Estimativa do desembaraço" } });
-  assert.equal(response.statusCode, 200, response.body);
-  const update = writes.find(write => write.sql.includes("UPDATE imports.import_process SET"));
-  assert.match(update.sql, /clearance_analyst=\$2,registration_target_date=\$3,clearance_estimate_brl=\$4/u);
-  assert.deepEqual(update.params, [processId, "Leisiane", "2026-11-10", "834389.97"]);
-  for (const fields of [{ clearanceEstimateBrl: "-1" }, { registrationTargetDate: "10/11/2026" },
-    { clearanceAnalyst: "x".repeat(161) }]) {
-    const refused = await app.inject({ method: "PATCH", url: `/api/v1/processes/${processId}/followup`,
-      headers: { "x-record-version": "3" }, payload: { fields, reason: "Estimativa do desembaraço" } });
-    assert.equal(refused.statusCode, 400, JSON.stringify(fields));
-  }
-});
-
 test("BL can no longer be created or edited as a document because it belongs to the IP", async t => {
   const { app, writes } = await followupApp(t);
   const created = await app.inject({ method: "POST", url: `/api/v1/processes/${processId}/documents`,

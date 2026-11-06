@@ -23,15 +23,15 @@ type Loaded = { query: string; data?: ClearanceEstimatesData; error?: string };
 type ListKey = "analysts" | "importers" | "suppliers";
 
 /**
- * The BI "Import Clearance Estimations" section of the post-shipment dashboard: the IPs whose DUIMP should be
- * registered next week (Monday to Sunday, by the date to register) and the money the clearance will need. It has its
- * own filters; the period applies at once, the other fields wait for Apply.
+ * The BI "Import Clearance Estimations" section of the post-shipment dashboard, from the post-shipment data of the IPs:
+ * what is registered next week (Monday to Sunday) by the DUIMP date or, before the DUIMP, the ETA at the port, and the
+ * taxes of the IP. It has its own filters; the period applies at once, the other fields wait for Apply.
  */
 export default function ClearanceEstimates() {
   const { m, locale } = useI18n();
   const t = m.reports.clearanceEstimates;
   const c = t.columns;
-  // The section exists to show next week; "Todas" lists every IP with an estimate.
+  // The section exists to show next week; "Todas" lists every IP with a registration date or taxes.
   const [draft, setDraft] = useState<ClearanceFilters>({ ...emptyClearanceFilters, period: "nextWeek" });
   const [applied, setApplied] = useState<ClearanceFilters>({ ...emptyClearanceFilters, period: "nextWeek" });
   const [loaded, setLoaded] = useState<Loaded>();
@@ -114,13 +114,14 @@ export default function ClearanceEstimates() {
             date(data.nextWeek.to))}</span>}</p>
         {data.lines.length === 0 ? <p>{t.none}</p> : <div className="table-scroll"><table>
           <thead><tr>
-            <th>{c.ip}</th><th>{c.registrationTargetDate}</th><th>{c.analyst}</th><th>{c.importer}</th><th>{c.status}</th>
-            <th>{c.supplier}</th><th>{c.eta}</th><th>{c.registered}</th><th className="clearance-money">{c.estimate}</th>
+            <th>{c.ip}</th><th>{c.referenceDate}</th><th>{c.analyst}</th><th>{c.importer}</th><th>{c.status}</th>
+            <th>{c.supplier}</th><th>{c.eta}</th><th>{c.registered}</th><th className="clearance-money">{c.value}</th>
           </tr></thead>
           <tbody>{data.lines.map(line => <tr key={line.id}>
             <td><Link className="text-link" href={`/processes/${line.id}`}>{line.ipNumber}</Link></td>
-            <td>{date(line.registrationTargetDate)}</td>
-            <td>{line.analyst ?? "—"}</td>
+            <td>{date(line.referenceDate)}{line.referenceSource
+              && <span className="muted"> · {t.referenceSources[line.referenceSource]}</span>}</td>
+            <td>{line.analysts.length ? line.analysts.join(", ") : "—"}</td>
             <td>{line.importer ?? "—"}</td>
             <td><span className="e2e-status">
               <span className="e2e-chart-swatch" style={{ background: `var(${postShipmentStatusColors[line.status]})` }} />
@@ -129,7 +130,7 @@ export default function ClearanceEstimates() {
             <td>{date(line.eta)}</td>
             <td><span className={line.registered ? "badge badge-success" : "badge badge-warning"}>
               {t.registeredOptions[line.registered ? "yes" : "no"]}</span></td>
-            <td className="clearance-money">{formatBrl(line.estimateBrl, locale)}</td>
+            <td className="clearance-money">{formatBrl(line.valueBrl, locale)}</td>
           </tr>)}</tbody>
           <tfoot><tr className="clearance-total">
             <th scope="row" colSpan={8}>{t.total}</th>

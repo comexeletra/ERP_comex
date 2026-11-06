@@ -33,14 +33,17 @@ test("the section comes after the charts of the post-shipment dashboard", () => 
 
 test("the table shows the columns of the BI, in its order, with the total of the estimates", () => {
   const columns = [...section.matchAll(/<th(?: className="[^"]*")?>\{c\.(\w+)\}<\/th>/gu)].map(match => match[1]);
-  assert.deepEqual(columns, ["ip", "registrationTargetDate", "analyst", "importer", "status", "supplier", "eta", "registered",
-    "estimate"]);
+  assert.deepEqual(columns, ["ip", "referenceDate", "analyst", "importer", "status", "supplier", "eta", "registered",
+    "value"]);
+  // The date tells whether it is the DUIMP or, before it, the ETA.
+  assert.match(section, /t\.referenceSources\[line\.referenceSource\]/u);
   assert.match(section, /<tfoot><tr className="clearance-total">/u);
   assert.match(section, /formatBrl\(data\.totalBrl, locale\)/u);
   for (const m of [ptBR, en, zhCN]) {
     const t = m.reports.clearanceEstimates;
     for (const column of columns) assert.ok(t.columns[column], column);
     assert.ok(t.periods.nextWeek && t.periods.all && t.registeredOptions.yes && t.registeredOptions.no);
+    assert.ok(t.referenceSources.duimp && t.referenceSources.eta);
     assert.match(t.nextWeekRange("09/11/2026", "15/11/2026"), /09\/11\/2026.*15\/11\/2026/u);
   }
 });

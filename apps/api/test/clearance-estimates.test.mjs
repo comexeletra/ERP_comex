@@ -4,7 +4,8 @@ import test from "node:test";
 import Fastify from "fastify";
 import { registerAuthorization } from "../dist/authorization.js";
 import { CLEARANCE_PERIODS, CLEARANCE_REGISTERED, clearanceEstimateLine, clearanceEstimatesQuery, isRegistered,
-  nextWeekRange, registerClearanceEstimateRoutes, selectClearanceEstimates } from "../dist/clearance-estimates.js";
+  nextWeekRange, referenceDate, registerClearanceEstimateRoutes, selectClearanceEstimates } from "../dist/clearance-estimates.js";
+import { processFollowupFieldKeys } from "../dist/followup.js";
 import { POST_SHIPMENT_STATUSES } from "../dist/post-shipment-dashboard.js";
 
 const actorId = "00000000-0000-4000-8000-000000000001";
@@ -12,9 +13,9 @@ const today = "2026-11-06";
 let sequence = 0;
 /** A row of the clearance query, as PostgreSQL returns it (dates and money as text). */
 const row = overrides => ({ id: `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}`,
-  ip_number: `IP-${sequence}`, importer: "ELETRA MATRIZ", clearance_analyst: null, registration_target_date: null,
-  clearance_estimate_brl: null, supplier_name: null, transport_mode: "SEA", etd: null, eta_confirmed: null,
-  ete_confirmed: null, duimp_number: null, duimp_date: null, status: "AGUARDANDO CHEGADA", ...overrides });
+  ip_number: `IP-${sequence}`, importer: "ELETRA MATRIZ", analysts: null, taxes_paid_brl: null, supplier_name: null,
+  transport_mode: "SEA", etd: null, eta_confirmed: null, ete_confirmed: null, duimp_number: null, duimp_date: null,
+  status: "AGUARDANDO CHEGADA", ...overrides });
 const line = overrides => clearanceEstimateLine(row(overrides));
 
 test("the next week runs from the Monday after this week to the Sunday, as the BI WEEKDAY(today, 2)", () => {
@@ -36,67 +37,75 @@ test("an IP is registered when it has the DUIMP number or date", () => {
   assert.deepEqual([...CLEARANCE_PERIODS], ["nextWeek", "all"]);
 });
 
-test("each line keeps the estimate fields of the IP, the supplier, the calculated ETA and the registration", () => {
-  const found = line({ ip_number: "024A/2026", clearance_analyst: " Leisiane ", registration_target_date: "2026-10-14",
-    clearance_estimate_brl: "834389.97", supplier_name: "HEXING ELECTRICAL (HANGZHOU)", eta_confirmed: "2026-10-18",
-    duimp_number: "26BR0001964550-4", status: "ENTREGUE" });
-  assert.deepEqual({ ...found, id: undefined }, { id: undefined, ipNumber: "024A/2026", registrationTargetDate: "2026-10-14",
-    analyst: "Leisiane", importer: "ELETRA MATRIZ", status: "ENTREGUE", supplier: "HEXING ELECTRICAL (HANGZHOU)",
-    eta: "2026-10-18", registered: true, estimateBrl: "834389.97" });
-  // Without a confirmed ETA, the ETA is calculated from the ETD, as in the other post-shipment screens.
-  assert.equal(line({ etd: "2026-09-01" }).eta !== null, true);
-  // A status outside the list falls back to the first one of the flow.
-  assert.equal(line({ status: "OUTRO" }).status, "AGUARDANDO PRODUÇÃO");
-  assert.equal(line({ clearance_analyst: "  " }).analyst, null);
+test("the reference date is the DUIMP date of a registered IP and, before the DUIMP, the ETA at the port", () => {
+  assert.deepEqual(referenceDate("2026-10-14", "2026-10-18"), { date: "2026-10-14", source: "duimp" });
+  assert.deepEqual(referenceDate(null, "2026-11-10"), { date: "2026-11-10", source: "eta" });
+  assert.deepEqual(referenceDate(null, null), { date: null, source: null });
 });
 
-test("the table follows the filters, in the order of the date to register (empty last) and the IP", () => {
+test("each line keeps the post-shipment data of the IP: taxes, analysts of the POs, supplier, ETA and DUIMP", () => {
+  const found = line({ ip_number: "Z-021A/2026", analysts: ["GABRIELA", " ", "EVELINE"], taxes_paid_brl: "3833400.68",
+    supplier_name: "ZLINK", eta_confirmed: "2026-10-18", duimp_number: "26BR0001993032-2", duimp_date: "2026-10-15",
+    status: "DESEMBARAÇO" });
+  assert.deepEqual({ ...found, id: undefined }, { id: undefined, ipNumber: "Z-021A/2026", referenceDate: "2026-10-15",
+    referenceSource: "duimp", analysts: ["EVELINE", "GABRIELA"], importer: "ELETRA MATRIZ", status: "DESEMBARAÇO",
+    supplier: "ZLINK", eta: "2026-10-18", registered: true, valueBrl: "3833400.68" });
+  // Without a DUIMP, the ETA; without a confirmed ETA, the ETA calculated from the ETD (SEA: ETD + 55 days).
+  const waiting = line({ etd: "2026-09-16" });
+  assert.deepEqual([waiting.referenceDate, waiting.referenceSource, waiting.registered], ["2026-11-10", "eta", false]);
+  assert.equal(line({ status: "OUTRO" }).status, "AGUARDANDO PRODUÇÃO");
+});
+
+test("the table follows the filters, in the order of the reference date (empty last) and the IP", () => {
   const lines = [
-    line({ ip_number: "B", registration_target_date: "2026-11-10", clearance_estimate_brl: "100.50",
-      clearance_analyst: "João", supplier_name: "NINGBO ZLINK", status: "AGUARDANDO CHEGADA" }),
-    line({ ip_number: "A", registration_target_date: "2026-11-10", clearance_estimate_brl: "0.25",
-      clearance_analyst: "Nathália", supplier_name: "HEXING", duimp_date: "2026-11-01", importer: "ELETRA CURITIBA" }),
-    line({ ip_number: "C", registration_target_date: null, clearance_estimate_brl: "1000" }),
-    line({ ip_number: "D", registration_target_date: "2026-11-16", clearance_estimate_brl: "7", status: "ENTREGUE" }),
-    line({ ip_number: "E", registration_target_date: "2026-11-08", clearance_estimate_brl: null }),
+    line({ ip_number: "B", eta_confirmed: "2026-11-10", taxes_paid_brl: "100.50", analysts: ["JOÃO"],
+      supplier_name: "NINGBO ZLINK" }),
+    line({ ip_number: "A", duimp_date: "2026-11-10", eta_confirmed: "2026-11-20", taxes_paid_brl: "0.25",
+      analysts: ["Nathália", "JUNIOR"], supplier_name: "HEXING", importer: "ELETRA CURITIBA" }),
+    line({ ip_number: "C", taxes_paid_brl: "1000" }),
+    line({ ip_number: "D", eta_confirmed: "2026-11-16", taxes_paid_brl: "7", status: "ENTREGUE" }),
+    line({ ip_number: "E", duimp_date: "2026-11-08" }),
+    // Without a date nor an amount the IP is out of the section.
+    line({ ip_number: "F", transport_mode: null }),
   ];
   const all = selectClearanceEstimates(lines, {}, today);
   assert.deepEqual(all.lines.map(item => item.ipNumber), ["E", "A", "B", "D", "C"]);
   assert.equal(all.totalBrl, "1107.75");
   assert.deepEqual(all.nextWeek, { from: "2026-11-09", to: "2026-11-15" });
-  // The next week is the BI filter: the date to register between Monday and Sunday of the next week.
+  // The next week: the DUIMP date, or the ETA before the DUIMP, between Monday and Sunday of the next week.
   const nextWeek = selectClearanceEstimates(lines, { period: "nextWeek" }, today);
   assert.deepEqual(nextWeek.lines.map(item => item.ipNumber), ["A", "B"]);
   assert.equal(nextWeek.totalBrl, "100.75");
   const pick = filters => selectClearanceEstimates(lines, filters, today).lines.map(item => item.ipNumber);
-  assert.deepEqual(pick({ registered: ["yes"] }), ["A"]);
-  assert.deepEqual(pick({ registered: ["no"] }), ["E", "B", "D", "C"]);
+  assert.deepEqual(pick({ registered: ["yes"] }), ["E", "A"]);
+  assert.deepEqual(pick({ registered: ["no"] }), ["B", "D", "C"]);
   assert.deepEqual(pick({ registered: ["yes", "no"] }), ["E", "A", "B", "D", "C"]);
-  assert.deepEqual(pick({ analysts: ["joão"] }), ["B"]);
+  // An IP with several PO analysts matches any of them.
+  assert.deepEqual(pick({ analysts: ["junior"] }), ["A"]);
+  assert.deepEqual(pick({ analysts: ["João", "Nathália"] }), ["A", "B"]);
   assert.deepEqual(pick({ suppliers: [" hexing "] }), ["A"]);
   assert.deepEqual(pick({ importers: ["ELETRA CURITIBA"] }), ["A"]);
   assert.deepEqual(pick({ status: ["ENTREGUE"] }), ["D"]);
   assert.deepEqual(pick({ ipNumber: "d" }), ["D"]);
-  // Nothing to sum gives zero, not an empty total.
   assert.equal(selectClearanceEstimates([], {}, today).totalBrl, "0");
 });
 
-test("the options list the analysts, importers and suppliers of the IPs with an estimate, sorted", () => {
-  const lines = [line({ clearance_analyst: "Nathália", supplier_name: "NINGBO ZLINK" }),
-    line({ clearance_analyst: "João", supplier_name: "HEXING", importer: "ELETRA CURITIBA" }),
-    line({ clearance_analyst: "João", supplier_name: null })];
-  // The options do not depend on the filters: the screen keeps offering the other values.
+test("the options list the analysts, importers and suppliers of the IPs of the section, sorted", () => {
+  const lines = [line({ analysts: ["Nathália"], supplier_name: "NINGBO ZLINK", taxes_paid_brl: "1" }),
+    line({ analysts: ["JOÃO", "Nathália"], supplier_name: "HEXING", importer: "ELETRA CURITIBA", taxes_paid_brl: "1" }),
+    line({ analysts: ["IGNORADO"], supplier_name: "FORA" })];
+  // The options do not depend on the filters, and IPs out of the section do not add options.
   const { options } = selectClearanceEstimates(lines, { analysts: ["Nathália"] }, today);
-  assert.deepEqual(options, { analysts: ["João", "Nathália"], importers: ["ELETRA CURITIBA", "ELETRA MATRIZ"],
+  assert.deepEqual(options, { analysts: ["JOÃO", "Nathália"], importers: ["ELETRA CURITIBA", "ELETRA MATRIZ"],
     suppliers: ["HEXING", "NINGBO ZLINK"] });
 });
 
 async function clearanceApp(t) {
   const queries = [];
   const rows = [
-    row({ ip_number: "Z-025/2026", registration_target_date: "2026-11-10", clearance_estimate_brl: "502679.69" }),
-    row({ ip_number: "024A/2026", registration_target_date: "2026-10-14", clearance_estimate_brl: "834389.97",
-      duimp_date: "2026-10-14", status: "ENTREGUE" }),
+    row({ ip_number: "Z-025/2026", eta_confirmed: "2026-11-10", taxes_paid_brl: "502679.69" }),
+    row({ ip_number: "024A/2026", duimp_date: "2026-10-14", eta_confirmed: "2026-10-18", taxes_paid_brl: "834389.97",
+      status: "ENTREGUE" }),
   ];
   const pool = {
     async query(sql, params = []) {
@@ -117,7 +126,7 @@ async function clearanceApp(t) {
   return { app, queries };
 }
 
-test("the route reads the IPs of the user's importers that have an estimate, and keeps deleted IPs out", async t => {
+test("the route reads the post-shipment data of the user's IPs, and keeps deleted IPs out", async t => {
   const { app, queries } = await clearanceApp(t);
   const response = await app.inject("/api/v1/reports/post-shipment/clearance-estimates?period=nextWeek");
   assert.equal(response.statusCode, 200, response.body);
@@ -125,10 +134,15 @@ test("the route reads the IPs of the user's importers that have an estimate, and
   const { sql, params } = queries.find(query => query.sql.includes("clearance_estimate_ip"));
   assert.deepEqual(params, [["ELETRA MATRIZ"]]);
   assert.match(sql, /p\.record_status <> 'DELETED'/u);
-  assert.match(sql, /p\.registration_target_date IS NOT NULL OR p\.clearance_estimate_brl IS NOT NULL/u);
+  assert.match(sql, /p\.taxes_paid_brl::text AS taxes_paid_brl/u);
+  // The analysts are those of the POs allocated to the IP.
+  assert.match(sql, /array_agg\(DISTINCT po\.analyst\)/u);
+  assert.match(sql, /a\.status = 'ACTIVE'/u);
   assert.match(sql, /LEFT JOIN catalog\.entry AS supplier ON supplier\.id = p\.supplier_entry_id/u);
   assert.match(sql, /WHEN p\.record_status = 'CANCELLED' THEN 'CANCELADO'/u);
   assert.match(sql, /WHEN p\.delivery_date IS NOT NULL THEN 'ENTREGUE'/u);
+  // No field of the removed M078 is read.
+  assert.doesNotMatch(sql, /clearance_analyst|registration_target_date|clearance_estimate_brl/u);
   const body = response.json();
   assert.deepEqual(body.lines.map(item => item.ipNumber), ["Z-025/2026"]);
   assert.equal(body.totalBrl, "502679.69");
@@ -161,6 +175,20 @@ test("the route requires the permission to read IPs", async t => {
   assert.equal((await app.inject("/api/v1/reports/post-shipment/clearance-estimates")).statusCode, 403);
 });
 
+test("M079 removes the empty clearance fields of M078, and the IP form no longer accepts them", async () => {
+  const sql = (await readFile(new URL("../migrations/M079_drop_ip_clearance_estimate.sql", import.meta.url), "utf8"))
+    .replace(/--.*$/gmu, "");
+  for (const column of ["clearance_analyst", "registration_target_date", "clearance_estimate_brl"]) {
+    assert.match(sql, new RegExp(`DROP COLUMN ${column}`, "u"));
+    assert.match(sql, new RegExp(`${column} IS NOT NULL`, "u"));
+  }
+  assert.match(sql, /RAISE EXCEPTION/u);
+  assert.doesNotMatch(sql, /\bUPDATE\b|\bDELETE\b|INSERT INTO/u);
+  for (const key of ["clearanceAnalyst", "registrationTargetDate", "clearanceEstimateBrl"]) {
+    assert.equal(processFollowupFieldKeys.includes(key), false, key);
+  }
+});
+
 test("the filters built by the web pass the API query schema, and the web lists match the API", async () => {
   const web = await import("../../web/lib/clearance-estimates.ts");
   const filters = { ...web.emptyClearanceFilters, ipNumber: " 024 ", analysts: ["João", "Nathália"], importers: ["FOR"],
@@ -176,16 +204,4 @@ test("the filters built by the web pass the API query schema, and the web lists 
   assert.deepEqual([...web.clearancePeriods], [...CLEARANCE_PERIODS]);
   assert.deepEqual([...web.clearanceRegistered], [...CLEARANCE_REGISTERED]);
   assert.deepEqual([...web.clearanceStatuses], [...POST_SHIPMENT_STATUSES]);
-});
-
-test("M078 adds the clearance estimate fields of the IP without touching existing data", async () => {
-  const sql = (await readFile(new URL("../migrations/M078_ip_clearance_estimate.sql", import.meta.url), "utf8"))
-    .replace(/--.*$/gmu, "");
-  assert.match(sql, /ADD COLUMN clearance_analyst varchar\(160\)/u);
-  assert.match(sql, /ADD COLUMN registration_target_date date/u);
-  assert.match(sql, /ADD COLUMN clearance_estimate_brl numeric\(18,2\)/u);
-  assert.match(sql, /clearance_analyst IS NULL OR length\(btrim\(clearance_analyst\)\) > 0/u);
-  assert.match(sql, /clearance_estimate_brl IS NULL OR clearance_estimate_brl >= 0/u);
-  for (const role of ["import_erp_app", "import_erp_hml_app"]) assert.match(sql, new RegExp(`TO ${role};`, "u"));
-  assert.doesNotMatch(sql, /\bUPDATE imports|\bDELETE\b|INSERT INTO|DROP COLUMN|ALTER COLUMN/u);
 });

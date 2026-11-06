@@ -28,8 +28,7 @@ test("product lines repeat shipment dates but never the IP costs", () => {
   const keys = productLineIpFields.map(field => field.key);
   for (const key of ["etd", "actualPortDepartureDate", "blNumber", "blDate", "arrivalDate"]) assert.ok(keys.includes(key), key);
   for (const key of ["freightCost", "freightCurrency", "taxesPaidBrl", "fineBrl", "storageBrl", "demurrageBrl",
-    "containerQuantity", "demurrageContainerQuantity", "clearanceAnalyst", "registrationTargetDate", "clearanceEstimateBrl"])
-    assert.ok(!keys.includes(key), key);
+    "containerQuantity", "demurrageContainerQuantity"]) assert.ok(!keys.includes(key), key);
 });
 
 test("new IP documents no longer offer BL", () => {
