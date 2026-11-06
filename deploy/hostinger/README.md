@@ -1,5 +1,13 @@
 # API ERP na VPS Hostinger
 
+## Cor do SLA TXT no Pós Embarque no HML (2026-11-06)
+
+Os commits `3a53062` (API) e `59a805f` (web) aplicam a regra do formato condicional do BI ao SLA TXT: até 20 dias verde (inclui negativos), acima de 20 vermelho, na tabela e na exportação; o cartão "SLA TXT médio" continua sem cor. `POST_SHIPMENT_TARGETS` passou a ter `slaTxt: 20`. A exportação do Pós Embarque não tem aba Resumo (decisão do usuário). Não há migration.
+
+O release `/opt/import-erp/apps/api/hml-release-6d002a1` foi montado com `git -c core.autocrlf=false archive 6d002a1:apps/api` (SHA-256 `fd338632…4003`, nenhuma fonte com CR), reaproveitando o `node_modules` de `hml-release-f714d95`, compilado na VPS e ativado pelo drop-in de 70 `z` `…-release-6d002a1.conf`; o worker foi movido com `enable-homologation-export-worker.sh 6d002a1`. Drop-ins e `ExecStart` anteriores: `/var/backups/import-erp/hml-post-sla-6d002a1-predeploy`. Rollback somente do código: remova o drop-in `6d002a1`, execute `systemctl daemon-reload`, reinicie `import-erp-hml-api` (volta a `hml-release-f714d95`) e rode `enable-homologation-export-worker.sh f714d95`.
+
+No release passaram os mesmos 6 arquivos de teste do release anterior. O ensaio só leitura repetiu as conferências e, na planilha gerada com o código do release, o SLA TXT teve 44 células verdes e 80 vermelhas, iguais à regra aplicada às linhas; as metas do resumo vieram com `slaTxt: 20`. `/health/live` respondeu 200, o resumo e a exportação sem sessão responderam 401, e API e worker ficaram ativos no `6d002a1`. Preview `homologacao` Ready (`erp-comex-dvk3l326c`). Scripts e log em `/root/claude-release-6d002a1` na VPS. Produção, `main` e as variáveis da Vercel não foram alteradas.
+
 ## Exportação Excel do Pós Embarque com as cores das regras no HML (2026-11-06)
 
 Os commits `f109489` (API) e `a690ed8` (web) exportam a tabela de IPs do Pós Embarque com a escolha de colunas (`docs/PLANO_EXPORTACAO_COLUNAS.md`, seção 11): `POST /api/v1/exports/post-shipment` (permissão `processes.read`), job `post-shipment-xlsx`, arquivo `pos-embarque.xlsx`, aba "Pós Embarque" com os filtros e as seleções da tela. LT Doc, LT Clearance e Prioridade levam as cores dos selos da tela (`exportToneColors`, tokens `--color-success|danger|warning-*` do tema claro). Não há migration (`job_type` é texto livre).
