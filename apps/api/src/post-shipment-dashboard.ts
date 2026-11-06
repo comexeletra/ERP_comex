@@ -119,13 +119,13 @@ export function postShipmentIp(row: PostShipmentIpRow, today: string): PostShipm
   };
 }
 
-const optionalText = (max: number) => z.string().trim().max(max).optional().transform(value => value || undefined);
+export const optionalText = (max: number) => z.string().trim().max(max).optional().transform(value => value || undefined);
 /** One or more values: a key repeated in the query string (a string when it has one value); empty ones dropped. */
-const valueList = <T extends string>(value: z.ZodType<T>) => z.preprocess(input => {
+export const valueList = <T extends string>(value: z.ZodType<T>) => z.preprocess(input => {
   const list = typeof input === "string" ? [input] : input;
   return Array.isArray(list) ? list.filter(item => item !== "") : list;
 }, z.array(value).max(500).transform(list => [...new Set(list.filter(item => item !== ""))])).optional();
-const textList = (max: number) => valueList(z.string().trim().max(max));
+export const textList = (max: number) => valueList(z.string().trim().max(max));
 
 /** Filters of the dashboard, the same for the summary and the table. `status` to `clearance` are chart selections. */
 export const postShipmentQuery = z.object({

@@ -24,6 +24,7 @@ import { registerFollowupRoutes } from "./followup.js";
 import { registerPurchaseRequestRoutes } from "./purchase-requests.js";
 import { registerExportJobRoutes } from "./export-jobs.js";
 import { E2E_CALCULATION_CONCURRENCY, registerShipmentLineRoutes } from "./shipment-lines.js";
+import { registerClearanceEstimateRoutes } from "./clearance-estimates.js";
 import { registerPostShipmentDashboardRoutes } from "./post-shipment-dashboard.js";
 import { registerPreShipmentDashboardRoutes } from "./pre-shipment-dashboard.js";
 import { createWorkGate } from "./work-gate.js";
@@ -122,6 +123,7 @@ const lineCalculationGate = createWorkGate(E2E_CALCULATION_CONCURRENCY);
 await registerShipmentLineRoutes(app, pool, lineCalculationGate);
 await registerPreShipmentDashboardRoutes(app, pool, lineCalculationGate);
 await registerPostShipmentDashboardRoutes(app, pool, lineCalculationGate);
+await registerClearanceEstimateRoutes(app, pool);
 await registerSupplierAliasRoutes(app, pool);
 
 app.get("/health/live", async () => ({ status: "ok" }));
