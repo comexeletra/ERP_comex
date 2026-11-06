@@ -266,3 +266,10 @@ A tabela do End to End pinta cada grupo de etapa (T0–T5) com a cor da planilha
 
 - No catálogo da API, cada coluna de etapa do contexto `end-to-end` leva `stage` (`apps/api/src/export-columns.ts`). Ao escrever as colunas escolhidas, o worker preenche o cabeçalho com a cor da etapa e uma linha inferior mais forte, e as células de valor com a mesma cor do cabeçalho (pedido do usuário em 2026-11-06, para as cores ficarem mais fortes no arquivo; antes era o tom claro, que continua só na tela). As demais colunas ficam sem preenchimento, e a previsão continua em itálico.
 - As cores do arquivo (`exportStageColors` em `apps/api/src/purchase-order-exports.ts`) são as do tema claro da tela (`-bg` e `-border`; o `-tint` não entra no arquivo). `test/export-columns.test.mjs` compara as duas e falha se divergirem: ao trocar uma cor de etapa em `tokens.css`, troque também no arquivo.
+
+## 11. Pós Embarque (2026-11-06)
+
+- Contexto `post-shipment`, tipo `post-shipment-xlsx`, rota `POST /api/v1/exports/post-shipment` (permissão `processes.read`, a mesma do painel) e arquivo `pos-embarque.xlsx`.
+- O corpo são os filtros e as seleções dos gráficos da tela (`postShipmentFilterBody`), lidos pelo worker com `postShipmentQuery`; a planilha tem as linhas da tabela (`queryPostShipmentLines`) numa aba "Pós Embarque".
+- Colunas: as 18 da tabela de IPs, na ordem da tela. O IP é obrigatório (identifica a linha). LT Doc, LT Clearance, SLA TXT e Qtd. de contêineres saem como número; Tipo de desembaraço como "On water" ou "Normal"; Prioridade como o valor do IP ou "Normal".
+- Cores (pedido do usuário): as colunas com regra de cor na tela levam a cor do selo, com o fundo e o texto dos tokens `--color-success|danger|warning-bg` e `-text` do tema claro (`exportToneColors`, conferido contra `tokens.css` em `test/export-jobs.test.mjs`). LT Doc: verde dentro da meta do modal, vermelho acima, sem cor sem meta. LT Clearance: verde até 7 dias, vermelho acima. Prioridade: amarelo nos IPs prioritários.
