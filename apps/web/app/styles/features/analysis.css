@@ -26,10 +26,10 @@
    and target lines. */
 .e2e-overview.post-dashboard-indicators { grid-template-columns: 1fr; margin: 16px 0; }
 .post-month-chart { overflow-x: auto; }
-.post-month-plot { --bar-area: 180px; --label-space: 28px; min-width: max-content; padding-top: 40px; position: relative; }
-.post-month-line { border-top: 2px dashed var(--color-text-muted); bottom: calc(var(--label-space) + var(--line-at, 0) * var(--bar-area)); left: 0; pointer-events: none; position: absolute; right: 0; z-index: var(--z-raised); }
+.post-month-plot { --label-space: 28px; --line-label-space: 72px; min-width: max-content; padding-right: var(--line-label-space); padding-top: 40px; position: relative; }
+.post-month-line { border-top: 2px dashed var(--color-text-muted); bottom: calc(var(--label-space) + var(--line-at, 0) * var(--bar-area)); left: 0; pointer-events: none; position: absolute; right: var(--line-label-space); z-index: var(--z-raised); }
 .post-month-line.is-target { border-top-color: var(--color-chart-on-time); }
-.post-month-line > span { background: var(--color-surface); color: var(--color-text-muted); font-size: var(--fs-2xs); padding: 0 4px; position: absolute; right: 0; top: -1.4em; }
+.post-month-line > span { color: var(--color-text-muted); display: grid; font-size: var(--fs-2xs); left: calc(100% + 6px); line-height: 1.2; position: absolute; top: 0; transform: translateY(calc(-50% - var(--label-shift, 0px))); white-space: nowrap; }
 .post-month-columns { align-items: end; display: grid; gap: 10px; grid-auto-columns: minmax(56px, 1fr); grid-auto-flow: column; list-style: none; margin: 0; padding: 0; }
 .post-month-columns li { animation: e2e-chart-rise var(--motion-chart) var(--ease-organic) both; animation-delay: calc(var(--step-index, 0) * 40ms); display: grid; grid-template-rows: var(--bar-area) 20px; min-width: 0; row-gap: 8px; }
 .post-month-column { display: block; height: var(--bar-area); position: relative; }

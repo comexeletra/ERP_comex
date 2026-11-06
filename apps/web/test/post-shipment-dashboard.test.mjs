@@ -5,7 +5,7 @@ import { en } from "../lib/i18n/en.ts";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
 import { zhCN } from "../lib/i18n/zh-CN.ts";
 import { atLeastTone, atMostTone, changeTone, emptyPostShipmentFilters, formatAverageDays, formatChange, formatContainers,
-  formatMonth, formatShareOf, parsePostShipmentFilters, postShipmentChannelColors, postShipmentChannels,
+  formatMonth, formatShareOf, lineLabelHeights, parsePostShipmentFilters, postShipmentChannelColors, postShipmentChannels,
   postShipmentFilterCount, postShipmentLinesQuery, postShipmentPriorities, postShipmentStatusColors, postShipmentStatuses,
   postShipmentFilterBody, postShipmentSlaTxtTarget, postShipmentSummaryQuery, postShipmentUrlQuery } from "../lib/post-shipment-dashboard.ts";
 import { preShipmentStatusColors } from "../lib/pre-shipment-dashboard.ts";
@@ -121,6 +121,27 @@ test("the post-shipment page shows the dashboard and keeps the load metrics in a
   for (const rule of [".post-month-chart", ".post-month-plot", ".post-month-line", ".post-month-line.is-target",
     ".post-month-columns", ".post-month-column", ".post-month-figures", ".post-month-bar", ".post-month-label"]) {
     assert.ok(styles.includes(`${rule} {`), rule);
+  }
+});
+
+test("the labels of the average and target lines sit beside the columns and never overlap each other", () => {
+  // A label stays centred on its line when it is far from the other one.
+  assert.deepEqual(lineLabelHeights([126, 36], 30), [126, 36]);
+  assert.deepEqual(lineLabelHeights([90], 30), [90]);
+  // Close lines move apart by the same amount, each one keeping its side, in the order they were given.
+  assert.deepEqual(lineLabelHeights([110, 100], 30), [120, 90]);
+  assert.deepEqual(lineLabelHeights([100, 100], 30), [85, 115]);
+  // Near the bottom the pair moves up instead of going below the plot.
+  assert.deepEqual(lineLabelHeights([0, 5], 30), [0, 30]);
+  assert.deepEqual(lineLabelHeights([], 30), []);
+  // The labels take a column of their own on the right, so the value of the last month is never under them.
+  assert.match(charts, /lineLabelHeights\(/u);
+  assert.match(styles, /\.post-month-plot \{[^}]*padding-right: var\(--line-label-space\)/u);
+  assert.match(styles, /\.post-month-line \{[^}]*right: var\(--line-label-space\)/u);
+  assert.match(styles, /\.post-month-line > span \{[^}]*left: calc\(100% \+ /u);
+  for (const m of [ptBR, en, zhCN]) {
+    assert.equal(typeof m.reports.postDashboard.average, "string");
+    assert.equal(typeof m.reports.postDashboard.target, "string");
   }
 });
 

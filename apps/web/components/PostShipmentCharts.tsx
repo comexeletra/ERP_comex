@@ -4,7 +4,7 @@ import { formatPercent, overviewShares } from "../lib/e2e-overview-format";
 import { statusLabel } from "../lib/i18n/labels";
 import type { Messages } from "../lib/i18n/pt-BR";
 import { atLeastTone, atMostTone, changeTone, formatAverageDays, formatChange, formatContainers, formatIps, formatMonth,
-  formatShareOf, formatWholeDays, postShipmentChannelColors, postShipmentChannels, postShipmentFixedChannels,
+  formatShareOf, formatWholeDays, lineLabelHeights, postShipmentChannelColors, postShipmentChannels, postShipmentFixedChannels,
   postShipmentPriorities, postShipmentPriorityColors, postShipmentStatusColors, postShipmentStatuses,
   type PostShipmentChannel, type PostShipmentMonth, type PostShipmentPriority, type PostShipmentStatus,
   type PostShipmentSummary, type PostShipmentTone } from "../lib/post-shipment-dashboard";
@@ -123,6 +123,10 @@ function Kpi({ label, value, help, tone = null, index, pressed, onClick, childre
     : <div className={className}>{body}</div>}</li>;
 }
 
+// Height of the columns of a monthly chart and the least distance between two line labels (two lines of text).
+const monthBarArea = 180;
+const monthLineLabelGap = 30;
+
 /** Values of a monthly chart: the value of each month and, for the lead time, its change against the month before. */
 type MonthValue = { month: string; value: number | null; change?: number | null; tip: [string, string][] };
 
@@ -138,14 +142,20 @@ function MonthlyColumns({ title, values, average, target, format }: {
   const max = Math.max(0, ...values.map(month => month.value ?? 0), average ?? 0, target ?? 0);
   // Bars and lines share the same area: the stylesheet places them by these fractions of its height.
   const fraction = (value: number | null) => (max > 0 && value !== null ? Math.max(0, value) / max : 0).toFixed(4);
-  const line = (value: number) => ({ "--line-at": fraction(value) }) as CSSProperties;
+  // The labels of the lines sit in a column of their own, right of the columns, apart from each other when the lines
+  // are close; each one is moved from its line by `--label-shift`.
+  const lines = [target ?? null, average].flatMap((value, index) => value === null ? []
+    : [{ key: index === 0 ? "target" : "average", value, name: index === 0 ? p.target : p.average }]);
+  const heights = lines.map(entry => Number(fraction(entry.value)) * monthBarArea);
+  const labels = lineLabelHeights(heights, monthLineLabelGap);
   if (!values.some(month => month.value !== null)) return <p className="muted">{p.noMonths}</p>;
   return <div className="post-month-chart" role="img" aria-label={`${title}: ${values.map(month =>
     `${formatMonth(month.month, locale)} ${format(month.value)}`).join(", ")}`}>
-    <div className="post-month-plot">
-      {target !== undefined && <span className="post-month-line is-target" style={line(target)}>
-        <span>{p.target(format(target))}</span></span>}
-      {average !== null && <span className="post-month-line" style={line(average)}><span>{p.average(format(average))}</span></span>}
+    <div className="post-month-plot" style={{ "--bar-area": `${monthBarArea}px` } as CSSProperties}>
+      {lines.map((entry, index) => <span key={entry.key}
+        className={`post-month-line${entry.key === "target" ? " is-target" : ""}`}
+        style={{ "--line-at": fraction(entry.value), "--label-shift": `${(labels[index] - heights[index]).toFixed(1)}px` } as CSSProperties}>
+        <span><span>{entry.name}</span><span>{format(entry.value)}</span></span></span>)}
       <ol className="post-month-columns">
         {values.map((month, index) => <li key={month.month} style={{ "--step-index": index } as CSSProperties}>
           <Tooltip followCursor content={<div className="e2e-chart-tip">

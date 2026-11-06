@@ -173,6 +173,22 @@ export function formatMonth(month: string, locale: string): string {
   return `${name}/${year}`;
 }
 
+/**
+ * Heights, from the bottom of a monthly chart, of the labels of its dashed lines (average and target): each label is
+ * centred on its line and, when two lines are closer than `gap`, both move apart by the same amount (moving up
+ * together near the bottom), so the labels never overlap. Made for the two lines of a chart; returns the input order.
+ */
+export function lineLabelHeights(lines: readonly number[], gap: number): number[] {
+  const order = lines.map((_, index) => index).sort((a, b) => lines[a] - lines[b]);
+  const heights = [...lines];
+  order.forEach((index, rank) => {
+    if (rank > 0) heights[index] = Math.max(lines[index], heights[order[rank - 1]] + gap);
+  });
+  const moved = order.reduce((total, index) => total + heights[index] - lines[index], 0) / Math.max(1, order.length);
+  const lowest = Math.min(0, ...order.map(index => heights[index] - moved));
+  return heights.map(height => height - moved - lowest);
+}
+
 export type PostShipmentMonth = {
   month: string; ips: number; onWater: number; dsa: number | null;
   leadTimeRealTime: number | null; leadTimeDelivered: number | null;
