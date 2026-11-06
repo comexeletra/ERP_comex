@@ -26,8 +26,6 @@ export type PostShipmentClearanceType = (typeof POST_SHIPMENT_CLEARANCE_TYPES)[n
 
 /** Targets of the BI: DSA ≥ 70%, average LT DOC ≤ 7 days and LT Clearance ≤ 7 days (green up to the target). */
 export const POST_SHIPMENT_TARGETS = { dsa: 0.7, avgLtDoc: 7, leadTime: 7 } as const;
-/** At most this many months in the monthly charts (the last ones of the period). */
-const MAX_MONTHS = 36;
 
 const channelNames: Record<Exclude<PostShipmentChannel, "other" | "none">, readonly string[]> = {
   green: ["GREEN", "VERDE"], yellow: ["YELLOW", "AMARELO"], red: ["RED", "VERMELHO"], gray: ["GRAY", "GREY", "CINZA"],
@@ -144,14 +142,18 @@ const linesQuery = postShipmentQuery.extend({
 const inPeriod = (ip: PostShipmentIp, { dateFrom, dateTo }: Pick<PostShipmentFilters, "dateFrom" | "dateTo">) =>
   (!dateFrom || ip.referenceDate >= dateFrom) && (!dateTo || ip.referenceDate <= dateTo);
 
-/** The IPs of the period and of every chart selection except `ignored` (the cross-filter of the charts). */
-function selected(ips: readonly PostShipmentIp[], filters: Partial<PostShipmentFilters>, ignored?: Selection) {
+/**
+ * The IPs of the period and of every chart selection, except those `ignored`: a chart ignores its own selection
+ * (the cross-filter), and the monthly charts ignore the date.
+ */
+function selected(ips: readonly PostShipmentIp[], filters: Partial<PostShipmentFilters>,
+  ignored: readonly (Selection | "date")[] = []) {
   const keep = (selection: Selection, value: string) => {
-    const chosen = selection === ignored ? undefined : filters[selection] as readonly string[] | undefined;
+    const chosen = ignored.includes(selection) ? undefined : filters[selection] as readonly string[] | undefined;
     return !chosen?.length || chosen.includes(value);
   };
-  return ips.filter(ip => inPeriod(ip, filters) && keep("status", ip.status) && keep("channel", ip.channelKey)
-    && keep("priority", ip.priorityKey) && keep("clearance", ip.clearanceType));
+  return ips.filter(ip => (ignored.includes("date") || inPeriod(ip, filters)) && keep("status", ip.status)
+    && keep("channel", ip.channelKey) && keep("priority", ip.priorityKey) && keep("clearance", ip.clearanceType));
 }
 
 function counts<Key extends string>(keys: readonly Key[], ips: readonly PostShipmentIp[], keyOf: (ip: PostShipmentIp) => Key) {
@@ -175,32 +177,35 @@ function nextMonth(month: string): string {
 }
 
 /**
- * Months of the monthly charts: those of the date filter; without it, from January of the current year to the
- * month of today (the BI shows the current year). A filter with one bound goes up to today or from January of
- * its year. At most the last 36 months.
+ * Months of the monthly charts: the whole history, from the month of the earliest reference date to the month of
+ * today, whatever the date filter (user decision of 2026-11-06). No IP, no month.
  */
-export function postShipmentMonths({ dateFrom, dateTo }: Pick<PostShipmentFilters, "dateFrom" | "dateTo">, today: string) {
-  const last = monthOf(dateTo ?? today);
-  const first = dateFrom ? monthOf(dateFrom) : `${last.slice(0, 4)}-01`;
+export function postShipmentMonths(referenceDates: readonly string[], today: string) {
+  if (!referenceDates.length) return [];
+  const last = monthOf(today);
+  const first = referenceDates.reduce((earliest, date) => date < earliest ? date : earliest).slice(0, 7);
   const months: string[] = [];
-  for (let month = first; month <= last; month = nextMonth(month)) months.push(month);
-  return months.slice(-MAX_MONTHS);
+  for (let month = first < last ? first : last; month <= last; month = nextMonth(month)) months.push(month);
+  return months;
 }
 
 export function summarizePostShipment(ips: readonly PostShipmentIp[], filters: Partial<PostShipmentFilters>, today: string) {
   const all = selected(ips, filters);
   // The on water card is the clearance chart: its count and the DSA keep the IPs of the other clearance type.
-  const anyClearance = selected(ips, filters, "clearance");
+  const anyClearance = selected(ips, filters, ["clearance"]);
   const onWater = anyClearance.filter(ip => ip.clearanceType === "onWater").length;
   let containers = 0n;
   for (const ip of all) if (ip.containerQuantity) containers += scaledQuantity(ip.containerQuantity);
 
-  const months = postShipmentMonths(filters, today).map(month => {
-    const ofMonth = anyClearance.filter(ip => monthOf(ip.referenceDate) === month);
+  // The monthly charts always show the whole history: they follow every filter and selection but the date.
+  const history = selected(ips, filters, ["date"]);
+  const historyAnyClearance = selected(ips, filters, ["date", "clearance"]);
+  const months = postShipmentMonths(historyAnyClearance.map(ip => ip.referenceDate), today).map(month => {
+    const ofMonth = historyAnyClearance.filter(ip => monthOf(ip.referenceDate) === month);
     const monthOnWater = ofMonth.filter(ip => ip.clearanceType === "onWater").length;
     return { month, ips: ofMonth.length, onWater: monthOnWater, dsa: ofMonth.length ? monthOnWater / ofMonth.length : null,
-      leadTimeRealTime: mean(all.filter(ip => monthOf(ip.referenceDate) === month).map(ip => ip.leadTime)),
-      leadTimeDelivered: mean(all.filter(ip => ip.deliveryDate !== null && monthOf(ip.deliveryDate) === month)
+      leadTimeRealTime: mean(history.filter(ip => monthOf(ip.referenceDate) === month).map(ip => ip.leadTime)),
+      leadTimeDelivered: mean(history.filter(ip => ip.deliveryDate !== null && monthOf(ip.deliveryDate) === month)
         .map(ip => ip.leadTime)) };
   }).map((month, index, list) => ({ ...month,
     leadTimeRealTimeChange: change(month.leadTimeRealTime, list[index - 1]?.leadTimeRealTime ?? null),
@@ -210,9 +215,9 @@ export function summarizePostShipment(ips: readonly PostShipmentIp[], filters: P
     totalIps: all.length, containers: decimalQuantity(containers), onWater,
     dsa: anyClearance.length ? onWater / anyClearance.length : null,
     avgLtDoc: mean(all.map(ip => ip.ltDoc)), avgSlaTxt: mean(all.map(ip => ip.slaTxt)),
-    byStatus: counts(POST_SHIPMENT_STATUSES, selected(ips, filters, "status"), ip => ip.status),
-    byChannel: counts(POST_SHIPMENT_CHANNELS, selected(ips, filters, "channel"), ip => ip.channelKey),
-    byPriority: counts(POST_SHIPMENT_PRIORITIES, selected(ips, filters, "priority"), ip => ip.priorityKey),
+    byStatus: counts(POST_SHIPMENT_STATUSES, selected(ips, filters, ["status"]), ip => ip.status),
+    byChannel: counts(POST_SHIPMENT_CHANNELS, selected(ips, filters, ["channel"]), ip => ip.channelKey),
+    byPriority: counts(POST_SHIPMENT_PRIORITIES, selected(ips, filters, ["priority"]), ip => ip.priorityKey),
     months,
     // The dashed line of each monthly chart: the average of the months that have a value.
     monthlyAverages: { dsa: mean(months.map(month => month.dsa)),

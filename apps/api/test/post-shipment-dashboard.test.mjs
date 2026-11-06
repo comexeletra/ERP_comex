@@ -147,36 +147,38 @@ test("the date filter uses the reference date: the delivery, or today for the IP
   assert.equal(summarizePostShipment(ips, { dateTo: "2026-03-10" }, today).totalIps, 3);
 });
 
-test("the months go from January of the current year to today, or cover the date filter", () => {
-  assert.deepEqual(postShipmentMonths({}, "2026-03-06"), ["2026-01", "2026-02", "2026-03"]);
-  assert.deepEqual(postShipmentMonths({ dateFrom: "2025-11-20", dateTo: "2026-02-03" }, today),
+test("the months are the whole history: from the earliest reference date to the month of today", () => {
+  assert.deepEqual(postShipmentMonths([], today), []);
+  assert.deepEqual(postShipmentMonths(["2026-01-05", "2025-11-20", "2026-01-31"], "2026-02-03"),
     ["2025-11", "2025-12", "2026-01", "2026-02"]);
-  assert.deepEqual(postShipmentMonths({ dateFrom: "2026-10-01" }, today), ["2026-10", "2026-11"]);
-  assert.deepEqual(postShipmentMonths({ dateTo: "2025-02-10" }, today), ["2025-01", "2025-02"]);
-  // At most the last 36 months.
-  const long = postShipmentMonths({ dateFrom: "2020-01-01", dateTo: "2026-11-30" }, today);
-  assert.deepEqual([long.length, long[0], long.at(-1)], [36, "2023-12", "2026-11"]);
+  assert.deepEqual(postShipmentMonths([today], today), ["2026-11"]);
 });
 
-test("the monthly charts: on water share, real-time and delivered lead time, change and average of the months", () => {
+test("the monthly charts ignore the date filter and follow the other filters and selections", () => {
   const summary = summarizePostShipment(dataset(), { dateFrom: "2026-01-01", dateTo: "2026-03-31" }, today);
-  assert.deepEqual(summary.months.map(month => month.month), ["2026-01", "2026-02", "2026-03"]);
-  const [january, february, march] = summary.months;
+  // The cards follow the period; the monthly charts keep the whole history.
+  assert.equal(summary.totalIps, 3);
+  assert.deepEqual(summary.months, summarizePostShipment(dataset(), {}, today).months);
+  assert.equal(summary.months.length, 11);
+  const month = key => summary.months.find(item => item.month === key);
+  const [january, february, march, november] = ["2026-01", "2026-02", "2026-03", "2026-11"].map(month);
   assert.deepEqual([january.ips, january.onWater, january.dsa], [2, 1, 0.5]);
   // A month with IPs and none on water is 0%; a month without IPs has no value.
   assert.deepEqual([march.ips, march.onWater, march.dsa], [1, 0, 0]);
   assert.deepEqual([february.ips, february.dsa, february.leadTimeRealTime, february.leadTimeDelivered], [0, null, null, null]);
   assert.deepEqual([january.leadTimeRealTime, january.leadTimeDelivered], [15, 15]);
   assert.deepEqual([march.leadTimeRealTime, march.leadTimeDelivered], [9, 9]);
+  // In the month of today, the IPs not delivered count with the lead time up to today; the delivered chart does not.
+  assert.deepEqual([november.ips, november.onWater, november.dsa], [2, 1, 0.5]);
+  assert.deepEqual([november.leadTimeRealTime, november.leadTimeDelivered], [5, null]);
   // Change against the month before: none when the month before has no value.
   assert.equal(january.leadTimeRealTimeChange, null);
   assert.equal(march.leadTimeRealTimeChange, null);
-  assert.deepEqual(summary.monthlyAverages, { dsa: 0.25, leadTimeRealTime: 12, leadTimeDelivered: 12 });
-
-  // In the month of today, the IPs not delivered count with the lead time up to today; the delivered chart does not.
-  const november = summarizePostShipment(dataset(), {}, today).months.at(-1);
-  assert.deepEqual([november.month, november.ips, november.onWater, november.dsa], ["2026-11", 2, 1, 0.5]);
-  assert.deepEqual([november.leadTimeRealTime, november.leadTimeDelivered], [5, null]);
+  assert.deepEqual(summary.monthlyAverages, { dsa: 1 / 3, leadTimeRealTime: 29 / 3, leadTimeDelivered: 12 });
+  // The other filters still apply: only the priority IPs (one delivered in January, one in the clearance today).
+  const priority = summarizePostShipment(dataset(), { priority: ["priority"] }, today);
+  assert.deepEqual(priority.months.find(item => item.month === "2026-01").ips, 1);
+  assert.deepEqual(priority.months.find(item => item.month === "2026-11").ips, 1);
 
   const day = "2026-02-20";
   const change = summarizePostShipment([
