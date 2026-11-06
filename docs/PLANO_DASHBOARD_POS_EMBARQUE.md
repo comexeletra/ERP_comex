@@ -134,6 +134,10 @@ seguem o modelo visual e o filtro cruzado do Pré Embarque (`docs/PLANO_DASHBOAR
 ## Ajustes do usuário (2026-11-06, depois da primeira entrega)
 
 - **Ordem da tela:** filtros, cartões de número, tabela de IPs e, depois, os gráficos.
+- **Cor do SLA TXT** (regra do formato condicional do BI): até 20 dias verde (0% e o menor valor da coluna, inclui
+  negativos), acima de 20 vermelho, na tabela e na exportação. O cartão "SLA TXT médio" fica sem cor: no BI ele está
+  verde com 38,91, fora dessa régua, e não há regra própria.
+- **Exportação:** sem aba Resumo (decisão do usuário).
 - **Gráficos por mês** (DSA e os dois de lead time): não seguem o filtro Date e mostram todo o histórico, do mês da
   data de referência mais antiga ao mês de hoje, sem limite de meses (a área rola na horizontal). Seguem os demais
   filtros e as seleções. Substitui a proposta anterior (ano corrente; com o filtro, os meses do período).
@@ -142,9 +146,7 @@ seguem o modelo visual e o filtro cruzado do Pré Embarque (`docs/PLANO_DASHBOAR
 
 O usuário pediu para executar e rever depois estes pontos de acabamento:
 
-1. **Cor do SLA TXT:** sem cor, na tabela e no cartão Avg SLA TXT (no print, 5 e 19 verdes e 27 a 396 vermelhos,
-   mas o cartão de 38,91 está verde).
-2. **Filtro Date:** usa sempre a data de referência (entrega ou hoje) em todas as medidas; o BI usa a Delivery Date
+1. **Filtro Date:** usa sempre a data de referência (entrega ou hoje) em todas as medidas; o BI usa a Delivery Date
    em algumas. Só muda o resultado quando o período inclui hoje.
 
 ## Implementação
