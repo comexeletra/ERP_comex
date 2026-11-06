@@ -39,6 +39,9 @@
 .post-month-change.is-bad { color: var(--color-danger-text); }
 .post-month-bar { background: var(--chart-color); border-radius: var(--radius-xs) var(--radius-xs) 0 0; bottom: 0; display: block; height: calc(var(--bar-at, 0) * 100%); left: 0; position: absolute; right: 0; transition: height var(--motion-chart) var(--ease-organic); }
 .post-month-label { color: var(--color-text-muted); font-size: var(--fs-xs); line-height: 20px; text-align: center; white-space: nowrap; }
+/* Clearance estimates (post-shipment) */
+.clearance-money { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.clearance-total > th, .clearance-total > td { border-top: 2px solid var(--color-border); color: var(--color-text-strong); font-weight: 700; }
 @media (prefers-reduced-motion: reduce) { .post-month-columns li, .post-month-bar { animation: none !important; transition: none !important; } }
 
 /* Quality queue */

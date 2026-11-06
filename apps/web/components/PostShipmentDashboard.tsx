@@ -15,6 +15,7 @@ import { atMostTone, emptyPostShipmentFilters, formatContainers, formatIps, pars
 import { nextChartSelection } from "../lib/purchase-order-lines";
 import type { SearchableOption } from "../lib/searchable-options";
 import { fetchRetryingTransient } from "../lib/transient-retry";
+import ClearanceEstimates from "./ClearanceEstimates";
 import DateRangeFilter from "./DateRangeFilter";
 import E2eCollapsible from "./E2eCollapsible";
 import ExportColumnsDialog from "./ExportColumnsDialog";
@@ -252,5 +253,8 @@ export default function PostShipmentDashboard({ initialQuery }: { initialQuery: 
         channel: (value: PostShipmentChannel, additive) => select("channel", value, additive),
         priority: (value, additive) => select("priority", value, additive) }}
       onClear={clearChart} />}
+
+    {/* Second section of the BI post-shipment page, with its own filters (docs/PLANO_ESTIMATIVA_DESEMBARACO.md). */}
+    <ClearanceEstimates />
   </>;
 }
