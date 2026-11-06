@@ -44,6 +44,10 @@ export const ipPostShipmentFields: IpPostShipmentField[] = [
   { key: "documentsOkDate", type: "date" },
   { key: "storageDueOverride", type: "date" },
   { key: "taxesPaidBrl", type: "money", ipOnly: true },
+  // Clearance estimate of the IP (docs/PLANO_ESTIMATIVA_DESEMBARACO.md).
+  { key: "clearanceAnalyst", max: 160, ipOnly: true },
+  { key: "registrationTargetDate", type: "date", ipOnly: true },
+  { key: "clearanceEstimateBrl", type: "money", ipOnly: true },
   { key: "fineBrl", type: "money", ipOnly: true },
   { key: "storageBrl", type: "money", ipOnly: true },
   { key: "demurrageBrl", type: "money", ipOnly: true },

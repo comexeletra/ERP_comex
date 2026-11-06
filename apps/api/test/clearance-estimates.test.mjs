@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import Fastify from "fastify";
 import { registerAuthorization } from "../dist/authorization.js";
@@ -175,4 +176,16 @@ test("the filters built by the web pass the API query schema, and the web lists 
   assert.deepEqual([...web.clearancePeriods], [...CLEARANCE_PERIODS]);
   assert.deepEqual([...web.clearanceRegistered], [...CLEARANCE_REGISTERED]);
   assert.deepEqual([...web.clearanceStatuses], [...POST_SHIPMENT_STATUSES]);
+});
+
+test("M078 adds the clearance estimate fields of the IP without touching existing data", async () => {
+  const sql = (await readFile(new URL("../migrations/M078_ip_clearance_estimate.sql", import.meta.url), "utf8"))
+    .replace(/--.*$/gmu, "");
+  assert.match(sql, /ADD COLUMN clearance_analyst varchar\(160\)/u);
+  assert.match(sql, /ADD COLUMN registration_target_date date/u);
+  assert.match(sql, /ADD COLUMN clearance_estimate_brl numeric\(18,2\)/u);
+  assert.match(sql, /clearance_analyst IS NULL OR length\(btrim\(clearance_analyst\)\) > 0/u);
+  assert.match(sql, /clearance_estimate_brl IS NULL OR clearance_estimate_brl >= 0/u);
+  for (const role of ["import_erp_app", "import_erp_hml_app"]) assert.match(sql, new RegExp(`TO ${role};`, "u"));
+  assert.doesNotMatch(sql, /\bUPDATE imports|\bDELETE\b|INSERT INTO|DROP COLUMN|ALTER COLUMN/u);
 });

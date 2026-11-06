@@ -51,6 +51,8 @@ const processFields: Record<string, [string, FieldType, number?]> = {
   containerQuantity: ["container_quantity", "money"], forwarder: ["forwarder", "text", 160],
   documentsOkDate: ["documents_ok_date", "date"], storageDueOverride: ["storage_due_override", "date"],
   taxesPaidBrl: ["taxes_paid_brl", "money"], fineBrl: ["fine_brl", "money"],
+  clearanceAnalyst: ["clearance_analyst", "text", 160], registrationTargetDate: ["registration_target_date", "date"],
+  clearanceEstimateBrl: ["clearance_estimate_brl", "money"],
   storageBrl: ["storage_brl", "money"], demurrageBrl: ["demurrage_brl", "money"],
   demurrageContainerQuantity: ["demurrage_container_quantity", "integer"],
 };
