@@ -116,8 +116,9 @@ export function postShipmentFilterCount(filters: PostShipmentFilters): number {
   return keys.size;
 }
 
-/** Targets of the BI, the same the API returns in the summary: LT Clearance up to 7 days is green. */
+/** Targets of the BI, the same the API returns in the summary: LT Clearance up to 7 days and SLA TXT up to 20 are green. */
 export const postShipmentLeadTimeTarget = 7;
+export const postShipmentSlaTxtTarget = 20;
 
 export type PostShipmentTone = "good" | "bad";
 /** Green up to the target, red above it (LT DOC average and LT Clearance); null without a value. */
@@ -182,7 +183,7 @@ export type PostShipmentSummary = {
   avgSlaTxt: number | null; byStatus: Record<PostShipmentStatus, number>; byChannel: Record<PostShipmentChannel, number>;
   byPriority: Record<PostShipmentPriority, number>; months: PostShipmentMonth[];
   monthlyAverages: { dsa: number | null; leadTimeRealTime: number | null; leadTimeDelivered: number | null };
-  targets: { dsa: number; avgLtDoc: number; leadTime: number };
+  targets: { dsa: number; avgLtDoc: number; leadTime: number; slaTxt: number };
 };
 export type PostShipmentLine = {
   id: string; ipNumber: string; importer: string | null; necessityDate: string | null; priority: string | null;

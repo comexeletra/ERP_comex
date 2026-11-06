@@ -8,7 +8,7 @@ import { e2eToday, formatE2eDate } from "../lib/e2e-analysis";
 import { statusLabel } from "../lib/i18n/labels";
 import { effectiveSelection } from "../lib/multi-select";
 import { atMostTone, emptyPostShipmentFilters, formatContainers, formatIps, parsePostShipmentFilters, postShipmentFilterBody, postShipmentFilterCount,
-  postShipmentLeadTimeTarget, postShipmentLinesQuery, postShipmentPriorities, postShipmentStatusColors, postShipmentStatuses, postShipmentSummaryQuery,
+  postShipmentLeadTimeTarget, postShipmentLinesQuery, postShipmentPriorities, postShipmentSlaTxtTarget, postShipmentStatusColors, postShipmentStatuses, postShipmentSummaryQuery,
   postShipmentUrlQuery, type PostShipmentChannel, type PostShipmentFilterOptions, type PostShipmentFilters,
   type PostShipmentLine, type PostShipmentLinesPage, type PostShipmentPriority, type PostShipmentStatus,
   type PostShipmentSummary } from "../lib/post-shipment-dashboard";
@@ -82,6 +82,9 @@ function LineRow({ line }: { line: PostShipmentLine }) {
     : line.ltDocOnTarget ? p.ltDocOnTarget(String(line.ltDocTarget)) : p.ltDocLate(String(line.ltDocTarget));
   const target = String(postShipmentLeadTimeTarget);
   const leadTimeTone = atMostTone(line.leadTime, postShipmentLeadTimeTarget);
+  // SLA TXT: green up to 20 days, red above (the BI rule).
+  const slaTarget = String(postShipmentSlaTxtTarget);
+  const slaTxtTone = atMostTone(line.slaTxt, postShipmentSlaTxtTarget);
   return <tr>
     <td>{date(line.necessityDate)}</td>
     <td><Link className="text-link" href={`/processes/${line.id}`}>{line.ipNumber}</Link></td>
@@ -99,7 +102,8 @@ function LineRow({ line }: { line: PostShipmentLine }) {
     <td><DaysBadge days={line.leadTime} onTarget={leadTimeTone === null ? null : leadTimeTone === "good"}
       tip={leadTimeTone === "good" ? p.leadTimeOnTarget(target) : p.leadTimeLate(target)} /></td>
     <td>{p.clearanceTypes[line.clearanceType]}</td>
-    <td>{line.slaTxt ?? "—"}</td>
+    <td><DaysBadge days={line.slaTxt} onTarget={slaTxtTone === null ? null : slaTxtTone === "good"}
+      tip={slaTxtTone === "good" ? p.leadTimeOnTarget(slaTarget) : p.leadTimeLate(slaTarget)} /></td>
   </tr>;
 }
 

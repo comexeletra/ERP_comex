@@ -7,7 +7,7 @@ import { zhCN } from "../lib/i18n/zh-CN.ts";
 import { atLeastTone, atMostTone, changeTone, emptyPostShipmentFilters, formatAverageDays, formatChange, formatContainers,
   formatMonth, formatShareOf, parsePostShipmentFilters, postShipmentChannelColors, postShipmentChannels,
   postShipmentFilterCount, postShipmentLinesQuery, postShipmentPriorities, postShipmentStatusColors, postShipmentStatuses,
-  postShipmentFilterBody, postShipmentSummaryQuery, postShipmentUrlQuery } from "../lib/post-shipment-dashboard.ts";
+  postShipmentFilterBody, postShipmentSlaTxtTarget, postShipmentSummaryQuery, postShipmentUrlQuery } from "../lib/post-shipment-dashboard.ts";
 import { preShipmentStatusColors } from "../lib/pre-shipment-dashboard.ts";
 import { choosableColumns, columnsBody } from "../lib/export-columns.ts";
 
@@ -51,6 +51,10 @@ test("the targets colour the numbers: green within, red outside, and a falling l
   assert.deepEqual([atLeastTone(0.7, 0.7), atLeastTone(0.1757, 0.7), atLeastTone(null, 0.7)], ["good", "bad", null]);
   assert.deepEqual([atMostTone(7, 7), atMostTone(-31, 7), atMostTone(8, 7), atMostTone(null, 7)], ["good", "good", "bad", null]);
   assert.deepEqual([changeTone(-0.1789), changeTone(0.5682), changeTone(0), changeTone(null)], ["good", "bad", null, null]);
+  // SLA TXT: green up to 20 days (negatives included), red above, as the BI rule; the table cell uses it.
+  assert.equal(postShipmentSlaTxtTarget, 20);
+  assert.deepEqual([atMostTone(-9, 20), atMostTone(20, 20), atMostTone(21, 20)], ["good", "good", "bad"]);
+  assert.match(dashboard, /<DaysBadge days=\{line\.slaTxt\}/u);
 });
 
 test("the numbers follow the BI formats in the interface language", () => {
