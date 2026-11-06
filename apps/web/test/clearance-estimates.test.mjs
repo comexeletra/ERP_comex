@@ -38,6 +38,8 @@ test("the table shows the columns of the BI, in its order, with the total of the
   // The date tells whether it is the DUIMP or, before it, the ETA.
   assert.match(section, /t\.referenceSources\[line\.referenceSource\]/u);
   assert.match(section, /<tfoot><tr className="clearance-total">/u);
+  // The IP, the registration date and the amount are the key columns, in green as in the BI.
+  assert.equal((section.match(/<th className="clearance-key[^"]*">/gu) ?? []).length, 3);
   assert.match(section, /formatBrl\(data\.totalBrl, locale\)/u);
   for (const m of [ptBR, en, zhCN]) {
     const t = m.reports.clearanceEstimates;
@@ -49,6 +51,9 @@ test("the table shows the columns of the BI, in its order, with the total of the
 });
 
 test("the period applies at once and starts on next week; the other filters wait for Apply", () => {
+  // The period is the last filter of the band, a one-choice slicer as in the BI.
+  assert.match(section, /<fieldset className="clearance-period">/u);
+  assert.ok(section.indexOf('className="clearance-period"') > section.indexOf("t.registered}<MultiSelectFilter"));
   assert.match(section, /useState<ClearanceFilters>\(\{ \.\.\.emptyClearanceFilters, period: "nextWeek" \}\)/u);
   assert.match(section, /onClick=\{\(\) => choosePeriod\(period\)\}/u);
   assert.match(section, /useDebouncedValue\(clearanceEstimatesQueryParams\(applied\)\.toString\(\), fetchDelayMs\)/u);
@@ -56,7 +61,8 @@ test("the period applies at once and starts on next week; the other filters wait
 });
 
 test("the section has its own style rules", () => {
-  for (const rule of [".clearance-money {", ".clearance-total > th, .clearance-total > td {"]) {
+  for (const rule of [".clearance-title {", ".clearance-period {", ".clearance-period-option {", ".clearance-table {",
+    ".clearance-key {", ".clearance-money {", ".clearance-total > th, .clearance-total > td {"]) {
     assert.ok(styles.includes(rule), rule);
   }
 });

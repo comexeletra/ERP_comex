@@ -83,14 +83,9 @@ export default function ClearanceEstimates() {
   const statusOptions: SearchableOption[] = clearanceStatuses.map(status => ({ value: status, label: statusLabel(m, status) }));
   const registeredOptions: SearchableOption[] = clearanceRegistered.map(value => ({ value, label: t.registeredOptions[value] }));
 
+  // As in the BI: the title, one band of filters ending with the period, then the table with the key columns in green.
   return <section className="card pre-dashboard-table" aria-label={t.title}>
-    <h2>{t.title}</h2>
-    <p className="muted pre-dashboard-help">{t.help}</p>
-    <nav className="tabs" aria-label={t.period}>
-      {clearancePeriods.map(period => <button key={period} type="button" aria-pressed={applied.period === period}
-        className={`tab${applied.period === period ? " active" : ""}`} onClick={() => choosePeriod(period)}>
-        {t.periods[period]}</button>)}
-    </nav>
+    <h2 className="clearance-title">{t.title}</h2>
     <form className="portfolio-filter product-lines-filter e2e-overview-filters" aria-label={t.filtersLabel} onSubmit={submit}>
       <label>{t.ipNumber}<input value={draft.ipNumber} placeholder={t.searchPlaceholder} maxLength={80}
         onChange={event => setDraft({ ...draft, ipNumber: event.target.value })} /></label>
@@ -101,9 +96,16 @@ export default function ClearanceEstimates() {
       {list("suppliers", t.supplier)}
       <label>{t.registered}<MultiSelectFilter ariaLabel={t.registered} allLabel={all} values={draft.registered}
         options={registeredOptions} onChange={next => setDraft({ ...draft, registered: next as ClearanceRegistered[] })} /></label>
+      {/* The BI period slicer: one choice, applied at once. */}
+      <fieldset className="clearance-period">
+        <legend>{t.period}</legend>
+        {clearancePeriods.map(period => <button key={period} type="button" aria-pressed={applied.period === period}
+          className="clearance-period-option" onClick={() => choosePeriod(period)}>{t.periods[period]}</button>)}
+      </fieldset>
       <div className="button-row product-lines-filter-actions"><button className="button" type="submit">{t.apply}</button>
         <button className="button secondary" type="button" onClick={clear}>{t.clear}</button></div>
     </form>
+    <p className="muted pre-dashboard-help">{t.help}</p>
 
     <div aria-live="polite">
       {!current && <p role="status">{t.loading}</p>}
@@ -112,14 +114,15 @@ export default function ClearanceEstimates() {
         <p>{t.found(formatIps(data.lines.length, locale))}
           {applied.period === "nextWeek" && <span className="muted"> · {t.nextWeekRange(date(data.nextWeek.from),
             date(data.nextWeek.to))}</span>}</p>
-        {data.lines.length === 0 ? <p>{t.none}</p> : <div className="table-scroll"><table>
+        {data.lines.length === 0 ? <p>{t.none}</p> : <div className="table-scroll"><table className="clearance-table">
           <thead><tr>
-            <th>{c.ip}</th><th>{c.referenceDate}</th><th>{c.analyst}</th><th>{c.importer}</th><th>{c.status}</th>
-            <th>{c.supplier}</th><th>{c.eta}</th><th>{c.registered}</th><th className="clearance-money">{c.value}</th>
+            <th className="clearance-key">{c.ip}</th><th className="clearance-key">{c.referenceDate}</th><th>{c.analyst}</th>
+            <th>{c.importer}</th><th>{c.status}</th><th>{c.supplier}</th><th>{c.eta}</th><th>{c.registered}</th>
+            <th className="clearance-key clearance-money">{c.value}</th>
           </tr></thead>
           <tbody>{data.lines.map(line => <tr key={line.id}>
-            <td><Link className="text-link" href={`/processes/${line.id}`}>{line.ipNumber}</Link></td>
-            <td>{date(line.referenceDate)}{line.referenceSource
+            <td className="clearance-key"><Link className="text-link" href={`/processes/${line.id}`}>{line.ipNumber}</Link></td>
+            <td className="clearance-key">{date(line.referenceDate)}{line.referenceSource
               && <span className="muted"> · {t.referenceSources[line.referenceSource]}</span>}</td>
             <td>{line.analysts.length ? line.analysts.join(", ") : "—"}</td>
             <td>{line.importer ?? "—"}</td>
@@ -130,11 +133,11 @@ export default function ClearanceEstimates() {
             <td>{date(line.eta)}</td>
             <td><span className={line.registered ? "badge badge-success" : "badge badge-warning"}>
               {t.registeredOptions[line.registered ? "yes" : "no"]}</span></td>
-            <td className="clearance-money">{formatBrl(line.valueBrl, locale)}</td>
+            <td className="clearance-key clearance-money">{formatBrl(line.valueBrl, locale)}</td>
           </tr>)}</tbody>
           <tfoot><tr className="clearance-total">
             <th scope="row" colSpan={8}>{t.total}</th>
-            <td className="clearance-money">{formatBrl(data.totalBrl, locale)}</td>
+            <td className="clearance-key clearance-money">{formatBrl(data.totalBrl, locale)}</td>
           </tr></tfoot>
         </table></div>}
       </>}
