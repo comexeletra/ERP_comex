@@ -166,15 +166,50 @@ function MonthlyColumns({ title, values, average, target, format }: {
 }
 
 /**
- * The BI post-shipment metrics: the number cards, the IPs by priority, status and channel (they cross-filter: a
- * click filters the other charts and the table, a chart keeps its own categories) and the monthly DSA and lead time.
+ * The BI number cards above the table: containers, IPs, on water (the tile filters the clearance type), DSA and the
+ * LT Doc and SLA TXT averages, tinted against their targets.
  */
-export default function PostShipmentCharts({ summary, selected, onSelect, onClear, onWaterSelected, onWaterToggle }: {
+export function PostShipmentIndicators({ summary, onWaterSelected, onWaterToggle }: {
+  summary: PostShipmentSummary; onWaterSelected: boolean; onWaterToggle: () => void;
+}) {
+  const { m, locale } = useI18n();
+  const p = m.reports.postDashboard;
+  const share = (value: number | null) => formatShareOf(value, locale);
+  return <section className="e2e-overview post-dashboard-indicators" aria-label={p.indicatorsTitle}>
+      <DashboardCard title={p.indicatorsTitle} wide selected={onWaterSelected} onClear={onWaterToggle}
+        total={<Counted value={summary.totalIps} format={value => p.totalIps(formatIps(value, locale))} />}>
+        <ul className="pre-dashboard-tiles">
+          <Kpi index={0} label={p.containers} help={p.containersHelp}
+            value={<Counted value={Number(summary.containers)} format={value => formatContainers(value, locale)} />} />
+          <Kpi index={1} label={p.ips} help={p.ipsHelp}
+            value={<Counted value={summary.totalIps} format={value => formatIps(value, locale)} />} />
+          <Kpi index={2} label={p.onWater} help={p.onWaterHelp} pressed={onWaterSelected} onClick={onWaterToggle}
+            value={<Counted value={summary.onWater} format={value => formatIps(value, locale)} />} />
+          <Kpi index={3} label={p.dsa} help={p.dsaHelp} tone={atLeastTone(summary.dsa, summary.targets.dsa)}
+            value={summary.dsa === null ? share(null) : <Counted value={summary.dsa} format={share} />}>
+            {summary.dsa !== null && <span className="e2e-status-step-share"><Meter fraction={summary.dsa} /></span>}
+          </Kpi>
+          <Kpi index={4} label={p.avgLtDoc} help={p.avgLtDocHelp} tone={atMostTone(summary.avgLtDoc, summary.targets.avgLtDoc)}
+            value={summary.avgLtDoc === null ? formatAverageDays(null, locale)
+              : <Counted value={summary.avgLtDoc} format={value => formatAverageDays(value, locale)} />} />
+          <Kpi index={5} label={p.avgSlaTxt} help={p.avgSlaTxtHelp}
+            value={summary.avgSlaTxt === null ? formatAverageDays(null, locale)
+              : <Counted value={summary.avgSlaTxt} format={value => formatAverageDays(value, locale)} />} />
+        </ul>
+      </DashboardCard>
+    </section>;
+}
+
+/**
+ * The BI post-shipment charts: the IPs by priority, status and channel (they cross-filter: a click filters the other
+ * charts, the cards and the table, a chart keeps its own categories) and the monthly DSA and lead time, which always
+ * show the whole history (they follow every filter but the date).
+ */
+export default function PostShipmentCharts({ summary, selected, onSelect, onClear }: {
   summary: PostShipmentSummary;
   selected: { status: readonly string[]; channel: readonly string[]; priority: readonly string[] };
   onSelect: { status: Select<PostShipmentStatus>; channel: Select<PostShipmentChannel>; priority: Select<PostShipmentPriority> };
   onClear: (chart: "status" | "channel" | "priority") => void;
-  onWaterSelected: boolean; onWaterToggle: () => void;
 }) {
   const { m, locale } = useI18n();
   const p = m.reports.postDashboard;
@@ -200,27 +235,6 @@ export default function PostShipmentCharts({ summary, selected, onSelect, onClea
   });
 
   return <section className="e2e-overview pre-dashboard" aria-label={p.label}>
-      <DashboardCard title={p.indicatorsTitle} wide selected={onWaterSelected} onClear={onWaterToggle}
-        total={<Counted value={summary.totalIps} format={ips} />}>
-        <ul className="pre-dashboard-tiles">
-          <Kpi index={0} label={p.containers} help={p.containersHelp}
-            value={<Counted value={Number(summary.containers)} format={value => formatContainers(value, locale)} />} />
-          <Kpi index={1} label={p.ips} help={p.ipsHelp}
-            value={<Counted value={summary.totalIps} format={value => formatIps(value, locale)} />} />
-          <Kpi index={2} label={p.onWater} help={p.onWaterHelp} pressed={onWaterSelected} onClick={onWaterToggle}
-            value={<Counted value={summary.onWater} format={value => formatIps(value, locale)} />} />
-          <Kpi index={3} label={p.dsa} help={p.dsaHelp} tone={atLeastTone(summary.dsa, summary.targets.dsa)}
-            value={summary.dsa === null ? share(null) : <Counted value={summary.dsa} format={share} />}>
-            {summary.dsa !== null && <span className="e2e-status-step-share"><Meter fraction={summary.dsa} /></span>}
-          </Kpi>
-          <Kpi index={4} label={p.avgLtDoc} help={p.avgLtDocHelp} tone={atMostTone(summary.avgLtDoc, summary.targets.avgLtDoc)}
-            value={summary.avgLtDoc === null ? formatAverageDays(null, locale)
-              : <Counted value={summary.avgLtDoc} format={value => formatAverageDays(value, locale)} />} />
-          <Kpi index={5} label={p.avgSlaTxt} help={p.avgSlaTxtHelp}
-            value={summary.avgSlaTxt === null ? formatAverageDays(null, locale)
-              : <Counted value={summary.avgSlaTxt} format={value => formatAverageDays(value, locale)} />} />
-        </ul>
-      </DashboardCard>
       <DashboardCard title={p.priorityTitle} selected={selected.priority.length > 0} onClear={() => onClear("priority")}
         total={<Counted value={sum(priorities)} format={ips} />}>
         <PriorityDonut title={p.chartLabel(p.priorityTitle, ips(sum(priorities)))} entries={priorities} total={sum(priorities)}

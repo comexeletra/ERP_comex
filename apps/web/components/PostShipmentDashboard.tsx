@@ -19,7 +19,7 @@ import DateRangeFilter from "./DateRangeFilter";
 import E2eCollapsible from "./E2eCollapsible";
 import { getMessages, useI18n } from "./I18nProvider";
 import { MultiSelectFilter } from "./MultiSelectFilter";
-import PostShipmentCharts from "./PostShipmentCharts";
+import PostShipmentCharts, { PostShipmentIndicators } from "./PostShipmentCharts";
 import { Tooltip } from "./Tooltip";
 import { useDebouncedValue } from "./useDebouncedValue";
 
@@ -102,8 +102,8 @@ function LineRow({ line }: { line: PostShipmentLine }) {
 }
 
 /**
- * The post-shipment dashboard (the BI "Pós Embarque" metrics, one line per IP): the filter form, the cards and charts,
- * and the table of the IPs. The form waits for Apply; the period and the chart clicks apply at once. The API is
+ * The post-shipment dashboard (the BI "Pós Embarque" metrics, one line per IP): the filter form, the number cards,
+ * the table of the IPs and then the charts. The form waits for Apply; the period and the chart clicks apply at once. The API is
  * called once the choices stop for a moment, and the last summary stays on screen while a new one loads.
  */
 export default function PostShipmentDashboard({ initialQuery }: { initialQuery: string }) {
@@ -203,12 +203,7 @@ export default function PostShipmentDashboard({ initialQuery }: { initialQuery: 
 
     {summaryLoaded?.error && <p className="notice error" role="alert">{summaryLoaded.error}</p>}
     {!summary && !summaryLoaded?.error && <p role="status">{p.loading}</p>}
-    {summary && <PostShipmentCharts summary={summary}
-      selected={{ status: applied.status, channel: applied.channel, priority: applied.priority }}
-      onSelect={{ status: (value, additive) => select("status", value, additive),
-        channel: (value: PostShipmentChannel, additive) => select("channel", value, additive),
-        priority: (value, additive) => select("priority", value, additive) }}
-      onClear={clearChart} onWaterSelected={onWaterSelected} onWaterToggle={toggleOnWater} />}
+    {summary && <PostShipmentIndicators summary={summary} onWaterSelected={onWaterSelected} onWaterToggle={toggleOnWater} />}
 
     <section className="card pre-dashboard-table" aria-live="polite">
       <h2>{p.tableTitle}</h2>
@@ -234,5 +229,12 @@ export default function PostShipmentDashboard({ initialQuery }: { initialQuery: 
         </nav>}
       </>}
     </section>
+
+    {summary && <PostShipmentCharts summary={summary}
+      selected={{ status: applied.status, channel: applied.channel, priority: applied.priority }}
+      onSelect={{ status: (value, additive) => select("status", value, additive),
+        channel: (value: PostShipmentChannel, additive) => select("channel", value, additive),
+        priority: (value, additive) => select("priority", value, additive) }}
+      onClear={clearChart} />}
   </>;
 }

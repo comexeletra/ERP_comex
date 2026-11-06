@@ -87,6 +87,19 @@ test("the charts cross-filter by status, channel and priority, and the on water 
   assert.match(charts, /e2e-status-step-tile/u);
 });
 
+test("the screen shows the filters, the number cards, the table and then the charts", () => {
+  const positions = ["<E2eCollapsible title={p.filtersLabel}", "<PostShipmentIndicators", 'className="card pre-dashboard-table"',
+    "<PostShipmentCharts"].map(mark => dashboard.indexOf(mark));
+  assert.ok(positions.every(position => position > 0), JSON.stringify(positions));
+  assert.deepEqual([...positions].sort((a, b) => a - b), positions);
+  assert.match(charts, /export function PostShipmentIndicators/u);
+  assert.ok(styles.includes(".e2e-overview.post-dashboard-indicators {"));
+  // The monthly charts say they keep the whole history, in the three languages.
+  for (const m of [ptBR, en, zhCN]) {
+    for (const key of ["monthHelp", "leadTimeHelp", "deliveredHelp"]) assert.ok(m.reports.postDashboard[key].length > 20, key);
+  }
+});
+
 test("the table shows the columns of the BI table, in its order", () => {
   const columns = [...dashboard.matchAll(/<th>\{c\.(\w+)\}<\/th>/gu)].map(match => match[1]);
   assert.deepEqual(columns, ["necessity", "ip", "priority", "incoterm", "mode", "status", "duimpDate", "documentsOk", "arrival",

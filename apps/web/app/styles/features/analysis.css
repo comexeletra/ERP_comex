@@ -22,7 +22,9 @@
 .pre-dashboard-table { margin-top: 16px; }
 .pre-dashboard-table h2 { font-size: var(--fs-lg); margin: 0 0 8px; }
 
-/* Post-shipment dashboard: the monthly columns of the BI, with the average and target lines. */
+/* Post-shipment dashboard: the number cards above the table, and the monthly columns of the BI with the average
+   and target lines. */
+.e2e-overview.post-dashboard-indicators { grid-template-columns: 1fr; margin: 16px 0; }
 .post-month-chart { overflow-x: auto; }
 .post-month-plot { --bar-area: 180px; --label-space: 28px; min-width: max-content; padding-top: 40px; position: relative; }
 .post-month-line { border-top: 2px dashed var(--color-text-muted); bottom: calc(var(--label-space) + var(--line-at, 0) * var(--bar-area)); left: 0; pointer-events: none; position: absolute; right: 0; z-index: var(--z-raised); }
