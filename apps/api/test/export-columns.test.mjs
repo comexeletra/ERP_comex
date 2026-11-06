@@ -75,8 +75,9 @@ test("the End to End stage columns carry their stage, colored in the file as the
   const token = name => `FF${new RegExp(`${name}:\\s*#([0-9a-f]{6})`, "u").exec(light)[1].toUpperCase()}`;
   for (const code of ["T0", "T1", "T2", "T3", "T4", "T5"]) {
     const stage = code.toLowerCase();
+    // The values take the header color, stronger than the tint of the screen (user request, 2026-11-06).
     assert.deepEqual(exportStageColors[code], { header: token(`--color-stage-${stage}-bg`),
-      values: token(`--color-stage-${stage}-tint`), border: token(`--color-stage-${stage}-border`) }, code);
+      border: token(`--color-stage-${stage}-border`) }, code);
   }
 });
 

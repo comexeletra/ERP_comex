@@ -129,24 +129,24 @@ async function chosenColumnsXlsx<Row>(sheetName: string, columns: readonly Resol
 }
 
 /**
- * Colors of the End to End stage groups in the file (ARGB): the header, the values and the group line.
- * The light theme of the screen (--color-stage-t*-bg, -tint and -border in apps/web/app/styles/tokens.css);
- * test/export-columns.test.mjs fails when they diverge.
+ * Colors of the End to End stage groups in the file (ARGB): the header and the group line. The values take the
+ * header color, stronger than the tint of the screen (user request, 2026-11-06). The light theme of the screen
+ * (--color-stage-t*-bg and -border in apps/web/app/styles/tokens.css); test/export-columns.test.mjs fails when they diverge.
  */
-export const exportStageColors: Record<E2eStageCode, { header: string; values: string; border: string }> = {
-  T0: { header: "FFDBEAF6", values: "FFF0F6FC", border: "FF4A8CC7" },
-  T1: { header: "FFE2EFD9", values: "FFF3F8EF", border: "FF6AA84F" },
-  T2: { header: "FFFFF0C2", values: "FFFFF9E6", border: "FFD9A400" },
-  T3: { header: "FFFCE0CF", values: "FFFEF3EC", border: "FFE5762F" },
-  T4: { header: "FFF9D3DC", values: "FFFDEFF2", border: "FFD9577A" },
-  T5: { header: "FFE3DDF4", values: "FFF4F1FB", border: "FF8A75C9" },
+export const exportStageColors: Record<E2eStageCode, { header: string; border: string }> = {
+  T0: { header: "FFDBEAF6", border: "FF4A8CC7" },
+  T1: { header: "FFE2EFD9", border: "FF6AA84F" },
+  T2: { header: "FFFFF0C2", border: "FFD9A400" },
+  T3: { header: "FFFCE0CF", border: "FFE5762F" },
+  T4: { header: "FFF9D3DC", border: "FFD9577A" },
+  T5: { header: "FFE3DDF4", border: "FF8A75C9" },
 };
 const solid = (argb: string): ExcelJS.Fill => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
 // One style object per stage, shared by its cells, so a large export does not hold a copy per cell.
 const stageStyles = Object.fromEntries(Object.entries(exportStageColors).map(([code, colors]) => [code, {
-  header: solid(colors.header), values: solid(colors.values),
+  fill: solid(colors.header),
   border: { bottom: { style: "medium", color: { argb: colors.border } } } satisfies Partial<ExcelJS.Borders>,
-}])) as Record<E2eStageCode, { header: ExcelJS.Fill; values: ExcelJS.Fill; border: Partial<ExcelJS.Borders> }>;
+}])) as Record<E2eStageCode, { fill: ExcelJS.Fill; border: Partial<ExcelJS.Borders> }>;
 
 function addChosenColumnsSheet<Row>(workbook: ExcelJS.Workbook, sheetName: string,
   columns: readonly ResolvedExportColumn<Row>[], rows: readonly Row[]): void {
@@ -157,13 +157,13 @@ function addChosenColumnsSheet<Row>(workbook: ExcelJS.Workbook, sheetName: strin
   columns.forEach((column, index) => {
     if (!column.stage) return;
     const header = sheet.getRow(1).getCell(index + 1);
-    header.fill = stageStyles[column.stage].header;
+    header.fill = stageStyles[column.stage].fill;
     header.border = stageStyles[column.stage].border;
   });
   for (const row of rows) {
     const added = sheet.addRow(columns.map(column => column.value(row)));
     columns.forEach((column, index) => {
-      if (column.stage) added.getCell(index + 1).fill = stageStyles[column.stage].values;
+      if (column.stage) added.getCell(index + 1).fill = stageStyles[column.stage].fill;
       if (column.forecast?.(row)) added.getCell(index + 1).font = { italic: true, color: { argb: "FF6B7280" } };
     });
   }
