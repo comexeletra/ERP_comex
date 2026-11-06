@@ -1627,7 +1627,6 @@ export const ptBR = {
       ltDocNoTarget: "Sem meta para o modal",
       leadTimeOnTarget: (target: string) => `Até ${target} dias`,
       leadTimeLate: (target: string) => `Acima de ${target} dias`,
-      average: "Média",
       target: "Meta",
       totalIps: (total: string) => `${total} IPs`,
       found: (count: string) => `${count} IPs encontrados`,

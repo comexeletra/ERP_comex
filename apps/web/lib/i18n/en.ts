@@ -1624,7 +1624,6 @@ export const en: Messages = {
       ltDocNoTarget: "No target for the mode",
       leadTimeOnTarget: (target: string) => `Up to ${target} days`,
       leadTimeLate: (target: string) => `Over ${target} days`,
-      average: "Average",
       target: "Target",
       totalIps: (total: string) => `${total} IPs`,
       found: (count: string) => `${count} IPs found`,

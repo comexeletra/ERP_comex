@@ -13,7 +13,8 @@ seguem o modelo visual e o filtro cruzado do Pré Embarque (`docs/PLANO_DASHBOAR
 - Tabela "IPs Process (Delivery Date Reference)": Necessity, IP Number, Priority, Incoterm, Mode, Status, Duimp Date,
   Doc ok, Arrival, LT DOC, ETD, ETA, ETE, Delivery Date, Ctnr Qty, LT Clearance, Clearance Type, SLA TXT.
 - Gráficos: IPs por Priority-Normal (rosca), IPs Status (barras), IPs channel (barras), DSA - Target >= 70% For Month,
-  Average Lead Time For Month (Real-Time) e (Only Delivered), com variação contra o mês anterior e linha da média.
+  Average Lead Time For Month (Real-Time) e (Only Delivered), com variação contra o mês anterior. A média
+  fica só no total do topo de cada cartão, sem linha no gráfico (decisão do usuário, 2026-11-06).
 
 ## Decisões do usuário (2026-11-06)
 
@@ -45,11 +46,11 @@ seguem o modelo visual e o filtro cruzado do Pré Embarque (`docs/PLANO_DASHBOAR
 | Status | status calculado pelas datas do IP (`shipmentStatusSql(p, null)`): Ag. produção, Ag. embarque, Ag. chegada, Desembaraço, Entregue, Cancelado; IP com registro `CANCELLED` é Cancelado | coluna Status |
 | Canal | `customs_channel` (Green, Yellow, Red, vazio) | — |
 | Priority-Normal | prioridade do IP preenchida (no HML, `Prioridade`) é Prioridade; vazia é Normal, como o filtro do Pré Embarque | — |
-| DSA por mês | DSA dos IPs cuja data de referência cai no mês. **Mês com IPs e sem On water mostra 0%** e entra na média (diferente do BI, decisão do usuário); mês sem IP fica sem valor; a linha é a média dos meses com valor | `% water up water` |
+| DSA por mês | DSA dos IPs cuja data de referência cai no mês. **Mês com IPs e sem On water mostra 0%** e entra na média (diferente do BI, decisão do usuário); mês sem IP fica sem valor; o total do cartão é a média dos meses com valor | `% water up water` |
 | Lead Time Real-Time por mês | média do LT Clearance dos IPs com Arrival, pelo mês da data de referência | `averageLeadTime pós` |
 | Lead Time Only Delivered por mês | média do LT Clearance dos IPs entregues com Arrival, pelo mês da Delivery Date | `averageLeadTime` |
 | Variação mensal | `(mês − mês anterior) ÷ mês anterior`; ▼ verde quando cai, ▲ vermelho quando sobe; sem mês anterior, sem variação | — |
-| Linha tracejada | média dos valores dos meses mostrados | — |
+| Linha tracejada | só a meta de 70% do DSA, com o rótulo numa faixa à direita das colunas; a média não é desenhada (já é o total do cartão) | — |
 
 ### Clearance Type: casos no HML
 
@@ -95,7 +96,7 @@ seguem o modelo visual e o filtro cruzado do Pré Embarque (`docs/PLANO_DASHBOAR
    Normal) e Date (período da data de referência, com o seletor de período do End to End). Cliques em status, canal,
    prioridade e no cartão On Waters filtram como no Pré Embarque (clique e Ctrl+clique).
 5. **Tela** `/reports/post`: cartões, tabela paginada, rosca de prioridade, barras de status e de canal, colunas de
-   DSA por mês (linha da meta de 70% e da média) e as duas colunas de lead time por mês (variação e média). Os números
+   DSA por mês (linha da meta de 70%) e as duas colunas de lead time por mês (variação; média no total do cartão). Os números
    contam até o valor novo (`useTweenedNumber`).
 6. As métricas atuais da carga (IPs históricos e novos, chegada, DUIMP, entrega, custos) continuam numa seção
    recolhível abaixo do dashboard.

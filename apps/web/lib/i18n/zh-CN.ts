@@ -1620,7 +1620,6 @@ export const zhCN: Messages = {
       ltDocNoTarget: "该运输方式无目标",
       leadTimeOnTarget: (target: string) => `不超过 ${target} 天`,
       leadTimeLate: (target: string) => `超过 ${target} 天`,
-      average: "平均",
       target: "目标",
       totalIps: (total: string) => `${total} 个 IP`,
       found: (count: string) => `找到 ${count} 个 IP`,

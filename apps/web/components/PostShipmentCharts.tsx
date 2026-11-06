@@ -4,7 +4,7 @@ import { formatPercent, overviewShares } from "../lib/e2e-overview-format";
 import { statusLabel } from "../lib/i18n/labels";
 import type { Messages } from "../lib/i18n/pt-BR";
 import { atLeastTone, atMostTone, changeTone, formatAverageDays, formatChange, formatContainers, formatIps, formatMonth,
-  formatShareOf, formatWholeDays, lineLabelHeights, postShipmentChannelColors, postShipmentChannels, postShipmentFixedChannels,
+  formatShareOf, formatWholeDays, postShipmentChannelColors, postShipmentChannels, postShipmentFixedChannels,
   postShipmentPriorities, postShipmentPriorityColors, postShipmentStatusColors, postShipmentStatuses,
   type PostShipmentChannel, type PostShipmentMonth, type PostShipmentPriority, type PostShipmentStatus,
   type PostShipmentSummary, type PostShipmentTone } from "../lib/post-shipment-dashboard";
@@ -123,39 +123,29 @@ function Kpi({ label, value, help, tone = null, index, pressed, onClick, childre
     : <div className={className}>{body}</div>}</li>;
 }
 
-// Height of the columns of a monthly chart and the least distance between two line labels (two lines of text).
-const monthBarArea = 180;
-const monthLineLabelGap = 30;
-
 /** Values of a monthly chart: the value of each month and, for the lead time, its change against the month before. */
 type MonthValue = { month: string; value: number | null; change?: number | null; tip: [string, string][] };
 
 /**
  * Columns by month with the value over each column, the change against the month before (lead time) and the
- * dashed lines of the average and, for the DSA, of the target. Each column scales to the largest value or line.
+ * dashed line of the target (DSA). The average is not drawn: it is the total at the top of the card. Each column
+ * scales to the largest value or to the target.
  */
-function MonthlyColumns({ title, values, average, target, format }: {
-  title: string; values: MonthValue[]; average: number | null; target?: number; format: (value: number | null) => string;
+function MonthlyColumns({ title, values, target, format }: {
+  title: string; values: MonthValue[]; target?: number; format: (value: number | null) => string;
 }) {
   const { m, locale } = useI18n();
   const p = m.reports.postDashboard;
-  const max = Math.max(0, ...values.map(month => month.value ?? 0), average ?? 0, target ?? 0);
-  // Bars and lines share the same area: the stylesheet places them by these fractions of its height.
+  const max = Math.max(0, ...values.map(month => month.value ?? 0), target ?? 0);
+  // Bars and the line share the same area: the stylesheet places them by these fractions of its height.
   const fraction = (value: number | null) => (max > 0 && value !== null ? Math.max(0, value) / max : 0).toFixed(4);
-  // The labels of the lines sit in a column of their own, right of the columns, apart from each other when the lines
-  // are close; each one is moved from its line by `--label-shift`.
-  const lines = [target ?? null, average].flatMap((value, index) => value === null ? []
-    : [{ key: index === 0 ? "target" : "average", value, name: index === 0 ? p.target : p.average }]);
-  const heights = lines.map(entry => Number(fraction(entry.value)) * monthBarArea);
-  const labels = lineLabelHeights(heights, monthLineLabelGap);
   if (!values.some(month => month.value !== null)) return <p className="muted">{p.noMonths}</p>;
   return <div className="post-month-chart" role="img" aria-label={`${title}: ${values.map(month =>
     `${formatMonth(month.month, locale)} ${format(month.value)}`).join(", ")}`}>
-    <div className="post-month-plot" style={{ "--bar-area": `${monthBarArea}px` } as CSSProperties}>
-      {lines.map((entry, index) => <span key={entry.key}
-        className={`post-month-line${entry.key === "target" ? " is-target" : ""}`}
-        style={{ "--line-at": fraction(entry.value), "--label-shift": `${(labels[index] - heights[index]).toFixed(1)}px` } as CSSProperties}>
-        <span><span>{entry.name}</span><span>{format(entry.value)}</span></span></span>)}
+    <div className="post-month-plot">
+      {/* The label takes a column of its own, right of the columns, so it never covers the value of the last month. */}
+      {target !== undefined && <span className="post-month-line" style={{ "--line-at": fraction(target) } as CSSProperties}>
+        <span><span>{p.target}</span><span>{format(target)}</span></span></span>}
       <ol className="post-month-columns">
         {values.map((month, index) => <li key={month.month} style={{ "--step-index": index } as CSSProperties}>
           <Tooltip followCursor content={<div className="e2e-chart-tip">
@@ -268,20 +258,18 @@ export default function PostShipmentCharts({ summary, selected, onSelect, onClea
       <DashboardCard title={p.dsaMonthTitle} wide selected={false} onClear={() => undefined}
         total={share(summary.monthlyAverages.dsa)}>
         <p className="muted pre-dashboard-help">{p.monthHelp}</p>
-        <MonthlyColumns title={p.dsaMonthTitle} values={dsaMonths} average={summary.monthlyAverages.dsa}
+        <MonthlyColumns title={p.dsaMonthTitle} values={dsaMonths}
           target={summary.targets.dsa} format={share} />
       </DashboardCard>
       <DashboardCard title={p.leadTimeRealTitle} wide selected={false} onClear={() => undefined}
         total={formatAverageDays(summary.monthlyAverages.leadTimeRealTime, locale)}>
         <p className="muted pre-dashboard-help">{p.leadTimeHelp}</p>
-        <MonthlyColumns title={p.leadTimeRealTitle} values={leadTimeMonths("RealTime")}
-          average={summary.monthlyAverages.leadTimeRealTime} format={days} />
+        <MonthlyColumns title={p.leadTimeRealTitle} values={leadTimeMonths("RealTime")} format={days} />
       </DashboardCard>
       <DashboardCard title={p.leadTimeDeliveredTitle} wide selected={false} onClear={() => undefined}
         total={formatAverageDays(summary.monthlyAverages.leadTimeDelivered, locale)}>
         <p className="muted pre-dashboard-help">{p.deliveredHelp}</p>
-        <MonthlyColumns title={p.leadTimeDeliveredTitle} values={leadTimeMonths("Delivered")}
-          average={summary.monthlyAverages.leadTimeDelivered} format={days} />
+        <MonthlyColumns title={p.leadTimeDeliveredTitle} values={leadTimeMonths("Delivered")} format={days} />
       </DashboardCard>
     </section>;
 }
