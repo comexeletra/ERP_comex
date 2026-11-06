@@ -1,5 +1,13 @@
 # API ERP na VPS Hostinger
 
+## Valores das etapas na cor do cabeçalho na exportação do End to End no HML (2026-11-06)
+
+O commit `c6af0ce` (API) preenche as células de valor das colunas T0–T5 da exportação do End to End com a mesma cor do cabeçalho da etapa, no lugar do tom claro (pedido do usuário: cores mais fortes no arquivo). `exportStageColors` passou a ter só `header` e `border`; a tela não mudou (`docs/PLANO_EXPORTACAO_COLUNAS.md`, seção 10). Não há migration.
+
+O release `/opt/import-erp/apps/api/hml-release-c6af0ce` foi montado com `git -c core.autocrlf=false archive c6af0ce:apps/api` (SHA-256 `035692a9…6794`, nenhuma fonte com CR), reaproveitando o `node_modules` de `hml-release-36fe8c1` (`package.json` e lockfile iguais), compilado na VPS e ativado pelo drop-in de 66 `z` `…-release-c6af0ce.conf`; o worker foi movido com `enable-homologation-export-worker.sh c6af0ce`. Drop-ins e `ExecStart` anteriores: `/var/backups/import-erp/hml-stage-values-c6af0ce-predeploy`. Rollback somente do código: remova o drop-in `c6af0ce`, execute `systemctl daemon-reload`, reinicie `import-erp-hml-api` (volta a `hml-release-36fe8c1`) e rode `enable-homologation-export-worker.sh 36fe8c1`.
+
+No release passaram `test/purchase-order-export.test.mjs` (5) e `test/export-jobs.test.mjs` (8, com `--test-skip-pattern="built by the web"`: o contrato com a web importa `../../web/lib` e rodou no repositório, como `test/export-columns.test.mjs`). A primeira tentativa parou nesse teste antes de ativar e não mudou nada (`release-attempt1.log`). O ensaio só leitura no HML gerou e releu o arquivo com o código do release: todas as linhas, 2.300 linhas e 47 colunas (397 KB), 69.000 células de valor das 30 colunas de etapa na cor do cabeçalho; T3 acumulada, 1.158 linhas e 48 colunas (214 KB), 34.740 células. As demais colunas ficaram sem preenchimento. RSS do ensaio 369 MB. `/health/live` respondeu 200, a rota de exportação sem sessão respondeu 401, e API e worker ficaram ativos no `c6af0ce`. Scripts e logs em `/root/claude-release-c6af0ce` na VPS. Produção, `main` e as variáveis da Vercel não foram alteradas.
+
 ## Busca de NCM oficial sem carregar o catálogo no HML (2026-11-05)
 
 A busca "Pesquisar NCMs oficiais" ficava em "Pesquisando…" e derrubava a API HML (`JavaScript heap out of memory`; 6 quedas desde 03/11, 3 logo após buscas). A rota `GET /api/v1/ncms/official-search` lia todo o `catalog.ncm_official_item` para a memória antes de filtrar: 10.516 NCMs com 1,36 GB de atributos em texto (até 440 kB por NCM), acima do heap de 2.240 MB do Node na VPS. `POST /api/v1/ncms/import-official` fazia o mesmo.
