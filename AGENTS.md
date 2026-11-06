@@ -161,6 +161,12 @@ Se algo essencial não estiver claro, pergunte antes de supor.
 - Uma tela nova com exportação segue o mesmo modelo, com catálogo próprio igual à sua tabela.
 - Os testes de cada tela comparam a tabela com o catálogo e falham quando eles divergem. Não ajuste o teste para passar: ajuste o catálogo ou a tabela.
 
+## Painel de Pós Embarque
+
+- Regras, DAX de origem e decisões em `docs/PLANO_DASHBOARD_POS_EMBARQUE.md`. O grão é o IP e os dados vêm do IP (`imports.import_process`), não das linhas de produto; só a Necessity (menor necessidade dos produtos distribuídos) e o TXT date (`ip_totvs_date`) seguem o Power Query do BI.
+- A data de referência é a entrega ou, sem ela, hoje: ela define o filtro Date e o mês do DSA e do lead time em tempo real. On water exige DUIMP registrada antes da chegada (ou antes de o IP chegar); IP que chegou sem DUIMP é Normal, diferente do BI. Sem a data de origem, LT DOC, LT Clearance e SLA TXT ficam vazios.
+- As medidas são funções puras em `apps/api/src/post-shipment-dashboard.ts`; a tela usa as peças visuais do End to End e do Pré Embarque (cartões, legenda, blocos, tooltips), com o layout do BI do Pós.
+
 ## Carga histórica da planilha Follow Up
 
 - Regras, decisões do usuário e resultado em `docs/PLANO_CARGA_HISTORICA_PLANILHA.md`. O carregador é `deploy/hostinger/import-follow-up-workbook.py`: ele não conecta ao banco, gera um SQL que só roda no HML e, sem `--commit`, termina em ROLLBACK com todos os gatilhos ativos. Ensaie sempre assim antes de gravar.
