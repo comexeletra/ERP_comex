@@ -83,3 +83,18 @@ Comparação dos 181 IPs que estão na aba e no HML, e dos 39 IPs ainda não ent
 3. Seção na tela com a coluna de data de referência e os textos.
 4. Release da API no HML (ativar a API nova antes da M079), push e validação no Preview.
 5. M080, campo no formulário do IP e valor estimado/pago na seção; release no HML, push e Preview.
+
+## Carga do Value Need (pedido do usuário, 2026-11-06)
+
+Depois da M080, o usuário pediu para copiar o Value Need (coluna K) da aba "Import Clearance Estimations" para a
+estimativa dos IPs correspondentes. Só esse valor é carregado; analista, data para registro e as demais colunas não.
+
+- Script: `deploy/hostinger/import-clearance-estimates.py` (testes em `test_import_clearance_estimates.py`). Não
+  conecta ao banco; gera um SQL que só roda no `erp_po_totvs_hml`, termina em ROLLBACK sem `--commit`, só preenche
+  estimativas vazias, audita cada IP (`HISTORICAL_IMPORT`, `clearance_estimate_brl`) e recusa uma segunda execução.
+- IP casado por `normalized_ip_number`; linhas de agrupamento ("MAY POS") ficam de fora; IP repetido com valores
+  diferentes fica de fora para o usuário decidir: **Z-004B/2026** (linhas 108 e 135) e **028A/2025** (189 e 190).
+- Resultado no HML com a planilha `a9134344…15bc`: 410 IPs da aba com valor, **176 preenchidos**, 1 mantido (já
+  digitado), os demais não existem no sistema (IPs de 2024 e 2025). 177 IPs com estimativa e 176 linhas de
+  auditoria. Para desfazer: limpar `clearance_estimate_brl` dos IPs com auditoria do ator
+  `migration:clearance-estimate-load`.

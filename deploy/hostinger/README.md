@@ -2,6 +2,8 @@
 
 ## Estimativas de desembaraço no Pós Embarque no HML (M078, M079) (2026-11-06)
 
+Carga do Value Need (pedido do usuário): `import-clearance-estimates.py` copiou a coluna K da aba "Import Clearance Estimations" da planilha `Follow Up Import 2026 - atualizado .xlsx` (SHA-256 `a913434489b8ba9af81803bcd0661b4cc7aa212206a3d0fbb6d1dbacd3e315bc`) para `clearance_estimate_brl`. O ensaio com ROLLBACK relatou 410 IPs da aba, 176 a preencher, 1 já digitado (mantido) e os demais fora do sistema, sem gravar auditoria; a gravação com `--expected-ips 176` deixou 177 estimativas e 176 linhas de `audit.audit_log` do ator `migration:clearance-estimate-load`. Z-004B/2026 e 028A/2025 ficaram de fora por terem dois valores na aba. Nenhum dado de produção foi lido ou alterado.
+
 A seção "Estimativas de desembaraço" de `/reports/post` (BI "Import Clearance Estimations") usa só dados de Pós Embarque do IP: `GET /api/v1/reports/post-shipment/clearance-estimates` toma a data da DUIMP ou, sem ela, o ETA como data de registro (filtro "Próxima semana", de segunda a domingo), Impostos pagos como valor e os analistas das POs do IP. Regras em `docs/PLANO_ESTIMATIVA_DESEMBARACO.md`.
 
 Antes dessa decisão do usuário, o release `hml-release-d71f79e` aplicou a M078 (três colunas vazias de estimativa digitada; backup `/var/backups/import-erp/erp_po_totvs_hml_pre_m078_20261106T175516Z.dump`, 474.014.721 bytes, SHA-256 `3fde5d4d6cb7f301db869ec7006116128da8db6dd29eb421b62874e2e8b7f9c8`) e ensaiou com ROLLBACK a carga da aba da planilha, que não gravou nada e não foi executada; o script de carga foi revertido (`37040c4`).
