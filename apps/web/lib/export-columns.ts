@@ -5,7 +5,7 @@ import type { Messages } from "./i18n/pt-BR";
  * the table header as label. Mirror of apps/api/src/export-columns.ts (the API test compares them);
  * a column added to, moved in or removed from one of those tables changes both in the same commit.
  */
-export type ExportContext = "portfolio" | "product-lines" | "end-to-end" | "pre-shipment";
+export type ExportContext = "portfolio" | "product-lines" | "end-to-end" | "pre-shipment" | "post-shipment";
 export type ExportColumnFilters = { stage?: string; view?: string };
 
 // Modules of lib/ do not import values from each other (see AGENTS.md).
@@ -107,6 +107,27 @@ export const exportColumnCatalog: Record<ExportContext, readonly ExportColumnDef
     { key: "importer", label: m => m.reports.dashboard.columns.importer },
     { key: "purpose", label: m => m.reports.dashboard.columns.purpose },
     { key: "poSentDate", label: m => m.reports.dashboard.columns.poSentDate },
+  ],
+  // components/PostShipmentDashboard.tsx, the table of the IPs of the Pós Embarque dashboard.
+  "post-shipment": [
+    { key: "necessity", label: m => m.reports.postDashboard.columns.necessity },
+    { key: "ipNumber", label: m => m.reports.postDashboard.columns.ip, required: true },
+    { key: "priority", label: m => m.reports.postDashboard.columns.priority },
+    { key: "incoterm", label: m => m.reports.postDashboard.columns.incoterm },
+    { key: "mode", label: m => m.reports.postDashboard.columns.mode },
+    { key: "status", label: m => m.reports.postDashboard.columns.status },
+    { key: "duimpDate", label: m => m.reports.postDashboard.columns.duimpDate },
+    { key: "documentsOk", label: m => m.reports.postDashboard.columns.documentsOk },
+    { key: "arrival", label: m => m.reports.postDashboard.columns.arrival },
+    { key: "ltDoc", label: m => m.reports.postDashboard.columns.ltDoc },
+    { key: "etd", label: m => m.reports.postDashboard.columns.etd },
+    { key: "eta", label: m => m.reports.postDashboard.columns.eta },
+    { key: "ete", label: m => m.reports.postDashboard.columns.ete },
+    { key: "delivery", label: m => m.reports.postDashboard.columns.delivery },
+    { key: "containers", label: m => m.reports.postDashboard.columns.containers },
+    { key: "ltClearance", label: m => m.reports.postDashboard.columns.ltClearance },
+    { key: "clearanceType", label: m => m.reports.postDashboard.columns.clearanceType },
+    { key: "slaTxt", label: m => m.reports.postDashboard.columns.slaTxt },
   ],
 };
 

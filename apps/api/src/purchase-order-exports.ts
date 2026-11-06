@@ -1,7 +1,8 @@
 import type { Pool } from "pg";
 import ExcelJS from "exceljs";
 import { moneyProduct, type calculateE2e, type E2eStageCode } from "./followup-calculations.js";
-import type { ResolvedExportColumn } from "./export-columns.js";
+import type { ExportTone, ResolvedExportColumn } from "./export-columns.js";
+import type { PostShipmentIp } from "./post-shipment-dashboard.js";
 import { summarizePreShipmentLines, type PreShipmentAgingRange, type PreShipmentFilters,
   type PreShipmentLine } from "./pre-shipment-dashboard.js";
 import type { ShipmentLine } from "./shipment-lines.js";
@@ -148,6 +149,21 @@ const stageStyles = Object.fromEntries(Object.entries(exportStageColors).map(([c
   border: { bottom: { style: "medium", color: { argb: colors.border } } } satisfies Partial<ExcelJS.Borders>,
 }])) as Record<E2eStageCode, { fill: ExcelJS.Fill; border: Partial<ExcelJS.Borders> }>;
 
+/**
+ * Colors of the values with a color rule on the screen (ARGB): the background and text of the success, danger and
+ * warning badges, light theme (--color-*-bg and -text in apps/web/app/styles/tokens.css); test/export-jobs.test.mjs
+ * fails when they diverge.
+ */
+export const exportToneColors: Record<ExportTone, { fill: string; font: string }> = {
+  good: { fill: "FFF1F7E1", font: "FF485A12" },
+  bad: { fill: "FFFFF1F0", font: "FF9E1B1B" },
+  warning: { fill: "FFFFF6DC", font: "FF7A5600" },
+};
+// One style object per tone, shared by its cells, as the stage styles.
+const toneStyles = Object.fromEntries(Object.entries(exportToneColors).map(([tone, colors]) => [tone, {
+  fill: solid(colors.fill), font: { bold: true, color: { argb: colors.font } } satisfies Partial<ExcelJS.Font>,
+}])) as Record<ExportTone, { fill: ExcelJS.Fill; font: Partial<ExcelJS.Font> }>;
+
 function addChosenColumnsSheet<Row>(workbook: ExcelJS.Workbook, sheetName: string,
   columns: readonly ResolvedExportColumn<Row>[], rows: readonly Row[]): void {
   const sheet = workbook.addWorksheet(sheetName, { views: [{ state: "frozen", ySplit: 1 }] });
@@ -165,6 +181,11 @@ function addChosenColumnsSheet<Row>(workbook: ExcelJS.Workbook, sheetName: strin
     columns.forEach((column, index) => {
       if (column.stage) added.getCell(index + 1).fill = stageStyles[column.stage].fill;
       if (column.forecast?.(row)) added.getCell(index + 1).font = { italic: true, color: { argb: "FF6B7280" } };
+      const tone = column.tone?.(row);
+      if (tone) {
+        added.getCell(index + 1).fill = toneStyles[tone].fill;
+        added.getCell(index + 1).font = toneStyles[tone].font;
+      }
     });
   }
 }
@@ -276,6 +297,15 @@ export async function preShipmentXlsx(lines: readonly PreShipmentLine[],
   addPreShipmentSummarySheet(workbook, lines, filters, today);
   addChosenColumnsSheet(workbook, "Pré Embarque", columns, lines);
   return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+/**
+ * The Pós Embarque dashboard export: the table of the IPs with the chosen columns (every column without a choice),
+ * LT Doc, LT Clearance and priority colored as their badges on the screen.
+ */
+export async function postShipmentXlsx(lines: readonly PostShipmentIp[],
+  columns: readonly ResolvedExportColumn<PostShipmentIp>[]): Promise<Buffer> {
+  return chosenColumnsXlsx("Pós Embarque", columns, lines);
 }
 
 /** Without chosen columns, the layout from before the column choice (8 columns). */

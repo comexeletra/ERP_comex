@@ -4,6 +4,7 @@ import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
 import { exportColumnsSchema, resolveExportColumns } from "./export-columns.js";
+import { postShipmentQuery } from "./post-shipment-dashboard.js";
 import { preShipmentQuery } from "./pre-shipment-dashboard.js";
 import { shipmentLineQuery } from "./shipment-lines.js";
 
@@ -22,11 +23,15 @@ const lineExportBody = shipmentLineQuery.extend({
 }).strict();
 // The Pré Embarque dashboard: its filters and chart selections, as the table shows them.
 const preShipmentExportBody = preShipmentQuery.extend({ context: z.literal("pre-shipment").optional(), ...columnChoice }).strict();
+// The Pós Embarque dashboard: its filters and chart selections, as the table of the IPs shows them.
+const postShipmentExportBody = postShipmentQuery.extend({ context: z.literal("post-shipment").optional(), ...columnChoice }).strict();
 const jobIdSchema = z.string().uuid();
 const exportFileNames: Record<string, string> = {
   "purchase-order-xlsx": "carteira-pos.xlsx", "purchase-order-lines-xlsx": "carteira-por-produto.xlsx",
-  "pre-shipment-xlsx": "pre-embarque.xlsx",
+  "pre-shipment-xlsx": "pre-embarque.xlsx", "post-shipment-xlsx": "pos-embarque.xlsx",
 };
+// Job types of the screens: the recent exports and the downloads read only these.
+const screenJobTypes = "'purchase-order-xlsx', 'purchase-order-lines-xlsx', 'pre-shipment-xlsx', 'post-shipment-xlsx'";
 
 function canAccessExport(
   left: readonly string[], right: readonly string[], requestedAsMaster: boolean, currentRoles: readonly string[],
@@ -46,7 +51,7 @@ export async function registerExportJobRoutes(app: FastifyInstance, pool: Pool):
     }>(
       `SELECT id, job_type, status, importer_scopes, requested_as_master, error_code, created_at, expires_at
        FROM jobs.export_job
-       WHERE requested_by = $1 AND job_type IN ('purchase-order-xlsx', 'purchase-order-lines-xlsx', 'pre-shipment-xlsx')
+       WHERE requested_by = $1 AND job_type IN (${screenJobTypes})
        ORDER BY created_at DESC LIMIT 20`,
       [request.authContext!.userId],
     );
@@ -66,12 +71,14 @@ export async function registerExportJobRoutes(app: FastifyInstance, pool: Pool):
     })) };
   });
 
-  for (const [path, jobType, schema] of [
-    ["/api/v1/exports/purchase-orders", "purchase-order-xlsx", purchaseOrderExportBody],
-    ["/api/v1/exports/purchase-order-lines", "purchase-order-lines-xlsx", lineExportBody],
-    ["/api/v1/exports/pre-shipment", "pre-shipment-xlsx", preShipmentExportBody],
+  // Each export asks for the permission of its screen: the Pós Embarque dashboard reads IPs.
+  for (const [path, jobType, schema, permission] of [
+    ["/api/v1/exports/purchase-orders", "purchase-order-xlsx", purchaseOrderExportBody, "purchase-orders.read"],
+    ["/api/v1/exports/purchase-order-lines", "purchase-order-lines-xlsx", lineExportBody, "purchase-orders.read"],
+    ["/api/v1/exports/pre-shipment", "pre-shipment-xlsx", preShipmentExportBody, "purchase-orders.read"],
+    ["/api/v1/exports/post-shipment", "post-shipment-xlsx", postShipmentExportBody, "processes.read"],
   ] as const) app.post(path, {
-    config: permissionConfig("purchase-orders.read"),
+    config: permissionConfig(permission),
   }, async (request, reply) => {
     const parsed = schema.safeParse(request.body);
     if (!parsed.success) {
@@ -171,7 +178,7 @@ export async function registerExportJobRoutes(app: FastifyInstance, pool: Pool):
       `SELECT job_type, importer_scopes, requested_as_master, result_binary
        FROM jobs.export_job
        WHERE id = $1 AND requested_by = $2
-         AND job_type IN ('purchase-order-xlsx', 'purchase-order-lines-xlsx', 'pre-shipment-xlsx')
+         AND job_type IN (${screenJobTypes})
          AND status = 'completed' AND expires_at > now()`,
       [parsedId.data, request.authContext!.userId],
     );

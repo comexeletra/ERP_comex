@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { E2E_STAGE_CODES, type E2eStageCode } from "./followup-calculations.js";
+import { POST_SHIPMENT_TARGETS, type PostShipmentIp } from "./post-shipment-dashboard.js";
 import type { PreShipmentLine } from "./pre-shipment-dashboard.js";
 import type { PurchaseOrderExportRow } from "./purchase-order-exports.js";
 import type { ShipmentLine, ShipmentLineFilters } from "./shipment-lines.js";
@@ -10,10 +11,12 @@ import type { ShipmentLine, ShipmentLineFilters } from "./shipment-lines.js";
  * commit, and in the web mirror (apps/web/lib/export-columns.ts); test/export-columns.test.mjs
  * compares the two. Headers come from the web in the viewer's language; these are the fallbacks.
  */
-export const exportContexts = ["portfolio", "product-lines", "end-to-end", "pre-shipment"] as const;
+export const exportContexts = ["portfolio", "product-lines", "end-to-end", "pre-shipment", "post-shipment"] as const;
 export type ExportContext = (typeof exportContexts)[number];
 
 type Cell = string | number | null;
+/** Color of a value by the rule of its column on the screen: the green, red and yellow badges. */
+export type ExportTone = "good" | "bad" | "warning";
 type ColumnFilters = Pick<ShipmentLineFilters, "stage" | "view">;
 export type ExportColumn<Row> = {
   key: string; header: string; width: number;
@@ -28,6 +31,8 @@ export type ExportColumn<Row> = {
   forecast?: (row: Row) => boolean;
   /** End to End stage of the column, written with the color of its stage group, as on the screen. */
   stage?: E2eStageCode;
+  /** Color of the value by the rule of the column on the screen (a badge); null leaves the cell plain. */
+  tone?: (row: Row) => ExportTone | null;
 };
 /** A chosen column with its header and its value bound to the export filters. */
 export type ResolvedExportColumn<Row> = Omit<ExportColumn<Row>, "value"> & { value: (row: Row) => Cell };
@@ -151,11 +156,42 @@ const preShipmentColumns: PreColumn[] = [
   pre("poSentDate", "PO Sent Date", row => text(row.poSentDate)),
 ];
 
+// Pós Embarque dashboard (components/PostShipmentDashboard.tsx), the columns of the BI table, one line per IP.
+type PostColumn = ExportColumn<PostShipmentIp>;
+const post = (key: string, header: string, value: (row: PostShipmentIp) => Cell, width = Math.max(12, header.length + 4),
+  extra: Partial<PostColumn> = {}): PostColumn => ({ key, header, width, value, ...extra });
+// Values the API writes in Portuguese, as the statuses.
+const clearanceLabels: Record<PostShipmentIp["clearanceType"], string> = { onWater: "On water", normal: "Normal" };
+const postShipmentColumns: PostColumn[] = [
+  post("necessity", "Necessidade", row => text(row.necessityDate)),
+  post("ipNumber", "IP", row => text(row.ipNumber), 18, { required: true }),
+  post("priority", "Prioridade", row => row.priorityKey === "priority" ? text(row.priority) ?? "Prioridade" : "Normal", 14,
+    { tone: row => row.priorityKey === "priority" ? "warning" : null }),
+  post("incoterm", "Incoterm", row => text(row.incoterm)),
+  post("mode", "Modal", row => text(row.mode)),
+  post("status", "Status", row => text(row.status), 22),
+  post("duimpDate", "Data da DUIMP", row => text(row.duimpDate)),
+  post("documentsOk", "Doc ok", row => text(row.documentsOkDate)),
+  post("arrival", "Chegada", row => text(row.arrivalDate)),
+  // Green within the target of the mode, red above it; a mode without a target has no color.
+  post("ltDoc", "LT Doc", row => decimal(row.ltDoc), 12,
+    { tone: row => row.ltDocOnTarget === null ? null : row.ltDocOnTarget ? "good" : "bad" }),
+  post("etd", "ETD", row => text(row.etd)),
+  post("eta", "ETA", row => text(row.eta)),
+  post("ete", "ETE", row => text(row.ete)),
+  post("delivery", "Entrega", row => text(row.deliveryDate)),
+  post("containers", "Qtd. de contêineres", row => decimal(row.containerQuantity), 20),
+  post("ltClearance", "LT Clearance", row => decimal(row.leadTime), 16, { tone: row => row.leadTime === null ? null
+    : row.leadTime <= POST_SHIPMENT_TARGETS.leadTime ? "good" : "bad" }),
+  post("clearanceType", "Tipo de desembaraço", row => clearanceLabels[row.clearanceType] ?? null, 22),
+  post("slaTxt", "SLA TXT", row => decimal(row.slaTxt)),
+];
+
 type ContextRow = { portfolio: PurchaseOrderExportRow; "product-lines": ShipmentLine; "end-to-end": ShipmentLine;
-  "pre-shipment": PreShipmentLine };
+  "pre-shipment": PreShipmentLine; "post-shipment": PostShipmentIp };
 export const exportColumnCatalogs: { [C in ExportContext]: ExportColumn<ContextRow[C]>[] } = {
   portfolio: portfolioColumns, "product-lines": productLineColumns, "end-to-end": endToEndColumns,
-  "pre-shipment": preShipmentColumns,
+  "pre-shipment": preShipmentColumns, "post-shipment": postShipmentColumns,
 };
 
 /** Columns chosen on the screen, each with its header in the viewer's language. */

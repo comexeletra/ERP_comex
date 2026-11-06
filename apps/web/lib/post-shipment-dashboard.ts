@@ -66,17 +66,29 @@ export function parsePostShipmentFilters(params: URLSearchParams): PostShipmentF
   return filters;
 }
 
-/** The query string of the filters, empty values left out: a list repeats its key, once for each value. */
-function filterParams(filters: PostShipmentFilters): URLSearchParams {
-  const params = new URLSearchParams();
-  const lists: [string, readonly string[]][] = [["status", inOrder(postShipmentStatuses, filters.status)],
+/**
+ * The filters as the API reads them, empty values left out: the body of the Excel export (a list is an array),
+ * and through filterParams the query of the summary and the table.
+ */
+export function postShipmentFilterBody(filters: PostShipmentFilters): Record<string, string | string[]> {
+  const body: Record<string, string | string[]> = {};
+  const lists: [string, string[]][] = [["status", inOrder(postShipmentStatuses, filters.status)],
     ["channel", inOrder(postShipmentChannels, filters.channel)], ["priority", inOrder(postShipmentPriorities, filters.priority)],
     ["clearance", inOrder(postShipmentClearanceTypes, filters.clearance)],
     ...listKeys.map(key => [key, cleanList(filters[key])] as [string, string[]])];
-  for (const [key, values] of lists) for (const value of values) params.append(key, value);
-  if (filters.ipNumber.trim()) params.set("ipNumber", filters.ipNumber.trim());
-  if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
-  if (filters.dateTo) params.set("dateTo", filters.dateTo);
+  for (const [key, values] of lists) if (values.length) body[key] = values;
+  if (filters.ipNumber.trim()) body.ipNumber = filters.ipNumber.trim();
+  if (filters.dateFrom) body.dateFrom = filters.dateFrom;
+  if (filters.dateTo) body.dateTo = filters.dateTo;
+  return body;
+}
+
+/** The query string of the filters: a list repeats its key, once for each value. */
+function filterParams(filters: PostShipmentFilters): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(postShipmentFilterBody(filters))) {
+    for (const item of Array.isArray(value) ? value : [value]) params.append(key, item);
+  }
   return params;
 }
 

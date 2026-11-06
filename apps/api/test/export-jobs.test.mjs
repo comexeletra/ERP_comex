@@ -112,7 +112,7 @@ test("recent exports list the PO, product line and pre-shipment exports with the
   assert.equal(response.statusCode, 200, response.body);
   assert.equal(response.json().items[0].jobType, "purchase-order-lines-xlsx");
   const list = queries.find(query => query.sql.includes("FROM jobs.export_job"));
-  assert.match(list.sql, /job_type IN \('purchase-order-xlsx', 'purchase-order-lines-xlsx', 'pre-shipment-xlsx'\)/u);
+  assert.match(list.sql, /job_type IN \('purchase-order-xlsx', 'purchase-order-lines-xlsx', 'pre-shipment-xlsx', 'post-shipment-xlsx'\)/u);
 });
 
 test("exports store the chosen screen columns with their context and reject invalid choices", async t => {
@@ -215,5 +215,111 @@ test("the pre-shipment export body built by the web is accepted by the route", a
     "quantity", "supplier", "importer", "purpose", "poSentDate"];
   const response = await app.inject({ method: "POST", url: "/api/v1/exports/pre-shipment",
     payload: { ...preShipmentFilterBody(filters), ...columnsBody("pre-shipment", allKeys, ptBR, {}) } });
+  assert.equal(response.statusCode, 202, response.body);
+});
+
+test("post-shipment exports store the dashboard filters, chart selections and columns for the worker", async t => {
+  const { app, queries } = await exportApp(t);
+  const { postShipmentQuery } = await import("../dist/post-shipment-dashboard.js");
+  const post = payload => app.inject({ method: "POST", url: "/api/v1/exports/post-shipment", payload });
+  const stored = () => JSON.parse(queries.filter(query => query.sql.includes("INSERT INTO jobs.export_job")).at(-1).params[4]);
+  const queued = await post({ status: ["ENTREGUE"], channel: ["green"], priority: ["priority"], clearance: ["onWater"],
+    modes: ["SEA"], ipNumber: "015", dateFrom: "2026-01-01", dateTo: "2026-01-31", context: "post-shipment",
+    columns: [{ key: "ltDoc", header: "LT Doc" }, { key: "slaTxt", header: "SLA TXT" }] });
+  assert.equal(queued.statusCode, 202, queued.body);
+  const insert = queries.filter(query => query.sql.includes("INSERT INTO jobs.export_job")).at(-1);
+  assert.match(insert.sql, /'post-shipment-xlsx'/u);
+  const { context, columns, ...filters } = stored();
+  assert.equal(context, "post-shipment");
+  assert.deepEqual(columns.map(column => column.key), ["ltDoc", "slaTxt"]);
+  // The worker parses the stored filters again with the dashboard schema.
+  assert.deepEqual(postShipmentQuery.strict().parse(filters), { status: ["ENTREGUE"], channel: ["green"],
+    priority: ["priority"], clearance: ["onWater"], modes: ["SEA"], ipNumber: "015", dateFrom: "2026-01-01",
+    dateTo: "2026-01-31" });
+  for (const payload of [
+    { channel: ["blue"] }, { aging: ["days120Plus"] },
+    { context: "pre-shipment", columns: [{ key: "ltDoc", header: "LT Doc" }] },
+    { context: "post-shipment", columns: [{ key: "poNumber", header: "PO" }] },
+    { context: "post-shipment", columns: [] },
+  ]) {
+    const response = await post(payload);
+    assert.equal(response.statusCode, 400, `${JSON.stringify(payload)}: ${response.body}`);
+  }
+});
+
+test("the worker writes the post-shipment export from the dashboard table and the download names it", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const worker = await readFile(new URL("../src/worker.ts", import.meta.url), "utf8");
+  const branch = worker.slice(worker.indexOf('job.job_type === "post-shipment-xlsx"'), worker.indexOf('job.job_type !== "purchase-order-xlsx"'));
+  assert.match(branch, /postShipmentQuery\.safeParse\(parameters\)/u);
+  assert.match(branch, /queryPostShipmentLines\(pool, job\.importer_scopes, filters\.data, maxExportLines \+ 1, 0\)/u);
+  assert.match(branch, /postShipmentXlsx\(result\.lines, chosen\)/u);
+  const routes = await readFile(new URL("../src/export-jobs.ts", import.meta.url), "utf8");
+  assert.match(routes, /"post-shipment-xlsx": "pos-embarque\.xlsx"/u);
+  // The post-shipment dashboard reads IPs: its export asks for the same permission.
+  assert.match(routes, /\["\/api\/v1\/exports\/post-shipment", "post-shipment-xlsx", postShipmentExportBody, "processes\.read"\]/u);
+});
+
+test("the post-shipment export writes the chosen columns of the table in the Pós Embarque sheet", async () => {
+  const ExcelJS = (await import("exceljs")).default;
+  const { postShipmentXlsx } = await import("../dist/purchase-order-exports.js");
+  const { resolveExportColumns } = await import("../dist/export-columns.js");
+  const columns = resolveExportColumns("post-shipment", [{ key: "status", header: "Status" },
+    { key: "ltClearance", header: "LT Clearance" }], {});
+  const lines = [{ ipNumber: "061E/2025", status: "ENTREGUE", leadTime: 37 },
+    { ipNumber: "015B/2026", status: "DESEMBARAÇO", leadTime: null }];
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await postShipmentXlsx(lines, columns));
+  assert.deepEqual(workbook.worksheets.map(sheet => sheet.name), ["Pós Embarque"]);
+  const rows = [];
+  workbook.getWorksheet("Pós Embarque").eachRow(row => rows.push(row.values.slice(1).map(cell => cell ?? null)));
+  assert.deepEqual(rows, [["IP", "Status", "LT Clearance"], ["061E/2025", "ENTREGUE", 37], ["015B/2026", "DESEMBARAÇO"]]);
+});
+
+test("the post-shipment export colors LT Doc, LT Clearance and priority as the table badges", async () => {
+  const ExcelJS = (await import("exceljs")).default;
+  const { readFile } = await import("node:fs/promises");
+  const { exportToneColors, postShipmentXlsx } = await import("../dist/purchase-order-exports.js");
+  const { resolveExportColumns } = await import("../dist/export-columns.js");
+  // The light theme of the screen badges (apps/web/app/styles/tokens.css), the colors of a printed sheet.
+  const tokens = await readFile(new URL("../../web/app/styles/tokens.css", import.meta.url), "utf8");
+  const light = tokens.slice(tokens.indexOf(":root {"), tokens.indexOf(':root[data-theme="dark"]'));
+  const token = name => `FF${new RegExp(`${name}:\\s*#([0-9a-f]{6})`, "u").exec(light)[1].toUpperCase()}`;
+  for (const [tone, name] of [["good", "success"], ["bad", "danger"], ["warning", "warning"]]) {
+    assert.deepEqual(exportToneColors[tone], { fill: token(`--color-${name}-bg`), font: token(`--color-${name}-text`) }, tone);
+  }
+  const columns = resolveExportColumns("post-shipment", [{ key: "priority", header: "Prioridade" },
+    { key: "ltDoc", header: "LT Doc" }, { key: "ltClearance", header: "LT Clearance" }, { key: "slaTxt", header: "SLA TXT" }], {});
+  const lines = [
+    { ipNumber: "A", priority: "Prioridade", priorityKey: "priority", ltDoc: 2, ltDocOnTarget: true, leadTime: 7, slaTxt: 5 },
+    { ipNumber: "B", priority: null, priorityKey: "normal", ltDoc: 8, ltDocOnTarget: false, leadTime: 8, slaTxt: 40 },
+    // A courier has no LT Doc target, and without an arrival there is no LT Clearance: no color.
+    { ipNumber: "C", priority: null, priorityKey: "normal", ltDoc: 20, ltDocOnTarget: null, leadTime: null, slaTxt: null },
+  ];
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await postShipmentXlsx(lines, columns));
+  const sheet = workbook.getWorksheet("Pós Embarque");
+  const fill = (row, column) => sheet.getRow(row).getCell(column).fill?.fgColor?.argb ?? null;
+  const font = (row, column) => sheet.getRow(row).getCell(column).font?.color?.argb ?? null;
+  // Columns: IP, Prioridade, LT Doc, LT Clearance, SLA TXT.
+  assert.deepEqual([2, 3, 4].map(row => [fill(row, 2), fill(row, 3), fill(row, 4), fill(row, 5)]), [
+    [exportToneColors.warning.fill, exportToneColors.good.fill, exportToneColors.good.fill, null],
+    [null, exportToneColors.bad.fill, exportToneColors.bad.fill, null],
+    [null, null, null, null],
+  ]);
+  assert.deepEqual([font(2, 3), font(3, 4)], [exportToneColors.good.font, exportToneColors.bad.font]);
+});
+
+test("the post-shipment export body built by the web is accepted by the route", async t => {
+  const { app } = await exportApp(t);
+  const { emptyPostShipmentFilters, postShipmentFilterBody } = await import("../../web/lib/post-shipment-dashboard.ts");
+  const { columnsBody, choosableColumns } = await import("../../web/lib/export-columns.ts");
+  const { ptBR } = await import("../../web/lib/i18n/pt-BR.ts");
+  const filters = { ...emptyPostShipmentFilters, status: ["DESEMBARAÇO"], channel: ["none"], priority: ["normal"],
+    clearance: ["onWater"], importers: ["FOR"], modes: ["AIR"], ipNumber: "Nh", dateFrom: "2026-01-01", dateTo: "2026-03-31",
+    datePeriod: "quarter:0:0" };
+  const allKeys = choosableColumns("post-shipment", {}).map(column => column.key);
+  const response = await app.inject({ method: "POST", url: "/api/v1/exports/post-shipment",
+    payload: { ...postShipmentFilterBody(filters), ...columnsBody("post-shipment", allKeys, ptBR, {}) } });
   assert.equal(response.statusCode, 202, response.body);
 });

@@ -21,6 +21,20 @@ test("each context lists the columns of its screen table, in the table order", (
   assert.deepEqual(keys(exportColumnCatalogs["pre-shipment"]), ["necessity", "mode", "status", "requester", "scNumber",
     "poNumber", "ipNumber", "etd", "eta", "ete", "productCode", "description", "quantity", "supplier", "importer", "purpose",
     "poSentDate"]);
+  assert.deepEqual(keys(exportColumnCatalogs["post-shipment"]), ["necessity", "ipNumber", "priority", "incoterm", "mode",
+    "status", "duimpDate", "documentsOk", "arrival", "ltDoc", "etd", "eta", "ete", "delivery", "containers", "ltClearance",
+    "clearanceType", "slaTxt"]);
+});
+
+test("the post-shipment export always writes the IP and keeps the numbers of the table as numbers", () => {
+  const resolved = resolveExportColumns("post-shipment", [{ key: "ltDoc", header: "LT Doc" },
+    { key: "containers", header: "Ctnr" }, { key: "clearanceType", header: "Clearance" }, { key: "priority", header: "Prio" }], {});
+  assert.deepEqual(resolved.map(column => column.key), ["ipNumber", "priority", "ltDoc", "containers", "clearanceType"]);
+  const line = { ipNumber: "015B/2026", priority: "Prioridade", priorityKey: "priority", ltDoc: -31, containerQuantity: "0.50",
+    clearanceType: "onWater" };
+  assert.deepEqual(resolved.map(column => column.value(line)), ["015B/2026", "Prioridade", -31, 0.5, "On water"]);
+  const normal = { ...line, priority: null, priorityKey: "normal", ltDoc: null, containerQuantity: null, clearanceType: "normal" };
+  assert.deepEqual(resolved.map(column => column.value(normal)), ["015B/2026", "Normal", null, null, "Normal"]);
 });
 
 test("the pre-shipment export always writes the PO and the product of the dashboard line", () => {
@@ -82,7 +96,7 @@ test("the End to End stage columns carry their stage, colored in the file as the
 });
 
 test("the web catalog mirrors the API catalogs (keys, order, required and dependent columns)", () => {
-  for (const context of ["portfolio", "product-lines", "end-to-end", "pre-shipment"]) {
+  for (const context of ["portfolio", "product-lines", "end-to-end", "pre-shipment", "post-shipment"]) {
     const api = exportColumnCatalogs[context].map(column => ({ key: column.key, required: column.required === true,
       follows: column.follows ?? null, conditional: column.available !== undefined }));
     const web = webCatalog[context].map(column => ({ key: column.key, required: column.required === true,

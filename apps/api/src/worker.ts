@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { exportColumnCatalogs, exportColumnsSchema, resolveExportColumns, type ExportContext } from "./export-columns.js";
 import { todayInBrasilia } from "./followup-calculations.js";
+import { postShipmentQuery, queryPostShipmentLines } from "./post-shipment-dashboard.js";
 import { preShipmentQuery, queryPreShipmentLines } from "./pre-shipment-dashboard.js";
-import { preShipmentXlsx, queryPurchaseOrderExport, purchaseOrderExportXlsx, purchaseOrderLinesXlsx,
+import { postShipmentXlsx, preShipmentXlsx, queryPurchaseOrderExport, purchaseOrderExportXlsx, purchaseOrderLinesXlsx,
   type PurchaseOrderExportFilters } from "./purchase-order-exports.js";
 import { queryShipmentLines, shipmentLineQuery } from "./shipment-lines.js";
 
@@ -144,6 +145,19 @@ async function processJob(job: ExportJob): Promise<void> {
       const result = await queryPreShipmentLines(pool, job.importer_scopes, filters.data, maxExportLines + 1, 0);
       if (result.totalCount > maxExportLines) throw new PermanentJobError("EXPORT_TOO_LARGE");
       await completeJob(job, await preShipmentXlsx(result.lines, chosen, { filters: filters.data, today: todayInBrasilia() }));
+      console.info(JSON.stringify({ event: "export_job_completed", jobId: job.id, rowCount: result.lines.length }));
+      return;
+    }
+    if (job.job_type === "post-shipment-xlsx") {
+      const filters = postShipmentQuery.safeParse(parameters);
+      if (!filters.success) throw new PermanentJobError("INVALID_EXPORT_FILTERS");
+      // Without a choice, every column of the table with its default header.
+      const chosen = chosenColumns({ context, columns }, ["post-shipment"], {})
+        ?? resolveExportColumns("post-shipment", exportColumnCatalogs["post-shipment"]
+          .map(column => ({ key: column.key, header: column.header })), {})!;
+      const result = await queryPostShipmentLines(pool, job.importer_scopes, filters.data, maxExportLines + 1, 0);
+      if (result.totalCount > maxExportLines) throw new PermanentJobError("EXPORT_TOO_LARGE");
+      await completeJob(job, await postShipmentXlsx(result.lines, chosen));
       console.info(JSON.stringify({ event: "export_job_completed", jobId: job.id, rowCount: result.lines.length }));
       return;
     }
