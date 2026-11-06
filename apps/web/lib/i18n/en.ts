@@ -1618,6 +1618,7 @@ export const en: Messages = {
       none: "No IPs for the filters.",
       pages: "Table pages",
       noValue: "No value",
+      export: "Export post-shipment Excel",
       ltDocOnTarget: (target: string) => `Within the ${target}-day target`,
       ltDocLate: (target: string) => `Above the ${target}-day target`,
       ltDocNoTarget: "No target for the mode",

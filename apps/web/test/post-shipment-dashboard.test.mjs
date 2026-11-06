@@ -7,8 +7,9 @@ import { zhCN } from "../lib/i18n/zh-CN.ts";
 import { atLeastTone, atMostTone, changeTone, emptyPostShipmentFilters, formatAverageDays, formatChange, formatContainers,
   formatMonth, formatShareOf, parsePostShipmentFilters, postShipmentChannelColors, postShipmentChannels,
   postShipmentFilterCount, postShipmentLinesQuery, postShipmentPriorities, postShipmentStatusColors, postShipmentStatuses,
-  postShipmentSummaryQuery, postShipmentUrlQuery } from "../lib/post-shipment-dashboard.ts";
+  postShipmentFilterBody, postShipmentSummaryQuery, postShipmentUrlQuery } from "../lib/post-shipment-dashboard.ts";
 import { preShipmentStatusColors } from "../lib/pre-shipment-dashboard.ts";
+import { choosableColumns, columnsBody } from "../lib/export-columns.ts";
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const [dashboard, charts, reports, page, styles] = await Promise.all([read("components/PostShipmentDashboard.tsx"),
@@ -117,4 +118,22 @@ test("the post-shipment page shows the dashboard and keeps the load metrics in a
     ".post-month-columns", ".post-month-column", ".post-month-figures", ".post-month-bar", ".post-month-label"]) {
     assert.ok(styles.includes(`${rule} {`), rule);
   }
+});
+
+test("the export offers the columns of the table, in its order, with the IP always written", () => {
+  const columns = [...dashboard.matchAll(/<th>\{c\.(\w+)\}<\/th>/gu)].map(match => ptBR.reports.postDashboard.columns[match[1]]);
+  assert.deepEqual(choosableColumns("post-shipment", {}).map(column => column.label(ptBR, {})), columns);
+  assert.deepEqual(columnsBody("post-shipment", ["ltDoc"], en, {}), { context: "post-shipment",
+    columns: [{ key: "ipNumber", header: "IP" }, { key: "ltDoc", header: "LT Doc" }] });
+});
+
+test("the export sends the filters and the chart selections of the table as the API body", () => {
+  assert.deepEqual(postShipmentFilterBody({ ...emptyPostShipmentFilters, status: ["ENTREGUE", "DESEMBARAÇO"],
+    clearance: ["onWater"], modes: [" SEA ", "SEA"], ipNumber: " 015 ", datePeriod: "month:0:0" }),
+  { status: ["DESEMBARAÇO", "ENTREGUE"], clearance: ["onWater"], modes: ["SEA"], ipNumber: "015" });
+  assert.deepEqual(postShipmentFilterBody(emptyPostShipmentFilters), {});
+  assert.match(dashboard, /runExport\("\/api\/v1\/exports\/post-shipment", \{ \.\.\.postShipmentFilterBody\(applied\), \.\.\.columns \}\)/u);
+  assert.match(dashboard, /<ExportColumnsDialog context="post-shipment"/u);
+  assert.match(dashboard, /useExcelExport\("pos-embarque"\)/u);
+  for (const m of [ptBR, en, zhCN]) assert.ok(m.reports.postDashboard.export);
 });

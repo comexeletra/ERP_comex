@@ -1614,6 +1614,7 @@ export const zhCN: Messages = {
       none: "没有符合筛选的 IP。",
       pages: "表格分页",
       noValue: "无值",
+      export: "导出装运后 Excel",
       ltDocOnTarget: (target: string) => `在 ${target} 天目标内`,
       ltDocLate: (target: string) => `超过 ${target} 天目标`,
       ltDocNoTarget: "该运输方式无目标",

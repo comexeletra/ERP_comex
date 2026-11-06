@@ -1621,6 +1621,7 @@ export const ptBR = {
       none: "Nenhum IP para os filtros.",
       pages: "Páginas da tabela",
       noValue: "Sem valor",
+      export: "Exportar Excel do Pós Embarque",
       ltDocOnTarget: (target: string) => `Dentro da meta de ${target} dias`,
       ltDocLate: (target: string) => `Acima da meta de ${target} dias`,
       ltDocNoTarget: "Sem meta para o modal",
