@@ -1096,3 +1096,58 @@ test("the assignments, allocations and line decisions built by the web screen ar
   const response = await sendInvoice(app, "invoice-web-decisions", payload);
   assert.equal(response.statusCode, 201, response.body);
 });
+
+// Audit 2026-11-09: the API checks each PO part of a split cell, not only the line total.
+function splitCellPayload(decision) {
+  const payload = invoicePayload();
+  payload.invoice.metadata.lines[0].poCell = "PO030201=3 pcs, PO030305=2 pcs";
+  if (decision) payload.invoice.metadata.lineDecisions = [{ sourceRow: 16, invoiceQuantity: "5", destinedQuantity: "5", ...decision }];
+  return payload;
+}
+
+test("a split cell part destined with another quantity needs the line confirmation and reason", async t => {
+  const { client, queries } = invoiceImportClient();
+  const app = await invoiceImportApp(t, client);
+  // The cell cites 3 for PO030201 and 2 for PO030305; the request puts all 5 on PO030201.
+  for (const [name, payload] of [
+    ["no-decision", splitCellPayload(null)],
+    ["unconfirmed", splitCellPayload({ confirmQuantityMismatch: false, quantityMismatchReason: "" })],
+  ]) {
+    const response = await sendInvoice(app, `invoice-split-${name}`, payload);
+    assert.equal(response.statusCode, 400, `${name}: ${response.body}`);
+    assert.equal(response.json().code, "INVOICE_QUANTITY_MISMATCH_UNCONFIRMED", name);
+    assert.match(response.json().detail, /Linha 16/u, name);
+  }
+  assert.equal(queries.some(query => query.sql.includes("INSERT INTO procurement.po_item_allocation")), false);
+  const confirmed = await sendInvoice(app, "invoice-split-confirmed", splitCellPayload({
+    confirmQuantityMismatch: true, quantityMismatchReason: "A PO030305 não tem saldo; tudo vai na PO030201" }));
+  assert.equal(confirmed.statusCode, 201, confirmed.body);
+  const audit = queries.find(query => query.sql.includes("INSERT INTO audit.audit_log")
+    && query.params.some(value => typeof value === "string" && value.includes('"kind":"INVOICE"')));
+  assert.deepEqual(JSON.parse(audit.params[7]).lineDecisions, [{ sourceRow: 16, productCode: "PO-CODE",
+    invoiceQuantity: "5", destinedQuantity: "5", quantityMismatchReason: "A PO030305 não tem saldo; tudo vai na PO030201" }]);
+});
+
+test("a single PO cell with its quantity written with comma thousands is read as thousands", async t => {
+  const { client } = invoiceImportClient();
+  const app = await invoiceImportApp(t, client);
+  const payload = invoicePayload();
+  Object.assign(payload.invoice.metadata.lines[0], { quantity: "1000", poCell: "PO030201=1,000 pcs" });
+  payload.invoice.amount = "10";
+  payload.invoice.metadata.assignments[0].quantity = "1000";
+  payload.allocations[0].quantity = "1000";
+  const response = await sendInvoice(app, "invoice-cell-thousands", payload);
+  // Read as 1 the part would differ from the 1000 destined; read as 1000 it passes to the balance (10 in the fake PO).
+  assert.equal(response.json().code, "PO_BALANCE_CHANGED", response.body);
+});
+
+test("an invalid invoice line names the row and the field in Portuguese", async t => {
+  const { client } = invoiceImportClient();
+  const app = await invoiceImportApp(t, client);
+  const payload = invoicePayload();
+  Object.assign(payload.invoice.metadata.lines[0], { amount: "4485.599999999999", unitPrice: "0.0504" });
+  const response = await sendInvoice(app, "invoice-line-invalid-amount", payload);
+  assert.equal(response.statusCode, 400, response.body);
+  assert.equal(response.json().code, "INVALID_INVOICE_LINES");
+  assert.equal(response.json().detail, "Linha 16 da invoice: valor (Total CNY) inválido.");
+});

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
 import { unitsDiffer } from "./unit-equivalence.js";
 import { exporterMatchesAlias } from "./exporter-alias.js";
+import { parseInvoicePoCell } from "./invoice-po-cell.js";
 
 const quantity = z.string().trim().regex(/^(?:0|[1-9]\d{0,15})(?:[.,]\d{1,8})?$/u)
   .refine(value => !/^0(?:[.,]0+)?$/u.test(value)).transform(value => value.replace(",", "."));
@@ -21,6 +22,20 @@ function priceUnits(value: string): bigint {
   return BigInt(whole) * 1_000_000_000_000_000_000n + BigInt(fraction.padEnd(18, "0") || "0");
 }
 function absoluteUnits(value: bigint): bigint { return value < 0n ? -value : value; }
+/** The invoice line fields as the INV sheet names them, for the message of an invalid line. */
+const invoiceLineFieldLabels: Record<string, string> = {
+  sourceRow: "número da linha inválido", productCode: "Material Code inválido", quantity: "quantidade (QTY) inválida",
+  poCell: "PO inválida", amount: "valor (Total CNY) inválido", unitPrice: "preço unitário (Price CNY) inválido",
+  ncm: "NCM inválido", unit: "unidade (QTY Unit) inválida", description: "descrição inválida",
+};
+function invalidInvoiceLinesMessage(lines: unknown, issues: readonly { path: readonly PropertyKey[] }[]): string {
+  const [index, field] = issues[0]?.path ?? [];
+  if (typeof index !== "number" || !Array.isArray(lines)) return "Informe as linhas da invoice (de 1 a 2.000).";
+  const sourceRow = (lines[index] as { sourceRow?: unknown } | null)?.sourceRow;
+  const row = typeof sourceRow === "number" ? `Linha ${sourceRow} da invoice` : `Linha ${index + 1} enviada da invoice`;
+  const reason = typeof field === "string" ? invoiceLineFieldLabels[field] ?? `campo ${field} inválido` : "linha inválida";
+  return `${row}: ${reason}.`;
+}
 const nullableText = (limit: number) => z.string().trim().max(limit).nullable();
 const poFields = z.object({
   number: z.string().trim().min(1).max(80),
@@ -1079,12 +1094,12 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const confirmImporterCnpjMismatch = body.invoice.metadata.confirmImporterCnpjMismatch === true;
         if (!importerCnpj.rowCount && !confirmImporterCnpjMismatch) {
           throw new BusinessError(409, "INVOICE_IMPORTER_CNPJ_MISMATCH",
-            "Confirme a selecao manual quando o CNPJ do cabecalho nao corresponder a importadora selecionada.");
+            "Confirme a seleção manual quando o CNPJ do cabeçalho não corresponder à importadora selecionada.");
         }
         const invoiceIpReference = typeof body.invoice.metadata.ipNumberFromInvoice === "string"
           ? body.invoice.metadata.ipNumberFromInvoice.trim() : "";
         if (!invoiceIpReference || invoiceIpReference.toLocaleUpperCase("en-US") !== body.process.ipNumber.trim().toLocaleUpperCase("en-US")) {
-          throw new BusinessError(400, "INVOICE_IP_REFERENCE_MISMATCH", "IP REF must match the invoice header.");
+          throw new BusinessError(400, "INVOICE_IP_REFERENCE_MISMATCH", "O IP do processo precisa ser o IP REF do cabeçalho da invoice.");
         }
         const fileSha256 = body.invoice.metadata.fileSha256;
         if (fileSha256 !== undefined && (typeof fileSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(fileSha256))) {
@@ -1097,7 +1112,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           productCode: z.string().trim().min(1).max(120),
           sourceRow: z.number().int().positive() }).strict())
           .min(1).max(2000).safeParse(body.invoice.metadata.assignments);
-        if (!invoiceAssignments.success) throw new BusinessError(400, "INVALID_INVOICE_ASSIGNMENTS", "Invoice assignments are required.");
+        if (!invoiceAssignments.success) throw new BusinessError(400, "INVALID_INVOICE_ASSIGNMENTS", "Revise as associações das linhas da invoice com as POs.");
         const invoiceLines = z.array(z.object({ sourceRow: z.number().int().positive(),
           productCode: z.string().trim().min(1).max(120), quantity, poCell: z.string(),
           amount: nonnegative.optional(), unitPrice: invoiceUnitPrice.optional(),
@@ -1105,7 +1120,10 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           unit: z.string().trim().min(1).max(32).optional(),
           description: z.string().trim().min(1).max(1000).optional() }).passthrough())
           .min(1).max(2000).safeParse(body.invoice.metadata.lines);
-        if (!invoiceLines.success) throw new BusinessError(400, "INVALID_INVOICE_LINES", "Invoice lines are required.");
+        if (!invoiceLines.success) {
+          throw new BusinessError(400, "INVALID_INVOICE_LINES",
+            invalidInvoiceLinesMessage(body.invoice.metadata.lines, invoiceLines.error.issues));
+        }
         if (body.invoice.currency !== "CNY") {
           throw new BusinessError(400, "INVALID_INVOICE_CURRENCY", "A carga de invoice aceita somente CNY.");
         }
@@ -1150,14 +1168,16 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           throw new BusinessError(400, "INVALID_INVOICE_LINE_DECISIONS", "Revise as quantidades destinadas da invoice.");
         }
         const assignedByRow = new Map<number, bigint>();
+        const assignedByRowPo = new Map<string, bigint>();
         for (const assignment of invoiceAssignments.data) {
           const sourceLine = lineByRow.get(assignment.sourceRow);
           const sourcePoNumbers = sourceLine
-            ? [...sourceLine.poCell.matchAll(/\bPO\s*([0-9]{3,})/giu)].map(match => normalizePoNumber(match[0])) : [];
+            ? parseInvoicePoCell(sourceLine.poCell).map(part => normalizePoNumber(part.poNumber)) : [];
           if (!sourceLine || sourceLine.productCode !== assignment.productCode
             || !sourcePoNumbers.includes(normalizePoNumber(assignment.sourcePoNumber))
             || normalizePoNumber(assignment.poNumber) !== normalizePoNumber(assignment.sourcePoNumber)) {
-            throw new BusinessError(400, "INVOICE_LINE_MISMATCH", "Assignment does not match the source invoice line.");
+            throw new BusinessError(400, "INVOICE_LINE_MISMATCH",
+              `Linha ${assignment.sourceRow} da invoice: a associação não corresponde à PO citada na linha.`);
           }
           // The destination key is the cited PO plus the line code: no item with another code.
           if (assignment.productCode.trim().toLocaleUpperCase("en-US")
@@ -1167,14 +1187,31 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           }
           assignedByRow.set(assignment.sourceRow,
             (assignedByRow.get(assignment.sourceRow) ?? 0n) + decimalUnits(assignment.quantity));
+          const rowPo = `${assignment.sourceRow}|${normalizePoNumber(assignment.sourcePoNumber)}`;
+          assignedByRowPo.set(rowPo, (assignedByRowPo.get(rowPo) ?? 0n) + decimalUnits(assignment.quantity));
+        }
+        // A split cell cites a quantity for each PO; destining another quantity to a PO is a decision as well.
+        const rowsWithPartMismatch = new Set<number>();
+        for (const line of invoiceLines.data) {
+          const parts = parseInvoicePoCell(line.poCell);
+          if (!parts.length || parts.some(part => part.quantity === null)) continue;
+          const citedByPo = new Map<string, bigint>();
+          for (const part of parts) {
+            const po = normalizePoNumber(part.poNumber);
+            citedByPo.set(po, (citedByPo.get(po) ?? 0n) + decimalUnits(part.quantity!));
+          }
+          if ([...citedByPo].some(([po, cited]) => (assignedByRowPo.get(`${line.sourceRow}|${po}`) ?? 0n) !== cited)) {
+            rowsWithPartMismatch.add(line.sourceRow);
+          }
         }
         for (const line of invoiceLines.data) {
           const decision = decisionByRow.get(line.sourceRow);
           const destined = decimalUnits(decision?.destinedQuantity ?? line.quantity);
           if ((assignedByRow.get(line.sourceRow) ?? 0n) !== destined) {
-            throw new BusinessError(400, "INVOICE_LINE_QUANTITY_MISMATCH", "Assignments must total the destined line quantity.");
+            throw new BusinessError(400, "INVOICE_LINE_QUANTITY_MISMATCH",
+              `Linha ${line.sourceRow} da invoice: as POs não somam a quantidade destinada da linha.`);
           }
-          if (destined !== decimalUnits(line.quantity)
+          if ((destined !== decimalUnits(line.quantity) || rowsWithPartMismatch.has(line.sourceRow))
             && !(decision?.confirmQuantityMismatch && decision.quantityMismatchReason.length >= 3)) {
             throw new BusinessError(400, "INVOICE_QUANTITY_MISMATCH_UNCONFIRMED",
               `Linha ${line.sourceRow}: confirme e explique a quantidade destinada diferente da invoice.`);
@@ -1184,7 +1221,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const zeroRows = invoiceLines.data.filter(line => decimalUnits(decisionByRow.get(line.sourceRow)?.destinedQuantity
           ?? line.quantity) === 0n);
         const citedPoNumbers = (line: { poCell: string }) =>
-          [...line.poCell.matchAll(/\bPO\s*([0-9]{3,})/giu)].map(match => normalizePoNumber(match[0]));
+          parseInvoicePoCell(line.poCell).map(part => normalizePoNumber(part.poNumber));
         const codesInCitedPos = zeroRows.length ? await client.query<{ po: string; code: string }>(
           `SELECT DISTINCT regexp_replace(regexp_replace(upper(po.external_number), '[^A-Z0-9]', '', 'g'), '^PO', '') AS po,
                   upper(btrim(item.product_code)) AS code, true AS invoice_po_code
@@ -1203,13 +1240,14 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
             codesInCitedPos.rows.some(row => row.po === po && row.code === code)) };
         });
         const auditedLineDecisions = savedLineDecisions
-          .filter(decision => decimalUnits(decision.destinedQuantity) !== decimalUnits(decision.invoiceQuantity))
+          .filter(decision => decimalUnits(decision.destinedQuantity) !== decimalUnits(decision.invoiceQuantity)
+            || rowsWithPartMismatch.has(decision.sourceRow))
           .map(decision => ({ sourceRow: decision.sourceRow, productCode: lineByRow.get(decision.sourceRow)!.productCode,
             invoiceQuantity: decision.invoiceQuantity, destinedQuantity: decision.destinedQuantity,
             quantityMismatchReason: decision.quantityMismatchReason,
             ...("codeFoundInPo" in decision ? { codeFoundInPo: decision.codeFoundInPo } : {}) }));
         const parsedCatalogUpdates = invoiceCatalogUpdates.safeParse(body.invoice.metadata.catalogUpdates ?? { products: [], poItems: [] });
-        if (!parsedCatalogUpdates.success) throw new BusinessError(400, "INVALID_INVOICE_CATALOG_UPDATES", "Revise the selected product and PO catalog updates.");
+        if (!parsedCatalogUpdates.success) throw new BusinessError(400, "INVALID_INVOICE_CATALOG_UPDATES", "Revise as atualizações de cadastro de produto da invoice.");
         const catalogUpdates = parsedCatalogUpdates.data;
         if (catalogUpdates.poItems?.length) {
           throw new BusinessError(400, "INVOICE_PO_ITEM_UPDATE_NOT_ALLOWED",
@@ -1217,7 +1255,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         }
         const poProductCodes = new Set(invoiceAssignments.data.map(item => item.poProductCode.toLocaleUpperCase("en-US")));
         if (catalogUpdates.products.some(update => !poProductCodes.has(update.productCode.toLocaleUpperCase("en-US")))) {
-          throw new BusinessError(400, "INVOICE_CATALOG_UPDATE_MISMATCH", "Catalog updates must match products and PO items selected for this invoice.");
+          throw new BusinessError(400, "INVOICE_CATALOG_UPDATE_MISMATCH", "As atualizações de cadastro precisam ser de produtos destinados por esta invoice.");
         }
         const aggregated = new Map<string, number>();
         for (const allocation of body.allocations) {
@@ -1270,7 +1308,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         if (nonActivePo) {
           const offending = invoiceAssignments.data.find(assignment => assignment.itemId === nonActivePo.id);
           throw new BusinessError(409, "PO_NOT_ACTIVE",
-            `Linha ${offending?.sourceRow ?? "?"} da invoice: PO ${nonActivePo.number} cancelada, encerrada ou excluida.`);
+            `Linha ${offending?.sourceRow ?? "?"} da invoice: PO ${nonActivePo.number} cancelada, encerrada ou excluída.`);
         }
         if (matchedItems.rows.some(item => ["CANCELLED", "CANCELED"].includes(item.source_status?.toUpperCase() ?? ""))) {
           const canceled = matchedItems.rows.find(item => ["CANCELLED", "CANCELED"].includes(item.source_status?.toUpperCase() ?? ""));
@@ -1297,7 +1335,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           const supplier = supplierByItemId.get(assignment.itemId)!;
           if (!supplier.matchesExporter && !assignment.confirmSupplierMismatch) {
             throw new BusinessError(400, "INVOICE_SUPPLIER_MISMATCH_UNCONFIRMED",
-              "Confirme a divergencia entre o Exporter da invoice e o fornecedor da PO.");
+              "Confirme a divergência entre o Exporter da invoice e o fornecedor da PO.");
           }
           const sourceLine = lineByRow.get(assignment.sourceRow);
           if (sourceLine?.unit && item.unit && unitsDiffer(sourceLine.unit, item.unit)
@@ -1351,10 +1389,10 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           const previous = previousProcess.rows[0];
           checkVersion(previous, versionFrom(request));
           if (previous.record_status === "CANCELLED") {
-            throw new BusinessError(409, "CANCELLED_IP_REFERENCE", "A cancelled IP cannot be revised.");
+            throw new BusinessError(409, "CANCELLED_IP_REFERENCE", "Um IP cancelado não pode ser revisado.");
           }
           if (previous.lifecycle_status === "CLOSED") {
-            throw new BusinessError(409, "CLOSED_IP_REVISION", "Reopen the IP before revising its invoice.");
+            throw new BusinessError(409, "CLOSED_IP_REVISION", "Reabra o IP antes de revisar a invoice.");
           }
           // A revision replaces the allocations, so a shipped IP needs the same confirmation as an allocation change.
           assertShippedChangeConfirmed(previous, { confirmShippedChange: body.confirmShippedChange,
@@ -1366,7 +1404,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
               `SELECT 1 FROM imports.process_document WHERE process_id = $1 AND status = 'ACTIVE'
                 AND kind <> 'INVOICE' AND purchase_order_item_id IS NOT NULL LIMIT 1`, [processId]);
             if (dependentDocuments.rowCount) {
-              throw new BusinessError(409, "INVOICE_REVISION_HAS_LINKED_DOCUMENTS", "A linked BL/NF document must be reviewed before replacing this invoice.");
+              throw new BusinessError(409, "INVOICE_REVISION_HAS_LINKED_DOCUMENTS", "Revise o documento BL/NF vinculado antes de substituir esta invoice.");
             }
             const oldDocuments = await client.query<Record<string, unknown>>(
               `SELECT * FROM imports.process_document WHERE process_id = $1 AND kind = 'INVOICE' AND status = 'ACTIVE' FOR UPDATE`, [processId]);
@@ -1502,7 +1540,7 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
             `SELECT * FROM catalog.entry WHERE kind = 'PRODUCT' AND importer IS NULL
               AND normalized_code = upper(btrim($1)) FOR UPDATE`, [update.productCode]);
           const product = found.rows[0];
-          if (!product) throw new BusinessError(409, "PRODUCT_CATALOG_NOT_FOUND", `Product ${update.productCode} is not registered in the global product catalog.`);
+          if (!product) throw new BusinessError(409, "PRODUCT_CATALOG_NOT_FOUND", `O produto ${update.productCode} não está no cadastro global de produtos.`);
           // The invoice only completes fields still empty in the catalog; it never overwrites registered data.
           const empty = (column: string) => !String(product[column] ?? "").trim();
           if (![["product_ncm_code", update.ncmCode], ["manufacturer", update.manufacturer],
