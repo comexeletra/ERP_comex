@@ -4,7 +4,7 @@
 |---|---|
 | Data | 2026-11-09 |
 | Branch de trabalho | `homologacao` |
-| Status | Especificação aguardando aprovação |
+| Status | Aprovada e implementada (web `537a143`, API `b62d03e`); API HML no release `b62d03e`; aceite da IPH034A no Preview pendente |
 
 ## Contexto (auditoria de 2026-11-09)
 
@@ -70,3 +70,10 @@ Permitir gravar as invoices reais (IPH034A/B) pela tela, com o número correto d
 3. Verificação completa (`apps/api`: build e test; `apps/web`: test, `tsc --noEmit`, lint e build) e revisão do diff.
 4. Release da API no HML (seção de release de `deploy/hostinger/README.md`), conferência da versão e da rota com o `dist` do release, push da `homologacao` e Preview `Ready`.
 5. Aceite da IPH034A no Preview, com a PO de teste 030201 já semeada no HML; antes, conferir no banco `erp_po_totvs_hml` se ela continua lá e com saldo.
+
+## Resultado (2026-11-09)
+
+- Web `537a143`: com o parser novo, IPH034A e as duas IPH034B saem sem nenhum valor, preço ou quantidade fora do formato da API, com os mesmos totais e o número da invoice (`PWBR260205-10A`, `PWBR260205-10B`). A célula PO só aceita `pcs`/`units` como unidade (regra anterior, mantida).
+- API `b62d03e`: célula dividida conferida por PO; mensagens da rota em português; `INVALID_INVOICE_LINES` diz a linha e o campo.
+- Verificação local: API 68 arquivos de teste, web 383 testes, type-check, lint (0 erros; os 42 avisos não vêm dos arquivos alterados) e builds.
+- HML: release `b62d03e` (registro em `deploy/hostinger/README.md`). A PO de teste 030201 da importadora GALPAO-FORTALEZA não existe mais: o aceite da IPH034A precisa recriá-la com `deploy/hostinger/seed-hml-iph034a-acceptance.mjs apply`, ou usar outra PO com saldo.
