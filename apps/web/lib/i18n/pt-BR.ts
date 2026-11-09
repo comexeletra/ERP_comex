@@ -920,6 +920,7 @@ export const ptBR = {
     ncmDigits: "O NCM precisa conter 8 dígitos.",
     descriptionEmpty: "A descrição do produto está vazia.",
     quantityPositive: "A quantidade precisa ser maior que zero.",
+    quantityDecimals: "A quantidade pode ter no máximo 8 casas decimais.",
     unitEmpty: "A unidade está vazia.",
     lineTotalInvalid: "O total da linha está vazio ou inválido.",
     unitPriceMissing: "O preço unitário não pôde ser calculado.",

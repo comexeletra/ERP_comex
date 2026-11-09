@@ -917,6 +917,7 @@ export const en: Messages = {
     ncmDigits: "The NCM must have 8 digits.",
     descriptionEmpty: "The product description is empty.",
     quantityPositive: "The quantity must be greater than zero.",
+    quantityDecimals: "The quantity can have at most 8 decimal places.",
     unitEmpty: "The unit is empty.",
     lineTotalInvalid: "The line total is empty or invalid.",
     unitPriceMissing: "The unit price could not be calculated.",

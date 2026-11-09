@@ -82,12 +82,17 @@ function normalizeHeader(value: string): string {
     .toLocaleLowerCase("en").replace(/[^a-z0-9]+/gu, " ").trim().replace(/\s+/gu, " ");
 }
 
+/** Same rule as apps/api/src/invoice-po-cell.ts: `1,000` and `12,500.5` group thousands with commas. */
+const commaThousands = /^-?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/u;
+
 function decimalValue(value: string): number | null {
   if (!value) return null;
   let normalized = value.trim().replace(/\s/gu, "");
   const comma = normalized.lastIndexOf(",");
   const dot = normalized.lastIndexOf(".");
-  if (comma >= 0 && dot >= 0) {
+  if (commaThousands.test(normalized)) {
+    normalized = normalized.replace(/,/gu, "");
+  } else if (comma >= 0 && dot >= 0) {
     normalized = comma > dot
       ? normalized.replace(/\./gu, "").replace(",", ".")
       : normalized.replace(/,/gu, "");
@@ -99,11 +104,41 @@ function decimalValue(value: string): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
-function decimalCell(cell: Cell): string {
-  const value = valueOf(cell);
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return decimalValue(textOf(cell)) === null ? "" : String(decimalValue(textOf(cell)));
+/** Writes a number in plain decimal notation (no exponent), as String would without it. */
+function plainDecimal(value: number): string {
+  const text = String(value);
+  const match = /^(-?)(\d)(?:\.(\d+))?e([+-]\d+)$/u.exec(text);
+  if (!match) return text;
+  const [, sign, lead, rest = "", exponentText] = match;
+  const digits = lead + rest;
+  const exponent = Number(exponentText);
+  if (exponent < 0) return `${sign}0.${"0".repeat(-exponent - 1)}${digits}`;
+  const whole = digits.padEnd(exponent + 1, "0");
+  return `${sign}${whole.slice(0, exponent + 1)}${digits.length > exponent + 1 ? `.${digits.slice(exponent + 1)}` : ""}`;
 }
+
+/**
+ * Excel stores computed values with binary residue (4485.599999999999) but shows 15 significant
+ * digits; the invoice is read as Excel shows it. With `maxDecimals` the value is also rounded to
+ * that scale (amounts and prices); quantities are left as read so an excess is reported, not hidden.
+ */
+function excelNumberText(value: number, maxDecimals?: number): string {
+  let rounded = Number(value.toPrecision(15));
+  const decimals = plainDecimal(rounded).split(".")[1]?.length ?? 0;
+  if (maxDecimals !== undefined && decimals > maxDecimals) rounded = Number(rounded.toFixed(maxDecimals));
+  return plainDecimal(rounded);
+}
+
+function decimalCell(cell: Cell, maxDecimals?: number): string {
+  const value = valueOf(cell);
+  if (typeof value === "number" && Number.isFinite(value)) return excelNumberText(value, maxDecimals);
+  const parsed = decimalValue(textOf(cell));
+  return parsed === null ? "" : excelNumberText(parsed, maxDecimals);
+}
+
+/** API scale of quantities and amounts, and of unit prices. */
+const quantityDecimals = 8;
+const priceDecimals = 18;
 
 /** Parses both the preferred one-PO-per-row format and legacy multi-PO cells. */
 export function parseInvoicePoAssignments(value: string, lineQuantity: string, m: Messages): InvoicePoAssignment[] {
@@ -154,7 +189,8 @@ function headerValue(sheet: Worksheet, label: string): string {
         const inlineValue = headerText.slice(label.length).replace(/^[\s:.]+/u, "").trim();
         if (inlineValue) return inlineValue;
       }
-      if (normalizeHeader(headerText) !== expected) continue;
+      // A label written with a colon only matches a cell with the colon: the merged INVOICE title is not INVOICE:.
+      if (normalizeHeader(headerText) !== expected || (label.includes(":") && !headerText.includes(":"))) continue;
       const cell = sheet.getRow(row).getCell(column + 1);
       const value = valueOf(cell);
       if (expected === "date" && typeof value === "number" && Number.isFinite(value)) {
@@ -191,21 +227,22 @@ function parseLine(sheet: Worksheet, rowNumber: number, columns: Map<string, num
   const get = (key: string) => textOf(sheet.getRow(rowNumber).getCell(columns.get(key)!));
   const issues: string[] = [];
   const quantity = decimalCell(sheet.getRow(rowNumber).getCell(columns.get("qty pcs kgs mts")!));
-  const amount = decimalCell(sheet.getRow(rowNumber).getCell(columns.get("total cny")!));
+  const amount = decimalCell(sheet.getRow(rowNumber).getCell(columns.get("total cny")!), quantityDecimals);
   const priceCell = sheet.getRow(rowNumber).getCell(columns.get("price cny")!);
   const priceValue = valueOf(priceCell);
   const amountNumber = decimalValue(amount);
   const quantityNumber = decimalValue(quantity);
   const formulaPrice = typeof priceValue === "object" && priceValue !== null && "result" in priceValue
-    ? Number(priceValue.result) : decimalValue(textOf(priceCell));
-  const unitPrice = Number.isFinite(formulaPrice) ? String(formulaPrice)
+    ? Number(priceValue.result) : typeof priceValue === "number" ? priceValue : decimalValue(textOf(priceCell));
+  const unitPrice = formulaPrice !== null && Number.isFinite(formulaPrice) ? excelNumberText(formulaPrice, priceDecimals)
     : amountNumber !== null && quantityNumber !== null && quantityNumber > 0
-      ? String(amountNumber / quantityNumber) : "";
+      ? excelNumberText(amountNumber / quantityNumber, priceDecimals) : "";
 
   if (!get("material code")) issues.push(t.materialCodeEmpty);
   if (!/^\d{8}$/u.test(get("ncm"))) issues.push(t.ncmDigits);
   if (!get("product description")) issues.push(t.descriptionEmpty);
   if (!quantityNumber || quantityNumber <= 0) issues.push(t.quantityPositive);
+  else if ((quantity.split(".")[1]?.length ?? 0) > quantityDecimals) issues.push(t.quantityDecimals);
   if (!get("qty unit")) issues.push(t.unitEmpty);
   if (amountNumber === null || amountNumber < 0) issues.push(t.lineTotalInvalid);
   if (!unitPrice) issues.push(t.unitPriceMissing);

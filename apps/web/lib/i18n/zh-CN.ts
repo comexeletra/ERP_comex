@@ -913,6 +913,7 @@ export const zhCN: Messages = {
     ncmDigits: "NCM 必须为 8 位数字。",
     descriptionEmpty: "产品描述为空。",
     quantityPositive: "数量必须大于零。",
+    quantityDecimals: "数量最多只能有 8 位小数。",
     unitEmpty: "单位为空。",
     lineTotalInvalid: "该行合计为空或无效。",
     unitPriceMissing: "无法计算单价。",

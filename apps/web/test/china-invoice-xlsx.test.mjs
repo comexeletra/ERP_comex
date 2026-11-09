@@ -68,6 +68,16 @@ test("rejects incomplete, malformed, and inconsistent multi-PO assignments", () 
   assert.throws(() => parseInvoicePoAssignments("PO 030321 = 0 unit", "0", ptBR), /quantidade total válida/);
 });
 
+test("reads comma thousands groups in the PO cell", () => {
+  assert.deepEqual(parseInvoicePoAssignments("PO030201=1,000 pcs, PO030305=999 pcs", "1999", ptBR).map(item => item.quantity),
+    ["1000", "999"]);
+  assert.deepEqual(parseInvoicePoAssignments("PO030201=1,000,000 pcs", "1000000", ptBR).map(item => item.quantity), ["1000000"]);
+  assert.deepEqual(parseInvoicePoAssignments("PO030201=12,500.5 pcs", "12500.5", ptBR).map(item => item.quantity), ["12500.5"]);
+  // A comma not followed by groups of three digits is still the decimal separator.
+  assert.deepEqual(parseInvoicePoAssignments("PO030201=1,5 pcs", "1.5", ptBR).map(item => item.quantity), ["1.5"]);
+  assert.throws(() => parseInvoicePoAssignments("PO030201=1,000 pcs, PO030305=999 pcs", "1000", ptBR), /soma das quantidades/);
+});
+
 async function fixtureWorkbook({ includeInv = true, includeIpReference = true, mutate } = {}) {
   const workbook = new ExcelJS.Workbook();
   const sheet = includeInv ? workbook.addWorksheet("INV") : workbook.addWorksheet("Other");
@@ -118,6 +128,48 @@ test("maps header and product fields from INV and expands PO splits", async () =
   assert.equal(result.totalAmount, "895.86");
   assert.match(result.fileSha256, /^[a-f0-9]{64}$/);
   assert.match(result.warnings[0], /mais de uma PO/);
+});
+
+test("does not read a merged INVOICE title as the INVOICE: label", async () => {
+  const result = await parseInvoice(await fixtureWorkbook({ mutate(sheet) {
+    sheet.mergeCells("A3:L3");
+    sheet.getCell("A3").value = "INVOICE";
+  } }));
+  assert.equal(result.invoiceNumber, "PWBR260205-10B");
+});
+
+// Values computed in Excel keep the binary residue of the real IPH034A/IPH034B rows (21 and 20 there).
+test("reads computed Excel numbers at the precision Excel shows", async () => {
+  const apiQuantity = /^(?:0|[1-9]\d{0,15})(?:\.\d{1,8})?$/u;
+  const apiPrice = /^(?:0|[1-9]\d{0,15})(?:\.\d{1,18})?$/u;
+  const result = await parseInvoice(await fixtureWorkbook({ mutate(sheet) {
+    sheet.getCell("I16").value = 89000;
+    sheet.getCell("K16").value = { formula: "N16/I16", result: 0.05039999999999999 };
+    sheet.getCell("N16").value = { formula: "I16*0.0504", result: 4485.599999999999 };
+    sheet.getCell("K17").value = { formula: "N17/I17", result: 0.0033607169529499626 };
+    sheet.getCell("N17").value = 1.4115;
+    sheet.getCell("I18").value = 89420;
+    sheet.getCell("N18").value = { formula: "SUM(N16:N17)", result: 4487.011499999999 };
+  } }));
+  const [first, second] = result.lines;
+  assert.equal(first.amount, "4485.6");
+  assert.equal(first.unitPrice, "0.0504");
+  assert.equal(second.unitPrice, "0.00336071695294996");
+  for (const line of result.lines) {
+    assert.match(line.quantity, apiQuantity);
+    assert.match(line.amount, apiQuantity);
+    assert.match(line.unitPrice, apiPrice);
+    assert.deepEqual(line.issues, []);
+  }
+  assert.equal(result.totalAmount, "4487.0115");
+});
+
+test("reports a quantity with more than 8 decimal places instead of rounding it", async () => {
+  const result = await parseInvoice(await fixtureWorkbook({ mutate(sheet) {
+    sheet.getCell("I16").value = 1.123456789;
+  } }));
+  assert.equal(result.lines[0].quantity, "1.123456789");
+  assert.match(result.lines[0].issues.join(" "), /8 casas decimais/);
 });
 
 test("keeps numbered rows with missing material and reports total discrepancies", async () => {
