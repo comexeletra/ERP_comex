@@ -1151,3 +1151,14 @@ test("an invalid invoice line names the row and the field in Portuguese", async 
   assert.equal(response.json().code, "INVALID_INVOICE_LINES");
   assert.equal(response.json().detail, "Linha 16 da invoice: valor (Total CNY) inválido.");
 });
+
+// PostgreSQL refuses a parameter used both as a varchar column and inside btrim (42P08, HTTP 500 on HML):
+// the IP number goes as text in both places, as in the manual IP route.
+test("a new IP from the invoice inserts its number with one parameter type", async t => {
+  const { client, queries } = invoiceImportClient();
+  const app = await invoiceImportApp(t, client);
+  const response = await sendInvoice(app, "invoice-new-ip-insert-types", invoicePayload());
+  assert.equal(response.statusCode, 201, response.body);
+  const insert = queries.find(query => query.sql.includes("INSERT INTO imports.import_process"));
+  assert.match(insert.sql, /VALUES \(\$1,\$2,\$3::text,upper\(btrim\(\$3::text\)\)/u);
+});
