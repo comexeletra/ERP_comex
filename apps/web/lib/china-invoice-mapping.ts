@@ -277,6 +277,43 @@ export function invoiceSavePayload(invoiceLabel: string, destinations: readonly 
   };
 }
 
+export type InvoiceBeforeAfterRow = { poNumber: string; productCode: string; unit: string; invoiceRows: number[];
+  before: string; after: string; difference: string; changed: boolean };
+
+/**
+ * The allocations of an IP before a revision and the destinations of the new invoice, side by side: one row
+ * per PO and code (in the order of the invoice, then what the invoice no longer cites), with the difference.
+ */
+export function invoiceBeforeAfterRows(
+  before: readonly { poNumber: string; productCode: string; quantity: string; unit: string }[],
+  after: readonly { sourceRow: number; poNumber: string; productCode: string; quantity: string }[],
+): InvoiceBeforeAfterRow[] {
+  const key = (po: string, code: string) =>
+    `${po.toLocaleUpperCase("en-US").replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "")}|${code.trim().toLocaleUpperCase("en-US")}`;
+  const rows = new Map<string, { poNumber: string; productCode: string; unit: string; invoiceRows: Set<number>;
+    before: bigint; after: bigint }>();
+  const row = (po: string, code: string) => {
+    const found = rows.get(key(po, code)) ?? { poNumber: po, productCode: code, unit: "", invoiceRows: new Set<number>(),
+      before: 0n, after: 0n };
+    rows.set(key(po, code), found);
+    return found;
+  };
+  for (const destination of after) {
+    const entry = row(destination.poNumber, destination.productCode);
+    entry.after += invoiceQuantityUnits(destination.quantity) ?? 0n;
+    entry.invoiceRows.add(destination.sourceRow);
+  }
+  for (const allocation of before) {
+    const entry = row(allocation.poNumber, allocation.productCode);
+    entry.before += invoiceQuantityUnits(allocation.quantity) ?? 0n;
+    entry.unit ||= allocation.unit;
+  }
+  return [...rows.values()].map(entry => ({ poNumber: entry.poNumber, productCode: entry.productCode, unit: entry.unit,
+    invoiceRows: [...entry.invoiceRows].sort((left, right) => left - right), before: formatInvoiceQuantity(entry.before),
+    after: formatInvoiceQuantity(entry.after), difference: formatInvoiceQuantity(entry.after - entry.before),
+    changed: entry.after !== entry.before }));
+}
+
 export type InvoicePoCodeSummaryRow = { poNumber: string; productCode: string; ordered: string; shipped: string;
   thisInvoice: string; balanceAfter: string; overBalance: boolean };
 

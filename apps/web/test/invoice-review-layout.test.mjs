@@ -82,3 +82,15 @@ test("the price point shows the difference in percent against the tolerance", ()
   assert.equal(ptBR.newRecord.priceDifference("+25,00%", false, 20), "+25,00% · acima da tolerância de 20%");
   assert.equal(ptBR.newRecord.priceDifference(null, false, 20), "PO sem preço · acima da tolerância de 20%");
 });
+
+test("the revision summary is one table with before and after side by side", () => {
+  const summary = component.slice(component.indexOf("aria-label={t.beforeAfterAria}"), component.indexOf("{orphanPos.map("));
+  assert.match(summary, /<table className="totvs-import-table invoice-before-after">/u);
+  for (const column of ["po", "code", "rows", "before", "after", "difference"]) {
+    assert.match(summary, new RegExp(String.raw`\{t\.beforeAfterColumn\.${column}\}`, "u"), column);
+  }
+  assert.match(summary, /className=\{row\.changed \? "invoice-before-after-changed" : undefined\}/u);
+  assert.doesNotMatch(component, /t\.beforeLine|t\.afterLine/u);
+  assert.match(styles, /\.invoice-before-after-changed td \{[^}]*background: var\(--color-warning-bg\);[^}]*\}/u);
+  assert.equal(ptBR.newRecord.beforeAfterColumn.difference, "Diferença");
+});

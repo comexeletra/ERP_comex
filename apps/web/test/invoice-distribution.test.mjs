@@ -133,3 +133,22 @@ test("the summary by PO and code shows ordered, already shipped, this invoice an
     { poNumber: "PO030305", productCode: "B", ordered: "5", shipped: "0", thisInvoice: "7", balanceAfter: "-2", overBalance: true },
   ]);
 });
+
+// User request (2026-11-10): the before and after of an IP revision side by side, one row per PO and code.
+test("the revision summary lines up before and after per PO and code and shows the difference", async () => {
+  const { invoiceBeforeAfterRows } = await import("../lib/china-invoice-mapping.ts");
+  const rows = invoiceBeforeAfterRows(
+    [{ poNumber: "030201", productCode: "A", quantity: "520", unit: "UN" },
+      { poNumber: "030201", productCode: "B", quantity: "10", unit: "UN" },
+      { poNumber: "PO 030201", productCode: "c", quantity: "5", unit: "PC" }],
+    [{ sourceRow: 17, poNumber: "030201", productCode: "B", quantity: "10" },
+      { sourceRow: 16, poNumber: "030201", productCode: "A", quantity: "300" },
+      { sourceRow: 18, poNumber: "030201", productCode: "A", quantity: "200" },
+      { sourceRow: 19, poNumber: "030305", productCode: "D", quantity: "7.5" }]);
+  assert.deepEqual(rows, [
+    { poNumber: "030201", productCode: "B", unit: "UN", invoiceRows: [17], before: "10", after: "10", difference: "0", changed: false },
+    { poNumber: "030201", productCode: "A", unit: "UN", invoiceRows: [16, 18], before: "520", after: "500", difference: "-20", changed: true },
+    { poNumber: "030305", productCode: "D", unit: "", invoiceRows: [19], before: "0", after: "7.5", difference: "7.5", changed: true },
+    { poNumber: "PO 030201", productCode: "c", unit: "PC", invoiceRows: [], before: "5", after: "0", difference: "-5", changed: true },
+  ]);
+});

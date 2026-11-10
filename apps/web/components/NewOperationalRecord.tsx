@@ -34,7 +34,7 @@ import PageHeader from "./PageHeader";
 import { classifyInvoiceDestination, distributeInvoiceParts, invoiceAssignmentsFromLines, InvoiceAuditPoint, InvoiceAuditPointKind,
   invoiceAuditProgress, invoiceCodePoint, invoiceComparisonRows, invoiceExporterAliasSuggestion, invoiceKeyItems, invoiceLineDecisions,
   invoicePartAuditPoints, invoicePoCodeSummary, invoiceProductFillFields, InvoiceQuantityDecision, invoiceQuantityPoint,
-  invoicePriceTolerancePercent, invoiceSavePayload, invoiceSupplierMatchesExporter } from "../lib/china-invoice-mapping";
+  invoiceBeforeAfterRows, invoicePriceTolerancePercent, invoiceSavePayload, invoiceSupplierMatchesExporter } from "../lib/china-invoice-mapping";
 import { createExporterAlias } from "./SupplierExporterAliases";
 
 const poRoles = new Set(["Master", "Administrador", "Importação", "Compras"]);
@@ -1375,12 +1375,22 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
             </table></div>
             {invoiceExistingProcess && <section className="notice" aria-label={t.beforeAfterAria}>
               <h3>{t.beforeAfter}</h3>
-              <p>{t.before(invoiceExistingProcess.operationalAllocations.length, invoiceExistingProcess.purchaseOrders.length)}</p>
-              {invoiceExistingProcess.operationalAllocations.map(allocation =>
-                <p key={allocation.id}>{t.beforeLine(allocation.poNumber, allocation.productCode, formatNumber(allocation.quantity), allocation.unit)}</p>)}
-              <p>{t.after(invoiceAllocations.length)}</p>
-              {invoiceAllocations.map(({ row, item, quantity }) => <p key={`${row.match.key}:${item.id}`}>
-                {t.afterLine(row.match.sourceRow, item.poNumber, item.productCode, formatNumber(quantity))}</p>)}
+              <p>{t.before(invoiceExistingProcess.operationalAllocations.length, invoiceExistingProcess.purchaseOrders.length)}
+                {" "}{t.after(invoiceAllocations.length)}</p>
+              <div className="totvs-import-table-wrap"><table className="totvs-import-table invoice-before-after">
+                <thead><tr><th scope="col">{t.beforeAfterColumn.po}</th><th scope="col">{t.beforeAfterColumn.code}</th>
+                  <th scope="col">{t.beforeAfterColumn.rows}</th><th scope="col">{t.beforeAfterColumn.before}</th>
+                  <th scope="col">{t.beforeAfterColumn.after}</th><th scope="col">{t.beforeAfterColumn.difference}</th></tr></thead>
+                <tbody>{invoiceBeforeAfterRows(invoiceExistingProcess.operationalAllocations,
+                  invoiceAllocations.map(({ row, item, quantity }) => ({ sourceRow: row.match.sourceRow, poNumber: item.poNumber,
+                    productCode: item.productCode, quantity }))).map(row => <tr key={`${row.poNumber}|${row.productCode}`}
+                  className={row.changed ? "invoice-before-after-changed" : undefined}>
+                  <td>{row.poNumber}</td><td>{row.productCode}</td><td>{row.invoiceRows.join(", ") || "—"}</td>
+                  <td>{`${formatNumber(row.before)} ${row.unit}`.trim()}</td><td>{`${formatNumber(row.after)} ${row.unit}`.trim()}</td>
+                  <td>{!row.changed ? "—" : row.difference.startsWith("-") ? `−${formatNumber(row.difference.slice(1))}`
+                    : `+${formatNumber(row.difference)}`}</td>
+                </tr>)}</tbody>
+              </table></div>
               {orphanPos.map(order => <fieldset key={order.id}>
                 <legend>{t.orphan(order.number)}</legend>
                 <label><input type="radio" name={`orphan-${order.id}`} checked={orphanPoDecisions[order.id] === "KEEP"}

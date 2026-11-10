@@ -114,6 +114,8 @@
 /* Balance by PO and product: ordered, already shipped, this invoice and the balance after it */
 .invoice-po-summary { margin-bottom: 12px; }
 .invoice-po-summary caption { font-weight: 700; padding: 6px 0; text-align: left; }
+.invoice-before-after :is(th, td):nth-child(n + 4) { text-align: right; white-space: nowrap; }
+.invoice-before-after-changed td { background: var(--color-warning-bg); color: var(--color-warning-text); }
 .invoice-po-summary-over td { background: var(--color-danger-bg); color: var(--color-danger-text); font-weight: 700; }
 /* Invoice audit points: one checklist per destination, pending in red and confirmed in green */
 .invoice-audit { display: grid; gap: 6px; margin-top: 10px; }
