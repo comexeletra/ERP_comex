@@ -79,3 +79,16 @@ test("IP lifecycle migration adds soft-delete metadata and guards allowed record
   assert.match(lifecycle, /import_erp_app/u);
   assert.match(lifecycle, /import_erp_hml_app/u);
 });
+
+// The amount of an invoice document (M020) has a currency: the invoice load saves its total in CNY without a
+// unit price, which the old pairing of unit price and currency refused (HTTP 409 on HML, 2026-11-09).
+test("M081 lets an invoice document keep a currency for its amount and keeps the historical rows valid", async () => {
+  const sql = await readFile(new URL("M081_process_document_amount_currency.sql", migrationsUrl), "utf8");
+  assert.match(sql, /DROP CONSTRAINT process_document_check1/u);
+  assert.match(sql, /ADD CONSTRAINT process_document_currency/u);
+  // A unit price still needs its currency, and a currency needs a unit price or an amount.
+  assert.match(sql, /unit_price IS NULL OR currency_code IS NOT NULL/u);
+  assert.match(sql, /currency_code IS NULL OR unit_price IS NOT NULL OR amount IS NOT NULL/u);
+  // Amounts without currency (the historical invoices) stay valid: nothing is updated.
+  assert.doesNotMatch(sql, /\bUPDATE\b/u);
+});
