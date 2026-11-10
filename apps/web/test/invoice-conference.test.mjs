@@ -136,3 +136,46 @@ test("the conference texts exist in the three languages", async () => {
   assert.deepEqual(Object.keys(en.newRecord.conference).sort(), Object.keys(ptBR.newRecord.conference).sort());
   assert.deepEqual(Object.keys(zhCN.newRecord.conference).sort(), Object.keys(ptBR.newRecord.conference).sort());
 });
+
+// Invoice audit page (2026-11-10): the price point per line can be corrected to the PO price, the supplier is
+// confirmed once per Follow Up supplier, and each INV × PKL divergence keeps the INV or takes the PKL.
+test("the line price point compares the invoice price with the CNY prices of the PO lines that receive it", async () => {
+  const { invoiceLinePricePoint } = await import("../lib/china-invoice-mapping.ts");
+  assert.equal(invoiceLinePricePoint("0.4725", [{ unitPrice: "0.4725", currency: "CNY" }, { unitPrice: "1", currency: "USD" }]), null);
+  assert.equal(invoiceLinePricePoint("0.4725", [{ unitPrice: null, currency: null }]), null);
+  assert.deepEqual(invoiceLinePricePoint("30.08", [{ unitPrice: "35.85", currency: "CNY" }, { unitPrice: "35.85", currency: "CNY" }]),
+    { invoicePrice: "30.08", poPrices: ["35.85"], difference: { percent: -16.0948, withinTolerance: true }, correctable: true });
+  assert.deepEqual(invoiceLinePricePoint("2", [{ unitPrice: "2", currency: "CNY" }, { unitPrice: "2.5", currency: "CNY" }]),
+    { invoicePrice: "2", poPrices: ["2", "2.5"], difference: null, correctable: false });
+});
+
+test("a price decision is ready when the analyst accepts or corrects a correctable point", async () => {
+  const { invoicePriceChoiceReady } = await import("../lib/china-invoice-mapping.ts");
+  const point = { invoicePrice: "2", poPrices: ["2.5"], difference: null, correctable: true };
+  assert.equal(invoicePriceChoiceReady(point, undefined), false);
+  assert.equal(invoicePriceChoiceReady(point, "ACCEPT"), true);
+  assert.equal(invoicePriceChoiceReady(point, "CORRECT"), true);
+  assert.equal(invoicePriceChoiceReady({ ...point, correctable: false }, "CORRECT"), false);
+  assert.equal(invoicePriceChoiceReady(null, undefined), true);
+});
+
+test("each Follow Up supplier that does not match the Exporter is confirmed once", async () => {
+  const { invoiceSupplierMismatches } = await import("../lib/china-invoice-mapping.ts");
+  assert.deepEqual(invoiceSupplierMismatches("HEXING ELECTRICAL CO.,LTD\nHANGZHOU", ["HEXING", "HEXING", "", "ZLINK"]), ["HEXING", "ZLINK"]);
+  assert.deepEqual(invoiceSupplierMismatches("HEXING", ["hexing"]), []);
+});
+
+test("an INV × PKL choice needs the source and a reason; the PKL is only offered when both sheets have the line", async () => {
+  const { invoicePackingChoiceReady, invoicePackingChoiceWeights } = await import("../lib/china-invoice-mapping.ts");
+  const both = { key: "inv:16", lineNumber: "1", invoiceRow: 16, packingRow: 13, fields: ["grossWeightKg"],
+    invoice: { quantity: "5", netWeightKg: "1", grossWeightKg: "1.5" }, packing: { quantity: "5", netWeightKg: "1", grossWeightKg: "1.6" } };
+  const onlyPacking = { ...both, key: "pkl:20", invoiceRow: null, invoice: null };
+  assert.equal(invoicePackingChoiceReady(both, undefined), false);
+  assert.equal(invoicePackingChoiceReady(both, { source: "PACKING", reason: "ab" }), false);
+  assert.equal(invoicePackingChoiceReady(both, { source: "PACKING", reason: "Peso do BL" }), true);
+  assert.equal(invoicePackingChoiceReady(onlyPacking, { source: "PACKING", reason: "Peso do BL" }), false);
+  assert.equal(invoicePackingChoiceReady(onlyPacking, { source: "INVOICE", reason: "Linha extra na PKL" }), true);
+  assert.deepEqual(invoicePackingChoiceWeights([both, onlyPacking], {
+    "inv:16": { source: "PACKING", reason: "Peso do BL" }, "pkl:20": { source: "INVOICE", reason: "Linha extra na PKL" } }),
+  { 16: { netWeightKg: "1", grossWeightKg: "1.6" } });
+});

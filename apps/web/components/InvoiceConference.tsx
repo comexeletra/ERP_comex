@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { ChinaInvoiceDraft } from "../lib/china-invoice-xlsx";
 import { invoiceConferenceTotals, invoiceLineChecks, InvoicePackingDivergence, InvoiceQuantityDecision, invoiceQuantityDecisionReady,
   invoiceValueByPo } from "../lib/china-invoice-mapping";
@@ -18,10 +19,13 @@ function signed(value: string): string {
  * (user decision, 2026-11-10). Nothing of it is saved in the IP; the INV × PKL divergences wait for the
  * analyst's confirmation and reason, which go with the invoice metadata.
  */
-export default function InvoiceConference({ draft, valueParts, divergences, decisions, onDecision }: {
+export default function InvoiceConference({ draft, valueParts, divergences, decisions, onDecision, decisionReady, renderDecision }: {
   draft: ChinaInvoiceDraft; valueParts: readonly ValuePart[]; divergences: readonly InvoicePackingDivergence[];
   decisions: Readonly<Record<string, InvoiceQuantityDecision>>;
   onDecision: (key: string, change: Partial<InvoiceQuantityDecision>) => void;
+  /** The invoice audit page decides each divergence with its own controls (keep the INV or take the PKL). */
+  decisionReady?: (divergence: InvoicePackingDivergence) => boolean;
+  renderDecision?: (divergence: InvoicePackingDivergence) => ReactNode;
 }) {
   const { m } = useI18n();
   const t = m.newRecord.conference;
@@ -61,7 +65,7 @@ export default function InvoiceConference({ draft, valueParts, divergences, deci
       <header className="invoice-audit-header"><strong>{t.divergencesTitle(divergences.length)}</strong></header>
       <ul className="invoice-audit-list">{divergences.map(divergence => {
         const decision = decisions[divergence.key] ?? { confirmed: false, reason: "" };
-        const ready = invoiceQuantityDecisionReady(decision);
+        const ready = decisionReady ? decisionReady(divergence) : invoiceQuantityDecisionReady(decision);
         return <li key={divergence.key} className={`notice ${ready ? "success" : "error"}`}>
           <div className="invoice-audit-title"><strong>{t.divergenceLine(divergence.lineNumber, divergence.invoiceRow, divergence.packingRow)}</strong>
             <span className={`badge badge-sm ${ready ? "badge-success" : "badge-danger"}`}>{ready ? t.confirmed : t.pending}</span></div>
@@ -75,10 +79,12 @@ export default function InvoiceConference({ draft, valueParts, divergences, deci
               <td>{divergence.packing ? formatDecimal(divergence.packing[field]) : t.onlyInvoice}</td>
             </tr>)}</tbody>
           </table>
-          <label className="invoice-audit-confirm"><input type="checkbox" checked={decision.confirmed}
-            onChange={event => onDecision(divergence.key, { confirmed: event.target.checked })} />{t.confirm}</label>
-          <label className="invoice-audit-reason">{t.reason}<input required minLength={3} maxLength={1000} value={decision.reason}
-            onChange={event => onDecision(divergence.key, { reason: event.target.value })} /></label>
+          {renderDecision ? renderDecision(divergence) : <>
+            <label className="invoice-audit-confirm"><input type="checkbox" checked={decision.confirmed}
+              onChange={event => onDecision(divergence.key, { confirmed: event.target.checked })} />{t.confirm}</label>
+            <label className="invoice-audit-reason">{t.reason}<input required minLength={3} maxLength={1000} value={decision.reason}
+              onChange={event => onDecision(divergence.key, { reason: event.target.value })} /></label>
+          </>}
         </li>;
       })}</ul>
     </section>}

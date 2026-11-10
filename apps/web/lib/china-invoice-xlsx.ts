@@ -30,6 +30,9 @@ export type InvoicePackingLine = { sourceRow: number; lineNumber: string; quanti
 export type InvoicePackingList = { status: "MISSING" } | { status: "UNREADABLE" } | { status: "READ"; lines: InvoicePackingLine[];
   totals: { quantity: string; netWeightKg: string; grossWeightKg: string } | null; packages: string; volumeCbm: string };
 
+export type InvoiceSheetLayout = { totalRow: number; columns: { quantity: number; unitPrice: number; netWeightKg: number;
+  grossWeightKg: number; amount: number; poCell: number } };
+
 export type ChinaInvoiceDraft = {
   fileName: string;
   fileSha256: string;
@@ -55,6 +58,8 @@ export type ChinaInvoiceDraft = {
   /** The TOTAL row of the INV as written ("" when unreadable), or null without that row. */
   declaredTotals: { quantity: string; netWeightKg: string; grossWeightKg: string; amount: string } | null;
   packingList: InvoicePackingList;
+  /** Where the INV values are, so the audit page writes the corrected invoice in the same cells. */
+  layout: InvoiceSheetLayout;
   issues: string[];
   warnings: string[];
 };
@@ -447,5 +452,8 @@ export async function parseChinaInvoiceXlsx(file: File, m: Messages): Promise<Ch
     totalQuantity: sum(line => line.quantity), totalNetWeightKg: sum(line => line.netWeightKg),
     totalGrossWeightKg: sum(line => line.grossWeightKg), totalAmount: sum(line => line.amount),
     declaredTotals, packingList: parsePackingList(workbook), issues, warnings,
+    layout: { totalRow, columns: { quantity: columns.get("qty pcs kgs mts")!, unitPrice: columns.get("price cny")!,
+      netWeightKg: columns.get("net weight kg")!, grossWeightKg: columns.get("gross weight kg")!,
+      amount: columns.get("total cny")!, poCell: columns.get("po")! } },
   };
 }

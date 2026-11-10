@@ -527,3 +527,51 @@ export function invoiceValueByPo(parts: readonly { quantity: string; invoicePric
   return { invoiceValue: formatScaled(invoiceValue, 26), poValue: formatScaled(poValue, 26), difference: formatScaled(gap, 26),
     percent: poValue > 0n ? Number(gap * 1_000_000n / poValue) / 10_000 : null, counted, excluded };
 }
+
+/*
+ * Decisions of the invoice audit page (user decision, 2026-11-10): they become corrections of the invoice file.
+ */
+
+export type InvoiceLinePricePoint = { invoicePrice: string; poPrices: string[]; difference: InvoicePriceDifference | null;
+  correctable: boolean };
+export type InvoicePriceChoice = "ACCEPT" | "CORRECT";
+
+/**
+ * The invoice price of a line against the CNY prices of the PO lines that receive it (a PO in another currency
+ * has no price check). It can be corrected to the PO price only when that price is one.
+ */
+export function invoiceLinePricePoint(invoicePrice: string,
+  poItems: readonly { unitPrice: string | null; currency: string | null }[]): InvoiceLinePricePoint | null {
+  const prices = poItems.filter(item => item.currency === "CNY" && item.unitPrice !== null).map(item => item.unitPrice!);
+  if (!prices.some(price => invoicePoPriceDiffers(invoicePrice, price, "CNY"))) return null;
+  const distinct = prices.filter((price, index) => prices.findIndex(other => invoicePriceUnits(other) === invoicePriceUnits(price)) === index);
+  return { invoicePrice, poPrices: distinct, correctable: distinct.length === 1,
+    difference: distinct.length === 1 ? invoicePriceDifference(invoicePrice, distinct[0]) : null };
+}
+
+export function invoicePriceChoiceReady(point: InvoiceLinePricePoint | null, choice: InvoicePriceChoice | undefined): boolean {
+  return !point || choice === "ACCEPT" || (choice === "CORRECT" && point.correctable);
+}
+
+/** The Follow Up suppliers of the destined lines that do not match the Exporter, each confirmed once. */
+export function invoiceSupplierMismatches(exporter: string, suppliers: readonly string[]): string[] {
+  return [...new Set(suppliers.map(value => value.trim().toLocaleUpperCase("en-US")).filter(Boolean))]
+    .filter(supplier => !invoiceSupplierMatchesExporter([supplier], exporter));
+}
+
+export type InvoicePackingChoice = { source: "INVOICE" | "PACKING" | null; reason: string };
+
+/** The PKL weights can be taken only for a line found in both sheets; a reason is always written. */
+export function invoicePackingChoiceReady(divergence: InvoicePackingDivergence, choice: InvoicePackingChoice | undefined): boolean {
+  if (!choice?.source || choice.reason.trim().length < minimumQuantityReasonLength) return false;
+  return choice.source === "INVOICE" || Boolean(divergence.invoice && divergence.packing);
+}
+
+/** The PKL weights of the invoice lines where the analyst took the PKL. */
+export function invoicePackingChoiceWeights(divergences: readonly InvoicePackingDivergence[],
+  choices: Readonly<Record<string, InvoicePackingChoice>>): Record<number, { netWeightKg: string; grossWeightKg: string }> {
+  return Object.fromEntries(divergences.filter(divergence => choices[divergence.key]?.source === "PACKING"
+    && divergence.invoiceRow !== null && divergence.packing)
+    .map(divergence => [divergence.invoiceRow!, { netWeightKg: divergence.packing!.netWeightKg,
+      grossWeightKg: divergence.packing!.grossWeightKg }]));
+}

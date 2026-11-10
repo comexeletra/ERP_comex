@@ -25,6 +25,7 @@ const groups: SidebarGroup[] = [
     { label: "productPortfolio", href: "/purchase-orders/lines", icon: "sheet" },
     { label: "postShipment", href: "/processes", icon: "ship" },
     { label: "endToEnd", href: "/end-to-end", icon: "flow" },
+    { label: "invoiceAudit", href: "/invoices/audit", icon: "audit" },
   ] },
   { label: "management", items: [
     { label: "requests", href: "/requests", icon: "requests" },
