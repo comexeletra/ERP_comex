@@ -380,7 +380,7 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
               const route = cancellationRoutes[order.id] ?? { type: "IDLE" as const };
               const quantities = process.operationalAllocations.filter(allocation => allocation.poId === order.id)
                 .map(allocation => allocation.productCode + ": " + formatNumber(allocation.quantity) + " " + allocation.unit);
-              return <div className="operational-fields" key={order.id}>
+              return <div className="process-cancel-po" key={order.id}>
                 <strong>PO {order.number}</strong>
                 <small>{quantities.length ? t.allocatedQuantities(quantities.join("; ")) : t.noActiveQuantities}</small>
                 <label>{t.destination}<SearchableSelect ariaLabel={t.destination} placeholder="" value={route.type}
