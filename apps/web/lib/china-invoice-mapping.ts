@@ -571,7 +571,6 @@ export type InvoiceCatalogField = "ncm" | "description";
 export type InvoiceCatalogPoint = { key: string; sourceRow: number; lineNumber: string; productCode: string;
   field: InvoiceCatalogField; invoiceValue: string; databaseValue: string; caseOnly: boolean };
 export type InvoiceCatalogMissing = { sourceRow: number; lineNumber: string; productCode: string };
-export type InvoiceCatalogChoice = "INVOICE" | "DATABASE";
 
 const plainText = (value: string) => value.normalize("NFD").replace(/[̀-ͯ]/gu, "")
   .toLocaleUpperCase("en-US").replace(/\s+/gu, " ").trim();
@@ -606,20 +605,17 @@ export function invoiceCatalogPoints(
   return { points, missing };
 }
 
-export function invoiceCatalogReady(points: readonly InvoiceCatalogPoint[], choices: Readonly<Record<string, InvoiceCatalogChoice>>,
-  missing: readonly InvoiceCatalogMissing[], missingDecisions: Readonly<Record<number, InvoiceQuantityDecision>>): boolean {
-  return points.every(point => Boolean(choices[point.key]))
-    && missing.every(entry => invoiceQuantityDecisionReady(missingDecisions[entry.sourceRow] ?? { confirmed: false, reason: "" }));
+/** Only a product out of the DATABASE waits for the analyst: the confirmation that it was checked, with a reason. */
+export function invoiceCatalogReady(missing: readonly InvoiceCatalogMissing[],
+  missingDecisions: Readonly<Record<number, InvoiceQuantityDecision>>): boolean {
+  return missing.every(entry => invoiceQuantityDecisionReady(missingDecisions[entry.sourceRow] ?? { confirmed: false, reason: "" }));
 }
 
-/** The DATABASE values the analyst took, by invoice row. */
-export function invoiceCatalogCorrections(points: readonly InvoiceCatalogPoint[],
-  choices: Readonly<Record<string, InvoiceCatalogChoice>>): Record<number, Partial<Record<InvoiceCatalogField, string>>> {
+/** The DATABASE rules NCM and description without question (user decision, 2026-11-10): every divergence takes it. */
+export function invoiceCatalogCorrections(points: readonly InvoiceCatalogPoint[]):
+  Record<number, Partial<Record<InvoiceCatalogField, string>>> {
   const corrections: Record<number, Partial<Record<InvoiceCatalogField, string>>> = {};
-  for (const point of points) {
-    if (choices[point.key] !== "DATABASE") continue;
-    corrections[point.sourceRow] = { ...corrections[point.sourceRow], [point.field]: point.databaseValue };
-  }
+  for (const point of points) corrections[point.sourceRow] = { ...corrections[point.sourceRow], [point.field]: point.databaseValue };
   return corrections;
 }
 

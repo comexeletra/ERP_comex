@@ -9,7 +9,7 @@ import { parseChinaInvoiceXlsx } from "../lib/china-invoice-xlsx.ts";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
 
 // Comparison of 2026-11-10: the analyst replaces the invoice NCM and description by the DATABASE ones (INV and PKL);
-// the user decided the page checks both, one decision per divergence, and a product out of the DATABASE is confirmed.
+// the user decided the page checks both, the DATABASE rules without question, and a product out of it is confirmed.
 
 const line = (sourceRow, lineNumber, productCode, ncm, description) => ({ sourceRow, lineNumber, productCode, ncm, description });
 const products = [
@@ -34,21 +34,22 @@ test("the NCM and the description of each line are set against the DATABASE by p
   assert.deepEqual(missing, [{ sourceRow: 28, lineNumber: "13", productCode: "2011100161" }]);
 });
 
-test("every divergence needs a choice and every product out of the DATABASE a confirmation with reason", () => {
+test("every divergence takes the DATABASE and only a product out of it waits for a confirmation with reason", () => {
   const { points, missing } = invoiceCatalogPoints([line(29, "14", "2020100110", "85322310", "X"),
     line(28, "13", "2011100161", "85334012", "TERMISTOR")], products);
-  const confirmed = { 28: { confirmed: true, reason: "NCM conferido no TOTVS" } };
-  assert.equal(invoiceCatalogReady(points, { "29:ncm": "DATABASE" }, missing, confirmed), false);
-  assert.equal(invoiceCatalogReady(points, { "29:ncm": "DATABASE", "29:description": "INVOICE" }, missing, {}), false);
-  assert.equal(invoiceCatalogReady(points, { "29:ncm": "DATABASE", "29:description": "INVOICE" }, missing, confirmed), true);
-  assert.deepEqual(invoiceCatalogCorrections(points, { "29:ncm": "DATABASE", "29:description": "INVOICE" }), { 29: { ncm: "85322410" } });
+  assert.deepEqual(invoiceCatalogCorrections(points),
+    { 29: { ncm: "85322410", description: "CAPACITOR (CONDENSDOR ELETRICO FIXO)" } });
+  assert.equal(invoiceCatalogReady(missing, {}), false);
+  assert.equal(invoiceCatalogReady(missing, { 28: { confirmed: true, reason: "ok" } }), false);
+  assert.equal(invoiceCatalogReady(missing, { 28: { confirmed: true, reason: "NCM conferido no TOTVS" } }), true);
+  assert.equal(invoiceCatalogReady([], {}), true);
 });
 
 // The real files (IPH037A, the DATABASE copy and the analyst's file of 2026-11-04) stay out of Git.
 const folder = "../../../invoices_tests/";
 const realFiles = ["IPH037A 2026       INV+PL.xlsx", "DATABASE - Renew.xlsx", "IPH037A 2026 INV+PL - Gabi 04.11.26.xlsx"]
   .map(name => new URL(folder + name, import.meta.url));
-test("taking the DATABASE in every divergence reproduces the analyst's NCM and description of IPH037A",
+test("the DATABASE corrections reproduce the analyst's NCM and description of IPH037A",
   { skip: !realFiles.every(file => existsSync(file)) }, async () => {
     const draft = await parseChinaInvoiceXlsx(new File([await readFile(realFiles[0])], "IPH037A.xlsx"), ptBR);
     const database = await parseProductDatabaseXlsx(new File([await readFile(realFiles[1])], "DATABASE.xlsx"), ptBR);
@@ -57,7 +58,7 @@ test("taking the DATABASE in every divergence reproduces the analyst's NCM and d
     assert.equal(points.filter(point => point.field === "description").length, 58);
     assert.equal(points.filter(point => point.field === "description" && point.caseOnly).length, 49);
     assert.deepEqual(missing.map(entry => entry.sourceRow), [28, 34, 36, 37]);
-    const corrections = invoiceCatalogCorrections(points, Object.fromEntries(points.map(point => [point.key, "DATABASE"])));
+    const corrections = invoiceCatalogCorrections(points);
     const analyst = new ExcelJS.Workbook();
     await analyst.xlsx.load(await readFile(realFiles[2]));
     const inv = analyst.getWorksheet("INV");

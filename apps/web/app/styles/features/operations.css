@@ -128,8 +128,7 @@
 .invoice-audit-choice label { align-items: center; cursor: pointer; display: inline-flex; font-weight: 400; gap: 6px; }
 .invoice-catalog { display: grid; gap: 8px; }
 .invoice-catalog h3, .invoice-catalog > p { margin: 0; }
-.invoice-catalog-table td { vertical-align: top; }
-.invoice-catalog-pending td { background: var(--color-warning-bg); color: var(--color-warning-text); }
+.invoice-catalog-table td { overflow-wrap: anywhere; }
 .invoice-po-summary-over td { background: var(--color-danger-bg); color: var(--color-danger-text); font-weight: 700; }
 /* Invoice audit points: one checklist per destination, pending in red and confirmed in green */
 .invoice-audit { display: grid; gap: 6px; margin-top: 10px; }

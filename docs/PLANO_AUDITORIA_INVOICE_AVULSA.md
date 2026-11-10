@@ -121,7 +121,7 @@ Comparação de 2026-11-10 entre o arquivo gerado pela página e o auditado pela
 Decisões do usuário (2026-11-10):
 
 1. A página confere NCM e descrição contra a DATABASE, selecionada pelo analista. A lista de fabricantes fica para depois, quando houver uma cópia dela.
-2. Cada divergência tem "manter a invoice" ou "usar a DATABASE", e um botão aplica "usar a DATABASE" a todas.
+2. ~~Cada divergência tem "manter a invoice" ou "usar a DATABASE", e um botão aplica "usar a DATABASE" a todas.~~ Revisto no mesmo dia: a DATABASE é a referência, sem questionamento. Toda divergência de NCM e descrição é corrigida pela DATABASE no arquivo, e a tela só lista as correções, numa lista recolhível. Só o produto fora da DATABASE pede decisão.
 3. A correção vai para a INV e para a linha da PKL com o mesmo `No.`, marcada em amarelo com a nota do valor original.
 4. Produto fora da DATABASE vira ponto de auditoria, com confirmação e motivo.
 
@@ -140,14 +140,14 @@ Critérios de aceite:
 - **Leitor:** cabeçalho por nome, NCM com zeros à esquerda e coluna ausente recusada. Teste em `lib/`.
 - **Regras:** IPH037A × DATABASE real com 18 NCMs, 58 descrições (49 só de caixa e acentos) e 4 códigos fora; as escolhas "usar a DATABASE" reproduzem a INV da analista nas colunas NCM e descrição. Teste com arquivos locais.
 - **Arquivo:** a correção vai para a INV e para a PKL, com marcação e nota; o parser lê o arquivo de volta sem erro. Teste em `lib/`.
-- **Tela:** o download espera todas as decisões, o botão aplica a todas e os textos existem nos três idiomas.
+- **Tela:** as correções da DATABASE entram sem escolha; o download espera só a confirmação dos produtos fora da DATABASE; os textos existem nos três idiomas.
 
 ### Resultado (etapa 1b)
 
 - **Leitor da DATABASE:** `parseProductDatabaseXlsx` em `lib/audit-reference-xlsx.ts` (antigo `follow-up-po-xlsx.ts`, renomeado porque agora lê as duas referências). Na DATABASE real: 486 produtos, sem código repetido.
 - **Regras** em `lib/china-invoice-mapping.ts`: `invoiceCatalogPoints`, `invoiceCatalogReady` e `invoiceCatalogCorrections`.
 - **Escrita:** NCM e descrição na INV e na PKL (`invoicePackingCorrections`), com as células alteradas por decisão na aba `AUDITORIA` (`invoiceChangedCells`).
-- **Ensaio IPH037A × DATABASE com "Usar a DATABASE em todas":**
+- **Ensaio IPH037A × DATABASE (DATABASE aplicada em todas as divergências):**
   - 76 divergências (18 NCM e 58 descrições) e 4 produtos fora da base;
   - NCM e descrição na INV e na PKL idênticos aos do arquivo da analista nas 62 linhas;
   - arquivo relido sem erro.
