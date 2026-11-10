@@ -386,3 +386,144 @@ export function invoiceComparisonRows(
     { field: "manufacturer", invoice: invoiceLine?.manufacturer ?? "", poItem: "", product: product.manufacturer ?? "", differs: false },
   ];
 }
+
+/*
+ * Conference of the invoice shown to the analyst during the audit (user decision, 2026-11-10): totals of
+ * the lines against the TOTAL row and the PKL sheet, the checks of each line, INV × PKL and the value at
+ * the PO price. Nothing of it is saved in the IP; only the INV × PKL decisions go with the invoice metadata.
+ */
+
+/** Values read from the sheet have up to 15 significant digits; 18 decimal places hold them exactly. */
+const conferenceDigits = 18;
+const conferenceScale = 10n ** BigInt(conferenceDigits);
+
+function conferenceUnits(value: string): bigint | null {
+  const match = /^(-?)(\d+)(?:[.,](\d+))?$/u.exec(value.trim());
+  if (!match || (match[3]?.length ?? 0) > conferenceDigits) return null;
+  const units = BigInt(match[2]) * conferenceScale + BigInt((match[3] ?? "").padEnd(conferenceDigits, "0"));
+  return match[1] ? -units : units;
+}
+
+function formatScaled(units: bigint, digits = conferenceDigits): string {
+  const scale = 10n ** BigInt(digits);
+  const absolute = units < 0n ? -units : units;
+  const fraction = (absolute % scale).toString().padStart(digits, "0").replace(/0+$/u, "");
+  return `${units < 0n ? "-" : ""}${absolute / scale}${fraction ? `.${fraction}` : ""}`;
+}
+
+/** Same tolerance as the TOTAL check of the parser (apps/web/lib/china-invoice-xlsx.ts). */
+const conferenceTotalTolerance = 11n * 10n ** BigInt(conferenceDigits - 3);
+
+export type InvoiceConferenceMeasure = "quantity" | "netWeight" | "grossWeight" | "amount";
+export type InvoiceConferenceRow = { measure: InvoiceConferenceMeasure; lines: string;
+  declared: string | null; declaredDifference: string | null; declaredMatches: boolean;
+  packing: string | null; packingDifference: string | null; packingMatches: boolean | null };
+type InvoiceConferenceLine = { quantity: string; netWeightKg: string; grossWeightKg: string; amount: string };
+type InvoiceConferenceTotals = { quantity: string; netWeightKg: string; grossWeightKg: string };
+
+/** The sum of the lines against the TOTAL row of the INV and the Total row of the PKL; differences are total − lines. */
+export function invoiceConferenceTotals(lines: readonly InvoiceConferenceLine[],
+  declared: (InvoiceConferenceTotals & { amount: string }) | null, packing: InvoiceConferenceTotals | null): InvoiceConferenceRow[] {
+  const fields = [["quantity", "quantity"], ["netWeight", "netWeightKg"], ["grossWeight", "grossWeightKg"], ["amount", "amount"]] as const;
+  return fields.map(([measure, field]) => {
+    const sum = lines.reduce((total, line) => total + (conferenceUnits(line[field]) ?? 0n), 0n);
+    const compare = (text: string | undefined) => {
+      const units = conferenceUnits(text ?? "");
+      if (units === null) return { value: null, difference: null, matches: false };
+      const gap = units - sum;
+      return { value: formatScaled(units), difference: formatScaled(gap),
+        matches: (gap < 0n ? -gap : gap) <= conferenceTotalTolerance };
+    };
+    const fromDeclared = compare(declared?.[field]);
+    const fromPacking = field === "amount" || !packing ? null : compare(packing[field]);
+    return { measure, lines: formatScaled(sum), declared: fromDeclared.value, declaredDifference: fromDeclared.difference,
+      declaredMatches: fromDeclared.matches, packing: fromPacking?.value ?? null,
+      packingDifference: fromPacking?.difference ?? null, packingMatches: fromPacking ? fromPacking.matches : null };
+  });
+}
+
+/** The rows of the lines whose quantity × price differs from the total, or whose net weight exceeds the gross. */
+export function invoiceLineChecks(lines: readonly { sourceRow: number; quantity: string; unitPrice: string; amount: string;
+  netWeightKg: string; grossWeightKg: string }[]): { lines: number; totalFailures: number[]; weightFailures: number[] } {
+  const totalFailures: number[] = [];
+  const weightFailures: number[] = [];
+  for (const line of lines) {
+    const quantity = conferenceUnits(line.quantity), price = conferenceUnits(line.unitPrice), amount = conferenceUnits(line.amount);
+    const gap = quantity === null || price === null || amount === null ? null : quantity * price - amount * conferenceScale;
+    if (gap === null || (gap < 0n ? -gap : gap) > conferenceTotalTolerance * conferenceScale) totalFailures.push(line.sourceRow);
+    const net = conferenceUnits(line.netWeightKg), gross = conferenceUnits(line.grossWeightKg);
+    if (net === null || gross === null || net > gross) weightFailures.push(line.sourceRow);
+  }
+  return { lines: lines.length, totalFailures, weightFailures };
+}
+
+export type InvoicePackingField = "quantity" | "netWeightKg" | "grossWeightKg";
+export type InvoicePackingValues = Record<InvoicePackingField, string>;
+type InvoicePackingSource = InvoicePackingValues & { sourceRow: number; lineNumber: string };
+export type InvoicePackingDivergence = { key: string; lineNumber: string; invoiceRow: number | null; packingRow: number | null;
+  fields: InvoicePackingField[]; invoice: InvoicePackingValues | null; packing: InvoicePackingValues | null };
+
+const packingFields: readonly InvoicePackingField[] = ["quantity", "netWeightKg", "grossWeightKg"];
+const packingValues = (line: InvoicePackingSource): InvoicePackingValues =>
+  ({ quantity: line.quantity, netWeightKg: line.netWeightKg, grossWeightKg: line.grossWeightKg });
+
+/**
+ * Pairs the INV and PKL lines by their number (No.) and lists each pair with a different quantity or weight,
+ * even by 0.00000001, and each line found in only one of the sheets: INV order first, then the PKL leftovers.
+ */
+export function invoicePackingDivergences(invoiceLines: readonly InvoicePackingSource[],
+  packingLines: readonly InvoicePackingSource[]): InvoicePackingDivergence[] {
+  const number = (value: string) => value.trim().replace(/^0+(?=\d)/u, "");
+  const same = (left: string, right: string) => {
+    const leftUnits = conferenceUnits(left), rightUnits = conferenceUnits(right);
+    return leftUnits === null || rightUnits === null ? left.trim() === right.trim() : leftUnits === rightUnits;
+  };
+  const unused = [...packingLines];
+  const divergences: InvoicePackingDivergence[] = [];
+  for (const line of invoiceLines) {
+    const index = unused.findIndex(entry => number(entry.lineNumber) === number(line.lineNumber));
+    const packing = index >= 0 ? unused.splice(index, 1)[0] : null;
+    const fields = packing ? packingFields.filter(field => !same(line[field], packing[field])) : [...packingFields];
+    if (fields.length) divergences.push({ key: `inv:${line.sourceRow}`, lineNumber: line.lineNumber, invoiceRow: line.sourceRow,
+      packingRow: packing?.sourceRow ?? null, fields, invoice: packingValues(line), packing: packing ? packingValues(packing) : null });
+  }
+  return [...divergences, ...unused.map(packing => ({ key: `pkl:${packing.sourceRow}`, lineNumber: packing.lineNumber,
+    invoiceRow: null, packingRow: packing.sourceRow, fields: [...packingFields], invoice: null, packing: packingValues(packing) }))];
+}
+
+export function invoicePackingDecisionsReady(divergences: readonly InvoicePackingDivergence[],
+  decisions: Readonly<Record<string, InvoiceQuantityDecision>>): boolean {
+  return divergences.every(divergence => invoiceQuantityDecisionReady(decisions[divergence.key] ?? { confirmed: false, reason: "" }));
+}
+
+/** The accepted divergences go with the invoice metadata, which the API keeps in the document notes. */
+export function invoicePackingListDecisions(divergences: readonly InvoicePackingDivergence[],
+  decisions: Readonly<Record<string, InvoiceQuantityDecision>>) {
+  return divergences.map(({ invoiceRow, packingRow, lineNumber, fields, invoice, packing, key }) =>
+    ({ invoiceRow, packingRow, lineNumber, fields, invoice, packing, reason: (decisions[key]?.reason ?? "").trim() }));
+}
+
+export type InvoicePoValue = { invoiceValue: string; poValue: string; difference: string; percent: number | null;
+  counted: number; excluded: number };
+
+/**
+ * The destined quantity at the invoice price against the same quantity at the PO price. Only PO items in CNY
+ * with a price are counted (a PO in another currency has no price check); the others are counted apart.
+ */
+export function invoiceValueByPo(parts: readonly { quantity: string; invoicePrice: string; poPrice: string | null;
+  poCurrency: string | null }[]): InvoicePoValue {
+  let invoiceValue = 0n, poValue = 0n, counted = 0, excluded = 0;
+  for (const part of parts) {
+    const quantity = invoiceQuantityUnits(part.quantity);
+    if (quantity === 0n) continue;
+    const invoicePrice = invoicePriceUnits(part.invoicePrice);
+    const poPrice = part.poPrice === null ? null : invoicePriceUnits(part.poPrice);
+    if (quantity === null || invoicePrice === null || poPrice === null || part.poCurrency !== "CNY") { excluded += 1; continue; }
+    invoiceValue += quantity * invoicePrice;
+    poValue += quantity * poPrice;
+    counted += 1;
+  }
+  const gap = invoiceValue - poValue;
+  return { invoiceValue: formatScaled(invoiceValue, 26), poValue: formatScaled(poValue, 26), difference: formatScaled(gap, 26),
+    percent: poValue > 0n ? Number(gap * 1_000_000n / poValue) / 10_000 : null, counted, excluded };
+}

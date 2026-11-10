@@ -116,6 +116,10 @@
 .invoice-po-summary caption { font-weight: 700; padding: 6px 0; text-align: left; }
 .invoice-before-after :is(th, td):nth-child(n + 4) { text-align: right; white-space: nowrap; }
 .invoice-before-after-changed td { background: var(--color-warning-bg); color: var(--color-warning-text); }
+.invoice-conference { display: grid; gap: 8px; }
+.invoice-conference h3, .invoice-conference > p { margin: 0; }
+.invoice-conference-table td { text-align: right; white-space: nowrap; }
+.invoice-conference-checks { display: grid; gap: 4px; margin: 0; padding-left: 18px; }
 .invoice-po-summary-over td { background: var(--color-danger-bg); color: var(--color-danger-text); font-weight: 700; }
 /* Invoice audit points: one checklist per destination, pending in red and confirmed in green */
 .invoice-audit { display: grid; gap: 6px; margin-top: 10px; }
@@ -129,10 +133,11 @@
 .invoice-audit-note { margin: 0; }
 .invoice-match-table .invoice-audit-confirm, .notice > .invoice-audit-confirm { align-items: flex-start; cursor: pointer; display: flex; font-weight: 400; gap: 7px; }
 .invoice-audit-confirm input { flex: 0 0 auto; margin: 1px 0 0; }
-.invoice-match-table .invoice-audit-reason { display: grid; font-weight: 400; gap: 4px; }
+.invoice-match-table .invoice-audit-reason, .notice > .invoice-audit-reason { display: grid; font-weight: 400; gap: 4px; }
 .invoice-audit-reason input { min-width: 0; width: 100%; }
 .invoice-compare-table { border-collapse: collapse; font-size: var(--fs-xs); margin-top: 8px; width: 100%; }
-.invoice-match-table .invoice-compare-table th, .invoice-match-table .invoice-compare-table td {
+.invoice-match-table .invoice-compare-table th, .invoice-match-table .invoice-compare-table td,
+.invoice-conference .invoice-compare-table th, .invoice-conference .invoice-compare-table td {
   border-bottom: 1px solid var(--color-divider); min-width: 0; padding: 5px 8px; position: static; vertical-align: top; width: auto;
 }
 .invoice-compare-table thead th { color: var(--color-text-muted); font-weight: 700; }

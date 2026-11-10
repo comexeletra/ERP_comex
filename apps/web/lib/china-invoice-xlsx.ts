@@ -1,4 +1,4 @@
-import type { Cell, Worksheet } from "exceljs";
+import type { Cell, Workbook, Worksheet } from "exceljs";
 import type { Messages } from "./i18n/pt-BR";
 
 const maxFileBytes = 10 * 1024 * 1024;
@@ -25,6 +25,11 @@ export type ChinaInvoiceLine = {
   issues: string[];
 };
 
+export type InvoicePackingLine = { sourceRow: number; lineNumber: string; quantity: string; netWeightKg: string; grossWeightKg: string };
+/** The PKL sheet, read only for the conference shown to the analyst; without it the invoice is still accepted. */
+export type InvoicePackingList = { status: "MISSING" } | { status: "UNREADABLE" } | { status: "READ"; lines: InvoicePackingLine[];
+  totals: { quantity: string; netWeightKg: string; grossWeightKg: string } | null; packages: string; volumeCbm: string };
+
 export type ChinaInvoiceDraft = {
   fileName: string;
   fileSha256: string;
@@ -47,6 +52,9 @@ export type ChinaInvoiceDraft = {
   totalNetWeightKg: string;
   totalGrossWeightKg: string;
   totalAmount: string;
+  /** The TOTAL row of the INV as written ("" when unreadable), or null without that row. */
+  declaredTotals: { quantity: string; netWeightKg: string; grossWeightKg: string; amount: string } | null;
+  packingList: InvoicePackingList;
   issues: string[];
   warnings: string[];
 };
@@ -264,9 +272,70 @@ function parseLine(sheet: Worksheet, rowNumber: number, columns: Map<string, num
     sourceRow: rowNumber, lineNumber: get("no"), ncm: get("ncm"), productCode: get("material code"),
     description: get("product description"), manufacturer: get("manufacturer"),
     manufacturerAddress: get("manufacturer s address"), manufacturerCountry: get("manufacturer s country"),
-    quantity, unit: get("qty unit"), unitPrice, netWeightKg: get("net weight kg"),
-    grossWeightKg: get("gross weight kg"), amount, poCell: get("po"), poAssignments, issues,
+    quantity, unit: get("qty unit"), unitPrice,
+    netWeightKg: decimalCell(sheet.getRow(rowNumber).getCell(columns.get("net weight kg")!)),
+    grossWeightKg: decimalCell(sheet.getRow(rowNumber).getCell(columns.get("gross weight kg")!)),
+    amount, poCell: get("po"), poAssignments, issues,
   };
+}
+
+/** The first number in the label row after the label (C78 = 158), or written in the label cell itself. */
+function footerNumber(sheet: Worksheet, row: number, column: number, label: RegExp): string {
+  for (let next = column + 1; next <= Math.min(sheet.columnCount, column + 10); next += 1) {
+    const value = decimalCell(sheet.getRow(row).getCell(next));
+    if (value) return value;
+  }
+  const inline = label.exec(textOf(sheet.getRow(row).getCell(column)))?.[1] ?? "";
+  const value = decimalValue(inline);
+  return value === null ? "" : excelNumberText(value);
+}
+
+const packagesLabel = /^\s*total\s+packed\s+in\s*:?\s*([\d.,]+)/iu;
+const volumeLabel = /^\s*volume\s*:?\s*([\d.,]+)/iu;
+
+function parsePackingList(workbook: Workbook): InvoicePackingList {
+  const sheet = workbook.getWorksheet("PKL");
+  if (!sheet) return { status: "MISSING" };
+  let header: { row: number; columns: Map<string, number> } | null = null;
+  for (let row = 1; row <= Math.min(sheet.rowCount, 30) && !header; row += 1) {
+    const columns = new Map<string, number>();
+    sheet.getRow(row).eachCell({ includeEmpty: false }, (cell, column) => {
+      const name = normalizeHeader(textOf(cell));
+      const key = name === "no" ? "no" : name.startsWith("qty") ? "quantity"
+        : name === "net weight kg" ? "net" : name === "gross weight kg" ? "gross" : "";
+      if (key && !columns.has(key)) columns.set(key, column);
+    });
+    if (columns.size === 4) header = { row, columns };
+  }
+  if (!header) return { status: "UNREADABLE" };
+  const { columns } = header;
+  const values = (row: number) => ({
+    quantity: decimalCell(sheet.getRow(row).getCell(columns.get("quantity")!)),
+    netWeightKg: decimalCell(sheet.getRow(row).getCell(columns.get("net")!)),
+    grossWeightKg: decimalCell(sheet.getRow(row).getCell(columns.get("gross")!)),
+  });
+  const lines: InvoicePackingLine[] = [];
+  let totalRow = 0;
+  for (let row = header.row + 1; row <= sheet.rowCount && !totalRow; row += 1) {
+    const lineNumber = textOf(sheet.getRow(row).getCell(columns.get("no")!));
+    if (/^\d+$/u.test(lineNumber)) { lines.push({ sourceRow: row, lineNumber, ...values(row) }); continue; }
+    sheet.getRow(row).eachCell({ includeEmpty: false }, cell => {
+      if (lines.length && normalizeHeader(textOf(cell)) === "total") totalRow = row;
+    });
+  }
+  if (!lines.length) return { status: "UNREADABLE" };
+  const totals = totalRow ? values(totalRow) : null;
+  let packages = "", volumeCbm = "";
+  const footerStart = totalRow || lines.at(-1)!.sourceRow;
+  for (let row = footerStart + 1; row <= Math.min(sheet.rowCount, footerStart + 40); row += 1) {
+    sheet.getRow(row).eachCell({ includeEmpty: false }, (cell, column) => {
+      const name = normalizeHeader(textOf(cell));
+      if (!packages && name.startsWith("total packed in")) packages = footerNumber(sheet, row, column, packagesLabel);
+      if (!volumeCbm && name.startsWith("volume")) volumeCbm = footerNumber(sheet, row, column, volumeLabel);
+    });
+  }
+  return { status: "READ", lines,
+    totals: totals && totals.quantity && totals.netWeightKg && totals.grossWeightKg ? totals : null, packages, volumeCbm };
 }
 
 export async function parseChinaInvoiceXlsx(file: File, m: Messages): Promise<ChinaInvoiceDraft> {
@@ -328,6 +397,9 @@ export async function parseChinaInvoiceXlsx(file: File, m: Messages): Promise<Ch
   };
   const warnings: string[] = [];
   const issues: string[] = [];
+  const declaredCell = (column: string) => decimalCell(sheet.getRow(totalRow).getCell(columns.get(column)!));
+  const declaredTotals = totalRow ? { quantity: declaredCell("qty pcs kgs mts"), netWeightKg: declaredCell("net weight kg"),
+    grossWeightKg: declaredCell("gross weight kg"), amount: declaredCell("total cny") } : null;
   if (!totalRow) issues.push(t.totalRowMissing);
   else for (const [column, value, label] of [
     ["qty pcs kgs mts", sum(line => line.quantity), t.totalLabels.quantity],
@@ -373,6 +445,7 @@ export async function parseChinaInvoiceXlsx(file: File, m: Messages): Promise<Ch
     countryOfPrecedence: headerValue(sheet, "COUNTRY OF PRECEDENCE:"),
     paymentTerms: headerValue(sheet, "Payment terms:") || textOf(sheet.getCell("C109")), lines,
     totalQuantity: sum(line => line.quantity), totalNetWeightKg: sum(line => line.netWeightKg),
-    totalGrossWeightKg: sum(line => line.grossWeightKg), totalAmount: sum(line => line.amount), issues, warnings,
+    totalGrossWeightKg: sum(line => line.grossWeightKg), totalAmount: sum(line => line.amount),
+    declaredTotals, packingList: parsePackingList(workbook), issues, warnings,
   };
 }

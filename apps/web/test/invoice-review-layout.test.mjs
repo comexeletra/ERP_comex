@@ -63,7 +63,7 @@ test("invoice audit confirmations and registry updates keep the checkbox beside 
 test("invoice comparison is a table with highlighted divergent fields", () => {
   assert.match(component, /<table className="invoice-compare-table">/u);
   assert.match(component, /className=\{row\.differs \? "invoice-compare-differs" : undefined\}/u);
-  assert.match(styles, /\.invoice-match-table \.invoice-compare-table th, \.invoice-match-table \.invoice-compare-table td\s*\{[^}]*position:\s*static;[^}]*width:\s*auto/u);
+  assert.match(styles, /\.invoice-match-table \.invoice-compare-table th, \.invoice-match-table \.invoice-compare-table td(?:,[^{]+)?\s*\{[^}]*position:\s*static;[^}]*width:\s*auto/u);
   assert.equal(ptBR.newRecord.compareField.ncm, "NCM");
 });
 

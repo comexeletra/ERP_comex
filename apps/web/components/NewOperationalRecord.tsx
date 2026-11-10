@@ -34,8 +34,10 @@ import PageHeader from "./PageHeader";
 import { classifyInvoiceDestination, distributeInvoiceParts, invoiceAssignmentsFromLines, InvoiceAuditPoint, InvoiceAuditPointKind,
   invoiceAuditProgress, invoiceCodePoint, invoiceComparisonRows, invoiceExporterAliasSuggestion, invoiceKeyItems, invoiceLineDecisions,
   invoicePartAuditPoints, invoicePoCodeSummary, invoiceProductFillFields, InvoiceQuantityDecision, invoiceQuantityPoint,
-  invoiceBeforeAfterRows, invoicePriceTolerancePercent, invoiceSavePayload, invoiceSupplierMatchesExporter } from "../lib/china-invoice-mapping";
+  invoiceBeforeAfterRows, invoicePackingDecisionsReady, invoicePackingDivergences, invoicePackingListDecisions,
+  invoicePriceTolerancePercent, invoiceSavePayload, invoiceSupplierMatchesExporter } from "../lib/china-invoice-mapping";
 import { createExporterAlias } from "./SupplierExporterAliases";
+import InvoiceConference from "./InvoiceConference";
 
 const poRoles = new Set(["Master", "Administrador", "Importação", "Compras"]);
 const ipRoles = new Set(["Master", "Administrador", "Importação"]);
@@ -271,6 +273,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   const [invoiceDraft, setInvoiceDraft] = useState<ChinaInvoiceDraft | null>(null);
   const [invoiceMatches, setInvoiceMatches] = useState<InvoiceMatch[]>([]);
   const [quantityDecisions, setQuantityDecisions] = useState<Record<number, InvoiceQuantityDecision>>({});
+  const [packingDecisions, setPackingDecisions] = useState<Record<string, InvoiceQuantityDecision>>({});
   const [invoiceDuplicate, setInvoiceDuplicate] = useState<InvoiceDuplicate | null>(null);
   const [duplicateInvoiceIps, setDuplicateInvoiceIps] = useState<string[]>([]);
   const [ipReferenceOtherImporter, setIpReferenceOtherImporter] = useState(false);
@@ -475,6 +478,10 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   // Every part has a valid destination, every audit point is confirmed and at least one line reaches a PO.
   const invoiceLinesReady = invoiceAllocations.length > 0
     && invoiceRows.every(row => row.issue === null && row.auditPoints.every(point => point.confirmed !== false));
+  // INV × PKL divergences wait for the analyst's confirmation and reason; the API does not receive the PKL sheet.
+  const packingDivergences = invoiceDraft?.packingList.status === "READ"
+    ? invoicePackingDivergences(invoiceDraft.lines, invoiceDraft.packingList.lines) : [];
+  const packingDecisionsReady = invoicePackingDecisionsReady(packingDivergences, packingDecisions);
 
   function updateItem(index: number, change: Partial<PoItemDraft>) {
     setPoPreflight(null);
@@ -530,7 +537,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     const file = event.currentTarget.files?.[0]; event.currentTarget.value = "";
     if (!file) return;
     clearInvoiceCommandKey(sessionStorage);
-    setInvoiceError(""); setInvoiceDraft(null); setInvoiceMatches([]); setQuantityDecisions({}); setInvoiceDuplicate(null);
+    setInvoiceError(""); setInvoiceDraft(null); setInvoiceMatches([]); setQuantityDecisions({}); setPackingDecisions({}); setInvoiceDuplicate(null);
     setDuplicateInvoiceIps([]); setConfirmDuplicateInvoice(false); setIpReferenceOtherImporter(false);
     setInvoiceExistingProcess(null); setOrphanPoDecisions({}); setExporterAliasNotice(""); setInvoiceLoading(true);
     try {
@@ -911,6 +918,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         if (!invoiceLinesReady || orphanPos.some(order => !orphanPoDecisions[order.id])
           || (importerCnpjMismatch && !confirmImporterCnpjMismatch))
           throw new Error(invoiceAllocations.length ? t.reviewAllLines : t.nothingDestined);
+        if (!packingDecisionsReady) throw new Error(t.conference.decisionsPending);
         const productUpdates = new Map<string, Record<string, unknown>>();
         for (const { match, line, allocations } of invoiceRows) {
           // Only a product that receives quantity from this invoice can be completed with its data.
@@ -956,6 +964,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                 amount: line.amount, poCell: line.poCell })),
               assignments,
               lineDecisions: invoiceLineDecisions(invoiceDraft.lines, invoiceMatches, quantityDecisions),
+              ...(packingDivergences.length
+                ? { packingListDecisions: invoicePackingListDecisions(packingDivergences, packingDecisions) } : {}),
               catalogUpdates: { products: [...productUpdates.values()] },
             } },
           allocations,
@@ -1233,6 +1243,13 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
             </div>
             <p className="muted">{t.destinationHelp}</p>
             {invoiceDraft.warnings.map(warning => <p className="notice warning" key={warning}>{warning}</p>)}
+            <InvoiceConference draft={invoiceDraft} divergences={packingDivergences} decisions={packingDecisions}
+              valueParts={invoiceAllocations.map(({ row, item, quantity }) => ({ quantity, invoicePrice: row.line?.unitPrice ?? "",
+                poPrice: item.unitPrice, poCurrency: item.currency }))}
+              onDecision={(key, change) => setPackingDecisions(current =>
+                ({ ...current, [key]: { ...(current[key] ?? { confirmed: false, reason: "" }), ...change } }))} />
+            {packingDivergences.length > 0 && !packingDecisionsReady
+              && <p className="notice error" role="alert">{t.conference.decisionsPending}</p>}
             {destinationIssues.length > 0 && <div className="notice error" role="alert">
               <p>{t.inactivePos(destinationIssues.filter(entry => entry.issue?.kind === "PO_NOT_ACTIVE").length)}</p>
               <p>{t.destinationsNeedAction(destinationIssues.length)}</p>
@@ -1401,7 +1418,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
             </section>}
             <button className="button secondary" type="button" disabled={saving} onClick={() => {
               clearInvoiceCommandKey(sessionStorage);
-              setInvoiceDraft(null); setInvoiceMatches([]); setQuantityDecisions({}); setInvoiceDuplicate(null);
+              setInvoiceDraft(null); setInvoiceMatches([]); setQuantityDecisions({}); setPackingDecisions({}); setInvoiceDuplicate(null);
               setDuplicateInvoiceIps([]); setConfirmDuplicateInvoice(false); setIpReferenceOtherImporter(false);
               setInvoiceExistingProcess(null); setOrphanPoDecisions({}); setInvoiceError("");
             }}>{t.removeInvoice}</button>
@@ -1422,7 +1439,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         <label>{m.poPanel.notes}<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
         </div>
         <button className="button" disabled={saving || invoiceLoading || !importer || Boolean(invoiceDraft && (invoiceError
-          || !invoiceLinesReady
+          || !invoiceLinesReady || !packingDecisionsReady
           || ipReferenceOtherImporter || (duplicateInvoiceIps.length > 0 && !confirmDuplicateInvoice)
           || !shippedChangeReady(Boolean(invoiceDuplicate?.shipped), shippedChange)
           || orphanPos.some(order => !orphanPoDecisions[order.id])

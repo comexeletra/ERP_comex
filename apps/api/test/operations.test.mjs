@@ -1097,6 +1097,24 @@ test("the assignments, allocations and line decisions built by the web screen ar
   assert.equal(response.statusCode, 201, response.body);
 });
 
+// User decision (2026-11-10): the INV × PKL acceptances go with the invoice metadata, with no API change.
+test("the INV × PKL decisions built by the web screen are kept in the invoice document notes", async t => {
+  const { invoicePackingDivergences, invoicePackingListDecisions } = await import("../../web/lib/china-invoice-mapping.ts");
+  const { client, queries } = invoiceImportClient();
+  const app = await invoiceImportApp(t, client);
+  const payload = invoicePayload();
+  const line = { sourceRow: 16, lineNumber: "1", quantity: "5", netWeightKg: "1.2", grossWeightKg: "1.5" };
+  const divergences = invoicePackingDivergences([line], [{ ...line, sourceRow: 13, grossWeightKg: "1.6" }]);
+  payload.invoice.metadata.packingListDecisions = invoicePackingListDecisions(divergences,
+    { "inv:16": { confirmed: true, reason: "Peso bruto corrigido na PKL" } });
+  const response = await sendInvoice(app, "invoice-web-packing", payload);
+  assert.equal(response.statusCode, 201, response.body);
+  const document = queries.find(query => query.sql.includes("INSERT INTO imports.process_document"));
+  assert.deepEqual(JSON.parse(document.params[6]).packingListDecisions, [{ invoiceRow: 16, packingRow: 13, lineNumber: "1",
+    fields: ["grossWeightKg"], invoice: { quantity: "5", netWeightKg: "1.2", grossWeightKg: "1.5" },
+    packing: { quantity: "5", netWeightKg: "1.2", grossWeightKg: "1.6" }, reason: "Peso bruto corrigido na PKL" }]);
+});
+
 // Audit 2026-11-09: the API checks each PO part of a split cell, not only the line total.
 function splitCellPayload(decision) {
   const payload = invoicePayload();

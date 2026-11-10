@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ExcelJS from "exceljs";
@@ -78,7 +79,22 @@ test("reads comma thousands groups in the PO cell", () => {
   assert.throws(() => parseInvoicePoAssignments("PO030201=1,000 pcs, PO030305=999 pcs", "1000", ptBR), /soma das quantidades/);
 });
 
-async function fixtureWorkbook({ includeInv = true, includeIpReference = true, mutate } = {}) {
+/** The PKL sheet of the real invoices: header in row 12, lines, a Total row and the packages and volume footer. */
+function addPackingList(workbook, mutate) {
+  const sheet = workbook.addWorksheet("PKL");
+  for (const [address, value] of [
+    ["A12", "No."], ["B12", "NCM"], ["C12", "Product description"], ["H12", "QTY(PCS)"],
+    ["I12", "Net Weight (KG)"], ["J12", "Gross Weight (KG)"],
+    ["A13", "1"], ["H13", "1030"], ["I13", 9.3], ["J13", 13.54],
+    ["A14", "2"], ["H14", 420], ["I14", { formula: "0.1*4", result: 0.4000000000000001 }], ["J14", 0.5],
+    ["A15", "Total    "], ["H15", 1450], ["I15", 9.7], ["J15", 14.04],
+    ["A17", "TOTAL PACKED IN "], ["C17", "158"], ["D17", "PACKAGES"],
+    ["A19", "VOLUME: "], ["C19", 157.73], ["D19", "CBM"],
+  ]) sheet.getCell(address).value = value;
+  mutate?.(sheet);
+}
+
+async function fixtureWorkbook({ includeInv = true, includeIpReference = true, mutate, packingList } = {}) {
   const workbook = new ExcelJS.Workbook();
   const sheet = includeInv ? workbook.addWorksheet("INV") : workbook.addWorksheet("Other");
   if (!includeInv) return new File([Buffer.from(await workbook.xlsx.writeBuffer())], "invoice.xlsx");
@@ -109,6 +125,7 @@ async function fixtureWorkbook({ includeInv = true, includeIpReference = true, m
   sheet.getCell("N18").value = 895.86;
   mutate?.(sheet);
   workbook.addWorksheet("Ignored").getCell("K4").value = "SHOULD NOT BE USED";
+  if (packingList) addPackingList(workbook, typeof packingList === "function" ? packingList : undefined);
   return new File([Buffer.from(await workbook.xlsx.writeBuffer())], "invoice.xlsx");
 }
 
@@ -292,4 +309,65 @@ test("requires IP REF in the INV header", async () => {
 test("invoice parsing messages follow the chosen language", () => {
   assert.throws(() => parseInvoicePoAssignments("PO ???", "12", en), /Could not interpret the PO on this line/);
   assert.throws(() => parseInvoicePoAssignments("PO ???", "12", zhCN), /无法识别该行的 PO/);
+});
+
+// User request (2026-11-10): the analyst sees the conference of quantities, weights and totals, and the PKL sheet.
+test("returns the declared TOTAL row and reads weights as Excel shows them", async () => {
+  const result = await parseInvoice(await fixtureWorkbook({ mutate(sheet) {
+    sheet.getCell("L17").value = { formula: "0.1*4", result: 0.4000000000000001 };
+  } }));
+  assert.deepEqual(result.declaredTotals, { quantity: "1450", netWeightKg: "9.7", grossWeightKg: "14.04", amount: "895.86" });
+  assert.equal(result.lines[1].netWeightKg, "0.4");
+  assert.equal(result.lines[0].grossWeightKg, "13.54");
+});
+
+test("reads the PKL lines, its Total row, the packages and the volume", async () => {
+  const result = await parseInvoice(await fixtureWorkbook({ packingList: true }));
+  assert.deepEqual(result.packingList, {
+    status: "READ",
+    lines: [
+      { sourceRow: 13, lineNumber: "1", quantity: "1030", netWeightKg: "9.3", grossWeightKg: "13.54" },
+      { sourceRow: 14, lineNumber: "2", quantity: "420", netWeightKg: "0.4", grossWeightKg: "0.5" },
+    ],
+    totals: { quantity: "1450", netWeightKg: "9.7", grossWeightKg: "14.04" },
+    packages: "158", volumeCbm: "157.73",
+  });
+});
+
+test("an invoice without a PKL sheet or with an unknown PKL layout is only reported", async () => {
+  assert.deepEqual((await parseInvoice(await fixtureWorkbook())).packingList, { status: "MISSING" });
+  const unknown = await parseInvoice(await fixtureWorkbook({ packingList(sheet) { sheet.getCell("I12").value = "Peso"; } }));
+  assert.deepEqual(unknown.packingList, { status: "UNREADABLE" });
+  assert.deepEqual(unknown.issues, []);
+});
+
+test("reads the packages and the volume written in the label cell", async () => {
+  const result = await parseInvoice(await fixtureWorkbook({ packingList(sheet) {
+    sheet.getCell("A17").value = "TOTAL PACKED IN 12 PACKAGES"; sheet.getCell("C17").value = null;
+    sheet.getCell("A19").value = "VOLUME: 3,5 CBM"; sheet.getCell("C19").value = null;
+  } }));
+  assert.equal(result.packingList.packages, "12");
+  assert.equal(result.packingList.volumeCbm, "3.5");
+});
+
+// The real IPH037A invoice (2026-11-10) stays out of Git (*.xlsx); the test runs where the file exists.
+const realIph037a = new URL("../../../invoices_tests/IPH037A 2026       INV+PL.xlsx", import.meta.url);
+test("reads the real IPH037A INV and PKL sheets", { skip: !existsSync(realIph037a) }, async () => {
+  const bytes = await readFile(realIph037a);
+  const result = await parseInvoice(new File([bytes], "IPH037A 2026 INV+PL.xlsx"));
+  assert.equal(result.lines.length, 62);
+  assert.deepEqual(result.issues, []);
+  assert.deepEqual(result.declaredTotals,
+    { quantity: "16778006", netWeightKg: "39576.0416263636", grossWeightKg: "48620.86", amount: "6255872.98" });
+  assert.equal(result.packingList.status, "READ");
+  assert.equal(result.packingList.lines.length, 62);
+  assert.deepEqual(result.packingList.totals, { quantity: "16778006", netWeightKg: "39576.0416263636", grossWeightKg: "48620.86" });
+  assert.equal(result.packingList.packages, "158");
+  assert.equal(result.packingList.volumeCbm, "157.73");
+  const conference = await import("../lib/china-invoice-mapping.ts");
+  assert.deepEqual(conference.invoicePackingDivergences(result.lines, result.packingList.lines), []);
+  assert.ok(conference.invoiceConferenceTotals(result.lines, result.declaredTotals, result.packingList.totals)
+    .every(row => row.declaredMatches && row.packingMatches !== false));
+  const checks = conference.invoiceLineChecks(result.lines);
+  assert.deepEqual([checks.lines, checks.totalFailures, checks.weightFailures], [62, [], []]);
 });

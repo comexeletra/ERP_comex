@@ -33,7 +33,7 @@ test("a different quantity needs the line confirmation and reason; a missing cod
   assert.match(component, /point\.kind === "CODE" \? t\.codeNotInPo/u);
   assert.equal(ptBR.newRecord.auditKind.CODE, "Código do produto");
   assert.equal(ptBR.newRecord.auditKind.QUANTITY, "Quantidade");
-  assert.match(styles, /\.invoice-match-table \.invoice-audit-reason\s*\{[^}]*font-weight:\s*400/u);
+  assert.match(styles, /\.invoice-match-table \.invoice-audit-reason(?:, [^{]+)?\s*\{[^}]*font-weight:\s*400/u);
 });
 
 test("the save sends the line decisions and only the assignment fields the API accepts", () => {
