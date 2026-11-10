@@ -1162,3 +1162,23 @@ test("a new IP from the invoice inserts its number with one parameter type", asy
   const insert = queries.find(query => query.sql.includes("INSERT INTO imports.import_process"));
   assert.match(insert.sql, /VALUES \(\$1,\$2,\$3::text,upper\(btrim\(\$3::text\)\)/u);
 });
+
+// User decision (2026-11-10): a price difference within the 20% tolerance still waits for the analyst's
+// acceptance, and the allocation audit keeps the difference in percent next to it.
+test("a price difference within the tolerance still needs the acceptance and is audited in percent", async t => {
+  const { client, queries } = invoiceImportClient({ poUnit: "UN", poUnitPrice: "0.36420000", poCurrency: "CNY" });
+  const app = await invoiceImportApp(t, client);
+  const payload = invoicePayload();
+  payload.invoice.amount = "1.82";
+  Object.assign(payload.invoice.metadata.lines[0], { amount: "1.82", unitPrice: "0.364192307692308", unit: "PCS" });
+  const unconfirmed = await sendInvoice(app, "invoice-price-within-unconfirmed", payload);
+  assert.equal(unconfirmed.statusCode, 400, unconfirmed.body);
+  assert.equal(unconfirmed.json().code, "INVOICE_PRICE_MISMATCH_UNCONFIRMED");
+  assert.match(unconfirmed.json().detail, /-0\.0021%/u);
+  payload.invoice.metadata.assignments[0].confirmPriceMismatch = true;
+  const confirmed = await sendInvoice(app, "invoice-price-within-confirmed", payload);
+  assert.equal(confirmed.statusCode, 201, confirmed.body);
+  assert.ok(queries.some(query => query.sql.includes("INSERT INTO audit.audit_log") && query.params.some(value =>
+    typeof value === "string" && value.includes('"confirmedPriceMismatch":true')
+      && value.includes('"priceDifferencePercent":"-0.0021"') && value.includes('"priceWithinTolerance":true'))));
+});

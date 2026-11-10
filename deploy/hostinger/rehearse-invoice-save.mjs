@@ -77,9 +77,14 @@ app.addHook("onRequest", async request => {
 await registerOperationalRoutes(app, pool);
 try {
   const before = await counts();
+  // An IP that already exists is revised by the same route, which needs its current version.
+  const existing = (await realPool.query(`SELECT version::text AS version FROM imports.import_process
+    WHERE normalized_ip_number = upper(btrim($1))`, [payload.process.ipNumber])).rows[0];
   const started = Date.now();
   const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice", payload,
-    headers: { "content-type": "application/json", "idempotency-key": `hml-rehearsal-${Date.now()}` } });
+    headers: { "content-type": "application/json", "idempotency-key": `hml-rehearsal-${Date.now()}`,
+      ...(existing ? { "x-record-version": `"${existing.version}"` } : {}) } });
+  stats.revision = Boolean(existing);
   const after = await counts();
   console.log(JSON.stringify({ release: releaseDir.split("/").pop(), status: response.statusCode,
     body: response.body.slice(0, 600), ms: Date.now() - started, ...stats,

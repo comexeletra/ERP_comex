@@ -6,6 +6,7 @@ import { permissionConfig } from "./authorization.js";
 import { unitsDiffer } from "./unit-equivalence.js";
 import { exporterMatchesAlias } from "./exporter-alias.js";
 import { parseInvoicePoCell } from "./invoice-po-cell.js";
+import { invoicePriceDifference } from "./invoice-price.js";
 
 const quantity = z.string().trim().regex(/^(?:0|[1-9]\d{0,15})(?:[.,]\d{1,8})?$/u)
   .refine(value => !/^0(?:[.,]0+)?$/u.test(value)).transform(value => value.replace(",", "."));
@@ -35,6 +36,12 @@ function invalidInvoiceLinesMessage(lines: unknown, issues: readonly { path: rea
   const row = typeof sourceRow === "number" ? `Linha ${sourceRow} da invoice` : `Linha ${index + 1} enviada da invoice`;
   const reason = typeof field === "string" ? invoiceLineFieldLabels[field] ?? `campo ${field} inválido` : "linha inválida";
   return `${row}: ${reason}.`;
+}
+/** The price difference the API computed for an allocation audit, when the PO item in CNY has another price. */
+function priceAudit(invoicePrice: string | undefined, item: { unit_price: string | null; currency_code: string | null }) {
+  const difference = invoicePrice && item.unit_price && item.currency_code === "CNY"
+    ? invoicePriceDifference(invoicePrice, item.unit_price) : null;
+  return difference ? { priceDifferencePercent: difference.percent, priceWithinTolerance: difference.withinTolerance } : {};
 }
 const nullableText = (limit: number) => z.string().trim().max(limit).nullable();
 const poFields = z.object({
@@ -1343,11 +1350,13 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
             throw new BusinessError(400, "INVOICE_UNIT_MISMATCH_UNCONFIRMED",
               `Linha ${assignment.sourceRow}: confirme a divergência de unidade com a PO.`);
           }
-          if (sourceLine?.unitPrice && item.unit_price && item.currency_code === "CNY"
-            && absoluteUnits(priceUnits(sourceLine.unitPrice) - priceUnits(item.unit_price)) > 10_000_000_000n
-            && assignment.confirmPriceMismatch !== true) {
+          // Every price difference waits for the analyst's acceptance, within the tolerance or above it.
+          const priceDifference = sourceLine?.unitPrice && item.unit_price && item.currency_code === "CNY"
+            ? invoicePriceDifference(sourceLine.unitPrice, item.unit_price) : null;
+          if (priceDifference && assignment.confirmPriceMismatch !== true) {
             throw new BusinessError(400, "INVOICE_PRICE_MISMATCH_UNCONFIRMED",
-              `Linha ${assignment.sourceRow}: confirme a divergência de preço com a PO.`);
+              `Linha ${assignment.sourceRow}: confirme a divergência de preço com a PO (${priceDifference.percent === null
+                ? "PO sem preço" : `${priceDifference.percent}%`}).`);
           }
         }
         const supplierIdsForProcess = new Set([...supplierByItemId.values()].map(item => item.supplierEntryId));
@@ -1520,7 +1529,8 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
                   confirmedSupplierMismatch: assignment.confirmSupplierMismatch,
                   supplierMatchedByAlias: supplierByItemId.get(item.id)?.matchedByAlias === true,
                   confirmedUnitMismatch: assignment.confirmUnitMismatch === true,
-                  confirmedPriceMismatch: assignment.confirmPriceMismatch === true })) }, auth.actor, body.process.reason);
+                  confirmedPriceMismatch: assignment.confirmPriceMismatch === true,
+                  ...priceAudit(lineByRow.get(assignment.sourceRow)?.unitPrice, item) })) }, auth.actor, body.process.reason);
         }
         const documentId = randomUUID();
         await client.query(
