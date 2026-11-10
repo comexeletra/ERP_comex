@@ -4,7 +4,7 @@
 |---|---|
 | Data | 2026-11-09 |
 | Branch de trabalho | `homologacao` |
-| Status | Aprovada e implementada (web `537a143`, API `b62d03e`); API HML no release `b62d03e`; aceite da IPH034A no Preview pendente |
+| Status | Implementada (web `537a143`; API `b62d03e`, `28bbc3a`, `1c9803e` com M081); API HML no release `1c9803e`; aceite da IPH034A no Preview pendente |
 
 ## Contexto (auditoria de 2026-11-09)
 
@@ -77,3 +77,6 @@ Permitir gravar as invoices reais (IPH034A/B) pela tela, com o número correto d
 - API `b62d03e`: célula dividida conferida por PO; mensagens da rota em português; `INVALID_INVOICE_LINES` diz a linha e o campo.
 - Verificação local: API 68 arquivos de teste, web 383 testes, type-check, lint (0 erros; os 42 avisos não vêm dos arquivos alterados) e builds.
 - HML: release `b62d03e` (registro em `deploy/hostinger/README.md`). A PO de teste 030201 da importadora GALPAO-FORTALEZA não existe mais: o aceite da IPH034A precisa recriá-la com `deploy/hostinger/seed-hml-iph034a-acceptance.mjs apply`, ou usar outra PO com saldo.
+- PO de teste 030201 da GALPAO-FORTALEZA recriada pela semente (decisão do usuário).
+- Achados no aceite (2026-11-09), fora do que a auditoria por código viu, porque os testes da API usam banco falso: o `INSERT` do IP novo pela invoice falhava com `42P08` (HTTP 500, desde `5247e2f`; corrigido em `28bbc3a`) e a moeda do documento violava `process_document_check1` (decisão do usuário: M081, `1c9803e`). Gravar IP novo pela invoice nunca tinha funcionado num banco real. A gravação inteira da IPH034A foi ensaiada contra o HML com ROLLBACK antes da ativação.
+- Pontos de preço da IPH034A contra a PO de teste: 19, dos quais 18 são só o arredondamento do total da linha a centavos e 1 é diferença real (linha 36: 30,08 × 35,85 CNY). Regra de tolerância proposta ao usuário, fora deste escopo.
