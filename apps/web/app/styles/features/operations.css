@@ -125,7 +125,7 @@
 .invoice-audit-values dt { font-weight: 700; }
 .invoice-audit-values dd { margin: 0; }
 .invoice-audit-note { margin: 0; }
-.invoice-match-table .invoice-audit-confirm { align-items: flex-start; cursor: pointer; display: flex; font-weight: 400; gap: 7px; }
+.invoice-match-table .invoice-audit-confirm, .notice > .invoice-audit-confirm { align-items: flex-start; cursor: pointer; display: flex; font-weight: 400; gap: 7px; }
 .invoice-audit-confirm input { flex: 0 0 auto; margin: 1px 0 0; }
 .invoice-match-table .invoice-audit-reason { display: grid; font-weight: 400; gap: 4px; }
 .invoice-audit-reason input { min-width: 0; width: 100%; }

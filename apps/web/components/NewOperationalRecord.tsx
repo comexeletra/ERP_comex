@@ -1211,7 +1211,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
             {invoiceDuplicate?.shipped && <ShippedChangeConfirmation value={shippedChange} onChange={setShippedChange} />}
             {duplicateInvoiceIps.length > 0 && <div className="notice error" role="alert">
               <p>{t.invoiceInIps(duplicateInvoiceIps.join(", "))}</p>
-              <label><input type="checkbox" checked={confirmDuplicateInvoice}
+              <label className="invoice-audit-confirm"><input type="checkbox" checked={confirmDuplicateInvoice}
                 onChange={event => setConfirmDuplicateInvoice(event.target.checked)} />{t.confirmDuplicateInvoice}</label>
             </div>}
             {ipReferenceOtherImporter && <p className="notice error" role="alert">
@@ -1219,7 +1219,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
             </p>}
             {importerCnpjMismatch && <div className="notice error" role="alert">
               <p>{t.cnpjMismatch(invoiceDraft.importerCnpj || t.notIdentified, importer, importerCnpjs[importer] || t.notRegistered)}</p>
-              <label><input type="checkbox" checked={confirmImporterCnpjMismatch}
+              <label className="invoice-audit-confirm"><input type="checkbox" checked={confirmImporterCnpjMismatch}
                 onChange={event => setConfirmImporterCnpjMismatch(event.target.checked)} />{t.confirmImporter}</label>
             </div>}
             <div className="operational-fields invoice-header-fields">

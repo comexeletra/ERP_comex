@@ -55,7 +55,7 @@ test("invoice audit points form a checklist with pending and confirmed states", 
 
 test("invoice audit confirmations and registry updates keep the checkbox beside its text", () => {
   // .stack-form label is a bold grid and .operational-fields inputs are full width; both must be undone here.
-  assert.match(styles, /\.invoice-match-table \.invoice-audit-confirm\s*\{[^}]*display:\s*flex;[^}]*font-weight:\s*400/u);
+  assert.match(styles, /\.invoice-match-table \.invoice-audit-confirm(?:, [^{]+)?\s*\{[^}]*display:\s*flex;[^}]*font-weight:\s*400/u);
   assert.match(styles, /\.invoice-audit-confirm input\s*\{[^}]*flex:\s*0 0 auto;/u);
   assert.match(styles, /\.invoice-match-table td:nth-child\(4\) > \.operational-fields input\[type="checkbox"\]\s*\{[^}]*width:\s*auto/u);
 });
@@ -65,4 +65,12 @@ test("invoice comparison is a table with highlighted divergent fields", () => {
   assert.match(component, /className=\{row\.differs \? "invoice-compare-differs" : undefined\}/u);
   assert.match(styles, /\.invoice-match-table \.invoice-compare-table th, \.invoice-match-table \.invoice-compare-table td\s*\{[^}]*position:\s*static;[^}]*width:\s*auto/u);
   assert.equal(ptBR.newRecord.compareField.ncm, "NCM");
+});
+
+// The form stretches every label as a grid, so a bare checkbox in a notice became a field as wide as the notice.
+test("confirmations inside the invoice notices keep the checkbox beside its text", () => {
+  for (const text of ["confirmDuplicateInvoice", "confirmImporter"]) {
+    assert.match(component, new RegExp(String.raw`<label className="invoice-audit-confirm"><input type="checkbox"[\s\S]{0,200}?/>\{t\.${text}\}</label>`, "u"), text);
+  }
+  assert.match(styles, /\.invoice-match-table \.invoice-audit-confirm, \.notice > \.invoice-audit-confirm \{[^}]*display: flex;/u);
 });
