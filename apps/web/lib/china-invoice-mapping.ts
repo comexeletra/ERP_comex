@@ -619,6 +619,118 @@ export function invoiceCatalogCorrections(points: readonly InvoiceCatalogPoint[]
   return corrections;
 }
 
+/*
+ * Manufacturer against the manufacturer list (user decisions, 2026-11-10): the list rules the address and the name;
+ * a name with several addresses is chosen by the analyst; a manufacturer out of the list is confirmed with a reason;
+ * a country that differs from the list is decided by the analyst; the country goes in capitals.
+ */
+
+export type InvoiceManufacturerEntry = { sourceRow: number; name: string; address: string; country: string; code: string };
+export type InvoiceManufacturerCheck = { sourceRow: number; lineNumber: string;
+  invoice: { name: string; address: string; country: string };
+  status: "ADDRESS" | "NAME" | "CHOICE" | "MISSING"; entry: InvoiceManufacturerEntry | null; candidates: InvoiceManufacturerEntry[] };
+export type InvoiceCountryChoice = { source: "INVOICE" | "LIST" | null; reason: string };
+type InvoiceManufacturerLine = { sourceRow: number; lineNumber: string; manufacturer: string; manufacturerAddress: string;
+  manufacturerCountry: string };
+
+const manufacturerKey = (value: string) => value.normalize("NFD").replace(/[̀-ͯ]/gu, "")
+  .toLocaleUpperCase("en-US").replace(/[^A-Z0-9]/gu, "");
+/** Spellings of the same country found in the list (EUA × USA, Japão × JAPAN). */
+const countrySpellings: Readonly<Record<string, string>> = { EUA: "USA", ESTADOSUNIDOS: "USA", UNITEDSTATES: "USA", JAPAO: "JAPAN" };
+const countryKey = (value: string) => { const key = manufacturerKey(value); return countrySpellings[key] ?? key; };
+
+export function invoiceCountryMatches(left: string, right: string): boolean {
+  return countryKey(left) === countryKey(right);
+}
+
+/** The identifier of a list entry chosen by the analyst: its TOTVS code, or its row when it has none. */
+export function invoiceManufacturerId(entry: InvoiceManufacturerEntry): string {
+  return entry.code || `#${entry.sourceRow}`;
+}
+
+/** Each line's manufacturer in the list: by address (as the analysts' XLOOKUP), else by name. */
+export function invoiceManufacturerChecks(lines: readonly InvoiceManufacturerLine[],
+  list: readonly InvoiceManufacturerEntry[]): InvoiceManufacturerCheck[] {
+  return lines.map(line => {
+    const invoice = { name: line.manufacturer.trim(), address: line.manufacturerAddress.trim(), country: line.manufacturerCountry.trim() };
+    const base = { sourceRow: line.sourceRow, lineNumber: line.lineNumber, invoice, candidates: [] as InvoiceManufacturerEntry[] };
+    const byAddress = invoice.address ? list.filter(entry => manufacturerKey(entry.address) === manufacturerKey(invoice.address)) : [];
+    if (byAddress.length) {
+      const entry = byAddress.find(candidate => manufacturerKey(candidate.name) === manufacturerKey(invoice.name)) ?? byAddress[0];
+      return { ...base, status: "ADDRESS", entry };
+    }
+    const byName = invoice.name ? list.filter(entry => manufacturerKey(entry.name) === manufacturerKey(invoice.name)) : [];
+    if (byName.length === 1) return { ...base, status: "NAME", entry: byName[0] };
+    if (byName.length > 1) return { ...base, status: "CHOICE", entry: null, candidates: byName };
+    return { ...base, status: "MISSING", entry: null };
+  });
+}
+
+function resolvedManufacturer(check: InvoiceManufacturerCheck, addressChoices: Readonly<Record<number, string>>) {
+  return check.entry ?? check.candidates.find(entry => invoiceManufacturerId(entry) === addressChoices[check.sourceRow]) ?? null;
+}
+
+/** The list country when it differs from the invoice one, once the manufacturer is known. */
+export function invoiceManufacturerCountryPoint(check: InvoiceManufacturerCheck,
+  addressChoices: Readonly<Record<number, string>>): string | null {
+  const entry = resolvedManufacturer(check, addressChoices);
+  return entry?.country && !invoiceCountryMatches(entry.country, check.invoice.country) ? entry.country : null;
+}
+
+/** Decisions still missing: an address to choose, a country to decide, a manufacturer out of the list to confirm. */
+export function invoiceManufacturerPending(checks: readonly InvoiceManufacturerCheck[],
+  addressChoices: Readonly<Record<number, string>>, countryChoices: Readonly<Record<number, InvoiceCountryChoice>>,
+  missingDecisions: Readonly<Record<number, InvoiceQuantityDecision>>): number {
+  return checks.reduce((total, check) => {
+    if (check.status === "MISSING") {
+      return total + (invoiceQuantityDecisionReady(missingDecisions[check.sourceRow] ?? { confirmed: false, reason: "" }) ? 0 : 1);
+    }
+    if (!resolvedManufacturer(check, addressChoices)) return total + 1;
+    const choice = countryChoices[check.sourceRow];
+    const decided = Boolean(choice?.source) && (choice?.reason.trim().length ?? 0) >= minimumQuantityReasonLength;
+    return total + (invoiceManufacturerCountryPoint(check, addressChoices) && !decided ? 1 : 0);
+  }, 0);
+}
+
+/**
+ * The manufacturer values that change in the file: the list address and name (only when the name really differs),
+ * the country the analyst kept or took from the list, in capitals. Without a list, only the capitals apply.
+ */
+export function invoiceManufacturerCorrections(lines: readonly InvoiceManufacturerLine[],
+  checks: readonly InvoiceManufacturerCheck[], addressChoices: Readonly<Record<number, string>>,
+  countryChoices: Readonly<Record<number, InvoiceCountryChoice>>):
+  Record<number, Partial<Record<"manufacturer" | "manufacturerAddress" | "manufacturerCountry", string>>> {
+  const corrections: Record<number, Partial<Record<"manufacturer" | "manufacturerAddress" | "manufacturerCountry", string>>> = {};
+  for (const line of lines) {
+    const check = checks.find(entry => entry.sourceRow === line.sourceRow);
+    const entry = check ? resolvedManufacturer(check, addressChoices) : null;
+    const correction: Partial<Record<"manufacturer" | "manufacturerAddress" | "manufacturerCountry", string>> = {};
+    if (entry?.address && entry.address !== line.manufacturerAddress.trim()) correction.manufacturerAddress = entry.address;
+    if (entry?.name && manufacturerKey(entry.name) !== manufacturerKey(line.manufacturer)) correction.manufacturer = entry.name;
+    const listCountry = check ? invoiceManufacturerCountryPoint(check, addressChoices) : null;
+    const country = (listCountry && countryChoices[line.sourceRow]?.source === "LIST" ? listCountry : line.manufacturerCountry)
+      .trim().toLocaleUpperCase("pt-BR");
+    if (country !== line.manufacturerCountry) correction.manufacturerCountry = country;
+    if (Object.keys(correction).length) corrections[line.sourceRow] = correction;
+  }
+  return corrections;
+}
+
+/** The header country of origin keeps its countries and gets, in capitals, the line countries it does not cite. */
+export function invoiceOriginCountries(header: string, lineCountries: readonly string[]):
+  { missing: string[]; corrected: string | null } {
+  const parts = header.split(/[,.;/]|\s+AND\s+|\s+&\s+/iu).map(part => part.trim()).filter(Boolean);
+  const cited = new Set(parts.map(countryKey));
+  const missing: string[] = [];
+  for (const country of lineCountries) {
+    const name = country.trim().toLocaleUpperCase("pt-BR");
+    if (!name || cited.has(countryKey(name))) continue;
+    cited.add(countryKey(name));
+    missing.push(name);
+  }
+  return { missing, corrected: missing.length ? [...parts.map(part => part.toLocaleUpperCase("pt-BR")), ...missing].join(", ") : null };
+}
+
 /** The PKL weights of the invoice lines where the analyst took the PKL. */
 export function invoicePackingChoiceWeights(divergences: readonly InvoicePackingDivergence[],
   choices: Readonly<Record<string, InvoicePackingChoice>>): Record<number, { netWeightKg: string; grossWeightKg: string }> {

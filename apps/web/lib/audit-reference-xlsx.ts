@@ -74,7 +74,9 @@ function attribute(tag: string, name: string): string {
 /** The text runs of a shared or inline string, without the phonetic runs. */
 function runsText(xml: string): string {
   return [...xml.replace(/<rPh\b[\s\S]*?<\/rPh>/gu, "").matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>|<t\b[^>]*\/>/gu)]
-    .map(match => xmlText(match[1] ?? "")).join("");
+    .map(match => xmlText(match[1] ?? "")).join("")
+    // Excel writes control characters as _x000D_; a typed line break comes as CR LF in the list and LF in the invoice.
+    .replace(/_x([0-9A-Fa-f]{4})_/gu, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)));
 }
 
 function columnIndex(reference: string): number {
@@ -113,7 +115,7 @@ function* sheetRows(xml: string, shared: readonly string[]): Generator<{ row: nu
       const value = type === "s" ? shared[Number(raw)] ?? ""
         : type === "inlineStr" ? runsText(body)
           : raw === undefined ? "" : type === "str" || type === "e" ? xmlText(raw) : type === "b" ? raw : numberText(xmlText(raw));
-      if (value.trim()) cells.set(column, value.trim());
+      if (value.trim()) cells.set(column, value.replace(/\r\n?/gu, "\n").trim());
     }
     yield { row: rowNumber, cells };
   }
@@ -272,6 +274,50 @@ export async function parseProductDatabaseXlsx(file: File, m: Messages): Promise
   }
   if (!columns) throw new Error(t.headerMissing);
   return { fileName: file.name, products, duplicated,
+    fileSha256: Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)))
+      .map(value => value.toString(16).padStart(2, "0")).join("") };
+}
+
+const manufacturerSheetName = "SUPPLY"; // i18n-ignore: sheet name of the manufacturer list workbook
+/** Headers by their letters and digits: the address header is written with a typographic apostrophe. */
+const manufacturerHeaders = { SUPPLY: "name", MANUFACTURERSADDRESS: "address", COUNTRY: "country", TOTVSCODE: "code" } as const;
+type ManufacturerField = typeof manufacturerHeaders[keyof typeof manufacturerHeaders];
+
+export type ManufacturerEntry = { sourceRow: number; name: string; address: string; country: string; code: string };
+export type ManufacturerList = { fileName: string; fileSha256: string; manufacturers: ManufacturerEntry[] };
+
+/**
+ * The manufacturer list the analysts check the invoice against (`TOTVS-HEXING -LIST MANUFACTURER`, sheet SUPPLY,
+ * header in row 1 in 2026-11): name, address, country and TOTVS code of each registered manufacturer.
+ */
+export async function parseManufacturerListXlsx(file: File, m: Messages): Promise<ManufacturerList> {
+  const t = m.manufacturerListSheet;
+  if (!file.name.toLocaleLowerCase("en-US").endsWith(".xlsx")) throw new Error(t.xlsxRequired);
+  if (file.size === 0 || file.size > maxFileBytes) throw new Error(t.fileSize);
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const { sheet, shared } = await workbookSheetXml(bytes, manufacturerSheetName, t);
+  const key = (value: string) => value.toLocaleUpperCase("en-US").replace(/[^A-Z0-9]/gu, "");
+  let columns: Map<ManufacturerField, number> | null = null;
+  const manufacturers: ManufacturerEntry[] = [];
+  for (const { row, cells } of sheetRows(sheet, shared)) {
+    if (!columns) {
+      if (row > 15) break;
+      const found = new Map<ManufacturerField, number>();
+      for (const [column, value] of cells) {
+        const field = manufacturerHeaders[key(value) as keyof typeof manufacturerHeaders];
+        if (field && !found.has(field)) found.set(field, column);
+      }
+      if (found.size === 4) columns = found;
+      else if (found.size >= 2) throw new Error(t.missingColumns(Object.entries(manufacturerHeaders)
+        .filter(([, field]) => !found.has(field)).map(([header]) => header).join(", ")));
+      continue;
+    }
+    const get = (field: ManufacturerField) => (cells.get(columns!.get(field)!) ?? "").trim();
+    if (!get("name") && !get("address")) continue;
+    manufacturers.push({ sourceRow: row, name: get("name"), address: get("address"), country: get("country"), code: get("code") });
+  }
+  if (!columns) throw new Error(t.headerMissing);
+  return { fileName: file.name, manufacturers,
     fileSha256: Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)))
       .map(value => value.toString(16).padStart(2, "0")).join("") };
 }

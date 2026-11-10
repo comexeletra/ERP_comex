@@ -5,12 +5,14 @@ import type { InvoicePackingList, InvoiceSheetLayout } from "./china-invoice-xls
  * The invoice file corrected with the analyst's decisions on the audit page (user decision, 2026-11-10):
  * quantity and PO cell of each line, the PO price when the analyst corrects it, the PKL weights when the
  * analyst takes them, the recalculated line total and TOTAL row, the DATABASE NCM and description the analyst
- * takes (also in the PKL line with the same No.), and an AUDITORIA sheet. A line destined with 0 keeps its
- * commercial values; every other cell and sheet is kept.
+ * takes (also in the PKL line with the same No.), the manufacturer from the manufacturer list, the header country
+ * of origin, and an AUDITORIA sheet. A line destined with 0 keeps its commercial values; every other cell and
+ * sheet is kept.
  */
 
 export type InvoiceLineValues = { quantity: string; poCell: string; unitPrice: string; netWeightKg: string;
-  grossWeightKg: string; amount: string; ncm: string; description: string };
+  grossWeightKg: string; amount: string; ncm: string; description: string; manufacturer: string;
+  manufacturerAddress: string; manufacturerCountry: string };
 export type InvoiceCorrectionField = keyof InvoiceLineValues;
 export type InvoiceLineCorrection = { sourceRow: number; lineNumber: string; destined: boolean; original: InvoiceLineValues;
   corrected: InvoiceLineValues; changed: InvoiceCorrectionField[] };
@@ -18,7 +20,10 @@ type CorrectionLine = InvoiceLineValues & { sourceRow: number; lineNumber: strin
   poAssignments: readonly { poNumber: string; quantity: string }[] };
 
 const fields: readonly InvoiceCorrectionField[] = ["quantity", "poCell", "unitPrice", "netWeightKg", "grossWeightKg", "amount",
-  "ncm", "description"];
+  "ncm", "description", "manufacturer", "manufacturerAddress", "manufacturerCountry"];
+/** The product and manufacturer fields the reference workbooks correct, also on a line destined with 0. */
+type ReferenceField = "ncm" | "description" | "manufacturer" | "manufacturerAddress" | "manufacturerCountry";
+const referenceFields: readonly ReferenceField[] = ["ncm", "description", "manufacturer", "manufacturerAddress", "manufacturerCountry"];
 const digits = 18;
 const scale = 10n ** BigInt(digits);
 
@@ -55,22 +60,24 @@ function lineAmount(quantity: string, price: string): string | null {
 /**
  * The corrected values of each line. `parts` are the destined parts (PO and quantity), `prices` the PO price
  * of the lines the analyst corrected, `weights` the PKL weights of the lines where the analyst took the PKL, and
- * `catalog` the DATABASE NCM and description the analyst took (they apply to a line destined with 0 too).
+ * `reference` the DATABASE and manufacturer list values (they apply to a line destined with 0 too).
  */
 export function invoiceLineCorrections(lines: readonly CorrectionLine[],
   parts: readonly { sourceRow: number; poNumber: string; quantity: string }[],
   prices: Readonly<Record<number, string>>,
   weights: Readonly<Record<number, { netWeightKg: string; grossWeightKg: string }>>,
-  catalog: Readonly<Record<number, { ncm?: string; description?: string }>> = {}): InvoiceLineCorrection[] {
+  reference: Readonly<Record<number, Partial<Record<ReferenceField, string>>>> = {}): InvoiceLineCorrection[] {
   return lines.map(line => {
     const original: InvoiceLineValues = { quantity: line.quantity, poCell: line.poCell, unitPrice: line.unitPrice,
       netWeightKg: line.netWeightKg, grossWeightKg: line.grossWeightKg, amount: line.amount, ncm: line.ncm,
-      description: line.description };
-    const reference = catalog[line.sourceRow] ?? {};
-    const product = {
-      ncm: reference.ncm !== undefined && ncmDigits(reference.ncm) !== ncmDigits(line.ncm) ? reference.ncm : line.ncm,
-      description: reference.description !== undefined && reference.description.trim() !== line.description.trim()
-        ? reference.description.trim() : line.description };
+      description: line.description,
+      manufacturer: line.manufacturer, manufacturerAddress: line.manufacturerAddress, manufacturerCountry: line.manufacturerCountry };
+    const values = reference[line.sourceRow] ?? {};
+    const product = Object.fromEntries(referenceFields.map(field => {
+      const value = values[field];
+      const differs = value !== undefined && (field === "ncm" ? ncmDigits(value) !== ncmDigits(line.ncm) : value.trim() !== line[field].trim());
+      return [field, differs ? value!.trim() : line[field]];
+    })) as Pick<InvoiceLineValues, ReferenceField>;
     const result = (destined: boolean, corrected: InvoiceLineValues): InvoiceLineCorrection => ({ sourceRow: line.sourceRow,
       lineNumber: line.lineNumber, destined, original, corrected, changed: fields.filter(field => corrected[field] !== original[field]) });
     const byPo = new Map<string, { poNumber: string; quantity: bigint }>();
@@ -157,7 +164,8 @@ export type InvoiceAuditSheet = { sheetName: string; summary: readonly (readonly
   columns: readonly string[]; rows: readonly (readonly string[])[] };
 
 const correctedFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFFF00" } } as const;
-const textFields: readonly InvoiceCorrectionField[] = ["poCell", "ncm", "description"];
+const textFields: readonly InvoiceCorrectionField[] = ["poCell", "ncm", "description", "manufacturer", "manufacturerAddress",
+  "manufacturerCountry"];
 
 function shownValue(cell: Cell): string {
   const value = cell.value;
@@ -177,7 +185,8 @@ function mark(cell: Cell, value: string | number, note: (original: string) => st
 /** Writes the corrections into the INV and PKL sheets and the audit sheet; Excel recalculates every formula on open. */
 export async function writeCorrectedInvoice(bytes: ArrayBuffer | Uint8Array, layout: InvoiceSheetLayout,
   corrections: readonly InvoiceLineCorrection[], totals: InvoiceCorrectedTotals, audit: InvoiceAuditSheet,
-  note: (original: string) => string, packing: InvoicePackingList | null = null): Promise<ArrayBuffer> {
+  note: (original: string) => string, packing: InvoicePackingList | null = null,
+  countryOfOrigin: string | null = null): Promise<ArrayBuffer> {
   const { default: ExcelJS } = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(bytes instanceof Uint8Array ? bytes.slice().buffer : bytes);
@@ -195,6 +204,10 @@ export async function writeCorrectedInvoice(bytes: ArrayBuffer | Uint8Array, lay
     for (const entry of invoicePackingCorrections(corrections, packing)) {
       mark(packingSheet.getRow(entry.packingRow).getCell(entry.column), entry.value, note);
     }
+  }
+  if (countryOfOrigin !== null && layout.countryOfOrigin) {
+    const { row, column, prefix } = layout.countryOfOrigin;
+    mark(sheet.getRow(row).getCell(column), prefix ? `${prefix} ${countryOfOrigin}` : countryOfOrigin, note);
   }
   if (layout.totalRow) {
     for (const field of ["quantity", "netWeightKg", "grossWeightKg", "amount"] as const) {

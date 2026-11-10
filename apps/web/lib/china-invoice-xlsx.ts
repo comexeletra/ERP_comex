@@ -34,7 +34,10 @@ export type InvoicePackingList = { status: "MISSING" } | { status: "UNREADABLE" 
   columns: { ncm: number | null; description: number | null } };
 
 export type InvoiceSheetLayout = { totalRow: number; columns: { quantity: number; unitPrice: number; netWeightKg: number;
-  grossWeightKg: number; amount: number; poCell: number; ncm: number; description: number } };
+  grossWeightKg: number; amount: number; poCell: number; ncm: number; description: number; manufacturer: number;
+  manufacturerAddress: number; manufacturerCountry: number };
+  /** The cell of the header country of origin; `prefix` is the label when it shares the cell with the value. */
+  countryOfOrigin: { row: number; column: number; prefix: string } | null };
 
 export type ChinaInvoiceDraft = {
   fileName: string;
@@ -216,6 +219,21 @@ function headerValue(sheet: Worksheet, label: string): string {
     }
   }
   return "";
+}
+
+/** Where `headerValue` reads the value: the label cell itself when it carries the value, or the cell after it. */
+function headerCell(sheet: Worksheet, label: string): { row: number; column: number; prefix: string } | null {
+  const expected = normalizeHeader(label);
+  for (let row = 1; row <= Math.min(sheet.rowCount, 25); row += 1) {
+    for (let column = 1; column <= sheet.columnCount; column += 1) {
+      const headerText = textOf(sheet.getRow(row).getCell(column));
+      if (headerText.toLocaleUpperCase("en-US").startsWith(label.toLocaleUpperCase("en-US"))
+        && headerText.slice(label.length).replace(/^[\s:.]+/u, "").trim()) return { row, column, prefix: label };
+      if (normalizeHeader(headerText) !== expected || (label.includes(":") && !headerText.includes(":"))) continue;
+      return { row, column: column + 1, prefix: "" };
+    }
+  }
+  return null;
 }
 
 function invoiceDate(value: string): string {
@@ -464,6 +482,8 @@ export async function parseChinaInvoiceXlsx(file: File, m: Messages): Promise<Ch
     layout: { totalRow, columns: { quantity: columns.get("qty pcs kgs mts")!, unitPrice: columns.get("price cny")!,
       netWeightKg: columns.get("net weight kg")!, grossWeightKg: columns.get("gross weight kg")!,
       amount: columns.get("total cny")!, poCell: columns.get("po")!, ncm: columns.get("ncm")!,
-      description: columns.get("product description")! } },
+      description: columns.get("product description")!, manufacturer: columns.get("manufacturer")!,
+      manufacturerAddress: columns.get("manufacturer s address")!, manufacturerCountry: columns.get("manufacturer s country")! },
+    countryOfOrigin: headerCell(sheet, "COUNTRY OF ORIGIN:") },
   };
 }

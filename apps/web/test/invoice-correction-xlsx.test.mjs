@@ -16,7 +16,8 @@ async function invoiceBytes() {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("INV");
   for (const [address, value] of [["J4", "IP REF.:"], ["K4", "IPH037A/2026"], ["J5", "INVOICE:"], ["K5", "PW-1"],
-    ["A6", "HEXING ELECTRICAL CO.,LTD\nHANGZHOU"], ["E6", "ELETRA CNPJ 12.115.480/0001-15"]]) sheet.getCell(address).value = value;
+    ["A6", "HEXING ELECTRICAL CO.,LTD\nHANGZHOU"], ["E6", "ELETRA CNPJ 12.115.480/0001-15"],
+    ["J12", "COUNTRY OF ORIGIN:"], ["K12", "CHINA.TAIWAN"]]) sheet.getCell(address).value = value;
   const header = ["No.", "NCM", "Material Code", "Product description", "Manufacturer", "Manufacturer's address",
     "Manufacturer's country", "QTY (PCS/KGS/MTS)", "QTY Unit", "Price (CNY)", "Net Weight (KG)", "Gross Weight (Kg)",
     "Total (CNY)", "PO"];
@@ -62,6 +63,7 @@ function zipEntryText(bytes, name) {
 }
 
 const parse = bytes => parseChinaInvoiceXlsx(new File([bytes], "IPH037A INV.xlsx"), ptBR);
+const maker = { manufacturer: "Maker", manufacturerAddress: "Road", manufacturerCountry: "CHINA" };
 
 // Line 16 split between two POs with 90 of 100, line 17 corrected to the PO price and the PKL weights, line 18 destined with 0.
 const parts = [
@@ -76,11 +78,11 @@ test("each line gets the destined quantity, the PO cell, the corrected price, th
   const corrections = invoiceLineCorrections(draft.lines, parts, prices, weights);
   assert.deepEqual(corrections.map(entry => [entry.sourceRow, entry.destined, entry.changed, entry.corrected]), [
     [16, true, ["quantity", "poCell", "amount"], { quantity: "90", poCell: "PO 030201 = 60 units\nPO 030305 = 30 units",
-      unitPrice: "2", netWeightKg: "10", grossWeightKg: "12", amount: "180", ncm: "85423939", description: "Part A" }],
+      unitPrice: "2", netWeightKg: "10", grossWeightKg: "12", amount: "180", ncm: "85423939", description: "Part A", ...maker }],
     [17, true, ["unitPrice", "netWeightKg", "amount"], { quantity: "50", poCell: "PO030201", unitPrice: "1.6",
-      netWeightKg: "5.5", grossWeightKg: "6", amount: "80", ncm: "85423939", description: "Part B" }],
+      netWeightKg: "5.5", grossWeightKg: "6", amount: "80", ncm: "85423939", description: "Part B", ...maker }],
     [18, false, [], { quantity: "10", poCell: "PO030305", unitPrice: "3", netWeightKg: "1", grossWeightKg: "1.5", amount: "30",
-      ncm: "85423939", description: "Part C" }],
+      ncm: "85423939", description: "Part C", ...maker }],
   ]);
   assert.deepEqual(invoiceCorrectedTotals(corrections), { quantity: "150", netWeightKg: "16.5", grossWeightKg: "19.5", amount: "290" });
 });
@@ -158,6 +160,32 @@ test("the DATABASE NCM and description go to the INV and to the PKL line with th
   const reread = await parse(Buffer.from(written));
   assert.deepEqual(reread.issues, []);
   assert.equal(reread.lines[0].ncm, "85322410");
+});
+
+// User decisions (2026-11-10): the manufacturer list rules the address; the header country of origin gets the
+// missing countries, written in the same cell after its label.
+test("the manufacturer values and the header country of origin are written and marked", async () => {
+  const original = await invoiceBytes();
+  const draft = await parse(original);
+  assert.deepEqual(draft.layout.countryOfOrigin, { row: 12, column: 11, prefix: "" });
+  const reference = { 17: { manufacturerAddress: "Floors 3-4, Road", manufacturerCountry: "INDONESIA" }, 18: { manufacturer: "Maker" } };
+  const corrections = invoiceLineCorrections(draft.lines, parts, {}, {}, reference);
+  assert.deepEqual(corrections.map(entry => entry.changed), [["quantity", "poCell", "amount"],
+    ["manufacturerAddress", "manufacturerCountry"], []]);
+  const written = await writeCorrectedInvoice(original, draft.layout, corrections, invoiceCorrectedTotals(corrections),
+    { sheetName: "AUDITORIA", summary: [], columns: ["Linha"], rows: [] }, value => `Valor original: ${value}`, draft.packingList,
+    "CHINA, TAIWAN, INDONESIA");
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(written);
+  const inv = workbook.getWorksheet("INV");
+  assert.equal(inv.getCell("F17").value, "Floors 3-4, Road");
+  assert.equal(inv.getCell("G17").value, "INDONESIA");
+  assert.equal(inv.getCell("G17").fill.fgColor.argb, "FFFFFF00");
+  assert.equal(inv.getCell("K12").value, "CHINA, TAIWAN, INDONESIA");
+  assert.equal(inv.getCell("J12").value, "COUNTRY OF ORIGIN:");
+  const reread = await parse(Buffer.from(written));
+  assert.equal(reread.countryOfOrigin, "CHINA, TAIWAN, INDONESIA");
+  assert.deepEqual(reread.issues, []);
 });
 
 test("an existing AUDITORIA sheet is kept and the new one gets another name", async () => {

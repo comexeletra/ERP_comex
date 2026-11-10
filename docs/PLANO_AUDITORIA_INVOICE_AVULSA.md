@@ -152,3 +152,47 @@ Critérios de aceite:
   - NCM e descrição na INV e na PKL idênticos aos do arquivo da analista nas 62 linhas;
   - arquivo relido sem erro.
 - **O que a analista fez e a página não faz:** lista de fabricantes (`TOTVS-HEXING - LIST MANUFACTURER`), país de origem e as colunas de `XLOOKUP` (O a V) que ela acrescenta. Ficam para quando houver a lista de fabricantes.
+
+## Etapa 1c: fabricante pela lista de fabricantes
+
+A analista confere o fabricante com `XLOOKUP` do endereço da invoice na aba `SUPPLY` de `TOTVS-HEXING -LIST MANUFACTURER - Ultima Versão!!!.xlsx` (575 fabricantes: nome, endereço, país, código TOTVS EX…). Na IPH037A a lista reproduz o que ela fez:
+
+- 60 linhas com o endereço idêntico;
+- linha 36 com o mesmo endereço em outra formatação: ela trocou pelo texto da lista;
+- linha 55 com o endereço fora da lista, achado pelo nome: ela trocou pelo endereço da lista;
+- linha 27 com país Taiwan na invoice e China na lista: ela anotou `TAIWAN OR CHINA?`;
+- linha 34 `Indonesia` → `INDONESIA`;
+- cabeçalho `CHINA.TAIWAN` → `CHINA, TAIWAN, INDONESIA`.
+
+Decisões do usuário (2026-11-10):
+
+1. A lista manda no endereço (como a DATABASE no NCM e na descrição):
+   - um endereço igual, só com formatação diferente, é trocado pelo texto da lista;
+   - um endereço fora da lista é procurado pelo nome do fabricante e, com um só endereço cadastrado, é trocado sem pergunta;
+   - com vários endereços cadastrados para o nome, o analista escolhe o endereço;
+   - um fabricante fora da lista pede confirmação com motivo.
+2. País do fabricante diferente da lista: o analista decide "manter a invoice" ou "usar a lista", com motivo. Diferença só de maiúsculas, acentos ou grafia (China × CHINA, EUA × USA, Japão × JAPAN) não conta.
+3. O país do fabricante sai sempre em maiúsculas no arquivo.
+4. O país de origem do cabeçalho (`COUNTRY OF ORIGIN:`) recebe os países de fabricante das linhas que faltam nele, separados por vírgula, mantendo os que já estão.
+
+Regras:
+
+- **Leitura:** aba `SUPPLY`; cabeçalho localizado pelo nome (`SUPPLY`, `MANUFACTURER'S ADDRESS`, `COUNTRY`, `TOTVS CODE`).
+- **Comparação:** endereço e nome são comparados sem maiúsculas, acentos, espaços e pontuação.
+- **Nome do fabricante:** só é trocado quando difere de fato do da lista, não por formatação. A analista não trocou nenhum na IPH037A.
+- **Sem lista:** a página avisa e registra na aba `AUDITORIA`. A padronização em maiúsculas e o país de origem do cabeçalho valem com ou sem lista.
+- **Escrita:** as correções vão na INV, com marcação e nota. A PKL não tem colunas de fabricante.
+
+Critério de aceite: IPH037A com DATABASE e lista, mantendo a invoice no país da linha 27, reproduz o arquivo da analista em todas as células de dados, exceto a dúvida anotada em G27, o prazo de pagamento (C80, que é digitado pela analista depois) e o `#REF!` da aba `NCM (BL)`.
+
+### Resultado (etapa 1c)
+
+- **Leitor:** `parseManufacturerListXlsx` em `lib/audit-reference-xlsx.ts`. Na lista real: 575 fabricantes.
+  - Os leitores de referência passam a trocar as quebras de linha CR LF por LF e a decodificar os escapes `_x000D_`. Sem isso, o endereço da linha 35 seria trocado só pelo tipo de quebra de linha.
+- **Regras** em `lib/china-invoice-mapping.ts`: `invoiceManufacturerChecks`, `invoiceManufacturerPending`, `invoiceManufacturerCorrections`, `invoiceCountryMatches` e `invoiceOriginCountries`.
+- **Tela:** seção em `components/InvoiceManufacturerAudit.tsx`.
+- **Escrita:** fabricante na INV e país de origem do cabeçalho na própria célula do valor.
+- **Ensaio IPH037A** com DATABASE e lista, preços da invoice aceitos e país da invoice mantido na linha 27, comparado célula a célula com o arquivo da analista:
+  - 156 das 159 alterações dela reproduzidas (98,1%);
+  - 156 das 157 alterações do sistema iguais às dela (99,4%);
+  - as 3 que faltam são as combinadas: a dúvida anotada em G27 (`TAIWAN OR CHINA?`; o sistema grava `TAIWAN`), o prazo de pagamento em C80 (digitado pela analista depois) e o `#REF!` da aba `NCM (BL)`.

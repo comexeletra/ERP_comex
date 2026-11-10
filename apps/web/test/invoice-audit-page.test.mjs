@@ -44,7 +44,7 @@ test("the conference panel takes the page's own INV × PKL decision and keeps th
 test("every class of the page has a style rule", async () => {
   const styles = await source("../app/styles/features/operations.css");
   for (const name of ["invoice-audit-page", "invoice-audit-files", "invoice-audit-importer", "invoice-audit-choice",
-    "invoice-catalog", "invoice-catalog-table"]) {
+    "invoice-catalog", "invoice-catalog-table", "invoice-manufacturer-candidates"]) {
     assert.match(styles, new RegExp(String.raw`\.${name}[\s,{.]`, "u"), name);
   }
 });
@@ -69,8 +69,24 @@ test("the DATABASE corrections go to the file without a choice and a product out
   assert.match(component, /parseProductDatabaseXlsx\(file, getMessages\(\)\)/u);
   assert.match(component, /catalog\.missing\.filter\(entry => !invoiceQuantityDecisionReady\(missingDecisions\[entry\.sourceRow\] \?\? noDecision\)\)/u);
   assert.doesNotMatch(component, /catalogChoices|useDatabaseAll|name=\{`catalog-/u);
-  assert.match(component, /invoiceCatalogCorrections\(catalog\.points\)\);/u);
+  assert.match(component, /\{ \.\.\.invoiceCatalogCorrections\(catalog\.points\) \};/u);
   assert.match(component, /<details><summary>\{t\.catalogDetails\(points\.length\)\}<\/summary>/u);
-  assert.match(component, /messages\.invoiceAudit\.noteOriginal, invoice\.draft\.packingList\);/u);
+  assert.match(component, /messages\.invoiceAudit\.noteOriginal, invoice\.draft\.packingList, origin\.corrected\);/u);
   assert.match(component, /\{!database \? <p className="notice warning">\{t\.noDatabase\}<\/p>/u);
+});
+
+// User decisions (2026-11-10): the manufacturer list rules the address; the analyst chooses among several addresses,
+// decides a country that differs from the list and confirms a manufacturer out of it.
+test("the manufacturer list decisions wait for the analyst and the corrections go to the file with the header", async () => {
+  const component = await source("../components/InvoiceAuditWorkbench.tsx");
+  const section = await source("../components/InvoiceManufacturerAudit.tsx");
+  assert.match(component, /parseManufacturerListXlsx\(file, getMessages\(\)\)/u);
+  assert.match(component, /\+ invoiceManufacturerPending\(manufacturerChecks, addressChoices, countryChoices, manufacturerMissing\);/u);
+  assert.match(component, /messages\.invoiceAudit\.noteOriginal, invoice\.draft\.packingList, origin\.corrected\);/u);
+  assert.match(component, /referenceCorrections\[Number\(row\)\] = \{ \.\.\.referenceCorrections\[Number\(row\)\], \.\.\.values \};/u);
+  assert.match(section, /name=\{`address-\$\{check\.sourceRow\}`\}/u);
+  assert.match(section, /name=\{`country-\$\{check\.sourceRow\}`\}/u);
+  assert.match(section, /<label className="invoice-audit-confirm"><input type="checkbox" checked=\{decision\.confirmed\}/u);
+  assert.deepEqual(Object.keys(en.manufacturerListSheet).sort(), Object.keys(ptBR.manufacturerListSheet).sort());
+  assert.deepEqual(Object.keys(zhCN.manufacturerListSheet).sort(), Object.keys(ptBR.manufacturerListSheet).sort());
 });

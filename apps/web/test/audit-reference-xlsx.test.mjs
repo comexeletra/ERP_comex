@@ -134,6 +134,38 @@ test("reads the DATABASE products by header name, with the NCM leading zeros and
   await assert.rejects(parseProductDatabaseXlsx(await followUpFile(), ptBR), /aba DATABASE/u);
 });
 
+// User decision (2026-11-10): the page also checks the manufacturer against the manufacturer list (sheet SUPPLY).
+test("reads the manufacturer list by header name, the address header with a typographic apostrophe", async () => {
+  const { parseManufacturerListXlsx } = await import("../lib/audit-reference-xlsx.ts");
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("SUPPLY");
+  ["SUPPLY", "MANUFACTURER’S ADDRESS", "COUNTRY", "TOTVS CODE", "Comentário"]
+    .forEach((header, index) => { sheet.getRow(1).getCell(index + 1).value = header; });
+  [["JoulWatt Technology Co., Ltd. ", "7 Floor, Chuangye Building", "China", "EX000452"], [null, null, "China", null],
+    ["Zhejiang Yajing Electronics Co., LTD", "Floors 3-4, Building 1", "CHINA", "EX000283"]]
+    .forEach((values, index) => values.forEach((value, column) => {
+      if (value !== null) sheet.getRow(2 + index).getCell(column + 1).value = value;
+    }));
+  workbook.addWorksheet("LIST").getCell("A1").value = "ignored";
+  const result = await parseManufacturerListXlsx(new File([Buffer.from(await workbook.xlsx.writeBuffer())], "LIST.xlsx"), ptBR);
+  assert.deepEqual(result.manufacturers, [
+    { sourceRow: 2, name: "JoulWatt Technology Co., Ltd.", address: "7 Floor, Chuangye Building", country: "China", code: "EX000452" },
+    { sourceRow: 4, name: "Zhejiang Yajing Electronics Co., LTD", address: "Floors 3-4, Building 1", country: "CHINA", code: "EX000283" },
+  ]);
+  sheet.getCell("C1").value = "País";
+  await assert.rejects(parseManufacturerListXlsx(new File([Buffer.from(await workbook.xlsx.writeBuffer())], "LIST.xlsx"), ptBR),
+    /COUNTRY/u);
+  await assert.rejects(parseManufacturerListXlsx(await databaseFile(), ptBR), /aba SUPPLY/u);
+});
+
+const realManufacturers = new URL("../../../invoices_tests/TOTVS-HEXING -LIST MANUFACTURER - Ultima Versão!!!.xlsx", import.meta.url);
+test("reads the real manufacturer list", { skip: !existsSync(realManufacturers) }, async () => {
+  const { parseManufacturerListXlsx } = await import("../lib/audit-reference-xlsx.ts");
+  const result = await parseManufacturerListXlsx(new File([await readFile(realManufacturers)], "LIST.xlsx"), ptBR);
+  assert.equal(result.manufacturers.length, 575);
+  assert.deepEqual(result.manufacturers.find(entry => entry.code === "EX000283")?.address.slice(0, 22), "Floors 3-4, Building 1");
+});
+
 // The DATABASE copy (2026-11-09) stays out of Git; the test runs where the file exists.
 const realDatabase = new URL("../../../invoices_tests/DATABASE - Renew.xlsx", import.meta.url);
 test("reads the real DATABASE", { skip: !existsSync(realDatabase) }, async () => {
