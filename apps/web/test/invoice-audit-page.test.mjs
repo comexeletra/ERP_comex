@@ -90,3 +90,21 @@ test("the manufacturer list decisions wait for the analyst and the corrections g
   assert.deepEqual(Object.keys(en.manufacturerListSheet).sort(), Object.keys(ptBR.manufacturerListSheet).sort());
   assert.deepEqual(Object.keys(zhCN.manufacturerListSheet).sort(), Object.keys(ptBR.manufacturerListSheet).sort());
 });
+
+// User report (2026-11-10): the native file input showed "no file chosen" after a file was read, because the page clears
+// it to let the same file be chosen again. The field shows the name of the file the page read.
+test("each file field shows the name of the file the page read", async () => {
+  const component = await source("../components/InvoiceAuditWorkbench.tsx");
+  const picker = await source("../components/FilePickerField.tsx");
+  const styles = await source("../app/styles/components.css");
+  assert.doesNotMatch(component, /<input type="file"/u);
+  for (const [label, name] of [["invoiceFile", String.raw`draft\?\.fileName`], ["followUpFile", String.raw`followUp\?\.fileName`],
+    ["databaseFile", String.raw`database\?\.fileName`], ["manufacturerFile", String.raw`manufacturerList\?\.fileName`]]) {
+    assert.match(component, new RegExp(String.raw`\[t\.${label}, ${name}, select\w+\]`, "u"), label);
+  }
+  assert.match(picker, /<input className="sr-only" type="file"/u);
+  assert.match(picker, /\{fileName \|\| emptyLabel\}/u);
+  for (const name of ["file-picker", "file-picker-control", "file-picker-button", "file-picker-name", "file-picker-empty"]) {
+    assert.match(styles, new RegExp(String.raw`\.${name}[\s,{:]`, "u"), name);
+  }
+});

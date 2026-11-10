@@ -139,6 +139,20 @@ table :is(input, select, textarea, [contenteditable]) { cursor: auto; }
 .file-upload-input::file-selector-button:hover { background: var(--color-primary-tint); }
 .file-upload-input:disabled { cursor: not-allowed; opacity: .6; }
 .file-upload-input:disabled::file-selector-button { cursor: not-allowed; }
+.file-picker { display: grid; gap: 6px; min-width: 0; }
+.file-picker-control {
+  align-items: center; background: var(--color-field-bg); border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm);
+  color: var(--color-text-secondary); cursor: pointer; display: flex; font-weight: 400; gap: 12px; min-height: 44px; min-width: 0; padding: 5px;
+}
+.file-picker-button {
+  background: var(--color-primary-soft); border: 1px solid var(--color-primary-border); border-radius: var(--radius-xs); color: var(--color-primary-strong);
+  flex: 0 0 auto; font-weight: 700; padding: 8px 12px; transition: background-color .15s ease, border-color .15s ease;
+}
+.file-picker-name { color: var(--color-text-strong); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-picker-empty { color: var(--color-text-muted); }
+.file-picker:hover .file-picker-button { background: var(--color-primary-tint); }
+.file-picker input:focus-visible + .file-picker-control { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+.file-picker input:disabled + .file-picker-control { cursor: not-allowed; opacity: .6; }
 
 /* Searchable selects (components/SearchableSelect.tsx, components/OperationalOptionSelect.tsx) */
 .searchable-select { min-width: 0; position: relative; width: 100%; }

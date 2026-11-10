@@ -1062,6 +1062,8 @@ export const zhCN: Messages = {
     confirmNotInDatabase: "我确认已在 DATABASE 之外核对该产品的 NCM 和描述",
     reason: "原因",
     manufacturerFile: "制造商清单（含 SUPPLY 工作表的 .xlsx）",
+    chooseFile: "选择文件",
+    noFileChosen: "未选择文件",
     manufacturerRead: (file: string, count: number) => `${file}：SUPPLY 工作表中有 ${count} 个制造商。`,
     manufacturerTitle: "制造商（制造商清单）",
     noManufacturerList: "没有制造商清单：不会核对制造商名称和地址。制造商国家仍以大写输出，表头原产国仍会核对。",

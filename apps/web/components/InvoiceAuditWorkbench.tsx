@@ -16,6 +16,7 @@ import { invoiceChangedCells, invoiceCorrectedTotals, invoiceLineCorrections, wr
 import { formatDecimal, formatNumber, formatPercentChange } from "../lib/format-number";
 import type { Messages } from "../lib/i18n/pt-BR";
 import { getMessages, useI18n } from "./I18nProvider";
+import FilePickerField from "./FilePickerField";
 import InvoiceConference from "./InvoiceConference";
 import InvoiceManufacturerAudit from "./InvoiceManufacturerAudit";
 import PageHeader from "./PageHeader";
@@ -193,11 +194,11 @@ export default function InvoiceAuditWorkbench() {
     {identity && !allowed && <p className="notice warning">{t.noPermission}</p>}
     {allowed && <section className="card invoice-audit-page">
       <div className="operational-fields invoice-audit-files">
-        <label>{t.invoiceFile}<input type="file" accept=".xlsx" disabled={Boolean(reading)} onChange={event => void selectInvoice(event)} /></label>
-        <label>{t.followUpFile}<input type="file" accept=".xlsx" disabled={Boolean(reading)} onChange={event => void selectFollowUp(event)} /></label>
-        <label>{t.databaseFile}<input type="file" accept=".xlsx" disabled={Boolean(reading)} onChange={event => void selectDatabase(event)} /></label>
-        <label>{t.manufacturerFile}<input type="file" accept=".xlsx" disabled={Boolean(reading)}
-          onChange={event => void selectManufacturers(event)} /></label>
+        {([[t.invoiceFile, draft?.fileName, selectInvoice], [t.followUpFile, followUp?.fileName, selectFollowUp],
+          [t.databaseFile, database?.fileName, selectDatabase], [t.manufacturerFile, manufacturerList?.fileName, selectManufacturers]] as const)
+          .map(([label, fileName, select]) => <FilePickerField key={label} label={label} fileName={fileName ?? null}
+            chooseLabel={t.chooseFile} emptyLabel={t.noFileChosen} accept=".xlsx" disabled={Boolean(reading)}
+            onSelect={event => void select(event)} />)}
       </div>
       {reading && reading !== "download" && <p role="status">{t.reading}</p>}
       {draft && <p className="notice invoice-summary" role="status">{t.invoiceRead(draft.fileName, draft.lines.length, draft.ipNumber)}</p>}

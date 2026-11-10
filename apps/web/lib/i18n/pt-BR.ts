@@ -1069,6 +1069,8 @@ export const ptBR = {
     confirmNotInDatabase: "Confirmo que conferi NCM e descrição deste produto fora da DATABASE",
     reason: "Motivo",
     manufacturerFile: "Lista de fabricantes (.xlsx com a aba SUPPLY)",
+    chooseFile: "Escolher arquivo",
+    noFileChosen: "Nenhum arquivo selecionado",
     manufacturerRead: (file: string, count: number) => `${file}: ${count} fabricantes na aba SUPPLY.`,
     manufacturerTitle: "Fabricante (lista de fabricantes)",
     noManufacturerList: "Sem lista de fabricantes: nome e endereço do fabricante não serão conferidos. O país do fabricante sai em maiúsculas e o país de origem do cabeçalho é conferido assim mesmo.",

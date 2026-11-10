@@ -1066,6 +1066,8 @@ export const en: Messages = {
     confirmNotInDatabase: "I confirm I checked the NCM and description of this product outside the DATABASE",
     reason: "Reason",
     manufacturerFile: "Manufacturer list (.xlsx with the SUPPLY sheet)",
+    chooseFile: "Choose file",
+    noFileChosen: "No file selected",
     manufacturerRead: (file: string, count: number) => `${file}: ${count} manufacturers in the SUPPLY sheet.`,
     manufacturerTitle: "Manufacturer (manufacturer list)",
     noManufacturerList: "No manufacturer list: manufacturer name and address will not be checked. The manufacturer country still goes in capitals and the header country of origin is still checked.",
