@@ -175,3 +175,55 @@ test("reads the real DATABASE", { skip: !existsSync(realDatabase) }, async () =>
   assert.equal(result.duplicated, 0);
   assert.equal(result.products.find(product => product.productCode === "2010100040")?.ncm, "85332120");
 });
+
+// User report (2026-11-10): IPH034B line 92 cited PO 029720, whose only line on the IP was taken by line 91, while the
+// 7,500 pieces were on PO 030631 in the same IP. The invoice producer may cite a wrong PO: the page suggests the right one.
+test("suggests the other POs with the same product and free balance on the invoice IP, then without IP", async () => {
+  const { followUpPoSuggestions } = await import("../lib/audit-reference-xlsx.ts");
+  const line = (sourceRow, poNumber, productCode, quantity, ipNumber, importer = "ELETRA MATRIZ") => ({ sourceRow, importer,
+    poNumber, supplier: "HEXING", productCode, quantity, unitPrice: "3.1", currency: "CNY", ipNumber, status: "" });
+  const lines = [
+    line(10, "029720", "2050101801", "80000", "034B/2026"),
+    line(11, "029720", "2050101801", "150000", "036/2026"),
+    line(12, "031000", "2050101801", "9000", ""),
+    line(13, "030631", "2050101801", "5000", "034B/2026"),
+    line(14, "030631", "2050101801", "2500.5", "034B/2026"),
+    line(15, "030700", "2050101801", "7500", "036/2026"),
+    line(16, "030800", "2050101801", "7500", "034B/2026", "ELETRA FOR"),
+    line(17, "030900", "2050101802", "7500", "034B/2026"),
+    line(18, "032000", "2050101801", "7000", "034B/2026"),
+    line(19, "033000", "2050101801", "8000", "034B/2026"),
+  ];
+  const suggest = (quantity, taken = []) => followUpPoSuggestions(lines, "ELETRA MATRIZ", "IPH034B/2026", " 2050101801 ", "PO 29720",
+    quantity, taken);
+  assert.deepEqual(suggest("7500"), [
+    { poNumber: "030631", available: "7500.5", ipNumber: "034B/2026", sourceRows: [13, 14] },
+    { poNumber: "033000", available: "8000", ipNumber: "034B/2026", sourceRows: [19] },
+    { poNumber: "031000", available: "9000", ipNumber: "", sourceRows: [12] },
+  ]);
+  assert.deepEqual(suggest("7500", [{ itemId: "fu:13", quantity: "1000" }, { itemId: "fu:19", quantity: "500" }]).map(entry =>
+    [entry.poNumber, entry.available, entry.sourceRows]), [["033000", "7500", [19]], ["031000", "9000", [12]]]);
+  assert.deepEqual(suggest("7500", [{ itemId: "fu:13", quantity: "5000" }]).map(entry => [entry.poNumber, entry.sourceRows]),
+    [["033000", [19]], ["031000", [12]]]);
+  assert.deepEqual(suggest("8000.1").map(entry => entry.poNumber), ["031000"]);
+  assert.deepEqual(suggest("0"), []);
+  assert.deepEqual(suggest("abc"), []);
+});
+
+const realInvoice034B = new URL("../../../invoices_tests/IPH034B 2026       INV+PL.xlsx", import.meta.url);
+test("suggests PO 030631 for the real IPH034B line 92", { skip: !existsSync(realInvoice034B) || !existsSync(realFollowUp) }, async () => {
+  const { followUpPoSuggestions } = await import("../lib/audit-reference-xlsx.ts");
+  const { parseChinaInvoiceXlsx } = await import("../lib/china-invoice-xlsx.ts");
+  const { distributeInvoiceParts, invoiceAssignmentsFromLines, invoiceKeyItems } = await import("../lib/china-invoice-mapping.ts");
+  const draft = await parseChinaInvoiceXlsx(new File([await readFile(realInvoice034B)], "IPH034B.xlsx"), ptBR);
+  const { lines } = await parseFollowUpXlsx(new File([await readFile(realFollowUp)], "Follow Up.xlsx"), ptBR);
+  const parts = invoiceAssignmentsFromLines(draft.lines).map(part => ({ ...part,
+    items: invoiceKeyItems(followUpCandidates(lines, "ELETRA MATRIZ", part.poNumber, draft.ipNumber).items, part.productCode) }));
+  const distribution = distributeInvoiceParts(parts);
+  assert.equal(distribution.get("92:0").enough, false);
+  const taken = [...distribution.values()].flatMap(entry => entry.allocations);
+  const suggestions = followUpPoSuggestions(lines, "ELETRA MATRIZ", draft.ipNumber, "2050101801", "029720", "7500", taken);
+  assert.equal(suggestions[0].poNumber, "030631");
+  assert.equal(suggestions[0].ipNumber, "034B/2026");
+  assert.equal(suggestions[0].available, "7500");
+});

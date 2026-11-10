@@ -1048,6 +1048,12 @@ export const en: Messages = {
     codeNotFound: (code: string) => `Code ${code} is not on this PO in the Follow Up.`,
     invalidQuantity: "Invalid destined quantity.",
     poNotFound: "PO not found in the Follow Up for this importer.",
+    poSuggestionsTitle: "PO suggested by the Follow Up (the invoice may cite the wrong PO):",
+    poSuggestion: (po: string, quantity: string, ip: string, rows: string) =>
+      `PO ${po}: ${quantity} of this product ${ip ? `on IP ${ip}` : "without IP"} (Follow Up line(s) ${rows}).`,
+    usePo: (po: string) => `Use PO ${po}`,
+    poChanged: (from: string, to: string) => `PO corrected from ${from} to ${to} by the Follow Up suggestion.`,
+    keepInvoicePo: (po: string) => `Back to the invoice PO ${po}`,
     noteOriginal: (value: string) => `Original value: ${value || "(empty)"}`,
     fileSuffix: "audited",
     databaseFile: "Product DATABASE (.xlsx with the DATABASE sheet)",
@@ -1129,6 +1135,8 @@ export const en: Messages = {
       capitals: "Capitals",
       originCountry: "Country of origin (header)",
       originAdded: (countries: string) => `Added: ${countries}`,
+      poChanged: "Line PO",
+      tookSuggestedPo: "PO suggested by the Follow Up",
     },
   },
   totvsSheet: {

@@ -196,3 +196,25 @@ Critério de aceite: IPH037A com DATABASE e lista, mantendo a invoice no país d
   - 156 das 159 alterações dela reproduzidas (98,1%);
   - 156 das 157 alterações do sistema iguais às dela (99,4%);
   - as 3 que faltam são as combinadas: a dúvida anotada em G27 (`TAIWAN OR CHINA?`; o sistema grava `TAIWAN`), o prazo de pagamento em C80 (digitado pela analista depois) e o `#REF!` da aba `NCM (BL)`.
+
+## Etapa 1d: sugestão da PO correta
+
+Relato do usuário (2026-11-10): na IPH034B, a linha 92 (produto 2050101801, 7.500 PCS) citava a PO 029720.
+- A única linha dessa PO no IP 034B tinha 80.000 PCS, já destinados à linha 91; a outra linha da PO está no IP 036/2026.
+- No Follow Up, as 7.500 PCS estão na PO 030631, no mesmo IP 034B (linha 6605).
+- Quem produz a invoice pode citar a PO errada, e os analistas sempre pegam esse erro. O usuário pediu que a página sugira a PO correta.
+
+Regras:
+
+- **Quando aparece:** a sugestão é mostrada quando a PO citada não recebe a parte da linha: PO fora do Follow Up da importadora, código fora da PO ou saldo insuficiente.
+- **POs candidatas:** outras POs da mesma importadora com o mesmo código, em linhas do IP da invoice ou sem IP. Do saldo de cada uma sai o que as outras partes da invoice já tomaram. A PO só entra se o saldo cobrir a quantidade da parte.
+- **Ordem:** primeiro as POs no IP da invoice, depois as de saldo exato, depois a ordem da planilha.
+- **Decisão:** o analista aceita a sugestão com um clique ("Usar a PO …") e pode voltar à PO da invoice. A distribuição é refeita com a PO escolhida.
+- **Escrita:** a célula PO da linha recebe o número novo na grafia da invoice (`PO029720` → `PO030631`), com a marcação amarela e a nota do valor original.
+- **Registro:** a aba `AUDITORIA` registra a troca ("PO da linha": PO da invoice → PO sugerida pelo Follow Up).
+
+### Resultado (etapa 1d)
+
+- **Função:** `followUpPoSuggestions` em `lib/audit-reference-xlsx.ts`.
+- **Escrita:** a grafia da célula PO é mantida por `invoiceLineCorrections`.
+- **IPH034B real** com o Follow Up local: a linha 92 recebe a sugestão da PO 030631 (IP 034B/2026, 7.500), e a célula N92 passa a `PO030631`.

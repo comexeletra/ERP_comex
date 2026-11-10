@@ -1044,6 +1044,12 @@ export const zhCN: Messages = {
     codeNotFound: (code: string) => `代码 ${code} 不在 Follow Up 的此 PO 中。`,
     invalidQuantity: "分配数量无效。",
     poNotFound: "在此进口商的 Follow Up 中未找到该 PO。",
+    poSuggestionsTitle: "Follow Up 建议的 PO（发票可能引用了错误的 PO）：",
+    poSuggestion: (po: string, quantity: string, ip: string, rows: string) =>
+      `PO ${po}：此产品 ${quantity}，${ip ? `在 IP ${ip}` : "无 IP"}（Follow Up 第 ${rows} 行）。`,
+    usePo: (po: string) => `使用 PO ${po}`,
+    poChanged: (from: string, to: string) => `已按 Follow Up 建议将 PO 从 ${from} 更正为 ${to}。`,
+    keepInvoicePo: (po: string) => `恢复发票的 PO ${po}`,
     noteOriginal: (value: string) => `原值：${value || "（空）"}`,
     fileSuffix: "已审核",
     databaseFile: "产品 DATABASE（含 DATABASE 工作表的 .xlsx）",
@@ -1125,6 +1131,8 @@ export const zhCN: Messages = {
       capitals: "大写",
       originCountry: "原产国（表头）",
       originAdded: (countries: string) => `已添加：${countries}`,
+      poChanged: "行 PO",
+      tookSuggestedPo: "Follow Up 建议的 PO",
     },
   },
   totvsSheet: {

@@ -229,6 +229,52 @@ export function followUpCandidates(lines: readonly FollowUpPoLine[], importer: s
       currency: line.currency, supplier: line.supplier, ipNumber: line.ipNumber })) };
 }
 
+export type FollowUpPoSuggestion = { poNumber: string; available: string; ipNumber: string; sourceRows: number[] };
+
+/** Quantities at the API scale (8 decimal places), as exact integers. */
+const quantityScale = 100_000_000n;
+function quantityUnits(value: string): bigint | null {
+  const match = /^(\d{1,16})(?:[.,](\d{1,8}))?$/u.exec(value.trim());
+  return match ? BigInt(match[1]) * quantityScale + BigInt((match[2] ?? "").padEnd(8, "0")) : null;
+}
+function quantityText(units: bigint): string {
+  const fraction = (units % quantityScale).toString().padStart(8, "0").replace(/0+$/u, "");
+  return `${units / quantityScale}${fraction ? `.${fraction}` : ""}`;
+}
+
+/**
+ * The other POs of the importer that can take a part its cited PO cannot receive: the producer of the invoice may
+ * cite a wrong PO (user report, 2026-11-10: IPH034B line 92 cited PO 029720, whose line on the IP was taken by
+ * line 91, while the 7,500 pieces were on PO 030631 in the same IP). A PO enters with the lines of the same product
+ * on the invoice IP or without IP, the balance `taken` by the other parts discounted, when that balance covers the
+ * quantity; the POs on the invoice IP come first, then the exact balance, then the sheet order.
+ */
+export function followUpPoSuggestions(lines: readonly FollowUpPoLine[], importer: string, invoiceIp: string, productCode: string,
+  citedPo: string, quantity: string, taken: readonly { itemId: string; quantity: string }[]): FollowUpPoSuggestion[] {
+  const requested = quantityUnits(quantity);
+  if (requested === null || requested === 0n) return [];
+  const used = new Map<string, bigint>();
+  for (const entry of taken) used.set(entry.itemId, (used.get(entry.itemId) ?? 0n) + (quantityUnits(entry.quantity) ?? 0n));
+  const code = productCode.trim().toLocaleUpperCase("en-US");
+  const cited = normalizedPo(citedPo);
+  const byPo = new Map<string, { poNumber: string; available: bigint; ipNumber: string; sourceRows: number[] }>();
+  for (const line of lines) {
+    const po = normalizedPo(line.poNumber);
+    const onIp = followUpIpMatches(line.ipNumber, invoiceIp);
+    if (line.importer !== importer || po === cited || line.productCode.trim().toLocaleUpperCase("en-US") !== code
+      || (line.ipNumber && !onIp)) continue;
+    const free = (quantityUnits(line.quantity) ?? 0n) - (used.get(`fu:${line.sourceRow}`) ?? 0n);
+    if (free <= 0n) continue;
+    const entry = byPo.get(po) ?? { poNumber: line.poNumber, available: 0n, ipNumber: "", sourceRows: [] };
+    byPo.set(po, { ...entry, available: entry.available + free, ipNumber: entry.ipNumber || (onIp ? line.ipNumber : ""),
+      sourceRows: [...entry.sourceRows, line.sourceRow] });
+  }
+  return [...byPo.values()].filter(entry => entry.available >= requested)
+    .sort((left, right) => Number(!left.ipNumber) - Number(!right.ipNumber)
+      || Number(left.available !== requested) - Number(right.available !== requested) || left.sourceRows[0] - right.sourceRows[0])
+    .map(entry => ({ ...entry, available: quantityText(entry.available) }));
+}
+
 const databaseSheetName = "DATABASE"; // i18n-ignore: sheet name of the product DATABASE workbook
 const databaseHeaders = ["Product Code", "Product Description", "NCM DATABASE"] as const; // i18n-ignore: DATABASE headers
 type DatabaseHeader = typeof databaseHeaders[number];

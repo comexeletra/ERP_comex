@@ -10,8 +10,8 @@ import { classifyInvoiceDestination, distributeInvoiceParts, invoiceAssignmentsF
   InvoiceQuantityDecision, invoiceQuantityDecisionReady, invoiceQuantityPoint, invoiceSupplierMismatches, InvoiceCountryChoice,
   InvoiceManufacturerCheck, invoiceManufacturerChecks, invoiceManufacturerCorrections, invoiceManufacturerCountryPoint,
   invoiceManufacturerId, invoiceManufacturerPending, invoiceOriginCountries } from "../lib/china-invoice-mapping";
-import { followUpCandidates, followUpImporters, followUpSameIps, parseFollowUpXlsx, parseManufacturerListXlsx, parseProductDatabaseXlsx,
-  type FollowUpCandidate, type FollowUpWorkbook, type ManufacturerList, type ProductDatabase } from "../lib/audit-reference-xlsx";
+import { followUpCandidates, followUpImporters, followUpPoSuggestions, followUpSameIps, parseFollowUpXlsx, parseManufacturerListXlsx,
+  parseProductDatabaseXlsx, type FollowUpCandidate, type FollowUpWorkbook, type ManufacturerList, type ProductDatabase } from "../lib/audit-reference-xlsx";
 import { invoiceChangedCells, invoiceCorrectedTotals, invoiceLineCorrections, writeCorrectedInvoice } from "../lib/invoice-correction-xlsx";
 import { formatDecimal, formatNumber, formatPercentChange } from "../lib/format-number";
 import type { Messages } from "../lib/i18n/pt-BR";
@@ -50,6 +50,7 @@ export default function InvoiceAuditWorkbench() {
   const [priceChoices, setPriceChoices] = useState<Record<number, InvoicePriceChoice>>({});
   const [supplierConfirmed, setSupplierConfirmed] = useState<Record<string, boolean>>({});
   const [packingChoices, setPackingChoices] = useState<Record<string, InvoicePackingChoice>>({});
+  const [poChoices, setPoChoices] = useState<Record<string, string>>({});
 
   useEffect(() => {
     apiFetch("/auth/me").then(async response => {
@@ -60,7 +61,7 @@ export default function InvoiceAuditWorkbench() {
   }, []);
 
   function resetDecisions() {
-    setQuantities({}); setQuantityDecisions({}); setPriceChoices({}); setSupplierConfirmed({}); setPackingChoices({});
+    setQuantities({}); setQuantityDecisions({}); setPriceChoices({}); setSupplierConfirmed({}); setPackingChoices({}); setPoChoices({});
   }
 
   async function selectInvoice(event: ChangeEvent<HTMLInputElement>) {
@@ -109,11 +110,13 @@ export default function InvoiceAuditWorkbench() {
   const importer = importers.length === 1 ? importers[0] : importers.includes(importerChoice) ? importerChoice : "";
   const ready = Boolean(draft && followUp && importer);
   const parts = ready ? baseParts.map(part => {
-    const { poExists, items } = followUpCandidates(followUp!.lines, importer, part.poNumber, draft!.ipNumber);
-    return { ...part, invoiceQuantity: part.quantity, quantity: quantities[part.key] ?? part.quantity, poExists,
+    const poNumber = poChoices[part.key] ?? part.poNumber;
+    const { poExists, items } = followUpCandidates(followUp!.lines, importer, poNumber, draft!.ipNumber);
+    return { ...part, poNumber, invoiceQuantity: part.quantity, quantity: quantities[part.key] ?? part.quantity, poExists,
       keyItems: invoiceKeyItems(items, part.productCode) };
   }) : [];
   const distribution = distributeInvoiceParts(parts.map(part => ({ key: part.key, quantity: part.quantity, items: part.keyItems })));
+  const taken = [...distribution.values()].flatMap(entry => entry.allocations);
   const rows = parts.map(part => {
     const line = draft!.lines.find(entry => entry.sourceRow === part.sourceRow)!;
     const decision = quantityDecisions[part.sourceRow] ?? noDecision;
@@ -125,8 +128,11 @@ export default function InvoiceAuditWorkbench() {
     const points = [invoiceQuantityPoint(part.invoiceQuantity, part.quantity, line.unit, decision),
       invoiceCodePoint(part.productCode, !part.poExists || part.keyItems.length > 0, part.quantity, decision)]
       .filter((point): point is InvoiceAuditPoint => point !== null);
-    return { part, line, decision, allocations, points,
-      issue: classifyInvoiceDestination(part.keyItems, part.poExists, part.quantity, partDistribution) };
+    const issue = classifyInvoiceDestination(part.keyItems, part.poExists, part.quantity, partDistribution);
+    const suggestions = issue && issue.kind !== "INVALID_QUANTITY"
+      ? followUpPoSuggestions(followUp!.lines, importer, draft!.ipNumber, part.productCode, part.poNumber,
+        part.quantity, taken) : [];
+    return { part, line, decision, allocations, points, issue, suggestions };
   });
   const allocatedItems = rows.flatMap(row => row.allocations.map(allocation => allocation.item));
   const pricePoints = new Map<number, InvoiceLinePricePoint>();
@@ -256,7 +262,7 @@ export default function InvoiceAuditWorkbench() {
             ({ ...current, [row]: { ...(current[row] ?? noDecision), ...change } }))} />
         <div className="totvs-import-table-wrap invoice-match-table-wrap"><table className="totvs-import-table invoice-match-table">
           <thead><tr><th>{t.column.line}</th><th>{t.column.product}</th><th>{t.column.quantity}</th><th>{t.column.destination}</th></tr></thead>
-          <tbody>{rows.map(({ part, line, decision, allocations, points, issue }) => {
+          <tbody>{rows.map(({ part, line, decision, allocations, points, issue, suggestions }) => {
             const pricePoint = part.key.endsWith(":0") ? pricePoints.get(part.sourceRow) : undefined;
             const choice = priceChoices[part.sourceRow];
             return <tr key={part.key}>
@@ -266,6 +272,11 @@ export default function InvoiceAuditWorkbench() {
                 onChange={event => setQuantities(current => ({ ...current, [part.key]: event.target.value.replace(",", ".") }))} />
                 <small>{t.invoiceQuantity(`${formatNumber(part.invoiceQuantity)} ${line.unit}`.trim())}</small></td>
               <td>
+                {part.poNumber !== part.sourcePoNumber && <div className="notice success invoice-po-changed" role="status">
+                  <p>{t.poChanged(part.sourcePoNumber, part.poNumber)}</p>
+                  <button className="button secondary" type="button" onClick={() => setPoChoices(current => {
+                    const next = { ...current }; delete next[part.key]; return next; })}>{t.keepInvoicePo(part.sourcePoNumber)}</button>
+                </div>}
                 {allocations.length > 0 && <ul className="invoice-key-items">{allocations.map(({ item, quantity }) =>
                   <li key={item.id}>{t.takes(item.poNumber, item.lineNumber, formatNumber(quantity),
                     item.unitPrice === null ? "—" : `${formatDecimal(item.unitPrice)} ${item.currency ?? ""}`.trim())}</li>)}</ul>}
@@ -274,6 +285,16 @@ export default function InvoiceAuditWorkbench() {
                   {issue.kind === "INSUFFICIENT_BALANCE" && <button className="button secondary" type="button"
                     onClick={() => setQuantities(current => ({ ...current, [part.key]: issue.available }))}>
                     {t.useBalance(formatNumber(issue.available))}</button>}
+                  {suggestions.length > 0 && <>
+                    <p><strong>{t.poSuggestionsTitle}</strong></p>
+                    <ul className="invoice-po-suggestions">{suggestions.map(suggestion => <li key={suggestion.poNumber}>
+                      <span>{t.poSuggestion(suggestion.poNumber, `${formatNumber(suggestion.available)} ${line.unit}`.trim(),
+                        suggestion.ipNumber, suggestion.sourceRows.join(", "))}</span>
+                      <button className="button secondary" type="button"
+                        onClick={() => setPoChoices(current => ({ ...current, [part.key]: suggestion.poNumber }))}>
+                        {t.usePo(suggestion.poNumber)}</button>
+                    </li>)}</ul>
+                  </>}
                 </div>}
                 {(points.length > 0 || pricePoint) && <ul className="invoice-audit-list">
                   {points.map(point => <li key={point.kind} className={`notice ${point.confirmed ? "success" : "error"}`}>
@@ -362,7 +383,8 @@ function CatalogAudit({ t, points, missing, missingDecisions, onMissing }: {
 
 type AuditInput = {
   draft: ChinaInvoiceDraft; followUp: FollowUpWorkbook; importer: string; sameIps: string[]; user: string;
-  rows: { part: { key: string; sourceRow: number; productCode: string; invoiceQuantity: string; quantity: string; poNumber: string };
+  rows: { part: { key: string; sourceRow: number; productCode: string; invoiceQuantity: string; quantity: string; poNumber: string;
+    sourcePoNumber: string };
     line: { lineNumber: string; unit: string }; decision: InvoiceQuantityDecision; points: InvoiceAuditPoint[];
     allocations: { item: FollowUpCandidate; quantity: string }[] }[];
   pricePoints: Map<number, InvoiceLinePricePoint>; priceChoices: Record<number, InvoicePriceChoice>;
@@ -385,6 +407,10 @@ function auditSheet(m: Messages, input: AuditInput) {
     .filter(entry => fields.includes(entry.field)).map(entry => entry.cell).join(", ");
   const rows: string[][] = [];
   for (const { part, line, decision, points, allocations } of input.rows) {
+    if (part.poNumber !== part.sourcePoNumber) {
+      rows.push([String(part.sourceRow), line.lineNumber, s.poChanged, `PO ${part.sourcePoNumber}`, `PO ${part.poNumber}`,
+        s.tookSuggestedPo, "", cells(part.sourceRow, ["poCell"])]);
+    }
     rows.push([String(part.sourceRow), line.lineNumber, s.destination, `PO ${part.poNumber} · ${part.productCode}`,
       allocations.map(({ item, quantity }) => s.destinationValue(item.lineNumber, formatNumber(quantity))).join("; ") || "—",
       s.destined(formatNumber(part.quantity)), "", part.key.endsWith(":0") ? cells(part.sourceRow, ["quantity", "poCell", "amount"]) : ""]);

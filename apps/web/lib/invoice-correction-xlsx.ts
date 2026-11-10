@@ -94,7 +94,9 @@ export function invoiceLineCorrections(lines: readonly CorrectionLine[],
       poKey(line.poAssignments[index].poNumber) === poKey(entry.poNumber)
       && units(line.poAssignments[index].quantity) === entry.quantity);
     const quantity = text(destined.reduce((total, entry) => total + entry.quantity, 0n));
-    const poCell = sameCell ? line.poCell : destined.length === 1 ? `PO ${destined[0].poNumber}`
+    const singleCell = /^(\s*PO\s*)\d+(\s*)$/iu.exec(line.poCell);
+    const poCell = sameCell ? line.poCell : destined.length === 1 && singleCell
+      ? `${singleCell[1]}${destined[0].poNumber}${singleCell[2]}` : destined.length === 1 ? `PO ${destined[0].poNumber}`
       : destined.map(entry => `PO ${entry.poNumber} = ${text(entry.quantity)} units`).join("\n");
     const unitPrice = prices[line.sourceRow] ?? line.unitPrice;
     const weight = weights[line.sourceRow];

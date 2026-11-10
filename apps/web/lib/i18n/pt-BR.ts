@@ -1051,6 +1051,12 @@ export const ptBR = {
     codeNotFound: (code: string) => `O código ${code} não está nesta PO no Follow Up.`,
     invalidQuantity: "Quantidade destinada inválida.",
     poNotFound: "PO não encontrada no Follow Up desta importadora.",
+    poSuggestionsTitle: "PO sugerida pelo Follow Up (a invoice pode citar a PO errada):",
+    poSuggestion: (po: string, quantity: string, ip: string, rows: string) =>
+      `PO ${po}: ${quantity} deste produto ${ip ? `no IP ${ip}` : "sem IP"} (linha(s) ${rows} do Follow Up).`,
+    usePo: (po: string) => `Usar a PO ${po}`,
+    poChanged: (from: string, to: string) => `PO corrigida de ${from} para ${to} pela sugestão do Follow Up.`,
+    keepInvoicePo: (po: string) => `Voltar para a PO ${po} da invoice`,
     noteOriginal: (value: string) => `Valor original: ${value || "(vazio)"}`,
     fileSuffix: "auditada",
     databaseFile: "DATABASE de produtos (.xlsx com a aba DATABASE)",
@@ -1132,6 +1138,8 @@ export const ptBR = {
       capitals: "Maiúsculas",
       originCountry: "País de origem (cabeçalho)",
       originAdded: (countries: string) => `Acrescentado: ${countries}`,
+      poChanged: "PO da linha",
+      tookSuggestedPo: "PO sugerida pelo Follow Up",
     },
   },
   totvsSheet: {

@@ -44,7 +44,8 @@ test("the conference panel takes the page's own INV × PKL decision and keeps th
 test("every class of the page has a style rule", async () => {
   const styles = await source("../app/styles/features/operations.css");
   for (const name of ["invoice-audit-page", "invoice-audit-files", "invoice-audit-importer", "invoice-audit-choice",
-    "invoice-catalog", "invoice-catalog-table", "invoice-manufacturer-candidates"]) {
+    "invoice-catalog", "invoice-catalog-table", "invoice-manufacturer-candidates",
+    "invoice-po-suggestions", "invoice-po-changed"]) {
     assert.match(styles, new RegExp(String.raw`\.${name}[\s,{.]`, "u"), name);
   }
 });
@@ -107,4 +108,17 @@ test("each file field shows the name of the file the page read", async () => {
   for (const name of ["file-picker", "file-picker-control", "file-picker-button", "file-picker-name", "file-picker-empty"]) {
     assert.match(styles, new RegExp(String.raw`\.${name}[\s,{:]`, "u"), name);
   }
+});
+
+// User request (2026-11-10): when the cited PO cannot receive a line, the page suggests the PO of the Follow Up that holds
+// the product on the invoice IP; the analyst takes it with one click and the PO cell is corrected in the file.
+test("a line the cited PO cannot receive gets the Follow Up PO suggestions and the chosen PO goes to the file", async () => {
+  const component = await source("../components/InvoiceAuditWorkbench.tsx");
+  assert.match(component, /const poNumber = poChoices\[part\.key\] \?\? part\.poNumber;/u);
+  assert.match(component, /followUpPoSuggestions\(followUp!\.lines, importer, draft!\.ipNumber, part\.productCode, part\.poNumber,\s+part\.quantity, taken\)/u);
+  assert.match(component, /issue && issue\.kind !== "INVALID_QUANTITY"/u);
+  assert.match(component, /setPoChoices\(current => \(\{ \.\.\.current, \[part\.key\]: suggestion\.poNumber \}\)\)/u);
+  assert.match(component, /rows\.map\(row => \(\{ sourceRow: row\.part\.sourceRow, poNumber: row\.part\.poNumber, quantity: row\.part\.quantity \}\)\)/u);
+  assert.match(component, /if \(part\.poNumber !== part\.sourcePoNumber\) \{/u);
+  assert.match(component, /setPoChoices\(\{\}\)/u);
 });

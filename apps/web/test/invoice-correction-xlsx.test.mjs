@@ -96,6 +96,15 @@ test("the amount is rounded to cents and a PO cell with the same POs and quantit
   assert.equal(line.corrected.amount, "36.42");
 });
 
+// User request (2026-11-10): the PO the analyst takes from the Follow Up suggestion replaces the number in the PO cell
+// with the writing of the invoice (IPH034B N92 "PO029720" becomes "PO030631").
+test("a single PO cell gets the other PO number with the writing of the invoice", async () => {
+  const draft = await parse(await invoiceBytes());
+  const [line] = invoiceLineCorrections(draft.lines.slice(2, 3), [{ sourceRow: 18, poNumber: "030631", quantity: "10" }], {}, {});
+  assert.deepEqual(line.changed, ["poCell"]);
+  assert.equal(line.corrected.poCell, "PO030631");
+});
+
 test("the corrected file changes only the corrected cells, marks them and is read again without issues", async () => {
   const original = await invoiceBytes();
   const draft = await parse(original);
