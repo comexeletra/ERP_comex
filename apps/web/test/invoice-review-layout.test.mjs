@@ -74,3 +74,11 @@ test("confirmations inside the invoice notices keep the checkbox beside its text
   }
   assert.match(styles, /\.invoice-match-table \.invoice-audit-confirm, \.notice > \.invoice-audit-confirm \{[^}]*display: flex;/u);
 });
+
+test("the price point shows the difference in percent against the tolerance", () => {
+  assert.match(component, /\{point\.difference && <><dt>\{t\.auditDifference\}<\/dt><dd>\{t\.priceDifference\(/u);
+  assert.match(component, /formatPercentChange\(point\.difference\.percent\)/u);
+  assert.equal(ptBR.newRecord.priceDifference("−16,09%", true, 20), "−16,09% · dentro da tolerância de 20%");
+  assert.equal(ptBR.newRecord.priceDifference("+25,00%", false, 20), "+25,00% · acima da tolerância de 20%");
+  assert.equal(ptBR.newRecord.priceDifference(null, false, 20), "PO sem preço · acima da tolerância de 20%");
+});

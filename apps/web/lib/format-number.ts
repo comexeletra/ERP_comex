@@ -3,6 +3,12 @@ const numberFormatter = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 2,
 });
 
+/** A change in percent with its sign (−16,09%, +33,33%); below 0,01% it reads "< 0,01%". */
+export function formatPercentChange(value: number): string {
+  if (Math.abs(value) < 0.01) return `< ${numberFormatter.format(0.01)}%`;
+  return `${value < 0 ? "−" : "+"}${numberFormatter.format(Math.abs(value))}%`;
+}
+
 export function formatNumber(value: unknown, fallback = "—"): string {
   if (value == null || value === "") return fallback;
   if (typeof value === "boolean") return value ? "Sim" : "Não";

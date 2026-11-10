@@ -850,6 +850,9 @@ export const en: Messages = {
     auditStatus: { pending: "Pending", confirmed: "Confirmed", manual: "Manual review" },
     auditInvoice: "Invoice",
     auditPo: (po: string) => `PO ${po}`,
+    auditDifference: "Difference",
+    priceDifference: (percent: string | null, within: boolean, limit: number) => percent === null
+      ? `PO without price · above the ${limit}% tolerance` : `${percent} · ${within ? "within" : "above"} the ${limit}% tolerance`,
     auditNote: {
       QUANTITY: "The invoice is stored as received; only the PO balance goes down by the assigned quantity.",
       CODE: "The invoice code does not exist in this PO. Fix the PO (Protheus) or the invoice, or assign 0 with a reason.",

@@ -853,6 +853,9 @@ export const ptBR = {
     auditStatus: { pending: "Pendente", confirmed: "Confirmado", manual: "Análise manual" },
     auditInvoice: "Invoice",
     auditPo: (po: string) => `PO ${po}`,
+    auditDifference: "Diferença",
+    priceDifference: (percent: string | null, within: boolean, limit: number) => percent === null
+      ? `PO sem preço · acima da tolerância de ${limit}%` : `${percent} · ${within ? "dentro" : "acima"} da tolerância de ${limit}%`,
     auditNote: {
       QUANTITY: "A invoice fica gravada como veio; só o saldo da PO baixa pela quantidade destinada.",
       CODE: "O código da invoice não existe nesta PO. Corrija a PO (Protheus) ou a invoice, ou destine 0 com motivo.",

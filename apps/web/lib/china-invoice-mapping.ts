@@ -119,6 +119,33 @@ export function invoicePoPriceDiffers(invoicePrice: string, poPrice: string | nu
     && Number.isFinite(Number(poPrice)) && Math.abs(Number(invoicePrice) - Number(poPrice)) > 0.00000001;
 }
 
+/**
+ * Same limit as apps/api/src/invoice-price.ts. A price difference up to it is within the tolerance of the
+ * area; every difference still waits for the analyst's acceptance (user decision, 2026-11-10).
+ */
+export const invoicePriceTolerancePercent = 20;
+export type InvoicePriceDifference = { percent: number | null; withinTolerance: boolean };
+
+function invoicePriceUnits(value: string): bigint | null {
+  const match = /^(\d+)(?:[.,](\d{1,18}))?$/u.exec(value.trim());
+  return match ? BigInt(match[1]) * 1_000_000_000_000_000_000n + BigInt((match[2] ?? "").padEnd(18, "0")) : null;
+}
+
+/**
+ * The invoice price against the PO price, in exact decimals: the change in percent (4 decimals, null when the
+ * PO price is 0) and whether it is within the tolerance (inclusive). Null when the prices are the same.
+ */
+export function invoicePriceDifference(invoicePrice: string, poPrice: string): InvoicePriceDifference | null {
+  const invoice = invoicePriceUnits(invoicePrice), po = invoicePriceUnits(poPrice);
+  if (invoice === null || po === null) return null;
+  const gap = invoice - po;
+  const absolute = gap < 0n ? -gap : gap;
+  if (absolute <= 10_000_000_000n) return null;
+  if (po === 0n) return { percent: null, withinTolerance: false };
+  return { percent: Number(gap * 1_000_000n / po) / 10_000,
+    withinTolerance: absolute * 100n <= BigInt(invoicePriceTolerancePercent) * po };
+}
+
 /** Same rule as apps/api/src/exporter-alias.ts: an alias has at least 8 letters or digits. */
 const minimumExporterAliasLength = 8;
 
@@ -146,7 +173,8 @@ export function invoiceExporterAliasSuggestion(exporter: string): string {
 
 export type InvoiceAuditPointKind = "QUANTITY" | "CODE" | "SUPPLIER" | "UNIT" | "PRICE" | "CURRENCY";
 /** `confirmed` is null for informative points that need analysis but no confirmation. */
-export type InvoiceAuditPoint = { kind: InvoiceAuditPointKind; invoiceValue: string; poValue: string; confirmed: boolean | null };
+export type InvoiceAuditPoint = { kind: InvoiceAuditPointKind; invoiceValue: string; poValue: string; confirmed: boolean | null;
+  difference?: InvoicePriceDifference };
 type InvoiceAuditInvoice = { productCode: string; exporter: string; line: { unit: string; unitPrice: string } | null };
 type InvoiceAuditPoItem = { productCode: string; unit: string | null; unitPrice: string | null; currency: string | null;
   supplierValues: readonly (string | null | undefined)[]; exporterAliases?: readonly string[] };
@@ -201,8 +229,9 @@ export function invoiceAuditPoints(invoice: InvoiceAuditInvoice, poItem: Invoice
     points.push({ kind: "UNIT", invoiceValue: invoice.line.unit, poValue: poItem.unit ?? "", confirmed: confirmations.unit });
   }
   if (invoice.line && invoicePoPriceDiffers(invoice.line.unitPrice, poItem.unitPrice, poItem.currency)) {
+    const difference = invoicePriceDifference(invoice.line.unitPrice, poItem.unitPrice ?? "");
     points.push({ kind: "PRICE", invoiceValue: `${invoice.line.unitPrice} CNY`,
-      poValue: `${poItem.unitPrice} ${poItem.currency}`, confirmed: confirmations.price });
+      poValue: `${poItem.unitPrice} ${poItem.currency}`, confirmed: confirmations.price, ...(difference ? { difference } : {}) });
   }
   if (poItem.currency && poItem.currency !== "CNY") {
     points.push({ kind: "CURRENCY", invoiceValue: "CNY", poValue: poItem.currency, confirmed: null });

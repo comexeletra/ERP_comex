@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { invoiceAuditPoints, invoiceAuditProgress, invoiceComparisonRows, invoiceExporterAliasSuggestion, invoicePoUnitDiffers,
-  invoiceSupplierMatchesExporter } from "../lib/china-invoice-mapping.ts";
+  invoicePriceDifference, invoicePriceTolerancePercent, invoiceSupplierMatchesExporter } from "../lib/china-invoice-mapping.ts";
+import { formatPercentChange } from "../lib/format-number.ts";
 
 const unconfirmed = { supplier: false, unit: false, price: false };
 const poItem = { productCode: "3080500380", unit: "UN", unitPrice: "1.5", currency: "CNY",
@@ -32,9 +33,35 @@ test("invoice audit flags a CNY price divergence and an empty supplier", () => {
     { ...poItem, supplierValues: [null, ""] }, { ...unconfirmed, price: true });
   assert.deepEqual(points, [
     { kind: "SUPPLIER", invoiceValue: "OTHER", poValue: "", confirmed: false },
-    { kind: "PRICE", invoiceValue: "2 CNY", poValue: "1.5 CNY", confirmed: true },
+    { kind: "PRICE", invoiceValue: "2 CNY", poValue: "1.5 CNY", confirmed: true,
+      difference: { percent: 33.3333, withinTolerance: false } },
   ]);
   assert.deepEqual(invoiceAuditProgress(points), { required: 2, confirmed: 1 });
+});
+
+// User decision (2026-11-10): the difference is shown in percent against the 20% tolerance, and every
+// difference still waits for the analyst's acceptance.
+test("a price point shows the difference in percent and still needs the acceptance within the tolerance", () => {
+  assert.equal(invoicePriceTolerancePercent, 20);
+  const point = (invoicePrice, poPrice) => invoiceAuditPoints(
+    { ...invoice, exporter: "HEXING ELECTRICAL CO.,LTD HANGZHOU", line: { unit: "UN", unitPrice: invoicePrice } },
+    { ...poItem, unitPrice: poPrice }, unconfirmed).find(entry => entry.kind === "PRICE");
+  // IPH034A row 149 (rounding of the line total) and row 36 (a real difference).
+  assert.deepEqual(point("0.364192307692308", "0.36420000"),
+    { kind: "PRICE", invoiceValue: "0.364192307692308 CNY", poValue: "0.36420000 CNY", confirmed: false,
+      difference: { percent: -0.0021, withinTolerance: true } });
+  assert.deepEqual(point("30.08", "35.85").difference, { percent: -16.0948, withinTolerance: true });
+  // The limit is inclusive and exact: 0.6 against 0.5 is 20% (floating point would give 20.000000000000004).
+  assert.deepEqual(invoicePriceDifference("0.6", "0.5"), { percent: 20, withinTolerance: true });
+  assert.deepEqual(invoicePriceDifference("1.2001", "1"), { percent: 20.01, withinTolerance: false });
+  assert.deepEqual(invoicePriceDifference("0.5", "0"), { percent: null, withinTolerance: false });
+  assert.equal(invoicePriceDifference("0.3642", "0.36420000"), null);
+});
+
+test("the percent of a price difference is written with its sign, and tiny ones as below 0.01%", () => {
+  assert.equal(formatPercentChange(-16.0948), "−16,09%");
+  assert.equal(formatPercentChange(33.3333), "+33,33%");
+  assert.equal(formatPercentChange(-0.0021), "< 0,01%");
 });
 
 test("invoice audit skips line checks while the invoice line is unknown", () => {

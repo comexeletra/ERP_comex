@@ -19,7 +19,7 @@ import {
 import PurchaseOrderCalculatedFields from "./PurchaseOrderCalculatedFields";
 import { loadPurchaseRequests, purchaseRequestOperationalFields, PurchaseRequestChoice, PurchaseRequestSelect } from "./PurchaseRequestSelect";
 import { parseTotvsPoXlsx, TotvsPoProductRow } from "../lib/totvs-po-xlsx";
-import { formatNumber } from "../lib/format-number";
+import { formatNumber, formatPercentChange } from "../lib/format-number";
 import { estimatedProductTotal, productPriceReferenceForCurrency } from "../lib/product-price-reference";
 import { formatUsDate } from "../lib/date-format";
 import { ChinaInvoiceDraft, parseChinaInvoiceXlsx } from "../lib/china-invoice-xlsx";
@@ -34,7 +34,7 @@ import PageHeader from "./PageHeader";
 import { classifyInvoiceDestination, distributeInvoiceParts, invoiceAssignmentsFromLines, InvoiceAuditPoint, InvoiceAuditPointKind,
   invoiceAuditProgress, invoiceCodePoint, invoiceComparisonRows, invoiceExporterAliasSuggestion, invoiceKeyItems, invoiceLineDecisions,
   invoicePartAuditPoints, invoicePoCodeSummary, invoiceProductFillFields, InvoiceQuantityDecision, invoiceQuantityPoint,
-  invoiceSavePayload, invoiceSupplierMatchesExporter } from "../lib/china-invoice-mapping";
+  invoicePriceTolerancePercent, invoiceSavePayload, invoiceSupplierMatchesExporter } from "../lib/china-invoice-mapping";
 import { createExporterAlias } from "./SupplierExporterAliases";
 
 const poRoles = new Set(["Master", "Administrador", "Importação", "Compras"]);
@@ -1335,6 +1335,9 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                             <dt>{t.auditInvoice}</dt><dd>{point.invoiceValue || "—"}</dd>
                             <dt>{t.auditPo(match.sourcePoNumber)}</dt>
                             <dd>{point.poValue || (point.kind === "SUPPLIER" ? t.noSupplierRegistered : point.kind === "CODE" ? t.codeNotInPo : "—")}</dd>
+                            {point.difference && <><dt>{t.auditDifference}</dt><dd>{t.priceDifference(
+                              point.difference.percent === null ? null : formatPercentChange(point.difference.percent),
+                              point.difference.withinTolerance, invoicePriceTolerancePercent)}</dd></>}
                           </dl>
                           {note && <p className="invoice-audit-note">{note}</p>}
                           {field && <label className="invoice-audit-confirm"><input type="checkbox" checked={point.confirmed === true}

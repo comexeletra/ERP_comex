@@ -846,6 +846,9 @@ export const zhCN: Messages = {
     auditStatus: { pending: "待确认", confirmed: "已确认", manual: "人工分析" },
     auditInvoice: "发票",
     auditPo: (po: string) => `PO ${po}`,
+    auditDifference: "差异",
+    priceDifference: (percent: string | null, within: boolean, limit: number) => percent === null
+      ? `PO 无单价 · 超出 ${limit}% 容差` : `${percent} · ${within ? `在 ${limit}% 容差范围内` : `超出 ${limit}% 容差`}`,
     auditNote: {
       QUANTITY: "发票按原样保存；PO 余量只按分配数量扣减。",
       CODE: "此 PO 中没有发票上的编码。请修正 PO（Protheus）或发票，或填写原因后分配 0。",

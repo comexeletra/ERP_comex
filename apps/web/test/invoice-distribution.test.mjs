@@ -84,7 +84,8 @@ test("each PO item that receives the part is audited and a divergence is listed 
   const base = { productCode: "A", unit: "PCS", unitPrice: "2", currency: "CNY", supplierValues: ["Exporter Ltd"] };
   const points = invoicePartAuditPoints(invoice, [base, { ...base, unitPrice: "3" }, { ...base, unitPrice: "4" }],
     { supplier: false, unit: false, price: false });
-  assert.deepEqual(points, [{ kind: "PRICE", invoiceValue: "2 CNY", poValue: "3 CNY", confirmed: false }]);
+  assert.deepEqual(points, [{ kind: "PRICE", invoiceValue: "2 CNY", poValue: "3 CNY", confirmed: false,
+    difference: { percent: -33.3333, withinTolerance: false } }]);
   assert.deepEqual(invoicePartAuditPoints(invoice, [], { supplier: false, unit: false, price: false }), []);
 });
 
