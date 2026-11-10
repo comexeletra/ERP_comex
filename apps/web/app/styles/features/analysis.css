@@ -103,6 +103,8 @@
 .process-action-buttons { align-items: flex-start; display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
 .process-action { margin: 12px 12px 0 0; }
 .process-action-buttons .process-action { margin: 0; }
+.process-lifecycle-reason { color: var(--color-text-secondary); display: grid; font-size: var(--fs-sm); font-weight: 700; gap: 6px; }
+.process-lifecycle-reason textarea { min-height: 92px; resize: vertical; width: 100%; }
 .process-action > summary.process-action-trigger {
   background: var(--color-surface-sunken); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text-secondary);
   display: inline-flex; font-size: var(--fs-md); min-height: 40px; padding: 8px 12px; transition: background-color .15s ease, border-color .15s ease, color .15s ease;

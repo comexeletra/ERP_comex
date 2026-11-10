@@ -363,8 +363,6 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
           && <p className="notice" role="status">{t.askManager}</p>}
         {notice && <p className="notice success" role="status">{notice}</p>}
         {saveError && <p className="notice error" role="alert">{saveError}</p>}
-        <label>{t.actionReason}<textarea required minLength={3} maxLength={1000} value={lifecycleReason}
-          onChange={event => setLifecycleReason(event.target.value)} /></label>
         <div className="process-action-buttons">
           {lifecycleActions.filter(action => action !== "cancel").map(action =>
             <button key={action} className="button" type="button"
@@ -405,11 +403,13 @@ export default function ProcessWorkspace({ id, returnPath }: { id: string; retur
           </form>
         </details>}
         </div>
+        <label className="process-lifecycle-reason"><span>{t.actionReason}</span><textarea required minLength={3} maxLength={1000}
+          value={lifecycleReason} onChange={event => setLifecycleReason(event.target.value)} /></label>
+        {lifecycleActions.includes("delete") && lifecycleReason.trim().length < 3
+          && <p className="muted">{t.reasonHint}</p>}
         {lifecycleActions.includes("delete") && deleteDisabled && <p className="notice" role="status">
           {t.deleteBlocked}
         </p>}
-        {lifecycleActions.includes("delete") && lifecycleReason.trim().length < 3
-          && <p className="muted">{t.reasonHint}</p>}
       </section>
       <section className="card"><h2>{t.operationalTitle}</h2>
         <p>{t.priorityNotes(process.priority ?? t.priorityNotInformed, process.notes || "—")}</p>
