@@ -4,7 +4,7 @@
 |---|---|
 | Data | 2026-11-10 |
 | Branch de trabalho | `homologacao` |
-| Status | Aprovada pelo usuário em 2026-11-10 |
+| Status | Implementada (web `8b5701b`, API `04acff6`); API HML no release `04acff6`; conferência na tela pendente |
 
 ## Objetivo
 
