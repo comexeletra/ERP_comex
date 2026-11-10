@@ -22,7 +22,7 @@ A etapa 2 (tabela no banco com carga periódica do Follow Up) fica para depois, 
    - Fica no menu para Master, Administrador, Importação e Compras.
    - O analista seleciona dois arquivos: a invoice (`.xlsx`, INV e PKL) e o Follow Up (`.xlsx`).
    - **Tudo roda no navegador:** os arquivos não saem do computador, e a tela não chama nenhuma rota da API além da sessão.
-2. **Leitor do Follow Up** (`lib/follow-up-po-xlsx.ts`):
+2. **Leitor do Follow Up** (`lib/audit-reference-xlsx.ts`):
    - **Aba e cabeçalho:** aba `Pré Embarque`; o cabeçalho é localizado pelo nome das colunas (em 2026-11-10 ele está na linha 3, e as colunas mudaram de lugar desde a carga histórica).
    - **Colunas usadas:** `Status`, `Importer`, `PO Totvs`, `Supplier`, `Product Code`, `Qty`, `Unit Price`, `Currency` e `IP Number`.
    - **Cada linha** é um item de PO, na ordem da planilha.
@@ -90,14 +90,14 @@ Tabela e carga periódica do Follow Up (etapa 2); gravar IP ou qualquer dado; co
 
 ## Plano
 
-1. Testes e `lib/follow-up-po-xlsx.ts` (leitor do Follow Up e candidatos por PO e código).
+1. Testes e `lib/audit-reference-xlsx.ts` (leitor do Follow Up e candidatos por PO e código).
 2. Testes e `lib/invoice-correction-xlsx.ts` (aplica as decisões e escreve a aba `AUDITORIA`); decisões de preço, PKL e fornecedor em `lib/`.
 3. Tela `/invoices/audit` com o parser, as regras e o `InvoiceConference`; menu e textos.
 4. Verificação completa, push e Preview; ensaio com a IPH037A e o Follow Up locais.
 
 ## Resultado (etapa 1)
 
-- **Leitor do Follow Up** em `lib/follow-up-po-xlsx.ts`:
+- **Leitor do Follow Up** em `lib/audit-reference-xlsx.ts`:
   - descompacta só a aba `Pré Embarque` e os textos compartilhados (`DecompressionStream` nativo, sem dependência nova);
   - o Follow Up local (8 MB) leva cerca de 1 a 3 s; com o ExcelJS eram 12 s e cerca de 830 MB.
 - **IP no Follow Up:** o IP da HEXING aparece sem o prefixo `IPH`. `IPH034A/2026` é `034A/2026` lá, nas mesmas 196 linhas do sistema. A página trata os dois como o mesmo IP e mostra quais IPs do Follow Up considerou.
@@ -113,3 +113,42 @@ Tabela e carga periódica do Follow Up (etapa 2); gravar IP ou qualquer dado; co
   - 62 destinos sem falta de saldo, nenhuma diferença de preço e nenhuma divergência INV × PKL;
   - uma confirmação de fornecedor (HEXING);
   - arquivo gerado e relido com 62 linhas, sem erro e com o mesmo total.
+
+## Etapa 1b: NCM e descrição pela DATABASE
+
+Comparação de 2026-11-10 entre o arquivo gerado pela página e o auditado pela analista (Gabi): a analista não altera quantidade, PO, preço nem peso. Ela confere NCM, descrição e fabricante com `XLOOKUP` contra `DATABASE - Renew.xlsx` (aba `DATABASE`) e a lista de fabricantes, e troca na INV e na PKL o NCM e a descrição pelos da DATABASE. A DATABASE reproduz 100% do trabalho dela na IPH037A: 18 NCMs, 9 descrições de conteúdo diferente, 49 só de maiúsculas e acentos, e 4 códigos fora da base. As escolhas de preço do ensaio foram do usuário; o analista pode escolher diferente.
+
+Decisões do usuário (2026-11-10):
+
+1. A página confere NCM e descrição contra a DATABASE, selecionada pelo analista. A lista de fabricantes fica para depois, quando houver uma cópia dela.
+2. Cada divergência tem "manter a invoice" ou "usar a DATABASE", e um botão aplica "usar a DATABASE" a todas.
+3. A correção vai para a INV e para a linha da PKL com o mesmo `No.`, marcada em amarelo com a nota do valor original.
+4. Produto fora da DATABASE vira ponto de auditoria, com confirmação e motivo.
+
+Regras:
+
+- **Leitura da DATABASE:** aba `DATABASE`; cabeçalho localizado pelo nome (`Product Code`, `Product Description`, `NCM DATABASE`) nas 15 primeiras linhas.
+- **Códigos:** o código é comparado sem diferenciar maiúsculas; um código repetido vale pela primeira linha.
+- **NCM:** comparado só pelos dígitos. Um NCM numérico com menos de 8 dígitos recebe zeros à esquerda. A correção é gravada como texto.
+- **Descrição:** qualquer diferença após aparar espaços é uma divergência. A tela indica quando ela é só de maiúsculas e acentos.
+- **Linha não destinada:** as correções de NCM e descrição valem para ela também, porque são decisões sobre o produto, não sobre o destino.
+- **Sem DATABASE:** a página continua funcionando, avisa que NCM e descrição não foram conferidos e registra isso na aba `AUDITORIA`.
+- **Aba `AUDITORIA`:** uma linha por divergência e por produto fora da base, com a decisão, o motivo e as células alteradas na INV e na PKL, além do arquivo DATABASE usado (nome e SHA-256).
+
+Critérios de aceite:
+
+- **Leitor:** cabeçalho por nome, NCM com zeros à esquerda e coluna ausente recusada. Teste em `lib/`.
+- **Regras:** IPH037A × DATABASE real com 18 NCMs, 58 descrições (49 só de caixa e acentos) e 4 códigos fora; as escolhas "usar a DATABASE" reproduzem a INV da analista nas colunas NCM e descrição. Teste com arquivos locais.
+- **Arquivo:** a correção vai para a INV e para a PKL, com marcação e nota; o parser lê o arquivo de volta sem erro. Teste em `lib/`.
+- **Tela:** o download espera todas as decisões, o botão aplica a todas e os textos existem nos três idiomas.
+
+### Resultado (etapa 1b)
+
+- **Leitor da DATABASE:** `parseProductDatabaseXlsx` em `lib/audit-reference-xlsx.ts` (antigo `follow-up-po-xlsx.ts`, renomeado porque agora lê as duas referências). Na DATABASE real: 486 produtos, sem código repetido.
+- **Regras** em `lib/china-invoice-mapping.ts`: `invoiceCatalogPoints`, `invoiceCatalogReady` e `invoiceCatalogCorrections`.
+- **Escrita:** NCM e descrição na INV e na PKL (`invoicePackingCorrections`), com as células alteradas por decisão na aba `AUDITORIA` (`invoiceChangedCells`).
+- **Ensaio IPH037A × DATABASE com "Usar a DATABASE em todas":**
+  - 76 divergências (18 NCM e 58 descrições) e 4 produtos fora da base;
+  - NCM e descrição na INV e na PKL idênticos aos do arquivo da analista nas 62 linhas;
+  - arquivo relido sem erro.
+- **O que a analista fez e a página não faz:** lista de fabricantes (`TOTVS-HEXING - LIST MANUFACTURER`), país de origem e as colunas de `XLOOKUP` (O a V) que ela acrescenta. Ficam para quando houver a lista de fabricantes.

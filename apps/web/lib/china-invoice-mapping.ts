@@ -567,6 +567,62 @@ export function invoicePackingChoiceReady(divergence: InvoicePackingDivergence, 
   return choice.source === "INVOICE" || Boolean(divergence.invoice && divergence.packing);
 }
 
+export type InvoiceCatalogField = "ncm" | "description";
+export type InvoiceCatalogPoint = { key: string; sourceRow: number; lineNumber: string; productCode: string;
+  field: InvoiceCatalogField; invoiceValue: string; databaseValue: string; caseOnly: boolean };
+export type InvoiceCatalogMissing = { sourceRow: number; lineNumber: string; productCode: string };
+export type InvoiceCatalogChoice = "INVOICE" | "DATABASE";
+
+const plainText = (value: string) => value.normalize("NFD").replace(/[̀-ͯ]/gu, "")
+  .toLocaleUpperCase("en-US").replace(/\s+/gu, " ").trim();
+
+/**
+ * The NCM (by its digits) and the description (after trimming) of each invoice line against the product DATABASE,
+ * by product code, as the analysts check them (comparison of 2026-11-10). A product out of the DATABASE is listed
+ * apart; a DATABASE row without NCM or description has nothing to compare.
+ */
+export function invoiceCatalogPoints(
+  lines: readonly { sourceRow: number; lineNumber: string; productCode: string; ncm: string; description: string }[],
+  products: readonly { productCode: string; ncm: string; description: string }[],
+): { points: InvoiceCatalogPoint[]; missing: InvoiceCatalogMissing[] } {
+  const byCode = new Map(products.map(product => [product.productCode.trim().toLocaleUpperCase("en-US"), product]));
+  const points: InvoiceCatalogPoint[] = [];
+  const missing: InvoiceCatalogMissing[] = [];
+  for (const line of lines) {
+    const productCode = line.productCode.trim();
+    const product = byCode.get(productCode.toLocaleUpperCase("en-US"));
+    if (!product) { missing.push({ sourceRow: line.sourceRow, lineNumber: line.lineNumber, productCode }); continue; }
+    const base = { sourceRow: line.sourceRow, lineNumber: line.lineNumber, productCode };
+    if (product.ncm && line.ncm.replace(/\D/gu, "") !== product.ncm) {
+      points.push({ ...base, key: `${line.sourceRow}:ncm`, field: "ncm", invoiceValue: line.ncm.trim(),
+        databaseValue: product.ncm, caseOnly: false });
+    }
+    const description = line.description.trim(), reference = product.description.trim();
+    if (reference && description !== reference) {
+      points.push({ ...base, key: `${line.sourceRow}:description`, field: "description", invoiceValue: description,
+        databaseValue: reference, caseOnly: plainText(description) === plainText(reference) });
+    }
+  }
+  return { points, missing };
+}
+
+export function invoiceCatalogReady(points: readonly InvoiceCatalogPoint[], choices: Readonly<Record<string, InvoiceCatalogChoice>>,
+  missing: readonly InvoiceCatalogMissing[], missingDecisions: Readonly<Record<number, InvoiceQuantityDecision>>): boolean {
+  return points.every(point => Boolean(choices[point.key]))
+    && missing.every(entry => invoiceQuantityDecisionReady(missingDecisions[entry.sourceRow] ?? { confirmed: false, reason: "" }));
+}
+
+/** The DATABASE values the analyst took, by invoice row. */
+export function invoiceCatalogCorrections(points: readonly InvoiceCatalogPoint[],
+  choices: Readonly<Record<string, InvoiceCatalogChoice>>): Record<number, Partial<Record<InvoiceCatalogField, string>>> {
+  const corrections: Record<number, Partial<Record<InvoiceCatalogField, string>>> = {};
+  for (const point of points) {
+    if (choices[point.key] !== "DATABASE") continue;
+    corrections[point.sourceRow] = { ...corrections[point.sourceRow], [point.field]: point.databaseValue };
+  }
+  return corrections;
+}
+
 /** The PKL weights of the invoice lines where the analyst took the PKL. */
 export function invoicePackingChoiceWeights(divergences: readonly InvoicePackingDivergence[],
   choices: Readonly<Record<string, InvoicePackingChoice>>): Record<number, { netWeightKg: string; grossWeightKg: string }> {

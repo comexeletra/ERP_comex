@@ -5,7 +5,8 @@ import test from "node:test";
 import { inflateRawSync } from "node:zlib";
 import ExcelJS from "exceljs";
 import { parseChinaInvoiceXlsx } from "../lib/china-invoice-xlsx.ts";
-import { invoiceCorrectedTotals, invoiceLineCorrections, writeCorrectedInvoice } from "../lib/invoice-correction-xlsx.ts";
+import { invoiceChangedCells, invoiceCorrectedTotals, invoiceLineCorrections, invoicePackingCorrections,
+  writeCorrectedInvoice } from "../lib/invoice-correction-xlsx.ts";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
 
 // User decision (2026-11-10): the audit page returns the invoice file itself, corrected with the analyst's
@@ -31,9 +32,12 @@ async function invoiceBytes() {
     sheet.getCell(`${letter}19`).value = { formula: `SUM(${letter}16:${letter}18)`, result };
   }
   const packing = workbook.addWorksheet("PKL");
-  for (const [address, value] of [["A12", "No."], ["H12", "QTY(PCS)"], ["I12", "Net Weight (KG)"], ["J12", "Gross Weight (KG)"],
-    ["A13", 1], ["H13", 100], ["I13", 10], ["J13", 12], ["A14", 2], ["H14", 50], ["I14", 5.5], ["J14", 6],
-    ["A15", 3], ["H15", 10], ["I15", 1], ["J15", 1.5], ["A16", "Total"], ["H16", 160], ["I16", 16.5], ["J16", 19.5]]) {
+  for (const [address, value] of [["A12", "No."], ["B12", "NCM"], ["C12", "Product description"], ["H12", "QTY(PCS)"],
+    ["I12", "Net Weight (KG)"], ["J12", "Gross Weight (KG)"],
+    ["A13", 1], ["B13", "85423939"], ["C13", "Part A"], ["H13", 100], ["I13", 10], ["J13", 12],
+    ["A14", 2], ["B14", "85423939"], ["C14", "Part B"], ["H14", 50], ["I14", 5.5], ["J14", 6],
+    ["A15", 3], ["B15", "85423939"], ["C15", "PART C (DATABASE)"], ["H15", 10], ["I15", 1], ["J15", 1.5],
+    ["A16", "Total"], ["H16", 160], ["I16", 16.5], ["J16", 19.5]]) {
     packing.getCell(address).value = value;
   }
   workbook.addWorksheet("Other").getCell("B2").value = "keep me";
@@ -72,10 +76,11 @@ test("each line gets the destined quantity, the PO cell, the corrected price, th
   const corrections = invoiceLineCorrections(draft.lines, parts, prices, weights);
   assert.deepEqual(corrections.map(entry => [entry.sourceRow, entry.destined, entry.changed, entry.corrected]), [
     [16, true, ["quantity", "poCell", "amount"], { quantity: "90", poCell: "PO 030201 = 60 units\nPO 030305 = 30 units",
-      unitPrice: "2", netWeightKg: "10", grossWeightKg: "12", amount: "180" }],
+      unitPrice: "2", netWeightKg: "10", grossWeightKg: "12", amount: "180", ncm: "85423939", description: "Part A" }],
     [17, true, ["unitPrice", "netWeightKg", "amount"], { quantity: "50", poCell: "PO030201", unitPrice: "1.6",
-      netWeightKg: "5.5", grossWeightKg: "6", amount: "80" }],
-    [18, false, [], { quantity: "10", poCell: "PO030305", unitPrice: "3", netWeightKg: "1", grossWeightKg: "1.5", amount: "30" }],
+      netWeightKg: "5.5", grossWeightKg: "6", amount: "80", ncm: "85423939", description: "Part B" }],
+    [18, false, [], { quantity: "10", poCell: "PO030305", unitPrice: "3", netWeightKg: "1", grossWeightKg: "1.5", amount: "30",
+      ncm: "85423939", description: "Part C" }],
   ]);
   assert.deepEqual(invoiceCorrectedTotals(corrections), { quantity: "150", netWeightKg: "16.5", grossWeightKg: "19.5", amount: "290" });
 });
@@ -121,6 +126,38 @@ test("the corrected file changes only the corrected cells, marks them and is rea
   assert.deepEqual(audit.getRow(1).values.slice(1), ["Invoice", "IPH037A INV.xlsx"]);
   assert.deepEqual(audit.getRow(4).values.slice(1), ["Linha", "Ponto", "Decisão", "Motivo"]);
   assert.deepEqual(audit.getRow(5).values.slice(1), ["16", "Quantidade", "90 de 100", "Saldo no próximo embarque"]);
+});
+
+// Comparison of 2026-11-10: the analyst takes the DATABASE NCM and description in the INV and in the PKL.
+test("the DATABASE NCM and description go to the INV and to the PKL line with the same No., also on a line destined with 0", async () => {
+  const original = await invoiceBytes();
+  const draft = await parse(original);
+  const catalog = { 16: { ncm: "85322410" }, 18: { ncm: "85423939", description: "PART C (DATABASE)" } };
+  const corrections = invoiceLineCorrections(draft.lines, parts, prices, weights, catalog);
+  assert.deepEqual(corrections.map(entry => [entry.sourceRow, entry.changed]), [
+    [16, ["quantity", "poCell", "amount", "ncm"]], [17, ["unitPrice", "netWeightKg", "amount"]], [18, ["description"]]]);
+  assert.deepEqual(invoicePackingCorrections(corrections, draft.packingList),
+    [{ sourceRow: 16, packingRow: 13, column: 2, field: "ncm", value: "85322410" }]);
+  assert.deepEqual(invoiceChangedCells(corrections, draft.layout, draft.packingList),
+    { 16: [{ field: "quantity", cell: "H16" }, { field: "poCell", cell: "N16" }, { field: "amount", cell: "M16" },
+      { field: "ncm", cell: "B16" }, { field: "ncm", cell: "PKL!B13" }],
+    17: [{ field: "unitPrice", cell: "J17" }, { field: "netWeightKg", cell: "K17" }, { field: "amount", cell: "M17" }],
+    18: [{ field: "description", cell: "D18" }] });
+  const written = await writeCorrectedInvoice(original, draft.layout, corrections, invoiceCorrectedTotals(corrections),
+    { sheetName: "AUDITORIA", summary: [], columns: ["Linha"], rows: [] }, value => `Valor original: ${value}`, draft.packingList);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(written);
+  const inv = workbook.getWorksheet("INV"), pkl = workbook.getWorksheet("PKL");
+  assert.equal(inv.getCell("B16").value, "85322410");
+  assert.equal(inv.getCell("B16").fill.fgColor.argb, "FFFFFF00");
+  assert.equal(inv.getCell("D18").value, "PART C (DATABASE)");
+  assert.equal(inv.getCell("H18").value, 10);
+  assert.equal(pkl.getCell("B13").value, "85322410");
+  assert.equal(pkl.getCell("B13").fill.fgColor.argb, "FFFFFF00");
+  assert.equal(pkl.getCell("C15").fill?.fgColor?.argb, undefined);
+  const reread = await parse(Buffer.from(written));
+  assert.deepEqual(reread.issues, []);
+  assert.equal(reread.lines[0].ncm, "85322410");
 });
 
 test("an existing AUDITORIA sheet is kept and the new one gets another name", async () => {

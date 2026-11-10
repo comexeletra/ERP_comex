@@ -326,11 +326,11 @@ test("reads the PKL lines, its Total row, the packages and the volume", async ()
   assert.deepEqual(result.packingList, {
     status: "READ",
     lines: [
-      { sourceRow: 13, lineNumber: "1", quantity: "1030", netWeightKg: "9.3", grossWeightKg: "13.54" },
-      { sourceRow: 14, lineNumber: "2", quantity: "420", netWeightKg: "0.4", grossWeightKg: "0.5" },
+      { sourceRow: 13, lineNumber: "1", quantity: "1030", netWeightKg: "9.3", grossWeightKg: "13.54", ncm: "", description: "" },
+      { sourceRow: 14, lineNumber: "2", quantity: "420", netWeightKg: "0.4", grossWeightKg: "0.5", ncm: "", description: "" },
     ],
     totals: { quantity: "1450", netWeightKg: "9.7", grossWeightKg: "14.04" },
-    packages: "158", volumeCbm: "157.73",
+    packages: "158", volumeCbm: "157.73", columns: { ncm: 2, description: 3 },
   });
 });
 

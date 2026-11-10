@@ -25,13 +25,16 @@ export type ChinaInvoiceLine = {
   issues: string[];
 };
 
-export type InvoicePackingLine = { sourceRow: number; lineNumber: string; quantity: string; netWeightKg: string; grossWeightKg: string };
+export type InvoicePackingLine = { sourceRow: number; lineNumber: string; quantity: string; netWeightKg: string; grossWeightKg: string;
+  ncm: string; description: string };
 /** The PKL sheet, read only for the conference shown to the analyst; without it the invoice is still accepted. */
 export type InvoicePackingList = { status: "MISSING" } | { status: "UNREADABLE" } | { status: "READ"; lines: InvoicePackingLine[];
-  totals: { quantity: string; netWeightKg: string; grossWeightKg: string } | null; packages: string; volumeCbm: string };
+  totals: { quantity: string; netWeightKg: string; grossWeightKg: string } | null; packages: string; volumeCbm: string;
+  /** Where NCM and description are in the PKL, so the audit page repeats their corrections there (null when absent). */
+  columns: { ncm: number | null; description: number | null } };
 
 export type InvoiceSheetLayout = { totalRow: number; columns: { quantity: number; unitPrice: number; netWeightKg: number;
-  grossWeightKg: number; amount: number; poCell: number } };
+  grossWeightKg: number; amount: number; poCell: number; ncm: number; description: number } };
 
 export type ChinaInvoiceDraft = {
   fileName: string;
@@ -307,10 +310,11 @@ function parsePackingList(workbook: Workbook): InvoicePackingList {
     sheet.getRow(row).eachCell({ includeEmpty: false }, (cell, column) => {
       const name = normalizeHeader(textOf(cell));
       const key = name === "no" ? "no" : name.startsWith("qty") ? "quantity"
-        : name === "net weight kg" ? "net" : name === "gross weight kg" ? "gross" : "";
+        : name === "net weight kg" ? "net" : name === "gross weight kg" ? "gross"
+          : name === "ncm" ? "ncm" : name === "product description" ? "description" : "";
       if (key && !columns.has(key)) columns.set(key, column);
     });
-    if (columns.size === 4) header = { row, columns };
+    if (["no", "quantity", "net", "gross"].every(key => columns.has(key))) header = { row, columns };
   }
   if (!header) return { status: "UNREADABLE" };
   const { columns } = header;
@@ -323,7 +327,11 @@ function parsePackingList(workbook: Workbook): InvoicePackingList {
   let totalRow = 0;
   for (let row = header.row + 1; row <= sheet.rowCount && !totalRow; row += 1) {
     const lineNumber = textOf(sheet.getRow(row).getCell(columns.get("no")!));
-    if (/^\d+$/u.test(lineNumber)) { lines.push({ sourceRow: row, lineNumber, ...values(row) }); continue; }
+    const text = (key: string) => columns.has(key) ? textOf(sheet.getRow(row).getCell(columns.get(key)!)) : "";
+    if (/^\d+$/u.test(lineNumber)) {
+      lines.push({ sourceRow: row, lineNumber, ...values(row), ncm: text("ncm"), description: text("description") });
+      continue;
+    }
     sheet.getRow(row).eachCell({ includeEmpty: false }, cell => {
       if (lines.length && normalizeHeader(textOf(cell)) === "total") totalRow = row;
     });
@@ -340,7 +348,8 @@ function parsePackingList(workbook: Workbook): InvoicePackingList {
     });
   }
   return { status: "READ", lines,
-    totals: totals && totals.quantity && totals.netWeightKg && totals.grossWeightKg ? totals : null, packages, volumeCbm };
+    totals: totals && totals.quantity && totals.netWeightKg && totals.grossWeightKg ? totals : null, packages, volumeCbm,
+    columns: { ncm: columns.get("ncm") ?? null, description: columns.get("description") ?? null } };
 }
 
 export async function parseChinaInvoiceXlsx(file: File, m: Messages): Promise<ChinaInvoiceDraft> {
@@ -454,6 +463,7 @@ export async function parseChinaInvoiceXlsx(file: File, m: Messages): Promise<Ch
     declaredTotals, packingList: parsePackingList(workbook), issues, warnings,
     layout: { totalRow, columns: { quantity: columns.get("qty pcs kgs mts")!, unitPrice: columns.get("price cny")!,
       netWeightKg: columns.get("net weight kg")!, grossWeightKg: columns.get("gross weight kg")!,
-      amount: columns.get("total cny")!, poCell: columns.get("po")! } },
+      amount: columns.get("total cny")!, poCell: columns.get("po")!, ncm: columns.get("ncm")!,
+      description: columns.get("product description")! } },
   };
 }

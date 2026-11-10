@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ExcelJS from "exceljs";
-import { followUpCandidates, followUpImporters, followUpIpMatches, followUpSameIps, parseFollowUpXlsx } from "../lib/follow-up-po-xlsx.ts";
+import { followUpCandidates, followUpImporters, followUpIpMatches, followUpSameIps, parseFollowUpXlsx } from "../lib/audit-reference-xlsx.ts";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
 
 // User decision (2026-11-10): the invoice audit page reads the POs from the Follow Up in use, in the browser.
@@ -67,7 +67,7 @@ test("reads the Pre sheet by header name, leaves cancelled lines out and keeps t
 test("a missing column, a missing Pre sheet or another file type is refused with the reason", async () => {
   await assert.rejects(parseFollowUpXlsx(await followUpFile({ mutate(sheet) { sheet.getCell(3, column("Unit Price")).value = "Price"; } }), ptBR),
     /Unit Price/u);
-  await assert.rejects(parseFollowUpXlsx(await followUpFile({ sheetName: "Pre" }), ptBR), /Pré Embarque/u);
+  await assert.rejects(parseFollowUpXlsx(await followUpFile({ sheetName: "Pre" }), ptBR), /aba Pré Embarque/u);
   await assert.rejects(parseFollowUpXlsx(new File(["x"], "follow.csv"), ptBR), /\.xlsx/u);
   await assert.rejects(parseFollowUpXlsx(new File(["not a zip file at all, just text"], "follow.xlsx"), ptBR), /ler a planilha/u);
 });
@@ -99,4 +99,47 @@ test("reads the real Follow Up Pre sheet", { skip: !existsSync(realFollowUp) }, 
   assert.ok(result.lines.length > 6000, String(result.lines.length));
   assert.equal(followUpSameIps(result.lines, "IPH034A/2026").join(), "034A/2026");
   assert.equal(result.lines.filter(line => line.ipNumber === "034A/2026").length, 196);
+});
+
+// User decision (2026-11-10): the page also checks NCM and description against the product DATABASE.
+async function databaseFile({ mutate } = {}) {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("DATABASE");
+  sheet.getCell("I1").value = "NVE";
+  ["Category", "Product Code", "Product Description", "NCM DATABASE", "CHECK COMEX"]
+    .forEach((header, index) => { sheet.getRow(2).getCell(index + 2).value = header; });
+  [["Raw material", 2010100040, "RESISTOR (RESISTENCIA ELETRICA FIXA)", 85332120, "OK"],
+    ["Raw material", "abc-1", "  PEÇA & <CAPA>  ", 4011000, "OK"],
+    [null, null, "sem código", 85332120, null],
+    ["Raw material", "ABC-1", "repetido", 11111111, "OK"]]
+    .forEach((values, index) => values.forEach((value, column) => {
+      if (value !== null) sheet.getRow(3 + index).getCell(column + 2).value = value;
+    }));
+  mutate?.(sheet);
+  workbook.addWorksheet("Planilha1").getCell("A1").value = "Eletra Code";
+  return new File([Buffer.from(await workbook.xlsx.writeBuffer())], "DATABASE - Renew.xlsx");
+}
+
+test("reads the DATABASE products by header name, with the NCM leading zeros and the first row of a repeated code", async () => {
+  const { parseProductDatabaseXlsx } = await import("../lib/audit-reference-xlsx.ts");
+  const result = await parseProductDatabaseXlsx(await databaseFile(), ptBR);
+  assert.equal(result.duplicated, 1);
+  assert.match(result.fileSha256, /^[a-f0-9]{64}$/u);
+  assert.deepEqual(result.products, [
+    { sourceRow: 3, productCode: "2010100040", description: "RESISTOR (RESISTENCIA ELETRICA FIXA)", ncm: "85332120" },
+    { sourceRow: 4, productCode: "abc-1", description: "PEÇA & <CAPA>", ncm: "04011000" },
+  ]);
+  await assert.rejects(parseProductDatabaseXlsx(await databaseFile({ mutate(sheet) { sheet.getCell("E2").value = "NCM"; } }), ptBR),
+    /NCM DATABASE/u);
+  await assert.rejects(parseProductDatabaseXlsx(await followUpFile(), ptBR), /aba DATABASE/u);
+});
+
+// The DATABASE copy (2026-11-09) stays out of Git; the test runs where the file exists.
+const realDatabase = new URL("../../../invoices_tests/DATABASE - Renew.xlsx", import.meta.url);
+test("reads the real DATABASE", { skip: !existsSync(realDatabase) }, async () => {
+  const { parseProductDatabaseXlsx } = await import("../lib/audit-reference-xlsx.ts");
+  const result = await parseProductDatabaseXlsx(new File([await readFile(realDatabase)], "DATABASE - Renew.xlsx"), ptBR);
+  assert.equal(result.products.length, 486);
+  assert.equal(result.duplicated, 0);
+  assert.equal(result.products.find(product => product.productCode === "2010100040")?.ncm, "85332120");
 });

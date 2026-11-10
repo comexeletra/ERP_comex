@@ -1,6 +1,9 @@
 import type { Messages } from "./i18n/pt-BR";
 
 /*
+ * Reference workbooks of the invoice audit page, read in the browser: the PO lines of the Follow Up and the
+ * NCM and description of each product in the DATABASE.
+ *
  * Reads the PO lines of the Follow Up workbook for the invoice audit page (decision of 2026-11-10: the
  * POs come from the Follow Up in use, read in the browser, with no table and no load). Only the
  * "Pré Embarque" sheet and the shared strings are unzipped: loading the whole 8 MB workbook with
@@ -116,16 +119,16 @@ function* sheetRows(xml: string, shared: readonly string[]): Generator<{ row: nu
   }
 }
 
-async function preSheetXml(bytes: Uint8Array, m: Messages): Promise<{ sheet: string; shared: string[] }> {
-  const t = m.followUpSheet;
+async function workbookSheetXml(bytes: Uint8Array, sheetName: string, t: { unreadable: string; sheetMissing: string }):
+  Promise<{ sheet: string; shared: string[] }> {
   let entries: Map<string, ZipEntry>;
   try { entries = zipDirectory(bytes); } catch { throw new Error(t.unreadable); }
   const workbook = await zipText(bytes, entries, "xl/workbook.xml");
   const rels = await zipText(bytes, entries, "xl/_rels/workbook.xml.rels");
   if (!workbook || !rels) throw new Error(t.unreadable);
   const sheetTag = [...workbook.matchAll(/<sheet\b[^>]*>/gu)].map(match => match[0])
-    .find(tag => attribute(tag, "name").trim() === preSheetName);
-  if (!sheetTag) throw new Error(t.preSheetMissing);
+    .find(tag => attribute(tag, "name").trim() === sheetName);
+  if (!sheetTag) throw new Error(t.sheetMissing);
   const relationId = attribute(sheetTag, "r:id");
   const target = [...rels.matchAll(/<Relationship\b[^>]*>/gu)].map(match => match[0])
     .find(tag => attribute(tag, "Id") === relationId);
@@ -149,7 +152,7 @@ export async function parseFollowUpXlsx(file: File, m: Messages): Promise<Follow
   if (!file.name.toLocaleLowerCase("en-US").endsWith(".xlsx")) throw new Error(t.xlsxRequired);
   if (file.size === 0 || file.size > maxFileBytes) throw new Error(t.fileSize);
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const { sheet, shared } = await preSheetXml(bytes, m);
+  const { sheet, shared } = await workbookSheetXml(bytes, preSheetName, t);
   let columns: Map<FollowUpHeader, number> | null = null;
   const lines: FollowUpPoLine[] = [];
   let cancelled = 0, ignored = 0;
@@ -222,4 +225,53 @@ export function followUpCandidates(lines: readonly FollowUpPoLine[], importer: s
     .map(line => ({ id: `fu:${line.sourceRow}`, lineNumber: line.sourceRow, poNumber: line.poNumber, productCode: line.productCode,
       remainingQuantity: line.quantity, orderedQuantity: line.quantity, unit: null, unitPrice: line.unitPrice,
       currency: line.currency, supplier: line.supplier, ipNumber: line.ipNumber })) };
+}
+
+const databaseSheetName = "DATABASE"; // i18n-ignore: sheet name of the product DATABASE workbook
+const databaseHeaders = ["Product Code", "Product Description", "NCM DATABASE"] as const; // i18n-ignore: DATABASE headers
+type DatabaseHeader = typeof databaseHeaders[number];
+
+export type DatabaseProduct = { sourceRow: number; productCode: string; description: string; ncm: string };
+export type ProductDatabase = { fileName: string; fileSha256: string; products: DatabaseProduct[]; duplicated: number };
+
+/**
+ * The product DATABASE the analysts check the invoice against (`DATABASE - Renew.xlsx`, sheet DATABASE, header in
+ * row 2 in 2026-11). A repeated code counts by its first row; a numeric NCM gets back its leading zeros.
+ */
+export async function parseProductDatabaseXlsx(file: File, m: Messages): Promise<ProductDatabase> {
+  const t = m.productDatabaseSheet;
+  if (!file.name.toLocaleLowerCase("en-US").endsWith(".xlsx")) throw new Error(t.xlsxRequired);
+  if (file.size === 0 || file.size > maxFileBytes) throw new Error(t.fileSize);
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const { sheet, shared } = await workbookSheetXml(bytes, databaseSheetName, t);
+  let columns: Map<DatabaseHeader, number> | null = null;
+  const products: DatabaseProduct[] = [];
+  const seen = new Set<string>();
+  let duplicated = 0;
+  for (const { row, cells } of sheetRows(sheet, shared)) {
+    if (!columns) {
+      if (row > 15) break;
+      const found = new Map<DatabaseHeader, number>();
+      for (const [column, value] of cells) {
+        const header = databaseHeaders.find(name => name === value.replace(/\s+/gu, " ").trim());
+        if (header && !found.has(header)) found.set(header, column);
+      }
+      if (found.size === databaseHeaders.length) columns = found;
+      else if (found.size >= 2) throw new Error(t.missingColumns(databaseHeaders.filter(name => !found.has(name)).join(", ")));
+      continue;
+    }
+    const get = (header: DatabaseHeader) => cells.get(columns!.get(header)!) ?? "";
+    const productCode = get("Product Code").trim();
+    if (!productCode) continue;
+    const key = productCode.toLocaleUpperCase("en-US");
+    if (seen.has(key)) { duplicated += 1; continue; }
+    seen.add(key);
+    const digits = get("NCM DATABASE").replace(/\D/gu, "");
+    products.push({ sourceRow: row, productCode, description: get("Product Description").trim(),
+      ncm: digits && digits.length < 8 ? digits.padStart(8, "0") : digits });
+  }
+  if (!columns) throw new Error(t.headerMissing);
+  return { fileName: file.name, products, duplicated,
+    fileSha256: Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)))
+      .map(value => value.toString(16).padStart(2, "0")).join("") };
 }

@@ -3,13 +3,14 @@
 import { ChangeEvent, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { parseChinaInvoiceXlsx, type ChinaInvoiceDraft } from "../lib/china-invoice-xlsx";
-import { classifyInvoiceDestination, distributeInvoiceParts, invoiceAssignmentsFromLines, InvoiceAuditPoint, invoiceCodePoint,
+import { classifyInvoiceDestination, distributeInvoiceParts, invoiceAssignmentsFromLines, InvoiceAuditPoint, InvoiceCatalogChoice,
+  invoiceCatalogCorrections, InvoiceCatalogMissing, InvoiceCatalogPoint, invoiceCatalogPoints, invoiceCodePoint,
   invoiceKeyItems, InvoiceLinePricePoint, invoiceLinePricePoint, InvoicePackingChoice, invoicePackingChoiceReady,
   invoicePackingChoiceWeights, invoicePackingDivergences, InvoicePriceChoice, invoicePriceChoiceReady, invoicePriceTolerancePercent,
-  InvoiceQuantityDecision, invoiceQuantityPoint, invoiceSupplierMismatches } from "../lib/china-invoice-mapping";
-import { followUpCandidates, followUpImporters, followUpSameIps, parseFollowUpXlsx, type FollowUpCandidate,
-  type FollowUpWorkbook } from "../lib/follow-up-po-xlsx";
-import { invoiceCorrectedTotals, invoiceLineCorrections, writeCorrectedInvoice } from "../lib/invoice-correction-xlsx";
+  InvoiceQuantityDecision, invoiceQuantityDecisionReady, invoiceQuantityPoint, invoiceSupplierMismatches } from "../lib/china-invoice-mapping";
+import { followUpCandidates, followUpImporters, followUpSameIps, parseFollowUpXlsx, parseProductDatabaseXlsx, type FollowUpCandidate,
+  type FollowUpWorkbook, type ProductDatabase } from "../lib/audit-reference-xlsx";
+import { invoiceChangedCells, invoiceCorrectedTotals, invoiceLineCorrections, writeCorrectedInvoice } from "../lib/invoice-correction-xlsx";
 import { formatDecimal, formatNumber, formatPercentChange } from "../lib/format-number";
 import type { Messages } from "../lib/i18n/pt-BR";
 import { getMessages, useI18n } from "./I18nProvider";
@@ -21,12 +22,6 @@ const auditSheetName = "AUDITORIA"; // i18n-ignore: sheet name kept in Portugues
 const noDecision: InvoiceQuantityDecision = { confirmed: false, reason: "" };
 type LoadedInvoice = { draft: ChinaInvoiceDraft; bytes: ArrayBuffer };
 
-function columnLetter(index: number): string {
-  let letters = "";
-  for (let value = index; value > 0; value = Math.floor((value - 1) / 26)) letters = String.fromCharCode(65 + (value - 1) % 26) + letters;
-  return letters;
-}
-
 /**
  * Invoice audit against the Follow Up in use, with no table and no load (user decision, 2026-11-10): both files
  * are read in the browser, nothing is saved, and the result is the invoice file corrected with the decisions.
@@ -37,7 +32,10 @@ export default function InvoiceAuditWorkbench() {
   const [identity, setIdentity] = useState<{ roles: string[]; name: string } | null>(null);
   const [invoice, setInvoice] = useState<LoadedInvoice | null>(null);
   const [followUp, setFollowUp] = useState<FollowUpWorkbook | null>(null);
-  const [reading, setReading] = useState<"" | "invoice" | "followUp" | "download">("");
+  const [database, setDatabase] = useState<ProductDatabase | null>(null);
+  const [catalogChoices, setCatalogChoices] = useState<Record<string, InvoiceCatalogChoice>>({});
+  const [missingDecisions, setMissingDecisions] = useState<Record<number, InvoiceQuantityDecision>>({});
+  const [reading, setReading] = useState<"" | "invoice" | "followUp" | "database" | "download">("");
   const [error, setError] = useState("");
   const [importerChoice, setImporterChoice] = useState("");
   const [quantities, setQuantities] = useState<Record<string, string>>({});
@@ -61,7 +59,7 @@ export default function InvoiceAuditWorkbench() {
   async function selectInvoice(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0]; event.currentTarget.value = "";
     if (!file) return;
-    setError(""); setReading("invoice"); setInvoice(null); resetDecisions();
+    setError(""); setReading("invoice"); setInvoice(null); resetDecisions(); setCatalogChoices({}); setMissingDecisions({});
     try { setInvoice({ draft: await parseChinaInvoiceXlsx(file, getMessages()), bytes: await file.arrayBuffer() }); }
     catch (cause) { setError(cause instanceof Error ? cause.message : getMessages().common.unexpectedError); }
     finally { setReading(""); }
@@ -72,6 +70,15 @@ export default function InvoiceAuditWorkbench() {
     if (!file) return;
     setError(""); setReading("followUp"); setFollowUp(null); setImporterChoice(""); resetDecisions();
     try { setFollowUp(await parseFollowUpXlsx(file, getMessages())); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : getMessages().common.unexpectedError); }
+    finally { setReading(""); }
+  }
+
+  async function selectDatabase(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0]; event.currentTarget.value = "";
+    if (!file) return;
+    setError(""); setReading("database"); setDatabase(null); setCatalogChoices({}); setMissingDecisions({});
+    try { setDatabase(await parseProductDatabaseXlsx(file, getMessages())); }
     catch (cause) { setError(cause instanceof Error ? cause.message : getMessages().common.unexpectedError); }
     finally { setReading(""); }
   }
@@ -110,11 +117,14 @@ export default function InvoiceAuditWorkbench() {
   }
   const supplierMismatches = draft ? invoiceSupplierMismatches(draft.exporterText, allocatedItems.map(item => item.supplier)) : [];
   const divergences = draft?.packingList.status === "READ" ? invoicePackingDivergences(draft.lines, draft.packingList.lines) : [];
+  const catalog = draft && database ? invoiceCatalogPoints(draft.lines, database.products) : { points: [], missing: [] };
   const pending = rows.filter(row => row.issue !== null).length
     + rows.reduce((total, row) => total + row.points.filter(point => point.confirmed === false).length, 0)
     + [...pricePoints].filter(([row, point]) => !invoicePriceChoiceReady(point, priceChoices[row])).length
     + supplierMismatches.filter(supplier => !supplierConfirmed[supplier]).length
-    + divergences.filter(divergence => !invoicePackingChoiceReady(divergence, packingChoices[divergence.key])).length;
+    + divergences.filter(divergence => !invoicePackingChoiceReady(divergence, packingChoices[divergence.key])).length
+    + catalog.points.filter(point => !catalogChoices[point.key]).length
+    + catalog.missing.filter(entry => !invoiceQuantityDecisionReady(missingDecisions[entry.sourceRow] ?? noDecision)).length;
   const canDownload = ready && pending === 0 && rows.some(row => row.allocations.length > 0);
   const sameIps = ready ? followUpSameIps(followUp!.lines, draft!.ipNumber) : [];
 
@@ -127,10 +137,13 @@ export default function InvoiceAuditWorkbench() {
         .map(([row, point]) => [row, point.poPrices[0]]));
       const corrections = invoiceLineCorrections(invoice.draft.lines,
         rows.map(row => ({ sourceRow: row.part.sourceRow, poNumber: row.part.poNumber, quantity: row.part.quantity })),
-        prices, invoicePackingChoiceWeights(divergences, packingChoices));
+        prices, invoicePackingChoiceWeights(divergences, packingChoices), invoiceCatalogCorrections(catalog.points, catalogChoices));
+      const changedCells = invoiceChangedCells(corrections, invoice.draft.layout, invoice.draft.packingList);
       const written = await writeCorrectedInvoice(invoice.bytes, invoice.draft.layout, corrections, invoiceCorrectedTotals(corrections),
         auditSheet(messages, { draft: invoice.draft, followUp, importer, sameIps, rows, pricePoints, priceChoices, supplierMismatches,
-          divergences, packingChoices, corrections, user: identity?.name ?? "" }), messages.invoiceAudit.noteOriginal);
+          divergences, packingChoices, corrections, changedCells, database, catalogPoints: catalog.points, catalogChoices,
+          catalogMissing: catalog.missing, missingDecisions, user: identity?.name ?? "" }),
+        messages.invoiceAudit.noteOriginal, invoice.draft.packingList);
       const link = document.createElement("a");
       link.href = URL.createObjectURL(new Blob([written], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
@@ -153,10 +166,12 @@ export default function InvoiceAuditWorkbench() {
       <div className="operational-fields invoice-audit-files">
         <label>{t.invoiceFile}<input type="file" accept=".xlsx" disabled={Boolean(reading)} onChange={event => void selectInvoice(event)} /></label>
         <label>{t.followUpFile}<input type="file" accept=".xlsx" disabled={Boolean(reading)} onChange={event => void selectFollowUp(event)} /></label>
+        <label>{t.databaseFile}<input type="file" accept=".xlsx" disabled={Boolean(reading)} onChange={event => void selectDatabase(event)} /></label>
       </div>
       {reading && reading !== "download" && <p role="status">{t.reading}</p>}
       {draft && <p className="notice invoice-summary" role="status">{t.invoiceRead(draft.fileName, draft.lines.length, draft.ipNumber)}</p>}
       {followUp && <p className="muted">{t.followUpRead(followUp.fileName, followUp.lines.length, followUp.cancelled)}</p>}
+      {database && <p className="muted">{t.databaseRead(database.fileName, database.products.length)}</p>}
       {draft && followUp && importers.length === 0 && <p className="notice error" role="alert">{t.noImporter}</p>}
       {draft && followUp && importers.length > 1 && <label className="invoice-audit-importer">{t.importer}
         <select value={importer} onChange={event => { setImporterChoice(event.target.value); resetDecisions(); }}>
@@ -193,6 +208,12 @@ export default function InvoiceAuditWorkbench() {
             onChange={event => setSupplierConfirmed(current => ({ ...current, [supplier]: event.target.checked }))} />
             {t.confirmSupplier(supplier)}</label>
         </div>)}
+        {!database ? <p className="notice warning">{t.noDatabase}</p> : <CatalogAudit t={t} points={catalog.points}
+          missing={catalog.missing} choices={catalogChoices} missingDecisions={missingDecisions}
+          onChoice={(key, choice) => setCatalogChoices(current => ({ ...current, [key]: choice }))}
+          onAll={() => setCatalogChoices(Object.fromEntries(catalog.points.map(point => [point.key, "DATABASE" as const])))}
+          onMissing={(row, change) => setMissingDecisions(current =>
+            ({ ...current, [row]: { ...(current[row] ?? noDecision), ...change } }))} />}
         <div className="totvs-import-table-wrap invoice-match-table-wrap"><table className="totvs-import-table invoice-match-table">
           <thead><tr><th>{t.column.line}</th><th>{t.column.product}</th><th>{t.column.quantity}</th><th>{t.column.destination}</th></tr></thead>
           <tbody>{rows.map(({ part, line, decision, allocations, points, issue }) => {
@@ -262,14 +283,60 @@ function issueText(t: Messages["invoiceAudit"], issue: NonNullable<ReturnType<ty
   return t.poNotFound;
 }
 
+/** NCM and description against the DATABASE: one choice per divergence, a button that takes the DATABASE in all. */
+function CatalogAudit({ t, points, missing, choices, missingDecisions, onChoice, onAll, onMissing }: {
+  t: Messages["invoiceAudit"]; points: readonly InvoiceCatalogPoint[]; missing: readonly InvoiceCatalogMissing[];
+  choices: Readonly<Record<string, InvoiceCatalogChoice>>; missingDecisions: Readonly<Record<number, InvoiceQuantityDecision>>;
+  onChoice: (key: string, choice: InvoiceCatalogChoice) => void; onAll: () => void;
+  onMissing: (row: number, change: Partial<InvoiceQuantityDecision>) => void;
+}) {
+  return <section className="notice invoice-catalog" aria-label={t.catalogTitle}>
+    <h3>{t.catalogTitle}</h3>
+    <p>{t.catalogSummary(points.filter(point => point.field === "ncm").length,
+      points.filter(point => point.field === "description").length, missing.length)}</p>
+    {points.length > 0 && <>
+      <div className="totvs-import-actions"><button className="button secondary" type="button" onClick={onAll}>{t.useDatabaseAll}</button></div>
+      <div className="totvs-import-table-wrap"><table className="totvs-import-table invoice-catalog-table">
+        <thead><tr><th scope="col">{t.catalogColumn.line}</th><th scope="col">{t.catalogColumn.code}</th>
+          <th scope="col">{t.catalogColumn.field}</th><th scope="col">{t.catalogColumn.invoice}</th>
+          <th scope="col">{t.catalogColumn.database}</th><th scope="col">{t.catalogColumn.decision}</th></tr></thead>
+        <tbody>{points.map(point => <tr key={point.key} className={choices[point.key] ? undefined : "invoice-catalog-pending"}>
+          <td>{point.sourceRow}<small>{t.lineNumber(point.lineNumber)}</small></td><td>{point.productCode}</td>
+          <td>{t.catalogField[point.field]}{point.caseOnly && <small>{t.caseOnly}</small>}</td>
+          <td>{point.invoiceValue || "—"}</td><td>{point.databaseValue}</td>
+          <td><fieldset className="invoice-audit-choice"><legend>{t.catalogChoice}</legend>
+            <label><input type="radio" name={`catalog-${point.key}`} checked={choices[point.key] === "INVOICE"}
+              onChange={() => onChoice(point.key, "INVOICE")} />{t.keepInvoiceValue}</label>
+            <label><input type="radio" name={`catalog-${point.key}`} checked={choices[point.key] === "DATABASE"}
+              onChange={() => onChoice(point.key, "DATABASE")} />{t.useDatabase}</label>
+          </fieldset></td>
+        </tr>)}</tbody>
+      </table></div>
+    </>}
+    {missing.length > 0 && <ul className="invoice-audit-list">{missing.map(entry => {
+      const decision = missingDecisions[entry.sourceRow] ?? noDecision;
+      return <li key={entry.sourceRow} className={`notice ${invoiceQuantityDecisionReady(decision) ? "success" : "error"}`}>
+        <p>{t.notInDatabase(entry.sourceRow, entry.lineNumber, entry.productCode)}</p>
+        <label className="invoice-audit-confirm"><input type="checkbox" checked={decision.confirmed}
+          onChange={event => onMissing(entry.sourceRow, { confirmed: event.target.checked })} />{t.confirmNotInDatabase}</label>
+        <label className="invoice-audit-reason">{t.reason}<input required minLength={3} maxLength={1000} value={decision.reason}
+          onChange={event => onMissing(entry.sourceRow, { reason: event.target.value })} /></label>
+      </li>;
+    })}</ul>}
+  </section>;
+}
+
 type AuditInput = {
   draft: ChinaInvoiceDraft; followUp: FollowUpWorkbook; importer: string; sameIps: string[]; user: string;
-  rows: { part: { sourceRow: number; productCode: string; invoiceQuantity: string; quantity: string; poNumber: string };
+  rows: { part: { key: string; sourceRow: number; productCode: string; invoiceQuantity: string; quantity: string; poNumber: string };
     line: { lineNumber: string; unit: string }; decision: InvoiceQuantityDecision; points: InvoiceAuditPoint[];
     allocations: { item: FollowUpCandidate; quantity: string }[] }[];
   pricePoints: Map<number, InvoiceLinePricePoint>; priceChoices: Record<number, InvoicePriceChoice>;
   supplierMismatches: string[]; divergences: ReturnType<typeof invoicePackingDivergences>;
   packingChoices: Record<string, InvoicePackingChoice>; corrections: ReturnType<typeof invoiceLineCorrections>;
+  changedCells: ReturnType<typeof invoiceChangedCells>; database: ProductDatabase | null;
+  catalogPoints: InvoiceCatalogPoint[]; catalogChoices: Record<string, InvoiceCatalogChoice>;
+  catalogMissing: InvoiceCatalogMissing[]; missingDecisions: Record<number, InvoiceQuantityDecision>;
 };
 
 /** The AUDITORIA sheet: the files used and, per invoice line, each point with its decision and the changed cells. */
@@ -277,16 +344,13 @@ function auditSheet(m: Messages, input: AuditInput) {
   const s = m.invoiceAudit.sheet;
   const { draft } = input;
   const lineNumber = (row: number | null) => draft.lines.find(line => line.sourceRow === row)?.lineNumber ?? "";
-  const columns = draft.layout.columns;
-  const columnOf = { quantity: columns.quantity, poCell: columns.poCell, unitPrice: columns.unitPrice,
-    netWeightKg: columns.netWeightKg, grossWeightKg: columns.grossWeightKg, amount: columns.amount };
-  const cells = (row: number) => input.corrections.find(entry => entry.sourceRow === row)?.changed
-    .map(field => `${columnLetter(columnOf[field])}${row}`).join(", ") ?? "";
+  const cells = (row: number, fields: readonly string[]) => (input.changedCells[row] ?? [])
+    .filter(entry => fields.includes(entry.field)).map(entry => entry.cell).join(", ");
   const rows: string[][] = [];
   for (const { part, line, decision, points, allocations } of input.rows) {
     rows.push([String(part.sourceRow), line.lineNumber, s.destination, `PO ${part.poNumber} · ${part.productCode}`,
       allocations.map(({ item, quantity }) => s.destinationValue(item.lineNumber, formatNumber(quantity))).join("; ") || "—",
-      s.destined(formatNumber(part.quantity)), "", cells(part.sourceRow)]);
+      s.destined(formatNumber(part.quantity)), "", part.key.endsWith(":0") ? cells(part.sourceRow, ["quantity", "poCell", "amount"]) : ""]);
     for (const point of points) {
       rows.push([String(part.sourceRow), line.lineNumber, m.newRecord.auditKind[point.kind], point.invoiceValue, point.poValue || "—",
         s.confirmed, decision.reason.trim(), ""]);
@@ -296,7 +360,16 @@ function auditSheet(m: Messages, input: AuditInput) {
     rows.push([String(row), lineNumber(row), m.newRecord.auditKind.PRICE, `${point.invoicePrice} CNY`,
       point.poPrices.map(price => `${price} CNY`).join(" · ") + (point.difference?.percent != null
         ? ` (${formatPercentChange(point.difference.percent)})` : ""),
-      input.priceChoices[row] === "CORRECT" ? s.corrected : s.accepted, "", ""]);
+      input.priceChoices[row] === "CORRECT" ? s.corrected : s.accepted, "", cells(row, ["unitPrice"])]);
+  }
+  for (const point of input.catalogPoints) {
+    rows.push([String(point.sourceRow), point.lineNumber, m.invoiceAudit.catalogField[point.field], point.invoiceValue,
+      point.databaseValue, input.catalogChoices[point.key] === "DATABASE" ? s.tookDatabase : s.keptInvoiceValue, "",
+      cells(point.sourceRow, [point.field])]);
+  }
+  for (const entry of input.catalogMissing) {
+    rows.push([String(entry.sourceRow), entry.lineNumber, s.notInDatabase, entry.productCode, "—", s.confirmed,
+      input.missingDecisions[entry.sourceRow]?.reason.trim() ?? "", ""]);
   }
   for (const supplier of input.supplierMismatches) {
     rows.push(["—", "", m.newRecord.auditKind.SUPPLIER, draft.exporterText.split(/\r?\n/u)[0], supplier, s.confirmed, "", ""]);
@@ -307,7 +380,7 @@ function auditSheet(m: Messages, input: AuditInput) {
       ? divergence.fields.map(field => `${m.newRecord.conference.field[field]} ${side[field]}`).join("; ") : "—";
     rows.push([divergence.invoiceRow === null ? "—" : String(divergence.invoiceRow), divergence.lineNumber, s.packing,
       values(divergence.invoice), values(divergence.packing), choice?.source === "PACKING" ? s.tookPacking : s.keptInvoice,
-      choice?.reason.trim() ?? "", ""]);
+      choice?.reason.trim() ?? "", divergence.invoiceRow === null ? "" : cells(divergence.invoiceRow, ["netWeightKg", "grossWeightKg"])]);
   }
   for (const correction of input.corrections) {
     if (!correction.destined) rows.push([String(correction.sourceRow), lineNumber(correction.sourceRow), s.notDestined, "", "", s.keptAsCame, "", ""]);
@@ -318,6 +391,7 @@ function auditSheet(m: Messages, input: AuditInput) {
   rows.sort((left, right) => (Number(left[0]) || Number.MAX_SAFE_INTEGER) - (Number(right[0]) || Number.MAX_SAFE_INTEGER));
   return { sheetName: auditSheetName, columns: s.columns, rows, summary: [
     [s.invoice, `${draft.fileName} (SHA-256 ${draft.fileSha256})`], [s.followUp, `${input.followUp.fileName} (SHA-256 ${input.followUp.fileSha256})`],
+    [s.database, input.database ? `${input.database.fileName} (SHA-256 ${input.database.fileSha256})` : s.noDatabase],
     [s.ipRef, draft.ipNumber], [s.sameIps, input.sameIps.join(", ") || "—"], [s.importer, input.importer],
     [s.date, new Date().toISOString()], [s.user, input.user], [s.note, s.noteText],
   ] as [string, string][] };
