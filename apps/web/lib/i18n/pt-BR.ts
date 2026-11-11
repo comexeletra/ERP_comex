@@ -1134,6 +1134,8 @@ export const ptBR = {
     noManufacturerList: "Nenhuma lista de fabricantes carregada no sistema: nome e endereço do fabricante não serão conferidos. O país do fabricante sai em maiúsculas e o país de origem do cabeçalho é conferido assim mesmo.",
     referenceLoading: "Lendo a DATABASE e a lista de fabricantes do sistema…",
     referenceError: "Não foi possível ler a DATABASE e a lista de fabricantes do sistema. Recarregue a página.",
+    codeNeedsZero: "Este código não está na PO. Confirmar não basta: destine 0 a esta PO ou troque a PO para resolver o ponto.",
+    destineZero: "Destinar 0 a esta PO",
     bulk: {
       title: "Decisões em massa",
       help: "Decide de uma vez os pontos de um tipo que ainda estão sem decisão. Pontos já decididos não mudam, e cada ponto continua podendo ser alterado abaixo.",

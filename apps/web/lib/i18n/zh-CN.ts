@@ -1127,6 +1127,8 @@ export const zhCN: Messages = {
     noManufacturerList: "系统中没有已加载的制造商清单：不会核对制造商名称和地址。制造商国家仍以大写输出，表头原产国仍会核对。",
     referenceLoading: "正在从系统读取 DATABASE 和制造商清单…",
     referenceError: "无法从系统读取 DATABASE 和制造商清单。请重新加载页面。",
+    codeNeedsZero: "此代码不在该 PO 中。仅确认不够：请为该 PO 分配 0 或更换 PO 以解决此点。",
+    destineZero: "为该 PO 分配 0",
     bulk: {
       title: "批量决定",
       help: "一次性决定某一类中尚未决定的所有点。已决定的点不会改变，下面仍可逐个修改。",

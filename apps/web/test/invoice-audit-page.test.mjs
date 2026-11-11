@@ -116,6 +116,19 @@ test("each file field shows the name of the file the page read", async () => {
   }
 });
 
+// User report (2026-11-11): a code out of the PO stayed red after the confirmation, with no hint why. Confirming does
+// not settle it (the rule of the IP screen): the point says so and destines 0 to the PO in one click.
+test("a code out of the PO tells how to settle it and destines 0 in one click", async () => {
+  const component = await source("../components/InvoiceAuditWorkbench.tsx");
+  assert.match(component, /\{point\.kind === "CODE" && !point\.confirmed && <>/u);
+  assert.match(component, /<p className="invoice-audit-note">\{t\.codeNeedsZero\}<\/p>/u);
+  assert.match(component, /onClick=\{\(\) => setQuantities\(current => \(\{ \.\.\.current, \[part\.key\]: "0" \}\)\)\}>\{t\.destineZero\}/u);
+  for (const dictionary of [ptBR, en, zhCN]) {
+    assert.equal(typeof dictionary.invoiceAudit.codeNeedsZero, "string");
+    assert.equal(typeof dictionary.invoiceAudit.destineZero, "string");
+  }
+});
+
 // User request (2026-11-10): when the cited PO cannot receive a line, the page suggests the PO of the Follow Up that holds
 // the product on the invoice IP; the analyst takes it with one click and the PO cell is corrected in the file.
 test("a line the cited PO cannot receive gets the Follow Up PO suggestions and the chosen PO goes to the file", async () => {

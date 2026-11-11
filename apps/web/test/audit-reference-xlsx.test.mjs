@@ -99,6 +99,17 @@ test("reads the real Follow Up Pre sheet", { skip: !existsSync(realFollowUp) }, 
   assert.ok(result.lines.length > 6000, String(result.lines.length));
   assert.equal(followUpSameIps(result.lines, "IPH034A/2026").join(), "034A/2026");
   assert.equal(result.lines.filter(line => line.ipNumber === "034A/2026").length, 196);
+  // The PO index (2026-11-11, the page was recomputing a 7-thousand-line filter per part on each key typed) returns
+  // the same lines, in sheet order, as filtering the whole sheet.
+  const po = value => value.replace(/\D/gu, "").replace(/^0+(?=\d)/u, "");
+  const pairs = [...new Map(result.lines.map(line => [`${line.importer}|${po(line.poNumber)}`, line])).values()].slice(0, 300);
+  for (const line of pairs) {
+    const expected = result.lines.filter(other => other.importer === line.importer && po(other.poNumber) === po(line.poNumber));
+    const found = followUpCandidates(result.lines, line.importer, line.poNumber, "IPH034A/2026");
+    assert.equal(found.poExists, expected.length > 0);
+    assert.deepEqual(found.items.map(item => item.lineNumber), expected
+      .filter(other => !other.ipNumber || followUpIpMatches(other.ipNumber, "IPH034A/2026")).map(other => other.sourceRow));
+  }
 });
 
 // User decision (2026-11-10): the page also checks NCM and description against the product DATABASE.

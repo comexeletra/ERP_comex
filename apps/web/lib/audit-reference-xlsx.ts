@@ -216,13 +216,33 @@ export type FollowUpCandidate = { id: string; lineNumber: number; poNumber: stri
   orderedQuantity: string; unit: null; unitPrice: string | null; currency: string | null; supplier: string; ipNumber: string };
 
 /**
+ * The Follow Up lines of each importer and PO, in sheet order, indexed once per Follow Up read: the audit page looks
+ * up every invoice part on each render, and filtering the 7 thousand lines per part took about 45 ms.
+ */
+const followUpPoIndex = new WeakMap<readonly FollowUpPoLine[], Map<string, Map<string, FollowUpPoLine[]>>>();
+function followUpLinesOfPo(lines: readonly FollowUpPoLine[], importer: string, po: string): FollowUpPoLine[] {
+  let index = followUpPoIndex.get(lines);
+  if (!index) {
+    index = new Map();
+    for (const line of lines) {
+      const byPo = index.get(line.importer) ?? new Map<string, FollowUpPoLine[]>();
+      index.set(line.importer, byPo);
+      const key = normalizedPo(line.poNumber);
+      const entries = byPo.get(key);
+      if (entries) entries.push(line); else byPo.set(key, [line]);
+    }
+    followUpPoIndex.set(lines, index);
+  }
+  return index.get(importer)?.get(po) ?? [];
+}
+
+/**
  * The lines of one PO in the importer that can receive the invoice: without IP, or already on the invoice IP
  * (as the revision of an IP). Each Follow Up line is one PO item, in the order of the sheet.
  */
 export function followUpCandidates(lines: readonly FollowUpPoLine[], importer: string, poNumber: string, invoiceIp: string):
   { poExists: boolean; items: FollowUpCandidate[] } {
-  const po = normalizedPo(poNumber);
-  const ofPo = lines.filter(line => line.importer === importer && normalizedPo(line.poNumber) === po);
+  const ofPo = followUpLinesOfPo(lines, importer, normalizedPo(poNumber));
   return { poExists: ofPo.length > 0, items: ofPo.filter(line => !line.ipNumber || followUpIpMatches(line.ipNumber, invoiceIp))
     .map(line => ({ id: `fu:${line.sourceRow}`, lineNumber: line.sourceRow, poNumber: line.poNumber, productCode: line.productCode,
       remainingQuantity: line.quantity, orderedQuantity: line.quantity, unit: null, unitPrice: line.unitPrice,

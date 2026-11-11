@@ -366,6 +366,11 @@ export default function InvoiceAuditWorkbench() {
                     <div className="invoice-audit-title"><strong>{m.newRecord.auditKind[point.kind]}</strong></div>
                     <dl className="invoice-audit-values"><dt>{m.newRecord.auditInvoice}</dt><dd>{point.invoiceValue || "—"}</dd>
                       <dt>{t.followUpValue}</dt><dd>{point.poValue || (point.kind === "CODE" ? m.newRecord.codeNotInPo : "—")}</dd></dl>
+                    {point.kind === "CODE" && !point.confirmed && <>
+                      <p className="invoice-audit-note">{t.codeNeedsZero}</p>
+                      <div className="button-row"><button className="button secondary" type="button"
+                        onClick={() => setQuantities(current => ({ ...current, [part.key]: "0" }))}>{t.destineZero}</button></div>
+                    </>}
                     {point === points[points.length - 1] && <>
                       <label className="invoice-audit-confirm"><input type="checkbox" checked={decision.confirmed}
                         onChange={event => setDecision(part.sourceRow, { confirmed: event.target.checked })} />{m.newRecord.confirmQuantity}</label>

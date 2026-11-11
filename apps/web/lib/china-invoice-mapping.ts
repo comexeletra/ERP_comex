@@ -649,18 +649,37 @@ export function invoiceManufacturerId(entry: InvoiceManufacturerEntry): string {
   return entry.code || `#${entry.sourceRow}`;
 }
 
+/**
+ * The normalized keys and similarity sets of a list entry, computed once per entry: the audit page compares every
+ * invoice line with the whole list on each render, and normalizing the 575 entries per line took about 110 ms.
+ */
+type ManufacturerFeatures = { address: string; name: string; nameWords: Set<string>; nameGrams: Set<string>;
+  addressWords: Set<string>; search: string[] };
+const manufacturerFeatureCache = new WeakMap<InvoiceManufacturerEntry, ManufacturerFeatures>();
+function manufacturerFeatures(entry: InvoiceManufacturerEntry): ManufacturerFeatures {
+  let features = manufacturerFeatureCache.get(entry);
+  if (!features) {
+    features = { address: manufacturerKey(entry.address), name: manufacturerKey(entry.name), nameWords: similarityWords(entry.name),
+      nameGrams: trigrams(entry.name), addressWords: similarityWords(entry.address),
+      search: [entry.name, entry.address, entry.code].map(manufacturerKey) };
+    manufacturerFeatureCache.set(entry, features);
+  }
+  return features;
+}
+
 /** Each line's manufacturer in the list: by address (as the analysts' XLOOKUP), else by name. */
 export function invoiceManufacturerChecks(lines: readonly InvoiceManufacturerLine[],
   list: readonly InvoiceManufacturerEntry[]): InvoiceManufacturerCheck[] {
   return lines.map(line => {
     const invoice = { name: line.manufacturer.trim(), address: line.manufacturerAddress.trim(), country: line.manufacturerCountry.trim() };
     const base = { sourceRow: line.sourceRow, lineNumber: line.lineNumber, invoice, candidates: [] as InvoiceManufacturerEntry[] };
-    const byAddress = invoice.address ? list.filter(entry => manufacturerKey(entry.address) === manufacturerKey(invoice.address)) : [];
+    const addressKey = manufacturerKey(invoice.address), nameKey = manufacturerKey(invoice.name);
+    const byAddress = invoice.address ? list.filter(entry => manufacturerFeatures(entry).address === addressKey) : [];
     if (byAddress.length) {
-      const entry = byAddress.find(candidate => manufacturerKey(candidate.name) === manufacturerKey(invoice.name)) ?? byAddress[0];
+      const entry = byAddress.find(candidate => manufacturerFeatures(candidate).name === nameKey) ?? byAddress[0];
       return { ...base, status: "ADDRESS", entry };
     }
-    const byName = invoice.name ? list.filter(entry => manufacturerKey(entry.name) === manufacturerKey(invoice.name)) : [];
+    const byName = invoice.name ? list.filter(entry => manufacturerFeatures(entry).name === nameKey) : [];
     if (byName.length === 1) return { ...base, status: "NAME", entry: byName[0] };
     if (byName.length > 1) return { ...base, status: "CHOICE", entry: null, candidates: byName };
     return { ...base, status: "MISSING", entry: null, candidates: invoiceManufacturerSimilar(invoice, list) };
@@ -687,8 +706,9 @@ export const invoiceManufacturerSimilarity = 0.6;
 export function invoiceManufacturerSimilar(invoice: { name: string; address: string },
   list: readonly InvoiceManufacturerEntry[], limit = 5): InvoiceManufacturerEntry[] {
   const name = similarityWords(invoice.name), nameGrams = trigrams(invoice.name), address = similarityWords(invoice.address);
-  return list.map(entry => ({ entry, score: Math.max(overlap(name, similarityWords(entry.name), false),
-    overlap(nameGrams, trigrams(entry.name), true), overlap(address, similarityWords(entry.address), false)) }))
+  return list.map(entry => { const features = manufacturerFeatures(entry);
+    return { entry, score: Math.max(overlap(name, features.nameWords, false), overlap(nameGrams, features.nameGrams, true),
+      overlap(address, features.addressWords, false)) }; })
     .filter(({ score }) => score >= invoiceManufacturerSimilarity)
     .sort((left, right) => right.score - left.score || left.entry.sourceRow - right.entry.sourceRow)
     .slice(0, limit).map(({ entry }) => entry);
@@ -698,7 +718,7 @@ export function invoiceManufacturerSimilar(invoice: { name: string; address: str
 export function invoiceManufacturerSearch(list: readonly InvoiceManufacturerEntry[], text: string, limit = 10): InvoiceManufacturerEntry[] {
   const key = manufacturerKey(text);
   if (key.length < 3) return [];
-  return list.filter(entry => [entry.name, entry.address, entry.code].some(value => manufacturerKey(value).includes(key)))
+  return list.filter(entry => manufacturerFeatures(entry).search.some(value => value.includes(key)))
     .slice(0, limit);
 }
 

@@ -1131,6 +1131,8 @@ export const en: Messages = {
     noManufacturerList: "No manufacturer list loaded in the system: manufacturer name and address will not be checked. The manufacturer country still goes in capitals and the header country of origin is still checked.",
     referenceLoading: "Reading the DATABASE and the manufacturer list from the system…",
     referenceError: "Could not read the DATABASE and the manufacturer list from the system. Reload the page.",
+    codeNeedsZero: "This code is not in the PO. Confirming is not enough: destine 0 to this PO or change the PO to settle the point.",
+    destineZero: "Destine 0 to this PO",
     bulk: {
       title: "Bulk decisions",
       help: "Decides at once the points of a kind that have no decision yet. Points already decided do not change, and each point can still be changed below.",
