@@ -54,7 +54,7 @@ export default function ChangePasswordPage() {
     <section className="card">
       <form className="stack-form" onSubmit={(event) => void change(event)}>
         <label>{t.current}<input type="password" autoComplete="current-password" required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label>
-        <label>{t.next}<input type="password" autoComplete="new-password" minLength={15} required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label>
+        <label>{t.next}<input type="password" autoComplete="new-password" minLength={6} required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label>
         {error && <p className="notice error" role="alert">{error}</p>}
         <button className="button" type="submit" disabled={busy}>{busy ? t.saving : t.submit}</button>
       </form>

@@ -14,7 +14,7 @@ import {
 } from "openid-client";
 import type { Pool } from "pg";
 import { z } from "zod";
-import { hashPassword, verifyPassword } from "./password.js";
+import { hashPassword, minimumPasswordLength, verifyPassword } from "./password.js";
 
 const SESSION_COOKIE = "erp_session";
 const OIDC_STATE_COOKIE = "erp_oidc_state";
@@ -130,7 +130,7 @@ const loginBody = z.object({
 
 const changePasswordBody = z.object({
   currentPassword: z.string().min(1).max(1024),
-  newPassword: z.string().min(15).max(1024),
+  newPassword: z.string().min(minimumPasswordLength).max(1024),
 });
 
 async function createSession(app: FastifyInstance, pool: Pool, reply: FastifyReply,

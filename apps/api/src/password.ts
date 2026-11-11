@@ -6,13 +6,15 @@ const keyLength = 32;
 const maximumMemory = 64 * 1024 * 1024;
 const dummySalt = Buffer.alloc(16, 0x45);
 
+export const minimumPasswordLength = 6;
+
 function validPassword(password: string): boolean {
   const bytes = Buffer.byteLength(password, "utf8");
-  return bytes >= 15 && bytes <= 1024;
+  return bytes >= minimumPasswordLength && bytes <= 1024;
 }
 
 export function assertPassword(password: string): void {
-  if (!validPassword(password)) throw new Error("A senha deve conter de 15 a 1024 bytes.");
+  if (!validPassword(password)) throw new Error(`A senha deve conter de ${minimumPasswordLength} a 1024 bytes.`);
 }
 
 async function derive(password: string, salt: Buffer): Promise<Buffer> {

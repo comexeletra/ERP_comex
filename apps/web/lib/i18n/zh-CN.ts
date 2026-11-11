@@ -95,7 +95,7 @@ export const zhCN: Messages = {
   },
   changePassword: {
     title: "修改密码",
-    instructions: "请设置至少 15 个字符的密码。",
+    instructions: "请设置至少 6 个字符的密码。",
     current: "当前密码",
     next: "新密码",
     saving: "正在保存…",

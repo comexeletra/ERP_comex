@@ -95,7 +95,7 @@ export const en: Messages = {
   },
   changePassword: {
     title: "Change password",
-    instructions: "Choose a password with at least 15 characters.",
+    instructions: "Choose a password with at least 6 characters.",
     current: "Current password",
     next: "New password",
     saving: "Saving…",

@@ -98,7 +98,7 @@ export const ptBR = {
   },
   changePassword: {
     title: "Trocar senha",
-    instructions: "Escolha uma senha com pelo menos 15 caracteres.",
+    instructions: "Escolha uma senha com pelo menos 6 caracteres.",
     current: "Senha atual",
     next: "Nova senha",
     saving: "Salvando…",
