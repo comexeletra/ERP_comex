@@ -109,7 +109,7 @@ type Entry = { id: string; importer: string | null; kind: Kind; code: string; na
   status: "ACTIVE" | "INACTIVE"; provenance: string; evidence: string;
   valid_from: string | null; valid_to: string | null; version: string; created_at: Date; updated_at: Date;
   manufacturer?: string | null; manufacturer_address?: string | null; manufacturer_country?: string | null;
-  product_ncm_code?: string | null;
+  product_ncm_code?: string | null; supplier_address?: string | null; supplier_country?: string | null;
   mandatory_import_attributes?: OfficialNcm["mandatoryImportAttributes"];
   creation_act?: OfficialNcm["creationAct"];
   source_updated_at?: string | null; attributes_source_version?: string | null; synced_at?: Date | null;
@@ -161,6 +161,8 @@ function present(row: Entry) {
       latestTotvsDescriptionPurchaseOrderNumber: row.latest_totvs_description_purchase_order_number ?? null,
       latestTotvsDescriptionObservedAt: row.latest_totvs_description_observed_at ?? null,
       referencePrices: row.reference_prices ?? [] } : {}),
+    // Filled by the manufacturer list load (M082).
+    ...(row.kind === "SUPPLIER" ? { address: row.supplier_address ?? null, country: row.supplier_country ?? null } : {}),
     createdAt: row.created_at, updatedAt: row.updated_at,
     ...(row.mandatory_import_attributes !== undefined ? { mandatoryImportAttributes: row.mandatory_import_attributes,
       creationAct: row.creation_act ?? null,

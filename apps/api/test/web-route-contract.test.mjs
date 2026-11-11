@@ -24,6 +24,7 @@ import { registerShipmentLineRoutes } from "../dist/shipment-lines.js";
 import { registerPreShipmentDashboardRoutes } from "../dist/pre-shipment-dashboard.js";
 import { registerPostShipmentDashboardRoutes } from "../dist/post-shipment-dashboard.js";
 import { registerSupplierAliasRoutes } from "../dist/supplier-aliases.js";
+import { registerReferenceLoadRoutes } from "../dist/reference-loads.js";
 
 // Routes called by the Next.js app. Fastify's own router is checked, so a
 // missing registration or a changed method fails before a browser test.
@@ -39,6 +40,9 @@ const webRoutes = [
   ["POST", "/api/v1/icms-rates/rates"], ["PATCH", "/api/v1/icms-rates/rates/:id"], ["PATCH", "/api/v1/icms-rates/states/:uf"],
   ["POST", "/api/v1/icms-rates/benefits"], ["PATCH", "/api/v1/icms-rates/benefits/:id"],
   ["PATCH", "/api/v1/icms-rates/importers/:importer"],
+  ["GET", "/api/v1/reference-loads"], ["GET", "/api/v1/reference-loads/audit-reference"],
+  ["GET", "/api/v1/reference-loads/pending-ncms"], ["POST", "/api/v1/reference-loads/preview"],
+  ["POST", "/api/v1/reference-loads"],
   ["GET", "/api/v1/purchase-orders"], ["GET", "/api/v1/purchase-orders/summary"],
   ["GET", "/api/v1/purchase-order-lines"], ["GET", "/api/v1/purchase-order-lines/e2e-stages"],
   ["GET", "/api/v1/purchase-order-lines/filter-options"],
@@ -152,6 +156,7 @@ test("all Next.js API calls have a registered API method and path", async t => {
   await registerPreShipmentDashboardRoutes(app, unusedPool);
   await registerPostShipmentDashboardRoutes(app, unusedPool);
   await registerSupplierAliasRoutes(app, unusedPool);
+  await registerReferenceLoadRoutes(app, unusedPool);
   for (const [method, url] of webRoutes) {
     assert.equal(app.hasRoute({ method, url }), true, `${method} ${url} is missing`);
   }

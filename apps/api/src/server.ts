@@ -15,6 +15,7 @@ import { registerCatalogRoutes } from "./catalog.js";
 import { registerTaxTreatmentRoutes } from "./tax-treatments.js";
 import { registerTaxRateRoutes } from "./tax-rates.js";
 import { registerIcmsRateRoutes } from "./icms-rates.js";
+import { registerReferenceLoadRoutes } from "./reference-loads.js";
 import { registerRequestRoutes } from "./requests.js";
 import { registerSourceAuditRoutes } from "./source-audit.js";
 import { registerAdminOutboxRoutes } from "./admin-outbox.js";
@@ -110,6 +111,7 @@ await registerTaxTreatmentRoutes(app, pool, {
 });
 await registerTaxRateRoutes(app, pool, { refreshTime: ncmRatesRefreshTime });
 await registerIcmsRateRoutes(app, pool);
+await registerReferenceLoadRoutes(app, pool);
 await registerRequestRoutes(app, pool);
 await registerSourceAuditRoutes(app, pool);
 await registerAdminOutboxRoutes(app, pool);
