@@ -149,3 +149,8 @@
   .supplier-catalog-details > strong { grid-column: 1; }
   .supplier-catalog-details > span:nth-child(2) { grid-column: 1 / -1; }
 }
+
+/* Reference loads: DATABASE and manufacturer list (stage 1f). */
+.reference-load { display: grid; gap: 12px; }
+.reference-load-preview { border-top: 1px solid var(--color-border); display: grid; gap: 10px; padding-top: 12px; }
+.reference-load-preview h3 { font-size: var(--fs-base); margin: 0; }

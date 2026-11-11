@@ -10,13 +10,16 @@ import { zhCN } from "../lib/i18n/zh-CN.ts";
 
 const source = path => readFile(new URL(path, import.meta.url), "utf8");
 
-test("the page is a route in the menu and calls no API route other than the session", async () => {
+// Stage 1f (user decision, 2026-11-11): the DATABASE and the manufacturer list come from their latest load, kept
+// apart from the catalog; the page only reads the session and that reference, and still saves nothing.
+test("the page is a route in the menu and only reads the session and the reference of the latest loads", async () => {
   const page = await source("../app/invoices/audit/page.tsx");
   const component = await source("../components/InvoiceAuditWorkbench.tsx");
   const sidebar = await source("../components/AppSidebar.tsx");
   assert.match(page, /<InvoiceAuditWorkbench \/>/u);
   assert.match(sidebar, /\{ label: "invoiceAudit", href: "\/invoices\/audit", icon: "audit" \}/u);
-  assert.deepEqual(component.match(/apiFetch\([^)]*\)/gu), ['apiFetch("/auth/me")']);
+  assert.deepEqual(component.match(/apiFetch\([^)]*\)/gu),
+    ['apiFetch("/auth/me")', 'apiFetch("/api/v1/reference-loads/audit-reference")']);
   assert.doesNotMatch(component, /method:/u);
   assert.match(component, /parseFollowUpXlsx\(file, getMessages\(\)\)/u);
   assert.match(component, /parseChinaInvoiceXlsx\(file, getMessages\(\)\)/u);
@@ -67,7 +70,8 @@ test("the page texts exist in the three languages", () => {
 // without question (user decision): its divergences are only listed; a product out of it waits for the analyst.
 test("the DATABASE corrections go to the file without a choice and a product out of it waits for the analyst", async () => {
   const component = await source("../components/InvoiceAuditWorkbench.tsx");
-  assert.match(component, /parseProductDatabaseXlsx\(file, getMessages\(\)\)/u);
+  assert.match(component, /const database = reference\?\.productDatabase \?\? null;/u);
+  assert.doesNotMatch(component, /parseProductDatabaseXlsx/u);
   assert.match(component, /catalog\.missing\.filter\(entry => !invoiceQuantityDecisionReady\(missingDecisions\[entry\.sourceRow\] \?\? noDecision\)\)/u);
   assert.doesNotMatch(component, /catalogChoices|useDatabaseAll|name=\{`catalog-/u);
   assert.match(component, /\{ \.\.\.invoiceCatalogCorrections\(catalog\.points\) \};/u);
@@ -81,7 +85,8 @@ test("the DATABASE corrections go to the file without a choice and a product out
 test("the manufacturer list decisions wait for the analyst and the corrections go to the file with the header", async () => {
   const component = await source("../components/InvoiceAuditWorkbench.tsx");
   const section = await source("../components/InvoiceManufacturerAudit.tsx");
-  assert.match(component, /parseManufacturerListXlsx\(file, getMessages\(\)\)/u);
+  assert.match(component, /const manufacturerList = reference\?\.manufacturerList \?\? null;/u);
+  assert.doesNotMatch(component, /parseManufacturerListXlsx/u);
   assert.match(component, /\+ invoiceManufacturerPending\(manufacturerChecks, addressChoices, countryChoices, manufacturerMissing\);/u);
   assert.match(component, /messages\.invoiceAudit\.noteOriginal, invoice\.draft\.packingList, origin\.corrected\);/u);
   assert.match(component, /referenceCorrections\[Number\(row\)\] = \{ \.\.\.referenceCorrections\[Number\(row\)\], \.\.\.values \};/u);
@@ -99,10 +104,11 @@ test("each file field shows the name of the file the page read", async () => {
   const picker = await source("../components/FilePickerField.tsx");
   const styles = await source("../app/styles/components.css");
   assert.doesNotMatch(component, /<input type="file"/u);
-  for (const [label, name] of [["invoiceFile", String.raw`draft\?\.fileName`], ["followUpFile", String.raw`followUp\?\.fileName`],
-    ["databaseFile", String.raw`database\?\.fileName`], ["manufacturerFile", String.raw`manufacturerList\?\.fileName`]]) {
+  for (const [label, name] of [["invoiceFile", String.raw`draft\?\.fileName`], ["followUpFile", String.raw`followUp\?\.fileName`]]) {
     assert.match(component, new RegExp(String.raw`\[t\.${label}, ${name}, select\w+\]`, "u"), label);
   }
+  // Stage 1f: only the invoice and the Follow Up are chosen; the DATABASE and the list come from the system.
+  assert.doesNotMatch(component, /databaseFile|manufacturerFile|selectDatabase|selectManufacturers/u);
   assert.match(picker, /<input className="sr-only" type="file"/u);
   assert.match(picker, /\{fileName \|\| emptyLabel\}/u);
   for (const name of ["file-picker", "file-picker-control", "file-picker-button", "file-picker-name", "file-picker-empty"]) {

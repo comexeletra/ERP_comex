@@ -10,9 +10,11 @@ import { classifyInvoiceDestination, distributeInvoiceParts, invoiceAssignmentsF
   InvoiceQuantityDecision, invoiceQuantityDecisionReady, invoiceQuantityPoint, invoiceSupplierMismatches, InvoiceCountryChoice,
   InvoiceManufacturerCheck, invoiceManufacturerChecks, InvoiceManufacturerEntry, invoiceManufacturerCorrections, invoiceManufacturerCountryPoint,
   invoiceManufacturerId, invoiceManufacturerPending, invoiceOriginCountries } from "../lib/china-invoice-mapping";
-import { followUpCandidates, followUpImporters, followUpPoSuggestions, followUpSameIps, parseFollowUpXlsx, parseManufacturerListXlsx,
-  parseProductDatabaseXlsx, type FollowUpCandidate, type FollowUpWorkbook, type ManufacturerList, type ProductDatabase } from "../lib/audit-reference-xlsx";
+import { followUpCandidates, followUpImporters, followUpPoSuggestions, followUpSameIps, parseFollowUpXlsx,
+  type FollowUpCandidate, type FollowUpWorkbook } from "../lib/audit-reference-xlsx";
+import type { AuditReference } from "../lib/reference-loads";
 import { invoiceChangedCells, invoiceCorrectedTotals, invoiceLineCorrections, writeCorrectedInvoice } from "../lib/invoice-correction-xlsx";
+import { formatUsDateTime } from "../lib/date-format";
 import { formatDecimal, formatNumber, formatPercentChange } from "../lib/format-number";
 import type { Messages } from "../lib/i18n/pt-BR";
 import { getMessages, useI18n } from "./I18nProvider";
@@ -27,8 +29,9 @@ const noDecision: InvoiceQuantityDecision = { confirmed: false, reason: "" };
 type LoadedInvoice = { draft: ChinaInvoiceDraft; bytes: ArrayBuffer };
 
 /**
- * Invoice audit against the Follow Up in use, with no table and no load (user decision, 2026-11-10): both files
- * are read in the browser, nothing is saved, and the result is the invoice file corrected with the decisions.
+ * Invoice audit against the Follow Up in use (user decision, 2026-11-10): the invoice and the Follow Up are read in
+ * the browser, nothing is saved, and the result is the invoice file corrected with the decisions. The DATABASE and
+ * the manufacturer list are the rows of their latest load, kept apart from the catalog (stage 1f, 2026-11-11).
  */
 export default function InvoiceAuditWorkbench() {
   const { m } = useI18n();
@@ -36,14 +39,14 @@ export default function InvoiceAuditWorkbench() {
   const [identity, setIdentity] = useState<{ roles: string[]; name: string } | null>(null);
   const [invoice, setInvoice] = useState<LoadedInvoice | null>(null);
   const [followUp, setFollowUp] = useState<FollowUpWorkbook | null>(null);
-  const [database, setDatabase] = useState<ProductDatabase | null>(null);
+  const [reference, setReference] = useState<AuditReference | null>(null);
+  const [referenceFailed, setReferenceFailed] = useState(false);
   const [missingDecisions, setMissingDecisions] = useState<Record<number, InvoiceQuantityDecision>>({});
-  const [manufacturerList, setManufacturerList] = useState<ManufacturerList | null>(null);
   const [addressChoices, setAddressChoices] = useState<Record<number, string>>({});
   const [countryChoices, setCountryChoices] = useState<Record<number, InvoiceCountryChoice>>({});
   const [manufacturerMissing, setManufacturerMissing] = useState<Record<number, InvoiceQuantityDecision>>({});
   const [pickedManufacturers, setPickedManufacturers] = useState<Record<number, InvoiceManufacturerEntry>>({});
-  const [reading, setReading] = useState<"" | "invoice" | "followUp" | "database" | "manufacturers" | "download">("");
+  const [reading, setReading] = useState<"" | "invoice" | "followUp" | "download">("");
   const [error, setError] = useState("");
   const [importerChoice, setImporterChoice] = useState("");
   const [quantities, setQuantities] = useState<Record<string, string>>({});
@@ -58,8 +61,14 @@ export default function InvoiceAuditWorkbench() {
       if (!response.ok) throw new Error(getMessages().common.unexpectedError);
       const user = await response.json() as { roles: string[]; user: { displayName: string | null } };
       setIdentity({ roles: user.roles, name: user.user.displayName ?? "" });
+      if (!user.roles.some(role => allowedRoles.has(role))) return;
+      const loaded = await apiFetch("/api/v1/reference-loads/audit-reference");
+      if (!loaded.ok) { setReferenceFailed(true); return; }
+      setReference(await loaded.json() as AuditReference);
     }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : getMessages().common.unexpectedError));
   }, []);
+  const database = reference?.productDatabase ?? null;
+  const manufacturerList = reference?.manufacturerList ?? null;
 
   function resetDecisions() {
     setQuantities({}); setQuantityDecisions({}); setPriceChoices({}); setSupplierConfirmed({}); setPackingChoices({}); setPoChoices({});
@@ -85,24 +94,6 @@ export default function InvoiceAuditWorkbench() {
 
   function resetManufacturerDecisions() {
     setAddressChoices({}); setCountryChoices({}); setManufacturerMissing({}); setPickedManufacturers({});
-  }
-
-  async function selectManufacturers(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.currentTarget.files?.[0]; event.currentTarget.value = "";
-    if (!file) return;
-    setError(""); setReading("manufacturers"); setManufacturerList(null); resetManufacturerDecisions();
-    try { setManufacturerList(await parseManufacturerListXlsx(file, getMessages())); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : getMessages().common.unexpectedError); }
-    finally { setReading(""); }
-  }
-
-  async function selectDatabase(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.currentTarget.files?.[0]; event.currentTarget.value = "";
-    if (!file) return;
-    setError(""); setReading("database"); setDatabase(null); setMissingDecisions({});
-    try { setDatabase(await parseProductDatabaseXlsx(file, getMessages())); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : getMessages().common.unexpectedError); }
-    finally { setReading(""); }
   }
 
   const draft = invoice?.draft ?? null;
@@ -207,8 +198,7 @@ export default function InvoiceAuditWorkbench() {
     {identity && !allowed && <p className="notice warning">{t.noPermission}</p>}
     {allowed && <section className="card invoice-audit-page">
       <div className="operational-fields invoice-audit-files">
-        {([[t.invoiceFile, draft?.fileName, selectInvoice], [t.followUpFile, followUp?.fileName, selectFollowUp],
-          [t.databaseFile, database?.fileName, selectDatabase], [t.manufacturerFile, manufacturerList?.fileName, selectManufacturers]] as const)
+        {([[t.invoiceFile, draft?.fileName, selectInvoice], [t.followUpFile, followUp?.fileName, selectFollowUp]] as const)
           .map(([label, fileName, select]) => <FilePickerField key={label} label={label} fileName={fileName ?? null}
             chooseLabel={t.chooseFile} emptyLabel={t.noFileChosen} accept=".xlsx" disabled={Boolean(reading)}
             onSelect={event => void select(event)} />)}
@@ -216,8 +206,12 @@ export default function InvoiceAuditWorkbench() {
       {reading && reading !== "download" && <p role="status">{t.reading}</p>}
       {draft && <p className="notice invoice-summary" role="status">{t.invoiceRead(draft.fileName, draft.lines.length, draft.ipNumber)}</p>}
       {followUp && <p className="muted">{t.followUpRead(followUp.fileName, followUp.lines.length, followUp.cancelled)}</p>}
-      {database && <p className="muted">{t.databaseRead(database.fileName, database.products.length)}</p>}
-      {manufacturerList && <p className="muted">{t.manufacturerRead(manufacturerList.fileName, manufacturerList.manufacturers.length)}</p>}
+      {!reference && !referenceFailed && <p role="status">{t.referenceLoading}</p>}
+      {referenceFailed && <p className="notice error" role="alert">{t.referenceError}</p>}
+      {database && <p className="muted">{t.databaseRead(database.fileName, database.products.length,
+        formatUsDateTime(database.loadedAt), database.loadedBy)}</p>}
+      {manufacturerList && <p className="muted">{t.manufacturerRead(manufacturerList.fileName,
+        manufacturerList.manufacturers.length, formatUsDateTime(manufacturerList.loadedAt), manufacturerList.loadedBy)}</p>}
       {draft && followUp && importers.length === 0 && <p className="notice error" role="alert">{t.noImporter}</p>}
       {draft && followUp && importers.length > 1 && <label className="invoice-audit-importer">{t.importer}
         <select value={importer} onChange={event => { setImporterChoice(event.target.value); resetDecisions(); }}>
@@ -401,10 +395,10 @@ type AuditInput = {
   pricePoints: Map<number, InvoiceLinePricePoint>; priceChoices: Record<number, InvoicePriceChoice>;
   supplierMismatches: string[]; divergences: ReturnType<typeof invoicePackingDivergences>;
   packingChoices: Record<string, InvoicePackingChoice>; corrections: ReturnType<typeof invoiceLineCorrections>;
-  changedCells: ReturnType<typeof invoiceChangedCells>; database: ProductDatabase | null;
+  changedCells: ReturnType<typeof invoiceChangedCells>; database: AuditReference["productDatabase"];
   catalogPoints: InvoiceCatalogPoint[];
   catalogMissing: InvoiceCatalogMissing[]; missingDecisions: Record<number, InvoiceQuantityDecision>;
-  manufacturerList: ManufacturerList | null; manufacturerChecks: InvoiceManufacturerCheck[];
+  manufacturerList: AuditReference["manufacturerList"]; manufacturerChecks: InvoiceManufacturerCheck[];
   addressChoices: Record<number, string>; countryChoices: Record<number, InvoiceCountryChoice>;
   manufacturerMissing: Record<number, InvoiceQuantityDecision>; origin: { missing: string[]; corrected: string | null };
 };
@@ -501,9 +495,11 @@ function auditSheet(m: Messages, input: AuditInput) {
   rows.sort((left, right) => (Number(left[0]) || Number.MAX_SAFE_INTEGER) - (Number(right[0]) || Number.MAX_SAFE_INTEGER));
   return { sheetName: auditSheetName, columns: s.columns, rows, summary: [
     [s.invoice, `${draft.fileName} (SHA-256 ${draft.fileSha256})`], [s.followUp, `${input.followUp.fileName} (SHA-256 ${input.followUp.fileSha256})`],
-    [s.database, input.database ? `${input.database.fileName} (SHA-256 ${input.database.fileSha256})` : s.noDatabase],
-    [s.manufacturerList, input.manufacturerList
-      ? `${input.manufacturerList.fileName} (SHA-256 ${input.manufacturerList.fileSha256})` : s.noManufacturerList],
+    [s.database, input.database ? s.referenceLoad(input.database.fileName, input.database.fileSha256,
+      formatUsDateTime(input.database.loadedAt), input.database.loadedBy) : s.noDatabase],
+    [s.manufacturerList, input.manufacturerList ? s.referenceLoad(input.manufacturerList.fileName,
+      input.manufacturerList.fileSha256, formatUsDateTime(input.manufacturerList.loadedAt), input.manufacturerList.loadedBy)
+      : s.noManufacturerList],
     [s.ipRef, draft.ipNumber], [s.sameIps, input.sameIps.join(", ") || "—"], [s.importer, input.importer],
     [s.date, new Date().toISOString()], [s.user, input.user], [s.note, s.noteText],
   ] as [string, string][] };
