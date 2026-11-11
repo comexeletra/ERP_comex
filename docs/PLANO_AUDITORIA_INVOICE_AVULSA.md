@@ -369,3 +369,24 @@ Pedido do usuário (2026-11-11): o analista não deve carregar quatro arquivos a
 4. **Página de auditoria:** lendo a referência da API, sem os dois botões.
 5. **Verificação completa e publicação:** commit, push, Preview e release da API no HML.
 6. **Carga real no HML:** ensaio com ROLLBACK, carga pela tela, cadastro dos NCMs, conferência e ensaio das invoices.
+
+### Resultado (etapa 1f, até a publicação)
+
+- **API:** `apps/api/src/reference-loads.ts`, com a prévia, a gravação, a leitura da referência e os NCMs pendentes. A permissão é `reference-loads.manage` (Master e Administrador). Os comandos em lote têm os parâmetros com tipo explícito, para evitar o `42P08` da gravação da invoice.
+- **Web:**
+  - tela `components/ReferenceLoadsPanel.tsx` em `/catalog/reference-loads`;
+  - payload em `lib/reference-loads.ts`, a mesma função usada pelo teste de contrato da API;
+  - página de auditoria só com a invoice e o Follow Up.
+- **Testes:**
+  - API: 13 testes novos em `test/reference-loads.test.mjs`;
+  - web: 5 testes em `test/reference-loads.test.mjs` e os da página ajustados à etapa 1f.
+- **Paridade com as planilhas:** as linhas que a carga guarda, depois de passarem pelo JSON, são iguais à leitura das planilhas, e a auditoria da IPH037A e da IPH034B dá o mesmo resultado com elas. O resultado inclui pontos de NCM e descrição, fabricante por endereço e por nome, parecidos e correções.
+- **Ensaio no HML com ROLLBACK** (`deploy/hostinger/rehearse-reference-load.mjs`, release `f7cfbb8`, M082 aplicada):
+  - as 486 e 575 linhas guardadas, relidas na mesma transação, ficaram idênticas às enviadas;
+  - na DATABASE, 478 produtos atualizados (426 descrições, 415 NCMs preenchidos, 20 trocados), 4 criados e 4 sem mudança;
+  - na lista, 540 fornecedores com endereço e país, 18 criados e 17 linhas sem `EX`;
+  - os 15 NCMs pendentes estão vigentes no catálogo oficial.
+- **Falta:**
+  - a carga real pela tela;
+  - o cadastro dos 15 NCMs;
+  - a releitura da referência do HML (`invoices_tests/reference-hml.json`) para o teste de paridade com o banco.
