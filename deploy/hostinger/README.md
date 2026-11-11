@@ -1,5 +1,28 @@
 # API ERP na VPS Hostinger
 
+## Cargas da DATABASE e da lista de fabricantes (M082) no HML (2026-11-11)
+
+Os commits `e587341` (API), `127ac44` (web) e `f7cfbb8` (ensaio) fazem a etapa 1f de `docs/PLANO_AUDITORIA_INVOICE_AVULSA.md`. Master e Administrador carregam a DATABASE e a lista de fabricantes em Cadastros > Cargas de referência, e cada carga faz duas coisas:
+- guarda as linhas da planilha, como o leitor da web as devolve, em `catalog.reference_product_row` e `catalog.reference_manufacturer_row`. A auditoria de invoice lê só essas linhas, nunca o cadastro;
+- enriquece o cadastro: descrição e NCM do produto, e endereço e país do fornecedor `EX`.
+
+O release `/opt/import-erp/apps/api/hml-release-f7cfbb8` (`git -c core.autocrlf=false archive f7cfbb8:apps/api`, SHA-256 `2be04ed7…7b79c`, nenhuma fonte com CR) reaproveita o `node_modules` de `hml-release-d488380` (lockfile igual).
+- **Testes no release:** passaram `reference-loads` (12; o contrato com a web rodou no repositório), `authorization` (14), `catalog.suppliers` (3), `catalog.products` (7), `catalog.history` (1), `web-route-contract` (1) e `api-error-response` (2).
+- **Backup antes da M082:** `/var/backups/import-erp/erp_po_totvs_hml_pre_m082_20261111T144607Z.dump` (473.642.371 bytes, SHA-256 `4c3c3579…6451`, 59 tabelas com dados).
+- **M082:** ensaiada com ROLLBACK e aplicada numa transação que recusa outro banco ou ledger diferente de 81, com checksum LF `d90a4c03…db81`. Ledger 82/82; as entradas do cadastro ficaram iguais (contagem, versões e origem); o papel da aplicação tem `INSERT` e não tem `UPDATE` nas tabelas de carga.
+
+`rehearse-reference-load.mjs` (nesta pasta) executou a prévia e a gravação do `dist` contra o HML, com os payloads montados pelas funções da tela a partir das planilhas reais, `SET CONSTRAINTS ALL IMMEDIATE` e o `COMMIT` trocado por `ROLLBACK`. Antes de desfazer, ele relê na mesma transação as linhas guardadas.
+- **DATABASE (486 linhas):** 478 produtos atualizados (426 descrições, 415 NCMs preenchidos, 20 trocados), 4 criados e 4 sem mudança. Os 15 NCMs fora do cadastro estão vigentes no catálogo oficial. Linhas guardadas iguais às enviadas; 441 ms.
+- **Lista (575 linhas):** 540 fornecedores com endereço e país, 18 criados e 17 linhas sem `EX` fora do cadastro. 20 nomes diferem do cadastro e não foram alterados. Linhas guardadas iguais às enviadas; 184 ms.
+- **Contagens:** iguais antes e depois do ensaio, sem nada gravado.
+
+Ativação e reversão:
+- **Ativação:** pelo drop-in de 78 `z` `…-release-f7cfbb8.conf`; o worker foi movido com `enable-homologation-export-worker.sh f7cfbb8`. Drop-ins anteriores: `/var/backups/import-erp/hml-reference-loads-f7cfbb8-predeploy`.
+- **Conferência depois de ativar:** `/health/live` 200, `GET /api/v1/reference-loads/audit-reference` sem sessão 401, RSS 140 MB.
+- **Rollback somente do código:** remova o drop-in `f7cfbb8`, execute `systemctl daemon-reload`, reinicie `import-erp-hml-api` (volta a `hml-release-d488380`, compatível com a M082) e rode `enable-homologation-export-worker.sh d488380`.
+
+Script, payloads e log em `/root/claude-release-f7cfbb8`. Produção, `main` e as variáveis da Vercel não foram alteradas.
+
 ## Diferença de preço da invoice em % e tolerância de 20% no HML (2026-11-10)
 
 Os commits `8b5701b` (web) e `04acff6` (API) mostram no ponto "Preço" da revisão da invoice a diferença do preço da invoice sobre o da PO, em %, e se ela está dentro da tolerância de 20% (inclusiva, em decimal exato). Toda diferença continua pedindo o aceite do analista (decisão do usuário); a recusa da API cita a %, e a auditoria da alocação grava `priceDifferencePercent` e `priceWithinTolerance` ao lado de `confirmedPriceMismatch` (`docs/PLANO_INVOICE_TOLERANCIA_PRECO.md`). Não há migration.
