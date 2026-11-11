@@ -239,7 +239,7 @@ Regras:
 
   Palavras comuns (CO, LTD, CHINA, ROAD...) não contam, e o mínimo é 0,6.
 - **Busca:** o analista também pode digitar parte do nome, do endereço ou do código TOTVS (`invoiceManufacturerSearch`, mínimo de 3 letras ou números, até 10 resultados).
-- **Escolha:** a entrada escolhida, parecida ou buscada, corrige a linha como a lista faz: endereço, nome quando difere de fato, e país divergente decidido pelo analista. Ela fica registrada na aba `AUDITORIA` como "Fabricante escolhido na lista (código)". Sem escolha, o fabricante continua sendo confirmado como fora da lista, com motivo.
+- **Escolha:** a entrada escolhida, parecida ou buscada, corrige o endereço e mantém o nome da invoice, como a analista fez (decisão do usuário, 2026-11-11). País divergente continua sendo decidido pelo analista. Ela fica registrada na aba `AUDITORIA` como "Fabricante escolhido na lista (código)". Sem escolha, o fabricante continua sendo confirmado como fora da lista, com motivo.
 - **PKL:** uma célula da PKL que é fórmula apontando para a INV mantém a fórmula, com o resultado corrigido, sem marcação.
 
 ### Resultado (etapa 1e)
@@ -247,4 +247,4 @@ Regras:
 Ensaio da IPH034B com a PO 030631 na linha 92 e EX000639 na linha 54:
 - **Iguais:** 102 das 103 correções da analista, agora incluindo F54. A PKL não difere mais.
 - **N92:** mesma PO; ela escreveu `PO 030631`, o sistema `PO030631`.
-- **E54:** o sistema grava o nome da lista (`Kangde`), e a analista manteve `Kant`.
+- **E54:** na primeira versão, o sistema gravava o nome da lista (`Kangde`), e a analista manteve `Kant`. Com a decisão do usuário, o nome da invoice é mantido. No novo ensaio, o sistema não faz nenhuma alteração que a analista não tenha feito.

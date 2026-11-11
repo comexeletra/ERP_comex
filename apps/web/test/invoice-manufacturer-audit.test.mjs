@@ -125,8 +125,9 @@ test("a manufacturer out of the list gets the similar entries, and the chosen on
   assert.equal(invoiceManufacturerPending([check], {}, {}, {}), 1);
   assert.equal(invoiceManufacturerPending([check], {}, {}, { 54: { confirmed: true, reason: "Fora da lista" } }), 0);
   assert.equal(invoiceManufacturerPending([check], { 54: "EX000639" }, {}, {}), 0);
+  // User decision (2026-11-11), as the analyst did: the chosen entry corrects the address and keeps the invoice name.
   assert.deepEqual(invoiceManufacturerCorrections([kant], [check], { 54: "EX000639" }, {}), { 54: {
-    manufacturerAddress: kangde[0].address, manufacturer: kangde[0].name } });
+    manufacturerAddress: kangde[0].address } });
   assert.deepEqual(invoiceManufacturerCorrections([kant], [check], { 54: "" }, {}), {});
 });
 

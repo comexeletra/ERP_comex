@@ -742,7 +742,10 @@ export function invoiceManufacturerCorrections(lines: readonly InvoiceManufactur
     const entry = check ? resolvedManufacturer(check, addressChoices) : null;
     const correction: Partial<Record<"manufacturer" | "manufacturerAddress" | "manufacturerCountry", string>> = {};
     if (entry?.address && entry.address !== line.manufacturerAddress.trim()) correction.manufacturerAddress = entry.address;
-    if (entry?.name && manufacturerKey(entry.name) !== manufacturerKey(line.manufacturer)) correction.manufacturer = entry.name;
+    // A similar or searched entry keeps the invoice name and corrects the address (user decision, 2026-11-11).
+    if (entry?.name && check?.status !== "MISSING" && manufacturerKey(entry.name) !== manufacturerKey(line.manufacturer)) {
+      correction.manufacturer = entry.name;
+    }
     const listCountry = check ? invoiceManufacturerCountryPoint(check, addressChoices) : null;
     const country = (listCountry && countryChoices[line.sourceRow]?.source === "LIST" ? listCountry : line.manufacturerCountry)
       .trim().toLocaleUpperCase("pt-BR");
