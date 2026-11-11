@@ -4,7 +4,7 @@
 |---|---|
 | Data | 2026-11-10 |
 | Branch de trabalho | `homologacao` |
-| Status | Etapa 1 aprovada e implementada (2026-11-10); conferência na tela pendente |
+| Status | Etapas 1 a 1e implementadas; etapa 1f (DATABASE e fabricantes por carga) aprovada em 2026-11-11, em implementação |
 
 ## Objetivo
 
@@ -248,3 +248,124 @@ Ensaio da IPH034B com a PO 030631 na linha 92 e EX000639 na linha 54:
 - **Iguais:** 102 das 103 correções da analista, agora incluindo F54. A PKL não difere mais.
 - **N92:** mesma PO; ela escreveu `PO 030631`, o sistema `PO030631`.
 - **E54:** na primeira versão, o sistema gravava o nome da lista (`Kangde`), e a analista manteve `Kant`. Com a decisão do usuário, o nome da invoice é mantido. No novo ensaio, o sistema não faz nenhuma alteração que a analista não tenha feito.
+
+## Etapa 1f: DATABASE e lista de fabricantes no cadastro
+
+Pedido do usuário (2026-11-11): o analista não deve carregar quatro arquivos a cada auditoria. A DATABASE e a lista de fabricantes passam a atualizar o cadastro do sistema por carga, e a página de auditoria fica só com a invoice e o Follow Up.
+
+### Conferência no HML (2026-11-11, só leitura, `erp_po_totvs_hml`)
+
+- **Produtos:** 1.899 produtos globais, sem código repetido.
+  - Dos 486 códigos da DATABASE, 482 existem e 4 não existem.
+  - A descrição do cadastro (`catalog.entry.name`) é o mesmo texto da DATABASE: em 421 produtos só a caixa e a acentuação diferem, com acentos estragados no cadastro (`RESISTeNCIA ELeTRICA`).
+  - NCM dos 482: 415 sem NCM no cadastro, 47 iguais e 20 diferentes.
+  - 72 descrições têm mais de 240 caracteres; o limite do produto é 2.000 (M048).
+  - 1.417 produtos estão fora da DATABASE e não são tocados.
+- **NCMs:** 15 dos 99 NCMs da DATABASE não estão cadastrados como NCM.
+- **Fabricantes:** o fabricante é um fornecedor do Protheus, com código `EX…`.
+  - Dos 575 da lista, 558 têm código `EX`, e 540 deles já são fornecedores no cadastro.
+  - 18 têm código `EX` ausente do cadastro.
+  - 14 têm código provisório numérico (`2026110731`…), e 3 estão marcados `CADASTRAR`.
+
+### Decisões do usuário (2026-11-11)
+
+1. As planilhas são a carga que atualiza o cadastro para essas duas entidades, por "de-para" pelo código. Não haverá tabela com cópia dos dados.
+2. Só Master e Administrador carregam.
+3. A página de auditoria fica só com os botões da invoice e do Follow Up, sem arquivo avulso de referência.
+4. Primeira carga com `DATABASE - Renew.xlsx` e `TOTVS-HEXING -LIST MANUFACTURER - Ultima Versão!!!.xlsx` (`invoices_tests/`, fora do Git).
+5. Os 18 fabricantes com `EX` fora do cadastro viram fornecedores novos. As 17 linhas sem `EX` não entram no cadastro e são listadas na prévia; na auditoria elas continuam valendo (decisão 9).
+6. A lista grava só endereço e país no fornecedor. O nome do fornecedor não muda, e a prévia lista os nomes diferentes.
+7. A planilha manda nesses campos: uma correção manual no sistema é desfeita pela carga seguinte.
+8. Os NCMs da DATABASE que não estão cadastrados são cadastrados pelo catálogo oficial, na mesma tela.
+9. **Revisão (2026-11-11, na aprovação):** a auditoria da invoice vem da carga real das planilhas, guardada separadamente no banco. A mesma carga enriquece as entidades do sistema, mas a auditoria não lê o cadastro. A paridade com a auditoria das analistas tem de ser mantida.
+   - **Por que importa:** no HML, 21 dos 540 fornecedores têm nome diferente do da lista. A auditoria grava o nome da lista na invoice quando ele difere, e uma referência lida do cadastro gravaria outro nome. Uma correção manual no cadastro também mudaria a auditoria.
+   - **Linhas sem `EX`:** a cópia da lista guarda as 575 linhas, inclusive as 17 sem código `EX`, como a página usa hoje. Só o enriquecimento do cadastro ignora essas linhas. Tirar essas linhas não mudava nada nas IPH037A e IPH034B (0 diferenças em 62 e 91 linhas), mas guardar a lista inteira mantém o comportamento atual em qualquer invoice.
+
+### Requisitos
+
+1. **Migration M082 (aplicada só no HML):**
+   - `catalog.reference_load`: id, tipo (`PRODUCT_DATABASE` ou `MANUFACTURER_LIST`), nome do arquivo, SHA-256, contagens e itens ignorados (`jsonb`), autor e data.
+   - **Referência da auditoria, separada do cadastro:**
+     - `catalog.reference_product_row`: carga, linha, código, descrição e NCM;
+     - `catalog.reference_manufacturer_row`: carga, linha, nome, endereço, país e código TOTVS.
+
+     Cada carga guarda as linhas como o leitor da planilha as devolve, e as cargas anteriores ficam guardadas.
+   - Em `catalog.entry`:
+     - `supplier_address` e `supplier_country`, só para `SUPPLIER`;
+     - a origem `REFERENCE_LOAD` em `provenance`, para os cadastros criados pela carga.
+   - Permissões para o papel da aplicação HML.
+2. **Carga da DATABASE**, pelo código, sem diferenciar maiúsculas:
+   - **Produto existente:** `name` passa a ser a descrição da DATABASE e `product_ncm_code` o NCM da DATABASE, com zeros à esquerda até 8 dígitos.
+   - **Produto ausente:** é criado como produto global ativo.
+   - **Registro:** cada campo alterado entra em `audit.audit_log`, como nas demais edições do cadastro, com a carga no motivo.
+   - **Produtos fora da planilha:** não são alterados.
+   - **Linha recusada:** sem código, com descrição vazia ou com NCM sem 8 dígitos. A carga não grava nada enquanto houver linha recusada, e a prévia mostra quais são.
+3. **Carga da lista de fabricantes**, pelo código TOTVS:
+   - **Fornecedor existente:** recebe endereço e país.
+   - **Código `EX` fora do cadastro:** vira fornecedor novo, com o nome da lista.
+   - **Linha sem `EX`:** fica fora, listada na prévia e registrada na carga.
+   - **Nome diferente do cadastro:** aparece na prévia e não é alterado.
+4. **Prévia antes de gravar:**
+   - **Leitura:** o navegador lê a planilha com `parseProductDatabaseXlsx` ou `parseManufacturerListXlsx` e envia só as linhas e o SHA-256 do arquivo; a planilha não é enviada.
+   - **Contagens e confirmação:** a API devolve as contagens (atualizados, criados, sem mudança, NCMs trocados, linhas ignoradas, nomes diferentes), e a pessoa confirma.
+   - **Gravação:** a API recalcula tudo na gravação, sem confiar na prévia, e grava numa transação com chave de idempotência. Recarregar o mesmo arquivo não altera nada.
+5. **NCMs não cadastrados:**
+   - **Classificação:** a prévia da DATABASE classifica os NCMs que não estão cadastrados como "no catálogo oficial vigente", "fora do catálogo" ou "não vigente". A consulta lê só os códigos necessários de `catalog.ncm_official_item`, sem carregar o catálogo inteiro.
+   - **Cadastro:** um botão cadastra os do catálogo oficial pela rota existente `POST /api/v1/ncms/import-official`, um código por vez, só para códigos encontrados no catálogo gravado. Assim a rota nunca baixa o catálogo oficial.
+   - **Fora do catálogo ou não vigentes:** ficam listados para correção na DATABASE.
+6. **Permissão:** nova `reference-loads.manage`, só para Master e Administrador. Os demais perfis recebem 403 nas rotas de carga.
+7. **Tela "Cargas de referência"**, no menu de cadastros, só para Master e Administrador:
+   - um bloco por planilha, com a última carga (arquivo, data e autor), a escolha do arquivo, a prévia e a confirmação;
+   - na DATABASE, a lista de NCMs não cadastrados com o botão de cadastro.
+8. **Página de auditoria:**
+   - **Arquivos:** ficam só a invoice e o Follow Up.
+   - **Referência:** vem de uma rota de leitura (`catalog.read`) com as linhas guardadas da última carga de cada tipo. A rota devolve o mesmo formato do leitor da planilha (`ProductDatabase` e `ManufacturerList`, com a linha de origem), sem consultar o cadastro.
+   - **Regras:** as de NCM, descrição, endereço e país não mudam.
+   - **Na tela e na aba `AUDITORIA`:** a versão usada (arquivo, SHA-256, data e autor da carga) no lugar do arquivo selecionado.
+   - **Sem carga:** a página avisa e segue sem conferir, como hoje sem arquivo.
+9. Textos nos três dicionários, regras de layout e `Tooltip` do projeto.
+
+### Restrições
+
+- A carga e a migration rodam só no HML. Produção, `main` e as variáveis da Vercel não são alterados.
+- A invoice e o Follow Up continuam só no navegador.
+- O corpo das rotas de carga fica abaixo de 1 MB (`bodyLimit`); a DATABASE real tem cerca de 150 KB de linhas.
+- A carga não altera POs, IPs, itens de PO nem os campos de fabricante do produto (M060).
+- Os testes da API usam banco falso. Antes da carga real, a gravação é ensaiada contra o HML com `ROLLBACK` e `SET CONSTRAINTS ALL IMMEDIATE`, com o payload montado pelas funções da tela.
+
+### Critérios de aceite
+
+| # | Critério | Teste |
+|---|---|---|
+| 1 | Carga da DATABASE: atualiza descrição e NCM, cria produto ausente, não toca produto fora da planilha, recusa linha inválida sem gravar nada, registra cada campo no histórico e não altera nada ao repetir o arquivo | API (banco falso) + ensaio HML com ROLLBACK |
+| 2 | Carga da lista: endereço e país no fornecedor pelo código, fornecedor novo para `EX` ausente, linha sem `EX` ignorada e listada, nome não alterado | API + ensaio HML |
+| 3 | Master e Administrador carregam; Importação, Compras e Fiscal recebem 403 | API |
+| 4 | Contrato web × API: o payload da tela passa no schema `.strict()` da API | API (importa a função da web, no repositório) |
+| 5 | Prévia dos NCMs: classifica pelo catálogo gravado sem carregar o catálogo inteiro; o cadastro usa só códigos encontrados | API |
+| 6 | Carga real no HML: 482 produtos atualizados e 4 criados, NCMs preenchidos e trocados conforme a prévia, 540 fornecedores atualizados e 18 criados, 17 linhas ignoradas; os 15 NCMs cadastrados ou listados com o motivo | conferência no HML depois do commit |
+| 7 | Auditoria sem os botões da DATABASE e da lista, com a referência da API; a referência lida do HML depois da carga é igual, linha a linha, à leitura das planilhas; IPH037A e IPH034B reproduzem os resultados das etapas 1b a 1e com ela | web + ensaio com arquivos locais e com a referência lida do HML |
+| 8 | Textos nos três idiomas; suítes, lint, type-check e build; API HML com a versão nova; Preview `Ready` | web + API + VPS |
+
+### Fora do escopo
+
+- Carga em produção.
+- Mudar o nome do fornecedor pela lista.
+- Cadastrar fornecedor para as linhas sem `EX`.
+- Editar produto ou fabricante numa tela própria de referência.
+- Carga automática ou periódica.
+- Ligar o fabricante ao produto.
+- Tabela do Follow Up (etapa 2).
+
+### Riscos
+
+- **Correção manual:** uma correção feita no cadastro volta ao valor da planilha na carga seguinte (decisão 7). Ela não afeta a auditoria, que lê só as linhas da carga.
+- **Planilha desatualizada:** a auditoria vale o que a última carga diz. A página mostra a data e o arquivo da carga usada.
+
+### Plano
+
+1. **M082** e ensaio da migration no HML.
+2. **Testes e rotas da API:** prévia, gravação, permissão, leitura da referência e classificação dos NCMs.
+3. **Testes e tela de carga:** payload compartilhado com o teste de contrato.
+4. **Página de auditoria:** lendo a referência da API, sem os dois botões.
+5. **Verificação completa e publicação:** commit, push, Preview e release da API no HML.
+6. **Carga real no HML:** ensaio com ROLLBACK, carga pela tela, cadastro dos NCMs, conferência e ensaio das invoices.
