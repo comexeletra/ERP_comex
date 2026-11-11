@@ -386,10 +386,14 @@ Pedido do usuário (2026-11-11): o analista não deve carregar quatro arquivos a
   - na DATABASE, 478 produtos atualizados (426 descrições, 415 NCMs preenchidos, 20 trocados), 4 criados e 4 sem mudança;
   - na lista, 540 fornecedores com endereço e país, 18 criados e 17 linhas sem `EX`;
   - os 15 NCMs pendentes estão vigentes no catálogo oficial.
-- **Falta:**
-  - a carga real pela tela;
-  - o cadastro dos 15 NCMs;
-  - a releitura da referência do HML (`invoices_tests/reference-hml.json`) para o teste de paridade com o banco.
+- **Carga real pela tela (2026-11-11, Francisco Matheus):** DATABASE às 13:17 e lista às 13:18, horário de Brasília, com os mesmos arquivos do ensaio (SHA-256 `be147ebe…` e `12c03ed2…`).
+  - **Produtos:** os 486 da DATABASE ficaram com descrição e NCM iguais aos da planilha; 4 foram criados.
+  - **Fornecedores:** 18 criados; 558 com endereço e país.
+  - **NCMs:** os 15 pendentes foram cadastrados pelo catálogo oficial, e não sobrou nenhum.
+- **Paridade com o banco:** a referência relida do HML (`export-audit-reference.mjs`, em `invoices_tests/reference-hml.json`, fora do Git) é igual às planilhas linha a linha. A auditoria da IPH037A e da IPH034B dá o mesmo resultado com ela (`test/reference-loads.test.mjs`, 5/5).
+- **Paridade da IPH034B com a analista:** com as cargas, ela foi medida pela simulação com as funções da página.
+  - Conteúdo: 100% (104 de 104 correções, nenhuma a mais).
+  - Exata: 95,2% (99 de 104). As outras 5 diferem só por espaço ou quebra de linha no fim do texto (D31, D32, D89, D90) ou pela grafia `PO 030631` × `PO030631` (N92).
 
 ## Etapa 1g: decisões em massa
 

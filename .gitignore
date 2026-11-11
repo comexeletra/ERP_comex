@@ -26,3 +26,6 @@ __pycache__/
 
 # Local services
 data/local/
+
+# Audit reference read back from HML for the parity test (stage 1f); local data, never in Git.
+invoices_tests/*.json
