@@ -129,6 +129,11 @@
 .invoice-catalog { display: grid; gap: 8px; }
 .invoice-catalog h3, .invoice-catalog > p { margin: 0; }
 .invoice-catalog-table td { overflow-wrap: anywhere; }
+/* Bulk decisions at the top of the invoice audit (stage 1g) */
+.invoice-bulk { border: 1px solid var(--color-border); border-radius: var(--radius-md); display: grid; gap: 8px; padding: 12px 14px; }
+.invoice-bulk h3, .invoice-bulk > p { margin: 0; }
+.invoice-bulk-groups { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.invoice-bulk-groups li { align-items: center; display: flex; flex-wrap: wrap; gap: 6px 12px; justify-content: space-between; }
 .invoice-manufacturer-candidates { align-items: flex-start; flex-direction: column; }
 .invoice-po-summary-over td { background: var(--color-danger-bg); color: var(--color-danger-text); font-weight: 700; }
 /* Invoice audit points: one checklist per destination, pending in red and confirmed in green */

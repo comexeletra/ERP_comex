@@ -390,3 +390,57 @@ Pedido do usuário (2026-11-11): o analista não deve carregar quatro arquivos a
   - a carga real pela tela;
   - o cadastro dos 15 NCMs;
   - a releitura da referência do HML (`invoices_tests/reference-hml.json`) para o teste de paridade com o banco.
+
+## Etapa 1g: decisões em massa
+
+Pedido do usuário (2026-11-11): uma opção no topo da página para decidir de uma vez todos os pontos de um tipo, por exemplo "Aceitar o preço da invoice (todos)" e "Corrigir para o preço da PO (todos)".
+
+Decisões do usuário (2026-11-11):
+
+1. Todos os tipos que admitem uma decisão comum entram no painel.
+2. A ação em massa só preenche os pontos sem decisão. Um ponto em que o analista já escolheu uma opção não é alterado.
+3. "Corrigir para o preço da PO (todos)" deixa pendentes os pontos sem um único preço de PO em CNY, e o painel avisa quantos ficaram.
+
+### Requisitos
+
+1. **Painel "Decisões em massa"** no topo da auditoria, depois da leitura dos arquivos. Ele aparece quando há algum ponto pendente de um dos tipos abaixo e mostra, por tipo, quantos estão sem decisão.
+
+   | Tipo | Ações | Motivo |
+   |---|---|---|
+   | Preço da invoice × PO | aceitar o preço da invoice (todos) / corrigir para o preço da PO (todos) | não |
+   | Pesos INV × PKL | manter a INV (todas) / usar a PKL (todas) | sim |
+   | Quantidade diferente ou código fora da PO | confirmar (todas) | sim |
+   | Fornecedor do Exporter | confirmar (todos) | não |
+   | Produto fora da DATABASE | confirmar (todos) | sim |
+   | País do fabricante diferente da lista | manter a invoice (todos) / usar a lista (todos) | sim |
+   | Fabricante fora da lista | confirmar (todos) | sim |
+
+2. **Motivo:** um campo de motivo no painel vale para as ações que pedem motivo, com o mesmo mínimo de 3 caracteres. Sem ele, essas ações ficam desabilitadas.
+3. **Sem decisão:**
+   - preço sem escolha;
+   - pesos ou país sem opção escolhida;
+   - quantidade, produto, fabricante ou fornecedor não confirmados.
+
+   Uma confirmação que ainda não estava marcada mantém o motivo já digitado na linha; o motivo do painel só entra quando a linha não tem motivo.
+4. **Não decidem e ficam pendentes:**
+   - "Usar a PKL" em linha que não está nas duas abas;
+   - "Corrigir para o preço da PO" sem um único preço de PO;
+   - código fora da PO com quantidade destinada diferente de 0, que se resolve destinando 0 ou trocando a PO.
+
+   O painel diz quantos sobraram e por quê.
+5. **Fora do painel:** a escolha entre vários endereços da lista, a PO sugerida, a escolha de um fabricante parecido e a falta de saldo, porque cada uma tem opções próprias da linha.
+6. **Depois da ação:** o analista continua podendo mudar ponto a ponto. A aba `AUDITORIA` registra cada ponto com a decisão e o motivo, como hoje.
+7. **Textos e layout:** nos três idiomas, com as regras de layout do projeto.
+
+### Critérios de aceite
+
+| # | Critério | Teste |
+|---|---|---|
+| 1 | Cada ação preenche só os pontos sem decisão e não altera os já decididos | web (`lib/`) |
+| 2 | Corrigir o preço deixa pendentes os pontos sem preço único; usar a PKL deixa pendentes as linhas fora de uma das abas; as contagens de pendentes saem certas | web (`lib/`) |
+| 3 | As ações com motivo ficam desabilitadas sem motivo; o painel está no topo da página e usa as funções de `lib/` | web |
+| 4 | Textos nos três idiomas; classes com regra; suítes, lint, type-check e build; Preview `Ready` | web |
+
+### Fora do escopo
+
+API, banco e release na VPS (nada muda fora da página); decisões em massa na tela de IP.

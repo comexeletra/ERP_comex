@@ -13,12 +13,15 @@ import { classifyInvoiceDestination, distributeInvoiceParts, invoiceAssignmentsF
 import { followUpCandidates, followUpImporters, followUpPoSuggestions, followUpSameIps, parseFollowUpXlsx,
   type FollowUpCandidate, type FollowUpWorkbook } from "../lib/audit-reference-xlsx";
 import type { AuditReference } from "../lib/reference-loads";
+import { bulkConfirmations, bulkFlags, bulkPriceChoices, bulkSourceChoices, pendingConfirmations, pendingFlags, pendingPrices,
+  pendingSources } from "../lib/invoice-bulk-decisions";
 import { invoiceChangedCells, invoiceCorrectedTotals, invoiceLineCorrections, writeCorrectedInvoice } from "../lib/invoice-correction-xlsx";
 import { formatUsDateTime } from "../lib/date-format";
 import { formatDecimal, formatNumber, formatPercentChange } from "../lib/format-number";
 import type { Messages } from "../lib/i18n/pt-BR";
 import { getMessages, useI18n } from "./I18nProvider";
 import FilePickerField from "./FilePickerField";
+import InvoiceBulkDecisions, { type BulkGroup } from "./InvoiceBulkDecisions";
 import InvoiceConference from "./InvoiceConference";
 import InvoiceManufacturerAudit from "./InvoiceManufacturerAudit";
 import PageHeader from "./PageHeader";
@@ -155,7 +158,63 @@ export default function InvoiceAuditWorkbench() {
     + catalog.missing.filter(entry => !invoiceQuantityDecisionReady(missingDecisions[entry.sourceRow] ?? noDecision)).length
     + invoiceManufacturerPending(manufacturerChecks, addressChoices, countryChoices, manufacturerMissing);
   const canDownload = ready && pending === 0 && rows.some(row => row.allocations.length > 0);
+  const bulkGroups = bulkDecisionGroups();
   const sameIps = ready ? followUpSameIps(followUp!.lines, draft!.ipNumber) : [];
+
+  /** Stage 1g: every kind of point that one decision can settle, with the points still without a decision. */
+  function bulkDecisionGroups(): BulkGroup[] {
+    const prices = [...pricePoints].map(([row, point]) => [row, point] as const);
+    const packingKeys = divergences.map(divergence => divergence.key);
+    const quantityRows = [...new Set(rows.filter(row => row.points.some(point => point.confirmed === false))
+      .map(row => row.part.sourceRow))];
+    // A code out of the PO is settled only by destining 0; confirming alone leaves it pending.
+    const quantitySettles = (sourceRow: number) => rows.filter(row => row.part.sourceRow === sourceRow).every(row =>
+      !row.points.some(point => point.kind === "CODE")
+      || invoiceCodePoint(row.part.productCode, false, row.part.quantity, { confirmed: true, reason: "bulk" })?.confirmed === true);
+    const countryRows = manufacturerChecks.filter(check => invoiceManufacturerCountryPoint(check, addressChoices))
+      .map(check => check.sourceRow);
+    const missingManufacturers = manufacturerChecks.filter(check => check.status === "MISSING"
+      && !check.candidates.some(entry => invoiceManufacturerId(entry) === addressChoices[check.sourceRow]))
+      .map(check => check.sourceRow);
+    const catalogRows = catalog.missing.map(entry => entry.sourceRow);
+    const apply = <T,>(outcome: { next: T; applied: number; left: number }, set: (next: T) => void) => {
+      set(outcome.next); return { applied: outcome.applied, left: outcome.left };
+    };
+    return [
+      { id: "price", pending: pendingPrices(prices, priceChoices).length, actions: [
+        { id: "acceptPrice", needsReason: false, run: () => apply(bulkPriceChoices(prices, priceChoices, "ACCEPT"), setPriceChoices) },
+        { id: "correctPrice", needsReason: false, run: () => apply(bulkPriceChoices(prices, priceChoices, "CORRECT"), setPriceChoices) },
+      ] },
+      { id: "packing", pending: pendingSources(packingKeys, packingChoices).length, actions: [
+        { id: "keepInvoice", needsReason: true, run: reason =>
+          apply(bulkSourceChoices(packingKeys, packingChoices, "INVOICE", reason), next => setPackingChoices(next as typeof packingChoices)) },
+        { id: "usePacking", needsReason: true, run: reason => apply(bulkSourceChoices(packingKeys, packingChoices, "PACKING", reason,
+          key => divergences.some(divergence => divergence.key === key && divergence.invoice && divergence.packing)),
+        next => setPackingChoices(next as typeof packingChoices)) },
+      ] },
+      { id: "quantity", pending: pendingConfirmations(quantityRows, quantityDecisions).length, actions: [
+        { id: "confirmQuantity", needsReason: true, run: reason => apply(bulkConfirmations(quantityRows, quantityDecisions, reason,
+          quantitySettles), next => setQuantityDecisions(next as typeof quantityDecisions)) },
+      ] },
+      { id: "supplier", pending: pendingFlags(supplierMismatches, supplierConfirmed).length, actions: [
+        { id: "confirmSupplier", needsReason: false, run: () => apply(bulkFlags(supplierMismatches, supplierConfirmed), setSupplierConfirmed) },
+      ] },
+      { id: "catalog", pending: pendingConfirmations(catalogRows, missingDecisions).length, actions: [
+        { id: "confirmCatalog", needsReason: true, run: reason => apply(bulkConfirmations(catalogRows, missingDecisions, reason),
+          next => setMissingDecisions(next as typeof missingDecisions)) },
+      ] },
+      { id: "country", pending: pendingSources(countryRows, countryChoices).length, actions: [
+        { id: "keepInvoiceCountry", needsReason: true, run: reason => apply(bulkSourceChoices(countryRows, countryChoices, "INVOICE", reason),
+          next => setCountryChoices(next as typeof countryChoices)) },
+        { id: "useListCountry", needsReason: true, run: reason => apply(bulkSourceChoices(countryRows, countryChoices, "LIST", reason),
+          next => setCountryChoices(next as typeof countryChoices)) },
+      ] },
+      { id: "manufacturer", pending: pendingConfirmations(missingManufacturers, manufacturerMissing).length, actions: [
+        { id: "confirmManufacturer", needsReason: true, run: reason => apply(bulkConfirmations(missingManufacturers, manufacturerMissing,
+          reason), next => setManufacturerMissing(next as typeof manufacturerMissing)) },
+      ] },
+    ];
+  }
 
   async function download() {
     if (!invoice || !followUp || !canDownload) return;
@@ -222,6 +281,7 @@ export default function InvoiceAuditWorkbench() {
         <p className="muted">{t.importerShown(importer, draft!.importerCnpj || t.notIdentified)}</p>
         <p className="muted">{sameIps.length ? t.sameIps(sameIps.join(", ")) : t.noSameIp}</p>
         {draft!.warnings.map(warning => <p className="notice warning" key={warning}>{warning}</p>)}
+        <InvoiceBulkDecisions key={draft!.fileSha256} t={t.bulk} groups={bulkGroups} />
         <InvoiceConference draft={draft!} divergences={divergences} decisions={{}} onDecision={() => undefined}
           valueParts={rows.flatMap(row => row.allocations.map(allocation => ({ quantity: allocation.quantity,
             invoicePrice: row.line.unitPrice, poPrice: allocation.item.unitPrice, poCurrency: allocation.item.currency })))}
