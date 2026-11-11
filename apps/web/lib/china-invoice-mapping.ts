@@ -570,15 +570,17 @@ export function invoicePackingChoiceReady(divergence: InvoicePackingDivergence, 
 export type InvoiceCatalogField = "ncm" | "description";
 export type InvoiceCatalogPoint = { key: string; sourceRow: number; lineNumber: string; productCode: string;
   field: InvoiceCatalogField; invoiceValue: string; databaseValue: string; caseOnly: boolean };
-export type InvoiceCatalogMissing = { sourceRow: number; lineNumber: string; productCode: string };
+/** An NCM not found in the DATABASE: the product is out of it, or it has no NCM there (user decision, 2026-11-11). */
+export type InvoiceCatalogMissing = { sourceRow: number; lineNumber: string; productCode: string;
+  reason: "NOT_IN_DATABASE" | "NO_NCM" };
 
 const plainText = (value: string) => value.normalize("NFD").replace(/[̀-ͯ]/gu, "")
   .toLocaleUpperCase("en-US").replace(/\s+/gu, " ").trim();
 
 /**
  * The NCM (by its digits) and the description (after trimming) of each invoice line against the product DATABASE,
- * by product code, as the analysts check them (comparison of 2026-11-10). A product out of the DATABASE is listed
- * apart; a DATABASE row without NCM or description has nothing to compare.
+ * by product code, as the analysts check them (comparison of 2026-11-10). A product out of the DATABASE, or without NCM
+ * in it, is listed apart, because its NCM was not found; a DATABASE row without description has nothing to compare.
  */
 export function invoiceCatalogPoints(
   lines: readonly { sourceRow: number; lineNumber: string; productCode: string; ncm: string; description: string }[],
@@ -590,9 +592,10 @@ export function invoiceCatalogPoints(
   for (const line of lines) {
     const productCode = line.productCode.trim();
     const product = byCode.get(productCode.toLocaleUpperCase("en-US"));
-    if (!product) { missing.push({ sourceRow: line.sourceRow, lineNumber: line.lineNumber, productCode }); continue; }
     const base = { sourceRow: line.sourceRow, lineNumber: line.lineNumber, productCode };
-    if (product.ncm && line.ncm.replace(/\D/gu, "") !== product.ncm) {
+    if (!product) { missing.push({ ...base, reason: "NOT_IN_DATABASE" }); continue; }
+    if (!product.ncm) missing.push({ ...base, reason: "NO_NCM" });
+    else if (line.ncm.replace(/\D/gu, "") !== product.ncm) {
       points.push({ ...base, key: `${line.sourceRow}:ncm`, field: "ncm", invoiceValue: line.ncm.trim(),
         databaseValue: product.ncm, caseOnly: false });
     }
@@ -605,10 +608,15 @@ export function invoiceCatalogPoints(
   return { points, missing };
 }
 
-/** Only a product out of the DATABASE waits for the analyst: the confirmation that it was checked, with a reason. */
+/**
+ * Only an NCM not found in the DATABASE waits for the analyst: the invoice NCM is kept with a confirmation and a
+ * reason, or flagged in the file (`flagged`, user decision of 2026-11-11), which needs no reason.
+ */
 export function invoiceCatalogReady(missing: readonly InvoiceCatalogMissing[],
-  missingDecisions: Readonly<Record<number, InvoiceQuantityDecision>>): boolean {
-  return missing.every(entry => invoiceQuantityDecisionReady(missingDecisions[entry.sourceRow] ?? { confirmed: false, reason: "" }));
+  missingDecisions: Readonly<Record<number, InvoiceQuantityDecision>>,
+  flagged: Readonly<Partial<Record<number, boolean>>> = {}): boolean {
+  return missing.every(entry => flagged[entry.sourceRow]
+    || invoiceQuantityDecisionReady(missingDecisions[entry.sourceRow] ?? { confirmed: false, reason: "" }));
 }
 
 /** The DATABASE rules NCM and description without question (user decision, 2026-11-10): every divergence takes it. */

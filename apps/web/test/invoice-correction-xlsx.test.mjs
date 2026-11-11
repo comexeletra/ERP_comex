@@ -5,7 +5,8 @@ import test from "node:test";
 import { inflateRawSync } from "node:zlib";
 import ExcelJS from "exceljs";
 import { parseChinaInvoiceXlsx } from "../lib/china-invoice-xlsx.ts";
-import { invoiceChangedCells, invoiceCorrectedTotals, invoiceLineCorrections, invoicePackingCorrections,
+import { invoiceChangedCells, invoiceCorrectedTotals, invoiceLineCorrections, invoiceNcmFlagCells, invoiceNcmFlagColumn,
+  invoicePackingCorrections,
   writeCorrectedInvoice } from "../lib/invoice-correction-xlsx.ts";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
 
@@ -251,4 +252,33 @@ test("a PKL cell that is a formula pointing at the INV keeps the formula with th
   assert.deepEqual(pkl.getCell("C13").value, { formula: "INV!D16", result: "PART A (DATABASE)" });
   assert.equal(pkl.getCell("C13").fill?.fgColor?.argb, undefined);
   assert.equal(workbook.getWorksheet("INV").getCell("D16").value, "PART A (DATABASE)");
+});
+
+// User decision (2026-11-11): an NCM not found in the DATABASE (product out of it, or without NCM there) can be flagged
+// instead of kept: the NCM cell goes orange, its value unchanged, and column O of the line says why.
+test("a flagged NCM goes orange with the warning in column O and keeps its value", async () => {
+  const original = await invoiceBytes(workbook => { workbook.getWorksheet("INV").getCell("O17").value = "old helper"; });
+  const draft = await parse(original);
+  assert.equal(invoiceNcmFlagColumn(draft.layout), 15);
+  assert.deepEqual(invoiceNcmFlagCells(draft.layout, 16), ["B16", "O16"]);
+  const corrections = invoiceLineCorrections(draft.lines, parts, {}, {});
+  const written = await writeCorrectedInvoice(original, draft.layout, corrections, invoiceCorrectedTotals(corrections),
+    { sheetName: "AUDITORIA", summary: [], columns: ["Linha"], rows: [] }, value => `Valor original: ${value}`, draft.packingList,
+    null, { rows: [16, 17], text: ptBR.invoiceAudit.ncmFlagCell });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(written);
+  const inv = workbook.getWorksheet("INV");
+  assert.equal(inv.getCell("B16").value, "85423939");
+  assert.equal(inv.getCell("B16").fill.fgColor.argb, "FFFFC000");
+  assert.equal(inv.getCell("B16").note, undefined);
+  assert.equal(inv.getCell("O16").value, "NCM não encontrada na DATABASE");
+  assert.equal(inv.getCell("O16").fill.fgColor.argb, "FFFFC000");
+  // A cell that already had a value keeps it in a note.
+  assert.equal(inv.getCell("O17").value, "NCM não encontrada na DATABASE");
+  assert.match(JSON.stringify(inv.getCell("O17").note), /old helper/u);
+  assert.equal(inv.getCell("B18").fill?.fgColor?.argb, undefined);
+  assert.equal(inv.getCell("O18").value, null);
+  const reread = await parse(Buffer.from(written));
+  assert.deepEqual(reread.issues, []);
+  assert.equal(reread.lines.length, 3);
 });

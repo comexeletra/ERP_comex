@@ -448,3 +448,22 @@ Decisões do usuário (2026-11-11):
 ### Fora do escopo
 
 API, banco e release na VPS (nada muda fora da página); decisões em massa na tela de IP.
+
+## Etapa 1h: NCM não encontrada na DATABASE
+
+Pedido e decisões do usuário (2026-11-11): quando a NCM não é encontrada na DATABASE, o analista escolhe entre manter a NCM da invoice, como já acontecia, ou sinalizar a linha no arquivo.
+
+### Requisitos
+
+1. **NCM não encontrada:** o produto não está na DATABASE ou está nela sem NCM. Antes, o produto sem NCM na DATABASE não gerava ponto; a descrição dele continua conferida quando a DATABASE tem uma.
+2. **Manter a NCM da invoice:** a confirmação com motivo, como antes.
+3. **Sinalizar no arquivo:** não pede motivo.
+   - A célula NCM da linha na aba INV fica laranja, com o valor sem mudança e sem nota.
+   - A primeira coluna depois dos dados da INV (O, nas invoices da HEXING) recebe "NCM não encontrada na DATABASE", também em laranja. Se essa célula já tinha valor, ele vai para uma nota.
+   - A página mostra "A célula da coluna de NCM destacada indica que a NCM não foi encontrada no Database" e a linha pode ter a sinalização desfeita.
+4. **Decisões em massa:** o grupo "NCM não encontrada na DATABASE" tem "Manter a NCM da invoice (todos)", com motivo, e "Sinalizar a NCM não encontrada (todos)", sem motivo. Cada ação só pega as linhas sem nenhuma das duas decisões.
+5. **AUDITORIA:** a linha registra "Produto fora da DATABASE" ou "NCM vazia na DATABASE", a decisão ("NCM sinalizada" ou "Confirmado" com o motivo) e as células sinalizadas. A observação do resumo explica o laranja.
+
+### Resultado
+
+Na IPH037C, a carga atual da DATABASE não encontra a NCM de 10 linhas (16 a 19, 81, 82, 92, 93, 128 e 154). Sinalizadas, elas saem com a NCM em laranja e o aviso na coluna O, e o arquivo é lido de novo pela página sem problemas. Só a página mudou; API, banco e VPS não mudaram.

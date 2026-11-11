@@ -31,7 +31,10 @@ test("the NCM and the description of each line are set against the DATABASE by p
     { key: "29:description", sourceRow: 29, lineNumber: "14", productCode: "2020100110", field: "description",
       invoiceValue: "CAPACITOR (CONDENSDOR ELeTRICO FIXO)", databaseValue: "CAPACITOR (CONDENSDOR ELETRICO FIXO)", caseOnly: true },
   ]);
-  assert.deepEqual(missing, [{ sourceRow: 28, lineNumber: "13", productCode: "2011100161" }]);
+  // A product in the DATABASE without NCM has no NCM found either (user decision, 2026-11-11); its description is
+  // still compared when the DATABASE has one.
+  assert.deepEqual(missing, [{ sourceRow: 30, lineNumber: "15", productCode: "abc-1", reason: "NO_NCM" },
+    { sourceRow: 28, lineNumber: "13", productCode: "2011100161", reason: "NOT_IN_DATABASE" }]);
 });
 
 test("every divergence takes the DATABASE and only a product out of it waits for a confirmation with reason", () => {
@@ -43,6 +46,9 @@ test("every divergence takes the DATABASE and only a product out of it waits for
   assert.equal(invoiceCatalogReady(missing, { 28: { confirmed: true, reason: "ok" } }), false);
   assert.equal(invoiceCatalogReady(missing, { 28: { confirmed: true, reason: "NCM conferido no TOTVS" } }), true);
   assert.equal(invoiceCatalogReady([], {}), true);
+  // Flagging the NCM in the file settles the point without a reason.
+  assert.equal(invoiceCatalogReady(missing, {}, { 28: true }), true);
+  assert.equal(invoiceCatalogReady(missing, {}, { 29: true }), false);
 });
 
 // The real files (IPH037A, the DATABASE copy and the analyst's file of 2026-11-04) stay out of Git.

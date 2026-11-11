@@ -72,11 +72,11 @@ test("the DATABASE corrections go to the file without a choice and a product out
   const component = await source("../components/InvoiceAuditWorkbench.tsx");
   assert.match(component, /const database = reference\?\.productDatabase \?\? null;/u);
   assert.doesNotMatch(component, /parseProductDatabaseXlsx/u);
-  assert.match(component, /catalog\.missing\.filter\(entry => !invoiceQuantityDecisionReady\(missingDecisions\[entry\.sourceRow\] \?\? noDecision\)\)/u);
+  assert.match(component, /\+ catalog\.missing\.filter\(entry => !flaggedNcms\[entry\.sourceRow\]\s+&& !invoiceQuantityDecisionReady\(missingDecisions\[entry\.sourceRow\] \?\? noDecision\)\)/u);
   assert.doesNotMatch(component, /catalogChoices|useDatabaseAll|name=\{`catalog-/u);
   assert.match(component, /\{ \.\.\.invoiceCatalogCorrections\(catalog\.points\) \};/u);
   assert.match(component, /<details><summary>\{t\.catalogDetails\(points\.length\)\}<\/summary>/u);
-  assert.match(component, /messages\.invoiceAudit\.noteOriginal, invoice\.draft\.packingList, origin\.corrected\);/u);
+  assert.match(component, /messages\.invoiceAudit\.noteOriginal, invoice\.draft\.packingList, origin\.corrected,/u);
   assert.match(component, /\{!database \? <p className="notice warning">\{t\.noDatabase\}<\/p>/u);
 });
 
@@ -88,7 +88,7 @@ test("the manufacturer list decisions wait for the analyst and the corrections g
   assert.match(component, /const manufacturerList = reference\?\.manufacturerList \?\? null;/u);
   assert.doesNotMatch(component, /parseManufacturerListXlsx/u);
   assert.match(component, /\+ invoiceManufacturerPending\(manufacturerChecks, addressChoices, countryChoices, manufacturerMissing\);/u);
-  assert.match(component, /messages\.invoiceAudit\.noteOriginal, invoice\.draft\.packingList, origin\.corrected\);/u);
+  assert.match(component, /messages\.invoiceAudit\.noteOriginal, invoice\.draft\.packingList, origin\.corrected,/u);
   assert.match(component, /referenceCorrections\[Number\(row\)\] = \{ \.\.\.referenceCorrections\[Number\(row\)\], \.\.\.values \};/u);
   assert.match(section, /name=\{`address-\$\{check\.sourceRow\}`\}/u);
   assert.match(section, /name=\{`country-\$\{check\.sourceRow\}`\}/u);
@@ -126,6 +126,27 @@ test("a code out of the PO tells how to settle it and destines 0 in one click", 
   for (const dictionary of [ptBR, en, zhCN]) {
     assert.equal(typeof dictionary.invoiceAudit.codeNeedsZero, "string");
     assert.equal(typeof dictionary.invoiceAudit.destineZero, "string");
+  }
+});
+
+// User decision (2026-11-11): an NCM not found in the DATABASE is kept (confirmation with reason) or flagged in the file,
+// orange with the warning in column O of the line; the page then explains the orange cell. Bulk does both.
+test("an NCM not found in the DATABASE is kept or flagged, and the page explains the flag", async () => {
+  const component = await source("../components/InvoiceAuditWorkbench.tsx");
+  assert.match(component, /messages\.invoiceAudit\.noteOriginal, invoice\.draft\.packingList, origin\.corrected,\s+\{ rows: ncmFlagRows, text: messages\.invoiceAudit\.ncmFlagCell \}\);/u);
+  assert.match(component, /const ncmFlagRows = catalog\.missing\.filter\(entry => flaggedNcms\[entry\.sourceRow\]\)\.map\(entry => entry\.sourceRow\);/u);
+  assert.match(component, /\{flagged\.length > 0 && <p className="notice warning" role="status">\{t\.ncmFlagNotice\}<\/p>\}/u);
+  assert.match(component, /onClick=\{\(\) => onFlag\(entry\.sourceRow, true\)\}>\{t\.flagNcm\}/u);
+  assert.match(component, /\{ id: "flagCatalog", needsReason: false, run: \(\) => apply\(bulkFlags\(/u);
+  assert.match(component, /const flagged = Boolean\(input\.flaggedNcms\[entry\.sourceRow\]\);/u);
+  assert.match(component, /flagged \? invoiceNcmFlagCells\(draft\.layout, entry\.sourceRow\)\.join\(", "\)/u);
+  assert.equal(ptBR.invoiceAudit.ncmFlagNotice, "A célula da coluna de NCM destacada indica que a NCM não foi encontrada no Database");
+  assert.equal(ptBR.invoiceAudit.ncmFlagCell, "NCM não encontrada na DATABASE");
+  for (const dictionary of [en, zhCN]) {
+    for (const key of ["ncmFlagNotice", "ncmFlagCell", "flagNcm", "undoFlagNcm", "noNcmInDatabase"]) {
+      assert.equal(typeof dictionary.invoiceAudit[key], typeof ptBR.invoiceAudit[key], key);
+    }
+    assert.equal(typeof dictionary.invoiceAudit.sheet.ncmFlagged, "string");
   }
 });
 

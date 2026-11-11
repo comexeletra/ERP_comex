@@ -165,7 +165,22 @@ export function invoiceChangedCells(corrections: readonly InvoiceLineCorrection[
 export type InvoiceAuditSheet = { sheetName: string; summary: readonly (readonly [string, string])[];
   columns: readonly string[]; rows: readonly (readonly string[])[] };
 
+/**
+ * An NCM not found in the DATABASE that the analyst flags (user decision, 2026-11-11): the NCM cell goes orange with
+ * its value unchanged, and the first column after the INV data (O in the HEXING invoices) says why.
+ */
+export type InvoiceNcmFlags = { rows: readonly number[]; text: string };
+
+export function invoiceNcmFlagColumn(layout: InvoiceSheetLayout): number {
+  return Math.max(14, ...Object.values(layout.columns)) + 1;
+}
+
+export function invoiceNcmFlagCells(layout: InvoiceSheetLayout, row: number): string[] {
+  return [`${columnLetter(layout.columns.ncm)}${row}`, `${columnLetter(invoiceNcmFlagColumn(layout))}${row}`];
+}
+
 const correctedFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFFF00" } } as const;
+const flaggedFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFC000" } } as const;
 const textFields: readonly InvoiceCorrectionField[] = ["poCell", "ncm", "description", "manufacturer", "manufacturerAddress",
   "manufacturerCountry"];
 
@@ -188,7 +203,7 @@ function mark(cell: Cell, value: string | number, note: (original: string) => st
 export async function writeCorrectedInvoice(bytes: ArrayBuffer | Uint8Array, layout: InvoiceSheetLayout,
   corrections: readonly InvoiceLineCorrection[], totals: InvoiceCorrectedTotals, audit: InvoiceAuditSheet,
   note: (original: string) => string, packing: InvoicePackingList | null = null,
-  countryOfOrigin: string | null = null): Promise<ArrayBuffer> {
+  countryOfOrigin: string | null = null, ncmFlags: InvoiceNcmFlags | null = null): Promise<ArrayBuffer> {
   const { default: ExcelJS } = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(bytes instanceof Uint8Array ? bytes.slice().buffer : bytes);
@@ -209,6 +224,14 @@ export async function writeCorrectedInvoice(bytes: ArrayBuffer | Uint8Array, lay
       if (cell.formula && /(^|[^A-Z0-9_])'?INV'?!/iu.test(cell.formula)) cell.value = { formula: cell.formula, result: entry.value };
       else mark(cell, entry.value, note);
     }
+  }
+  for (const row of ncmFlags?.rows ?? []) {
+    sheet.getRow(row).getCell(columnOf.ncm).fill = { ...flaggedFill };
+    const warning = sheet.getRow(row).getCell(invoiceNcmFlagColumn(layout));
+    const previous = shownValue(warning);
+    warning.value = ncmFlags!.text;
+    warning.fill = { ...flaggedFill };
+    if (previous) warning.note = note(previous);
   }
   if (countryOfOrigin !== null && layout.countryOfOrigin) {
     const { row, column, prefix } = layout.countryOfOrigin;

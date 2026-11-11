@@ -70,12 +70,14 @@ export function bulkConfirmations<K extends string | number>(keys: readonly K[],
   return { next, applied, left };
 }
 
-/** Confirmations without a reason (the supplier of the Exporter) not given yet. */
-export function pendingFlags(keys: readonly string[], current: Readonly<Record<string, boolean>>): string[] {
+/** Decisions without a reason (the supplier of the Exporter, the NCM flagged in the file) not given yet. */
+export function pendingFlags<K extends string | number>(keys: readonly K[], current: Readonly<Partial<Record<K, boolean>>>): K[] {
   return keys.filter(key => !current[key]);
 }
 
-export function bulkFlags(keys: readonly string[], current: Readonly<Record<string, boolean>>): BulkOutcome<Record<string, boolean>> {
+export function bulkFlags<K extends string | number>(keys: readonly K[],
+  current: Readonly<Partial<Record<K, boolean>>>): BulkOutcome<Partial<Record<K, boolean>>> {
   const pending = pendingFlags(keys, current);
-  return { next: { ...current, ...Object.fromEntries(pending.map(key => [key, true])) }, applied: pending.length, left: 0 };
+  return { next: { ...current, ...Object.fromEntries(pending.map(key => [key, true])) } as Partial<Record<K, boolean>>,
+    applied: pending.length, left: 0 };
 }

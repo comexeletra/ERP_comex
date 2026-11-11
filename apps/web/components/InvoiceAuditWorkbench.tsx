@@ -15,7 +15,8 @@ import { followUpCandidates, followUpImporters, followUpPoSuggestions, followUpS
 import type { AuditReference } from "../lib/reference-loads";
 import { bulkConfirmations, bulkFlags, bulkPriceChoices, bulkSourceChoices, pendingConfirmations, pendingFlags, pendingPrices,
   pendingSources } from "../lib/invoice-bulk-decisions";
-import { invoiceChangedCells, invoiceCorrectedTotals, invoiceLineCorrections, writeCorrectedInvoice } from "../lib/invoice-correction-xlsx";
+import { invoiceChangedCells, invoiceCorrectedTotals, invoiceLineCorrections, invoiceNcmFlagCells,
+  writeCorrectedInvoice } from "../lib/invoice-correction-xlsx";
 import { formatUsDateTime } from "../lib/date-format";
 import { formatDecimal, formatNumber, formatPercentChange } from "../lib/format-number";
 import type { Messages } from "../lib/i18n/pt-BR";
@@ -45,6 +46,7 @@ export default function InvoiceAuditWorkbench() {
   const [reference, setReference] = useState<AuditReference | null>(null);
   const [referenceFailed, setReferenceFailed] = useState(false);
   const [missingDecisions, setMissingDecisions] = useState<Record<number, InvoiceQuantityDecision>>({});
+  const [flaggedNcms, setFlaggedNcms] = useState<Partial<Record<number, boolean>>>({});
   const [addressChoices, setAddressChoices] = useState<Record<number, string>>({});
   const [countryChoices, setCountryChoices] = useState<Record<number, InvoiceCountryChoice>>({});
   const [manufacturerMissing, setManufacturerMissing] = useState<Record<number, InvoiceQuantityDecision>>({});
@@ -80,7 +82,8 @@ export default function InvoiceAuditWorkbench() {
   async function selectInvoice(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0]; event.currentTarget.value = "";
     if (!file) return;
-    setError(""); setReading("invoice"); setInvoice(null); resetDecisions(); setMissingDecisions({}); resetManufacturerDecisions();
+    setError(""); setReading("invoice"); setInvoice(null); resetDecisions(); setMissingDecisions({}); setFlaggedNcms({});
+    resetManufacturerDecisions();
     try { setInvoice({ draft: await parseChinaInvoiceXlsx(file, getMessages()), bytes: await file.arrayBuffer() }); }
     catch (cause) { setError(cause instanceof Error ? cause.message : getMessages().common.unexpectedError); }
     finally { setReading(""); }
@@ -155,7 +158,8 @@ export default function InvoiceAuditWorkbench() {
     + [...pricePoints].filter(([row, point]) => !invoicePriceChoiceReady(point, priceChoices[row])).length
     + supplierMismatches.filter(supplier => !supplierConfirmed[supplier]).length
     + divergences.filter(divergence => !invoicePackingChoiceReady(divergence, packingChoices[divergence.key])).length
-    + catalog.missing.filter(entry => !invoiceQuantityDecisionReady(missingDecisions[entry.sourceRow] ?? noDecision)).length
+    + catalog.missing.filter(entry => !flaggedNcms[entry.sourceRow]
+      && !invoiceQuantityDecisionReady(missingDecisions[entry.sourceRow] ?? noDecision)).length
     + invoiceManufacturerPending(manufacturerChecks, addressChoices, countryChoices, manufacturerMissing);
   const canDownload = ready && pending === 0 && rows.some(row => row.allocations.length > 0);
   const bulkGroups = bulkDecisionGroups();
@@ -176,7 +180,9 @@ export default function InvoiceAuditWorkbench() {
     const missingManufacturers = manufacturerChecks.filter(check => check.status === "MISSING"
       && !check.candidates.some(entry => invoiceManufacturerId(entry) === addressChoices[check.sourceRow]))
       .map(check => check.sourceRow);
-    const catalogRows = catalog.missing.map(entry => entry.sourceRow);
+    // An NCM not found in the DATABASE is kept (confirmation) or flagged; neither action changes the other's points.
+    const catalogRows = pendingConfirmations(catalog.missing.map(entry => entry.sourceRow)
+      .filter(row => !flaggedNcms[row]), missingDecisions);
     const apply = <T,>(outcome: { next: T; applied: number; left: number }, set: (next: T) => void) => {
       set(outcome.next); return { applied: outcome.applied, left: outcome.left };
     };
@@ -197,11 +203,13 @@ export default function InvoiceAuditWorkbench() {
           quantitySettles), next => setQuantityDecisions(next as typeof quantityDecisions)) },
       ] },
       { id: "supplier", pending: pendingFlags(supplierMismatches, supplierConfirmed).length, actions: [
-        { id: "confirmSupplier", needsReason: false, run: () => apply(bulkFlags(supplierMismatches, supplierConfirmed), setSupplierConfirmed) },
+        { id: "confirmSupplier", needsReason: false, run: () => apply(bulkFlags(supplierMismatches, supplierConfirmed),
+          next => setSupplierConfirmed(next as typeof supplierConfirmed)) },
       ] },
-      { id: "catalog", pending: pendingConfirmations(catalogRows, missingDecisions).length, actions: [
+      { id: "catalog", pending: catalogRows.length, actions: [
         { id: "confirmCatalog", needsReason: true, run: reason => apply(bulkConfirmations(catalogRows, missingDecisions, reason),
           next => setMissingDecisions(next as typeof missingDecisions)) },
+        { id: "flagCatalog", needsReason: false, run: () => apply(bulkFlags(catalogRows, flaggedNcms), setFlaggedNcms) },
       ] },
       { id: "country", pending: pendingSources(countryRows, countryChoices).length, actions: [
         { id: "keepInvoiceCountry", needsReason: true, run: reason => apply(bulkSourceChoices(countryRows, countryChoices, "INVOICE", reason),
@@ -231,12 +239,14 @@ export default function InvoiceAuditWorkbench() {
         rows.map(row => ({ sourceRow: row.part.sourceRow, poNumber: row.part.poNumber, quantity: row.part.quantity })),
         prices, invoicePackingChoiceWeights(divergences, packingChoices), referenceCorrections);
       const changedCells = invoiceChangedCells(corrections, invoice.draft.layout, invoice.draft.packingList);
+      const ncmFlagRows = catalog.missing.filter(entry => flaggedNcms[entry.sourceRow]).map(entry => entry.sourceRow);
       const written = await writeCorrectedInvoice(invoice.bytes, invoice.draft.layout, corrections, invoiceCorrectedTotals(corrections),
         auditSheet(messages, { draft: invoice.draft, followUp, importer, sameIps, rows, pricePoints, priceChoices, supplierMismatches,
           divergences, packingChoices, corrections, changedCells, database, catalogPoints: catalog.points,
-          catalogMissing: catalog.missing, missingDecisions, manufacturerList, manufacturerChecks, addressChoices, countryChoices,
-          manufacturerMissing, origin, user: identity?.name ?? "" }),
-        messages.invoiceAudit.noteOriginal, invoice.draft.packingList, origin.corrected);
+          catalogMissing: catalog.missing, missingDecisions, flaggedNcms, manufacturerList, manufacturerChecks, addressChoices,
+          countryChoices, manufacturerMissing, origin, user: identity?.name ?? "" }),
+        messages.invoiceAudit.noteOriginal, invoice.draft.packingList, origin.corrected,
+        { rows: ncmFlagRows, text: messages.invoiceAudit.ncmFlagCell });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(new Blob([written], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
@@ -309,9 +319,10 @@ export default function InvoiceAuditWorkbench() {
             {t.confirmSupplier(supplier)}</label>
         </div>)}
         {!database ? <p className="notice warning">{t.noDatabase}</p> : <CatalogAudit t={t} points={catalog.points}
-          missing={catalog.missing} missingDecisions={missingDecisions}
+          missing={catalog.missing} missingDecisions={missingDecisions} flagged={flaggedNcms}
           onMissing={(row, change) => setMissingDecisions(current =>
-            ({ ...current, [row]: { ...(current[row] ?? noDecision), ...change } }))} />}
+            ({ ...current, [row]: { ...(current[row] ?? noDecision), ...change } }))}
+          onFlag={(row, flag) => setFlaggedNcms(current => ({ ...current, [row]: flag }))} />}
         <InvoiceManufacturerAudit t={t} hasList={Boolean(manufacturerList)} checks={manufacturerChecks}
           corrections={manufacturerCorrections} addressChoices={addressChoices} countryChoices={countryChoices}
           missingDecisions={manufacturerMissing} origin={origin} header={draft!.countryOfOrigin}
@@ -416,13 +427,15 @@ function issueText(t: Messages["invoiceAudit"], issue: NonNullable<ReturnType<ty
 
 /**
  * NCM and description against the DATABASE, which rules without question (user decision, 2026-11-10): every
- * divergence is corrected in the file and only listed here; a product out of the DATABASE waits for a confirmation.
+ * divergence is corrected in the file and only listed here. An NCM not found in the DATABASE (product out of it or
+ * without NCM there) keeps the invoice NCM with a confirmation, or is flagged in the file (user decision, 2026-11-11).
  */
-function CatalogAudit({ t, points, missing, missingDecisions, onMissing }: {
+function CatalogAudit({ t, points, missing, missingDecisions, flagged: flaggedRows, onMissing, onFlag }: {
   t: Messages["invoiceAudit"]; points: readonly InvoiceCatalogPoint[]; missing: readonly InvoiceCatalogMissing[];
-  missingDecisions: Readonly<Record<number, InvoiceQuantityDecision>>;
-  onMissing: (row: number, change: Partial<InvoiceQuantityDecision>) => void;
+  missingDecisions: Readonly<Record<number, InvoiceQuantityDecision>>; flagged: Readonly<Partial<Record<number, boolean>>>;
+  onMissing: (row: number, change: Partial<InvoiceQuantityDecision>) => void; onFlag: (row: number, flag: boolean) => void;
 }) {
+  const flagged = missing.filter(entry => flaggedRows[entry.sourceRow]);
   return <section className="notice invoice-catalog" aria-label={t.catalogTitle}>
     <h3>{t.catalogTitle}</h3>
     <p>{t.catalogSummary(points.filter(point => point.field === "ncm").length,
@@ -438,14 +451,26 @@ function CatalogAudit({ t, points, missing, missingDecisions, onMissing }: {
         </tr>)}</tbody>
       </table></div>
     </details>}
+    {flagged.length > 0 && <p className="notice warning" role="status">{t.ncmFlagNotice}</p>}
     {missing.length > 0 && <ul className="invoice-audit-list">{missing.map(entry => {
       const decision = missingDecisions[entry.sourceRow] ?? noDecision;
-      return <li key={entry.sourceRow} className={`notice ${invoiceQuantityDecisionReady(decision) ? "success" : "error"}`}>
-        <p>{t.notInDatabase(entry.sourceRow, entry.lineNumber, entry.productCode)}</p>
-        <label className="invoice-audit-confirm"><input type="checkbox" checked={decision.confirmed}
-          onChange={event => onMissing(entry.sourceRow, { confirmed: event.target.checked })} />{t.confirmNotInDatabase}</label>
-        <label className="invoice-audit-reason">{t.reason}<input required minLength={3} maxLength={1000} value={decision.reason}
-          onChange={event => onMissing(entry.sourceRow, { reason: event.target.value })} /></label>
+      const isFlagged = Boolean(flaggedRows[entry.sourceRow]);
+      return <li key={entry.sourceRow}
+        className={`notice ${isFlagged || invoiceQuantityDecisionReady(decision) ? "success" : "error"}`}>
+        <p>{entry.reason === "NO_NCM" ? t.noNcmInDatabase(entry.sourceRow, entry.lineNumber, entry.productCode)
+          : t.notInDatabase(entry.sourceRow, entry.lineNumber, entry.productCode)}</p>
+        {isFlagged ? <>
+          <p className="invoice-audit-note">{t.ncmFlaggedNote}</p>
+          <div className="button-row"><button className="button secondary" type="button"
+            onClick={() => onFlag(entry.sourceRow, false)}>{t.undoFlagNcm}</button></div>
+        </> : <>
+          <label className="invoice-audit-confirm"><input type="checkbox" checked={decision.confirmed}
+            onChange={event => onMissing(entry.sourceRow, { confirmed: event.target.checked })} />{t.confirmNotInDatabase}</label>
+          <label className="invoice-audit-reason">{t.reason}<input required minLength={3} maxLength={1000} value={decision.reason}
+            onChange={event => onMissing(entry.sourceRow, { reason: event.target.value })} /></label>
+          <div className="button-row"><button className="button secondary" type="button"
+            onClick={() => onFlag(entry.sourceRow, true)}>{t.flagNcm}</button></div>
+        </>}
       </li>;
     })}</ul>}
   </section>;
@@ -463,6 +488,7 @@ type AuditInput = {
   changedCells: ReturnType<typeof invoiceChangedCells>; database: AuditReference["productDatabase"];
   catalogPoints: InvoiceCatalogPoint[];
   catalogMissing: InvoiceCatalogMissing[]; missingDecisions: Record<number, InvoiceQuantityDecision>;
+  flaggedNcms: Partial<Record<number, boolean>>;
   manufacturerList: AuditReference["manufacturerList"]; manufacturerChecks: InvoiceManufacturerCheck[];
   addressChoices: Record<number, string>; countryChoices: Record<number, InvoiceCountryChoice>;
   manufacturerMissing: Record<number, InvoiceQuantityDecision>; origin: { missing: string[]; corrected: string | null };
@@ -501,8 +527,11 @@ function auditSheet(m: Messages, input: AuditInput) {
       cells(point.sourceRow, [point.field])]);
   }
   for (const entry of input.catalogMissing) {
-    rows.push([String(entry.sourceRow), entry.lineNumber, s.notInDatabase, entry.productCode, "—", s.confirmed,
-      input.missingDecisions[entry.sourceRow]?.reason.trim() ?? "", ""]);
+    const flagged = Boolean(input.flaggedNcms[entry.sourceRow]);
+    rows.push([String(entry.sourceRow), entry.lineNumber, entry.reason === "NO_NCM" ? s.noNcmInDatabase : s.notInDatabase,
+      entry.productCode, "—", flagged ? s.ncmFlagged : s.confirmed,
+      flagged ? "" : input.missingDecisions[entry.sourceRow]?.reason.trim() ?? "",
+      flagged ? invoiceNcmFlagCells(draft.layout, entry.sourceRow).join(", ") : ""]);
   }
   for (const check of input.manufacturerChecks) {
     const row = String(check.sourceRow);

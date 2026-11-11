@@ -55,6 +55,9 @@ test("the bulk confirmation without a reason marks every supplier not yet confir
   const result = bulkFlags(["HEXING", "OTHER", "THIRD"], current);
   assert.deepEqual(result.next, { HEXING: true, OTHER: true, THIRD: true });
   assert.deepEqual([result.applied, result.left], [2, 0]);
+  // The NCM flag of a product out of the DATABASE uses the same function with the INV rows (2026-11-11).
+  const rows = bulkFlags([28, 34], { 28: true });
+  assert.deepEqual([rows.next, rows.applied], [{ 28: true, 34: true }, 1]);
 });
 
 test("the panel is at the top of the page, uses the lib functions and asks a reason where it is needed", async () => {
@@ -82,4 +85,6 @@ test("the panel texts exist in the three languages", () => {
   }
   assert.equal(ptBR.invoiceAudit.bulk.actions.acceptPrice, "Aceitar o preço da invoice (todos)");
   assert.equal(ptBR.invoiceAudit.bulk.actions.correctPrice, "Corrigir para o preço da PO (todos)");
+  assert.equal(ptBR.invoiceAudit.bulk.actions.flagCatalog, "Sinalizar a NCM não encontrada (todos)");
+  assert.equal(ptBR.invoiceAudit.bulk.actions.confirmCatalog, "Manter a NCM da invoice (todos)");
 });
