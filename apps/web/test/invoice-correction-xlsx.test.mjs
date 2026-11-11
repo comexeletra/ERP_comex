@@ -79,7 +79,7 @@ test("each line gets the destined quantity, the PO cell, the corrected price, th
   const draft = await parse(await invoiceBytes());
   const corrections = invoiceLineCorrections(draft.lines, parts, prices, weights);
   assert.deepEqual(corrections.map(entry => [entry.sourceRow, entry.destined, entry.changed, entry.corrected]), [
-    [16, true, ["quantity", "poCell", "amount"], { quantity: "90", poCell: "PO 030201 = 60 units\nPO 030305 = 30 units",
+    [16, true, ["quantity", "poCell", "amount"], { quantity: "90", poCell: "PO 030201 = 60 UNIT\nPO 030305 = 30 UNIT",
       unitPrice: "2", netWeightKg: "10", grossWeightKg: "12", amount: "180", ncm: "85423939", description: "Part A", ...maker }],
     [17, true, ["unitPrice", "netWeightKg", "amount"], { quantity: "50", poCell: "PO030201", unitPrice: "1.6",
       netWeightKg: "5.5", grossWeightKg: "6", amount: "80", ncm: "85423939", description: "Part B", ...maker }],

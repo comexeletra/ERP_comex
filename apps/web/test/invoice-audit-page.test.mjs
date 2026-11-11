@@ -150,6 +150,28 @@ test("an NCM not found in the DATABASE is kept or flagged, and the page explains
   }
 });
 
+// User decision (2026-11-11, IPH037D): a line whose PO cell the reader cannot split is a pending point that blocks the
+// download; the page proposes the split by the Follow Up balance, or the line is kept without destination with a reason.
+test("a PO cell the reader cannot split blocks the download until it is split by balance or kept", async () => {
+  const component = await source("../components/InvoiceAuditWorkbench.tsx");
+  assert.match(component, /const unreadLines = ready \? draft!\.lines\.filter\(line => line\.poAssignments\.length === 0\)/u);
+  assert.match(component, /invoicePoCellSplit\(line\.quantity, numbers\.map\(poNumber =>/u);
+  assert.match(component, /\.\.\.unreadLines\.filter\(entry => splitAccepted\[entry\.line\.sourceRow\] && entry\.split\.length > 0\)/u);
+  assert.match(component, /\+ unreadLines\.filter\(entry => !poCellSettled\(entry\.line\.sourceRow\)\)\.length/u);
+  assert.match(component, /onClick=\{\(\) => setSplitAccepted\(current => \(\{ \.\.\.current, \[entry\.line\.sourceRow\]: true \}\)\)\}>\{t\.acceptSplit\}/u);
+  assert.match(component, /\{ id: "acceptSplit", needsReason: false, run: \(\) =>/u);
+  assert.match(component, /\{ id: "keepPoCell", needsReason: true, run: reason =>/u);
+  assert.match(component, /s\.splitByBalance/u);
+  for (const dictionary of [en, zhCN]) {
+    for (const key of ["poCellTitle", "poCellUnreadable", "poCellProposal", "poCellNoProposal", "acceptSplit", "undoSplit",
+      "splitAccepted", "keepWithoutDestination"]) {
+      assert.equal(typeof dictionary.invoiceAudit[key], typeof ptBR.invoiceAudit[key], key);
+    }
+  }
+  assert.equal(ptBR.invoiceAudit.poCellProposal("PO 030888 = 20; PO 030201 = 60"),
+    "Proposta pelo saldo do Follow Up, na ordem da célula: PO 030888 = 20; PO 030201 = 60.");
+});
+
 // User request (2026-11-10): when the cited PO cannot receive a line, the page suggests the PO of the Follow Up that holds
 // the product on the invoice IP; the analyst takes it with one click and the PO cell is corrected in the file.
 test("a line the cited PO cannot receive gets the Follow Up PO suggestions and the chosen PO goes to the file", async () => {

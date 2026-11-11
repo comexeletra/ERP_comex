@@ -42,11 +42,48 @@ export type InvoicePoAssignmentSource = {
 };
 
 export function invoiceAssignmentsFromLines(lines: readonly InvoicePoAssignmentSource[]) {
-  return lines.flatMap(line => line.poAssignments.map((assignment, index) => ({
-    key: `${line.sourceRow}:${index}`, sourceRow: line.sourceRow, sourcePoNumber: assignment.poNumber,
-    poNumber: assignment.poNumber, quantity: assignment.quantity, productCode: line.productCode,
-    description: line.description,
-  })));
+  return lines.flatMap(line => invoiceAssignmentsFromSplit(line, line.poAssignments.map(assignment => assignment.poNumber),
+    line.poAssignments.map(assignment => assignment.quantity)));
+}
+
+/** The parts of one line: the POs in cell order with the quantity of each. */
+export function invoiceAssignmentsFromSplit(line: Pick<InvoicePoAssignmentSource, "sourceRow" | "productCode" | "description">,
+  poNumbers: readonly string[], quantities: readonly string[]) {
+  return poNumbers.map((poNumber, index) => ({
+    key: `${line.sourceRow}:${index}`, sourceRow: line.sourceRow, sourcePoNumber: poNumber,
+    poNumber, quantity: quantities[index], productCode: line.productCode, description: line.description,
+  }));
+}
+
+/** What the key items of a part still hold in the Follow Up, summed. */
+export function invoiceKeyBalance(items: readonly { remainingQuantity: string }[]): string {
+  return formatInvoiceQuantity(items.reduce((total, item) => total + (invoiceQuantityUnits(item.remainingQuantity) ?? 0n), 0n));
+}
+
+/**
+ * The POs cited in a PO cell the invoice reader could not split, such as "PO 030888&030201" of IPH037D
+ * (2026-11-11): the numbers of 5 or more digits, in cell order, without repeats. A cell that already gives quantities
+ * (=) is not guessed, because its numbers are not all POs.
+ */
+export function invoicePoCellNumbers(cell: string): string[] {
+  if (cell.includes("=")) return [];
+  return [...new Set(cell.match(/\d{5,}/gu) ?? [])];
+}
+
+/**
+ * Splits the line quantity among the cited POs by the Follow Up balance of the product, in cell order (the analyst's
+ * split of IPH037D, 20 + 60); what exceeds the balances goes to the last PO, which then shows the lack of balance.
+ */
+export function invoicePoCellSplit(quantity: string, balances: readonly string[]): string[] {
+  const total = invoiceQuantityUnits(quantity);
+  if (total === null || total <= 0n || !balances.length) return [];
+  let left = total;
+  return balances.map((balance, index) => {
+    const available = invoiceQuantityUnits(balance) ?? 0n;
+    const taken = index === balances.length - 1 ? left : available <= 0n ? 0n : available < left ? available : left;
+    left -= taken;
+    return formatInvoiceQuantity(taken);
+  });
 }
 
 /** The destination key is the cited PO plus the line code: only the PO items with that code, in PO line order. */

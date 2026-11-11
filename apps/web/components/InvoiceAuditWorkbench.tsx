@@ -9,7 +9,8 @@ import { classifyInvoiceDestination, distributeInvoiceParts, invoiceAssignmentsF
   invoicePackingChoiceWeights, invoicePackingDivergences, InvoicePriceChoice, invoicePriceChoiceReady, invoicePriceTolerancePercent,
   InvoiceQuantityDecision, invoiceQuantityDecisionReady, invoiceQuantityPoint, invoiceSupplierMismatches, InvoiceCountryChoice,
   InvoiceManufacturerCheck, invoiceManufacturerChecks, InvoiceManufacturerEntry, invoiceManufacturerCorrections, invoiceManufacturerCountryPoint,
-  invoiceManufacturerId, invoiceManufacturerPending, invoiceOriginCountries } from "../lib/china-invoice-mapping";
+  invoiceManufacturerId, invoiceManufacturerPending, invoiceOriginCountries, invoiceAssignmentsFromSplit, invoiceKeyBalance,
+  invoicePoCellNumbers, invoicePoCellSplit } from "../lib/china-invoice-mapping";
 import { followUpCandidates, followUpImporters, followUpPoSuggestions, followUpSameIps, parseFollowUpXlsx,
   type FollowUpCandidate, type FollowUpWorkbook } from "../lib/audit-reference-xlsx";
 import type { AuditReference } from "../lib/reference-loads";
@@ -60,6 +61,8 @@ export default function InvoiceAuditWorkbench() {
   const [supplierConfirmed, setSupplierConfirmed] = useState<Record<string, boolean>>({});
   const [packingChoices, setPackingChoices] = useState<Record<string, InvoicePackingChoice>>({});
   const [poChoices, setPoChoices] = useState<Record<string, string>>({});
+  const [splitAccepted, setSplitAccepted] = useState<Partial<Record<number, boolean>>>({});
+  const [poCellKept, setPoCellKept] = useState<Record<number, InvoiceQuantityDecision>>({});
 
   useEffect(() => {
     apiFetch("/auth/me").then(async response => {
@@ -77,6 +80,7 @@ export default function InvoiceAuditWorkbench() {
 
   function resetDecisions() {
     setQuantities({}); setQuantityDecisions({}); setPriceChoices({}); setSupplierConfirmed({}); setPackingChoices({}); setPoChoices({});
+    setSplitAccepted({}); setPoCellKept({});
   }
 
   async function selectInvoice(event: ChangeEvent<HTMLInputElement>) {
@@ -107,7 +111,21 @@ export default function InvoiceAuditWorkbench() {
   const importers = followUp ? followUpImporters(followUp.lines, baseParts.map(part => part.poNumber)) : [];
   const importer = importers.length === 1 ? importers[0] : importers.includes(importerChoice) ? importerChoice : "";
   const ready = Boolean(draft && followUp && importer);
-  const parts = ready ? baseParts.map(part => {
+  // IPH037D (2026-11-11): a PO cell the reader cannot split ("PO 030888&030201") leaves its line without parts. It is a
+  // pending point; the page proposes the split of the line by the Follow Up balance of each cited PO, in cell order.
+  const unreadLines = ready ? draft!.lines.filter(line => line.poAssignments.length === 0).map(line => {
+    const numbers = invoicePoCellNumbers(line.poCell);
+    const split = invoicePoCellSplit(line.quantity, numbers.map(poNumber => invoiceKeyBalance(
+      invoiceKeyItems(followUpCandidates(followUp!.lines, importer, poNumber, draft!.ipNumber).items, line.productCode))));
+    return { line, numbers, split };
+  }) : [];
+  const poCellSettled = (sourceRow: number) => Boolean(splitAccepted[sourceRow])
+    || invoiceQuantityDecisionReady(poCellKept[sourceRow] ?? noDecision);
+  const destinedParts = [...baseParts,
+    ...unreadLines.filter(entry => splitAccepted[entry.line.sourceRow] && entry.split.length > 0)
+      .flatMap(entry => invoiceAssignmentsFromSplit(entry.line, entry.numbers, entry.split))]
+    .sort((left, right) => left.sourceRow - right.sourceRow);
+  const parts = ready ? destinedParts.map(part => {
     const poNumber = poChoices[part.key] ?? part.poNumber;
     const { poExists, items } = followUpCandidates(followUp!.lines, importer, poNumber, draft!.ipNumber);
     return { ...part, poNumber, invoiceQuantity: part.quantity, quantity: quantities[part.key] ?? part.quantity, poExists,
@@ -154,6 +172,7 @@ export default function InvoiceAuditWorkbench() {
   const origin = draft ? invoiceOriginCountries(draft.countryOfOrigin, draft.lines.map(line =>
     manufacturerCorrections[line.sourceRow]?.manufacturerCountry ?? line.manufacturerCountry)) : { missing: [], corrected: null };
   const pending = rows.filter(row => row.issue !== null).length
+    + unreadLines.filter(entry => !poCellSettled(entry.line.sourceRow)).length
     + rows.reduce((total, row) => total + row.points.filter(point => point.confirmed === false).length, 0)
     + [...pricePoints].filter(([row, point]) => !invoicePriceChoiceReady(point, priceChoices[row])).length
     + supplierMismatches.filter(supplier => !supplierConfirmed[supplier]).length
@@ -186,7 +205,17 @@ export default function InvoiceAuditWorkbench() {
     const apply = <T,>(outcome: { next: T; applied: number; left: number }, set: (next: T) => void) => {
       set(outcome.next); return { applied: outcome.applied, left: outcome.left };
     };
+    // A PO cell without a proposal (no PO found in it) cannot be split: it stays pending for the split action.
+    const cellRows = unreadLines.filter(entry => !poCellSettled(entry.line.sourceRow)).map(entry => entry.line.sourceRow);
+    const splittable = unreadLines.filter(entry => cellRows.includes(entry.line.sourceRow) && entry.split.length > 0)
+      .map(entry => entry.line.sourceRow);
     return [
+      { id: "poCell", pending: cellRows.length, actions: [
+        { id: "acceptSplit", needsReason: false, run: () =>
+          ({ ...apply(bulkFlags(splittable, splitAccepted), setSplitAccepted), left: cellRows.length - splittable.length }) },
+        { id: "keepPoCell", needsReason: true, run: reason => apply(bulkConfirmations(cellRows, poCellKept, reason),
+          next => setPoCellKept(next as typeof poCellKept)) },
+      ] },
       { id: "price", pending: pendingPrices(prices, priceChoices).length, actions: [
         { id: "acceptPrice", needsReason: false, run: () => apply(bulkPriceChoices(prices, priceChoices, "ACCEPT"), setPriceChoices) },
         { id: "correctPrice", needsReason: false, run: () => apply(bulkPriceChoices(prices, priceChoices, "CORRECT"), setPriceChoices) },
@@ -244,7 +273,7 @@ export default function InvoiceAuditWorkbench() {
         auditSheet(messages, { draft: invoice.draft, followUp, importer, sameIps, rows, pricePoints, priceChoices, supplierMismatches,
           divergences, packingChoices, corrections, changedCells, database, catalogPoints: catalog.points,
           catalogMissing: catalog.missing, missingDecisions, flaggedNcms, manufacturerList, manufacturerChecks, addressChoices,
-          countryChoices, manufacturerMissing, origin, user: identity?.name ?? "" }),
+          countryChoices, manufacturerMissing, origin, unreadLines, splitAccepted, poCellKept, user: identity?.name ?? "" }),
         messages.invoiceAudit.noteOriginal, invoice.draft.packingList, origin.corrected,
         { rows: ncmFlagRows, text: messages.invoiceAudit.ncmFlagCell });
       const link = document.createElement("a");
@@ -336,6 +365,33 @@ export default function InvoiceAuditWorkbench() {
             ({ ...current, [row]: { ...(current[row] ?? { source: null, reason: "" }), ...change } }))}
           onMissing={(row, change) => setManufacturerMissing(current =>
             ({ ...current, [row]: { ...(current[row] ?? noDecision), ...change } }))} />
+        {unreadLines.length > 0 && <section className="notice" aria-label={t.poCellTitle}>
+          <h3>{t.poCellTitle}</h3>
+          <ul className="invoice-audit-list">{unreadLines.map(entry => {
+            const row = entry.line.sourceRow;
+            const kept = poCellKept[row] ?? noDecision;
+            const setKept = (change: Partial<InvoiceQuantityDecision>) => setPoCellKept(current =>
+              ({ ...current, [row]: { ...(current[row] ?? noDecision), ...change } }));
+            return <li key={row} className={`notice ${poCellSettled(row) ? "success" : "error"}`}>
+              <p>{t.poCellUnreadable(row, entry.line.lineNumber, entry.line.poCell)}</p>
+              {splitAccepted[row] ? <>
+                <p className="invoice-audit-note">{t.splitAccepted(splitText(entry))}</p>
+                <div className="button-row"><button className="button secondary" type="button"
+                  onClick={() => setSplitAccepted(current => ({ ...current, [row]: false }))}>{t.undoSplit}</button></div>
+              </> : <>
+                {entry.split.length > 0 ? <>
+                  <p>{t.poCellProposal(splitText(entry))}</p>
+                  <div className="button-row"><button className="button secondary" type="button"
+                    onClick={() => setSplitAccepted(current => ({ ...current, [entry.line.sourceRow]: true }))}>{t.acceptSplit}</button></div>
+                </> : <p className="invoice-audit-note">{t.poCellNoProposal}</p>}
+                <label className="invoice-audit-confirm"><input type="checkbox" checked={kept.confirmed}
+                  onChange={event => setKept({ confirmed: event.target.checked })} />{t.keepWithoutDestination}</label>
+                <label className="invoice-audit-reason">{t.reason}<input required minLength={3} maxLength={1000} value={kept.reason}
+                  onChange={event => setKept({ reason: event.target.value })} /></label>
+              </>}
+            </li>;
+          })}</ul>
+        </section>}
         <div className="totvs-import-table-wrap invoice-match-table-wrap"><table className="totvs-import-table invoice-match-table">
           <thead><tr><th>{t.column.line}</th><th>{t.column.product}</th><th>{t.column.quantity}</th><th>{t.column.destination}</th></tr></thead>
           <tbody>{rows.map(({ part, line, decision, allocations, points, issue, suggestions }) => {
@@ -476,6 +532,13 @@ function CatalogAudit({ t, points, missing, missingDecisions, flagged: flaggedRo
   </section>;
 }
 
+/** A line whose PO cell the reader could not split, with the POs found in it and the split proposed by balance. */
+type UnreadLine = { line: { sourceRow: number; lineNumber: string; poCell: string }; numbers: string[]; split: string[] };
+
+function splitText(entry: UnreadLine): string {
+  return entry.numbers.map((poNumber, index) => `PO ${poNumber} = ${formatNumber(entry.split[index])}`).join("; ");
+}
+
 type AuditInput = {
   draft: ChinaInvoiceDraft; followUp: FollowUpWorkbook; importer: string; sameIps: string[]; user: string;
   rows: { part: { key: string; sourceRow: number; productCode: string; invoiceQuantity: string; quantity: string; poNumber: string;
@@ -489,6 +552,7 @@ type AuditInput = {
   catalogPoints: InvoiceCatalogPoint[];
   catalogMissing: InvoiceCatalogMissing[]; missingDecisions: Record<number, InvoiceQuantityDecision>;
   flaggedNcms: Partial<Record<number, boolean>>;
+  unreadLines: UnreadLine[]; splitAccepted: Partial<Record<number, boolean>>; poCellKept: Record<number, InvoiceQuantityDecision>;
   manufacturerList: AuditReference["manufacturerList"]; manufacturerChecks: InvoiceManufacturerCheck[];
   addressChoices: Record<number, string>; countryChoices: Record<number, InvoiceCountryChoice>;
   manufacturerMissing: Record<number, InvoiceQuantityDecision>; origin: { missing: string[]; corrected: string | null };
@@ -502,6 +566,13 @@ function auditSheet(m: Messages, input: AuditInput) {
   const cells = (row: number, fields: readonly string[]) => (input.changedCells[row] ?? [])
     .filter(entry => fields.includes(entry.field)).map(entry => entry.cell).join(", ");
   const rows: string[][] = [];
+  for (const entry of input.unreadLines) {
+    const row = entry.line.sourceRow;
+    const split = Boolean(input.splitAccepted[row]);
+    rows.push([String(row), entry.line.lineNumber, s.poCell, entry.line.poCell, entry.split.length ? splitText(entry) : "—",
+      split ? s.splitByBalance : s.keptWithoutDestination, split ? "" : input.poCellKept[row]?.reason.trim() ?? "",
+      split ? cells(row, ["poCell"]) : ""]);
+  }
   for (const { part, line, decision, points, allocations } of input.rows) {
     if (part.poNumber !== part.sourcePoNumber) {
       rows.push([String(part.sourceRow), line.lineNumber, s.poChanged, `PO ${part.sourcePoNumber}`, `PO ${part.poNumber}`,

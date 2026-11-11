@@ -97,7 +97,8 @@ export function invoiceLineCorrections(lines: readonly CorrectionLine[],
     const singleCell = /^(\s*PO\s*)\d+(\s*)$/iu.exec(line.poCell);
     const poCell = sameCell ? line.poCell : destined.length === 1 && singleCell
       ? `${singleCell[1]}${destined[0].poNumber}${singleCell[2]}` : destined.length === 1 ? `PO ${destined[0].poNumber}`
-      : destined.map(entry => `PO ${entry.poNumber} = ${text(entry.quantity)} units`).join("\n");
+      // The analysts' format of a split cell (IPH037D, 2026-11-11), read back by parseInvoicePoAssignments.
+      : destined.map(entry => `PO ${entry.poNumber} = ${text(entry.quantity)} UNIT`).join("\n");
     const unitPrice = prices[line.sourceRow] ?? line.unitPrice;
     const weight = weights[line.sourceRow];
     const priced = !same(quantity, line.quantity) || !same(unitPrice, line.unitPrice);

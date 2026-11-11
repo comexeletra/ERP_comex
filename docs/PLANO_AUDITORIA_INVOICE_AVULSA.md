@@ -467,3 +467,15 @@ Pedido e decisões do usuário (2026-11-11): quando a NCM não é encontrada na 
 ### Resultado
 
 Na IPH037C, a carga atual da DATABASE não encontra a NCM de 10 linhas (16 a 19, 81, 82, 92, 93, 128 e 154). Sinalizadas, elas saem com a NCM em laranja e o aviso na coluna O, e o arquivo é lido de novo pela página sem problemas. Só a página mudou; API, banco e VPS não mudaram.
+
+## Etapa 1i: célula PO que a página não consegue ler
+
+Paridade da IPH037D (2026-11-11): a linha 20 tinha a célula "PO 030888&030201". O leitor não a interpreta (o segundo número vem sem "PO" e sem a quantidade de cada PO), a linha ficou sem destino, a página não mostrou ponto pendente e liberou o download. A analista dividiu a linha em "PO 030888 = 20 UNIT" e "PO 030201 = 60 UNIT", que é exatamente o saldo do Follow Up de cada PO no IP 037D. Decisões do usuário no mesmo dia:
+
+1. A linha sem PO legível é ponto pendente e bloqueia o download.
+2. Quando a célula cita várias POs sem quantidade, a página propõe dividir a quantidade da linha pelo saldo do Follow Up do produto em cada PO, na ordem da célula (o que passa dos saldos vai para a última PO, que então mostra a falta de saldo). O analista aceita com um clique; as quantidades continuam editáveis na tabela, com a confirmação de sempre. Sem PO na célula, ou sem querer dividir, a linha é mantida sem destino com confirmação e motivo.
+3. A célula dividida sai no formato dos analistas, "PO 030888 = 20 UNIT", uma PO por linha, também nas demais divisões (antes, "units").
+
+O painel de decisões em massa tem "Dividir pelo saldo do Follow Up (todas)" e "Manter sem destino (todas)", e a aba `AUDITORIA` registra a célula, a proposta e a decisão. Só a página mudou; o leitor da invoice e a API continuam recusando essa célula na gravação do IP.
+
+Resultado: na IPH037D, a proposta é 20 + 60 e a célula escrita é igual à da analista.
