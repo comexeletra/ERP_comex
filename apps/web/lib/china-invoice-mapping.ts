@@ -621,7 +621,8 @@ export function invoiceCatalogCorrections(points: readonly InvoiceCatalogPoint[]
 
 /*
  * Manufacturer against the manufacturer list (user decisions, 2026-11-10): the list rules the address and the name;
- * a name with several addresses is chosen by the analyst; a manufacturer out of the list is confirmed with a reason;
+ * a name with several addresses is chosen by the analyst; a manufacturer out of the list is taken from the similar or
+ * searched entries of the list, or confirmed with a reason (user request, 2026-11-11);
  * a country that differs from the list is decided by the analyst; the country goes in capitals.
  */
 
@@ -662,8 +663,43 @@ export function invoiceManufacturerChecks(lines: readonly InvoiceManufacturerLin
     const byName = invoice.name ? list.filter(entry => manufacturerKey(entry.name) === manufacturerKey(invoice.name)) : [];
     if (byName.length === 1) return { ...base, status: "NAME", entry: byName[0] };
     if (byName.length > 1) return { ...base, status: "CHOICE", entry: null, candidates: byName };
-    return { ...base, status: "MISSING", entry: null };
+    return { ...base, status: "MISSING", entry: null, candidates: invoiceManufacturerSimilar(invoice, list) };
   });
+}
+
+/** Words that every company or address has, left out of the similarity. */
+const commonWords = new Set(["CO", "LTD", "LIMITED", "COMPANY", "CORP", "CORPORATION", "INC", "THE", "OF", "AND", "CHINA", "PRC",
+  "PROVINCE", "CITY", "DISTRICT", "ROAD", "RD", "NO", "TOWN", "STREET", "ST", "BUILDING", "FLOOR", "ZONE"]);
+const similarityWords = (value: string) => new Set(value.normalize("NFD").replace(/[̀-ͯ]/gu, "").toLocaleUpperCase("en-US")
+  .split(/[^A-Z0-9]+/u).filter(word => word.length > 1 && !commonWords.has(word)));
+const trigrams = (value: string) => {
+  const key = [...similarityWords(value)].join("");
+  return new Set(Array.from({ length: Math.max(key.length - 2, 0) }, (_, index) => key.slice(index, index + 3)));
+};
+function overlap(left: ReadonlySet<string>, right: ReadonlySet<string>, dice: boolean): number {
+  if (!left.size || !right.size) return 0;
+  const common = [...left].filter(value => right.has(value)).length;
+  return dice ? 2 * common / (left.size + right.size) : common / (left.size + right.size - common);
+}
+
+/** The list entries close to a manufacturer the list does not have (name nearly equal or the same address words). */
+export const invoiceManufacturerSimilarity = 0.6;
+export function invoiceManufacturerSimilar(invoice: { name: string; address: string },
+  list: readonly InvoiceManufacturerEntry[], limit = 5): InvoiceManufacturerEntry[] {
+  const name = similarityWords(invoice.name), nameGrams = trigrams(invoice.name), address = similarityWords(invoice.address);
+  return list.map(entry => ({ entry, score: Math.max(overlap(name, similarityWords(entry.name), false),
+    overlap(nameGrams, trigrams(entry.name), true), overlap(address, similarityWords(entry.address), false)) }))
+    .filter(({ score }) => score >= invoiceManufacturerSimilarity)
+    .sort((left, right) => right.score - left.score || left.entry.sourceRow - right.entry.sourceRow)
+    .slice(0, limit).map(({ entry }) => entry);
+}
+
+/** The list entries whose name, address or TOTVS code contain the text the analyst typed (at least 3 letters or digits). */
+export function invoiceManufacturerSearch(list: readonly InvoiceManufacturerEntry[], text: string, limit = 10): InvoiceManufacturerEntry[] {
+  const key = manufacturerKey(text);
+  if (key.length < 3) return [];
+  return list.filter(entry => [entry.name, entry.address, entry.code].some(value => manufacturerKey(value).includes(key)))
+    .slice(0, limit);
 }
 
 function resolvedManufacturer(check: InvoiceManufacturerCheck, addressChoices: Readonly<Record<number, string>>) {
@@ -682,10 +718,10 @@ export function invoiceManufacturerPending(checks: readonly InvoiceManufacturerC
   addressChoices: Readonly<Record<number, string>>, countryChoices: Readonly<Record<number, InvoiceCountryChoice>>,
   missingDecisions: Readonly<Record<number, InvoiceQuantityDecision>>): number {
   return checks.reduce((total, check) => {
-    if (check.status === "MISSING") {
+    if (!resolvedManufacturer(check, addressChoices)) {
+      if (check.status !== "MISSING") return total + 1;
       return total + (invoiceQuantityDecisionReady(missingDecisions[check.sourceRow] ?? { confirmed: false, reason: "" }) ? 0 : 1);
     }
-    if (!resolvedManufacturer(check, addressChoices)) return total + 1;
     const choice = countryChoices[check.sourceRow];
     const decided = Boolean(choice?.source) && (choice?.reason.trim().length ?? 0) >= minimumQuantityReasonLength;
     return total + (invoiceManufacturerCountryPoint(check, addressChoices) && !decided ? 1 : 0);

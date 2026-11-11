@@ -218,3 +218,33 @@ Regras:
 - **Função:** `followUpPoSuggestions` em `lib/audit-reference-xlsx.ts`.
 - **Escrita:** a grafia da célula PO é mantida por `invoiceLineCorrections`.
 - **IPH034B real** com o Follow Up local: a linha 92 recebe a sugestão da PO 030631 (IP 034B/2026, 7.500), e a célula N92 passa a `PO030631`.
+
+## Etapa 1e: fabricante parecido e PKL com fórmula
+
+Comparação da IPH034B com o arquivo da analista (2026-11-11).
+
+Resultado antes da etapa 1e:
+- 102 das 103 correções de dados da analista reproduzidas. As colunas O a W (fórmulas de conferência dela) ficam fora da conta.
+- **Linha 54:** a invoice escreve `Suzhou Industrial Park Kant Electronics`, e a lista tem `Kangde` (EX000639), com o endereço escrito em outra ordem. A analista reconheceu o fabricante e trocou o endereço; a página marcava "fora da lista".
+- **PKL:** nesta invoice, o NCM e a descrição da PKL são fórmulas (`=INV!D16`). O sistema as trocava por valor fixo, e o vínculo com a INV se perdia.
+
+Decisões do usuário (2026-11-11): sugerir os fabricantes parecidos e permitir digitar o fabricante para buscar na lista.
+
+Regras:
+
+- **Parecidos:** um fabricante fora da lista recebe até 5 entradas parecidas (`invoiceManufacturerSimilar`). A similaridade é a maior entre:
+  - as palavras do nome;
+  - os trigramas do nome;
+  - as palavras do endereço.
+
+  Palavras comuns (CO, LTD, CHINA, ROAD...) não contam, e o mínimo é 0,6.
+- **Busca:** o analista também pode digitar parte do nome, do endereço ou do código TOTVS (`invoiceManufacturerSearch`, mínimo de 3 letras ou números, até 10 resultados).
+- **Escolha:** a entrada escolhida, parecida ou buscada, corrige a linha como a lista faz: endereço, nome quando difere de fato, e país divergente decidido pelo analista. Ela fica registrada na aba `AUDITORIA` como "Fabricante escolhido na lista (código)". Sem escolha, o fabricante continua sendo confirmado como fora da lista, com motivo.
+- **PKL:** uma célula da PKL que é fórmula apontando para a INV mantém a fórmula, com o resultado corrigido, sem marcação.
+
+### Resultado (etapa 1e)
+
+Ensaio da IPH034B com a PO 030631 na linha 92 e EX000639 na linha 54:
+- **Iguais:** 102 das 103 correções da analista, agora incluindo F54. A PKL não difere mais.
+- **N92:** mesma PO; ela escreveu `PO 030631`, o sistema `PO030631`.
+- **E54:** o sistema grava o nome da lista (`Kangde`), e a analista manteve `Kant`.

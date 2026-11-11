@@ -5,7 +5,7 @@ import test from "node:test";
 import ExcelJS from "exceljs";
 import { parseManufacturerListXlsx } from "../lib/audit-reference-xlsx.ts";
 import { invoiceCountryMatches, invoiceManufacturerChecks, invoiceManufacturerCorrections, invoiceManufacturerPending,
-  invoiceOriginCountries } from "../lib/china-invoice-mapping.ts";
+  invoiceManufacturerSearch, invoiceOriginCountries } from "../lib/china-invoice-mapping.ts";
 import { parseChinaInvoiceXlsx } from "../lib/china-invoice-xlsx.ts";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
 
@@ -102,4 +102,51 @@ test("keeping the invoice country of row 27, the list reproduces the analyst's m
     }
     const countries = draft.lines.map(entry => corrections[entry.sourceRow]?.manufacturerCountry ?? entry.manufacturerCountry);
     assert.equal(invoiceOriginCountries(draft.countryOfOrigin, countries).corrected, text(inv.getCell("K12")));
+  });
+
+// Comparison of IPH034B (2026-11-11): line 54 wrote "Kant" where the list has "Kangde" (EX000639), with the address
+// written in another order; the analyst recognised the manufacturer and took the list address. The page suggests the
+// similar entries of the list and lets the analyst type to search it; a manufacturer out of it is still confirmed.
+const kangde = [
+  { sourceRow: 402, name: "Suzhou Industrial Park Kangde Electronics Co., Ltd",
+    address: "No. 45 Dongfu Road, Loufeng East District, Suzhou Industrial Park, Building 3, Venture Capital Industrial Square",
+    country: "China", code: "EX000639" },
+  { sourceRow: 403, name: "Suzhou Industrial Park Precision Machinery Co., Ltd", address: "No. 9 Xinghan Street", country: "China",
+    code: "EX000700" },
+  ...list,
+];
+const kant = line(54, "Suzhou Industrial Park Kant Electronics Co., LTD",
+  "Factory 3, Loufeng East District, No.45 Loufeng Dongfu Road, Suzhou Industrial Park, Jiangsu, China", "CHINA");
+
+test("a manufacturer out of the list gets the similar entries, and the chosen one corrects the line", () => {
+  const [check] = invoiceManufacturerChecks([kant], kangde);
+  assert.equal(check.status, "MISSING");
+  assert.deepEqual(check.candidates.map(entry => entry.code), ["EX000639"]);
+  assert.equal(invoiceManufacturerPending([check], {}, {}, {}), 1);
+  assert.equal(invoiceManufacturerPending([check], {}, {}, { 54: { confirmed: true, reason: "Fora da lista" } }), 0);
+  assert.equal(invoiceManufacturerPending([check], { 54: "EX000639" }, {}, {}), 0);
+  assert.deepEqual(invoiceManufacturerCorrections([kant], [check], { 54: "EX000639" }, {}), { 54: {
+    manufacturerAddress: kangde[0].address, manufacturer: kangde[0].name } });
+  assert.deepEqual(invoiceManufacturerCorrections([kant], [check], { 54: "" }, {}), {});
+});
+
+test("the analyst types a name, an address or a TOTVS code to search the list", () => {
+  assert.deepEqual(invoiceManufacturerSearch(kangde, "kangde").map(entry => entry.code), ["EX000639"]);
+  assert.deepEqual(invoiceManufacturerSearch(kangde, "Dongfu Road").map(entry => entry.code), ["EX000639"]);
+  assert.deepEqual(invoiceManufacturerSearch(kangde, "ex0007").map(entry => entry.code), ["EX000700"]);
+  assert.deepEqual(invoiceManufacturerSearch(kangde, "Suzhou Industrial", 1).map(entry => entry.code), ["EX000639"]);
+  assert.deepEqual(invoiceManufacturerSearch(kangde, " a- "), []);
+});
+
+const realInvoice034B = new URL("../../../invoices_tests/IPH034B 2026       INV+PL.xlsx", import.meta.url);
+const realList034B = new URL("../../../invoices_tests/TOTVS-HEXING -LIST MANUFACTURER - Ultima Versão!!!.xlsx", import.meta.url);
+test("the real IPH034B line 54 gets Kangde EX000639 first, with the address the analyst took",
+  { skip: !existsSync(realInvoice034B) || !existsSync(realList034B) }, async () => {
+    const draft = await parseChinaInvoiceXlsx(new File([await readFile(realInvoice034B)], "IPH034B.xlsx"), ptBR);
+    const { manufacturers } = await parseManufacturerListXlsx(new File([await readFile(realList034B)], "LIST.xlsx"), ptBR);
+    const check = invoiceManufacturerChecks(draft.lines, manufacturers).find(entry => entry.sourceRow === 54);
+    assert.equal(check.status, "MISSING");
+    assert.equal(check.candidates[0].code, "EX000639");
+    assert.equal(check.candidates[0].address, "No. 45 Dongfu Road, Loufeng East District, Suzhou Industrial Park, Building 3, "
+      + "Venture Capital Industrial Square, Loufeng East District");
   });

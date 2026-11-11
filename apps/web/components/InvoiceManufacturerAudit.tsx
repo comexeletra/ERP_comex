@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { invoiceManufacturerCountryPoint, invoiceManufacturerId, InvoiceCountryChoice, InvoiceManufacturerCheck,
-  InvoiceQuantityDecision, invoiceQuantityDecisionReady } from "../lib/china-invoice-mapping";
+  InvoiceManufacturerEntry, invoiceManufacturerSearch, InvoiceQuantityDecision, invoiceQuantityDecisionReady } from "../lib/china-invoice-mapping";
 import type { Messages } from "../lib/i18n/pt-BR";
 
 type ManufacturerCorrections = Record<number, Partial<Record<"manufacturer" | "manufacturerAddress" | "manufacturerCountry", string>>>;
@@ -11,14 +12,16 @@ const reasonReady = (reason: string) => reason.trim().length >= 3;
 /**
  * Manufacturer against the manufacturer list (user decisions, 2026-11-10): the list address and name are applied and
  * only listed; the analyst chooses the address of a name with several, decides a country that differs from the list
- * and confirms a manufacturer out of it. The header country of origin gets the missing countries.
+ * and takes a manufacturer out of it from the similar entries or by typing to search the list, or confirms it is out
+ * of the list (user request, 2026-11-11). The header country of origin gets the missing countries.
  */
 export default function InvoiceManufacturerAudit({ t, hasList, checks, corrections, addressChoices, countryChoices,
-  missingDecisions, origin, header, onAddress, onCountry, onMissing }: {
+  missingDecisions, origin, header, list, onAddress, onPick, onCountry, onMissing }: {
   t: Messages["invoiceAudit"]; hasList: boolean; checks: readonly InvoiceManufacturerCheck[]; corrections: ManufacturerCorrections;
   addressChoices: Readonly<Record<number, string>>; countryChoices: Readonly<Record<number, InvoiceCountryChoice>>;
   missingDecisions: Readonly<Record<number, InvoiceQuantityDecision>>; origin: { missing: string[]; corrected: string | null };
-  header: string; onAddress: (row: number, id: string) => void;
+  header: string; list: readonly InvoiceManufacturerEntry[]; onAddress: (row: number, id: string) => void;
+  onPick: (row: number, entry: InvoiceManufacturerEntry) => void;
   onCountry: (row: number, change: Partial<InvoiceCountryChoice>) => void;
   onMissing: (row: number, change: Partial<InvoiceQuantityDecision>) => void;
 }) {
@@ -31,6 +34,8 @@ export default function InvoiceManufacturerAudit({ t, hasList, checks, correctio
   });
   const choices = checks.filter(check => check.status === "CHOICE");
   const missing = checks.filter(check => check.status === "MISSING");
+  const [searches, setSearches] = useState<Record<number, string>>({});
+  const entryText = (entry: InvoiceManufacturerEntry) => t.listEntry(entry.name, entry.address || "—", entry.country || "—", entry.code || "—");
   return <section className="notice invoice-catalog" aria-label={t.manufacturerTitle}>
     <h3>{t.manufacturerTitle}</h3>
     {hasList ? <p>{t.manufacturerSummary(applied.length, choices.length, countryPoints.length, missing.length)}</p>
@@ -74,12 +79,33 @@ export default function InvoiceManufacturerAudit({ t, hasList, checks, correctio
       })}
       {missing.map(check => {
         const decision = missingDecisions[check.sourceRow] ?? noDecision;
-        return <li key={`missing-${check.sourceRow}`} className={`notice ${invoiceQuantityDecisionReady(decision) ? "success" : "error"}`}>
+        const chosen = check.candidates.find(entry => invoiceManufacturerId(entry) === addressChoices[check.sourceRow]);
+        const query = searches[check.sourceRow] ?? "";
+        const found = invoiceManufacturerSearch(list, query)
+          .filter(entry => !check.candidates.some(candidate => invoiceManufacturerId(candidate) === invoiceManufacturerId(entry)));
+        return <li key={`missing-${check.sourceRow}`}
+          className={`notice ${chosen || invoiceQuantityDecisionReady(decision) ? "success" : "error"}`}>
           <p>{t.notInList(check.sourceRow, check.invoice.name || "—")}</p>
-          <label className="invoice-audit-confirm"><input type="checkbox" checked={decision.confirmed}
-            onChange={event => onMissing(check.sourceRow, { confirmed: event.target.checked })} />{t.confirmNotInList}</label>
-          <label className="invoice-audit-reason">{t.reason}<input required minLength={3} maxLength={1000} value={decision.reason}
-            onChange={event => onMissing(check.sourceRow, { reason: event.target.value })} /></label>
+          {check.candidates.length > 0 && <fieldset className="invoice-audit-choice invoice-manufacturer-candidates">
+            <legend>{t.similarManufacturers}</legend>
+            {check.candidates.map(entry => <label key={invoiceManufacturerId(entry)}><input type="radio"
+              name={`similar-${check.sourceRow}`} checked={chosen === entry}
+              onChange={() => onAddress(check.sourceRow, invoiceManufacturerId(entry))} />{entryText(entry)}</label>)}
+          </fieldset>}
+          <label className="invoice-audit-reason">{t.searchList}<input type="search" value={query}
+            onChange={event => setSearches(current => ({ ...current, [check.sourceRow]: event.target.value }))} /></label>
+          {query.trim() && (found.length ? <ul className="invoice-suggestions">{found.map(entry => <li key={invoiceManufacturerId(entry)}>
+            <span>{entryText(entry)}</span>
+            <button className="button secondary" type="button" onClick={() => { onPick(check.sourceRow, entry);
+              setSearches(current => ({ ...current, [check.sourceRow]: "" })); }}>{t.useManufacturer(entry.code || "—")}</button>
+          </li>)}</ul> : <p className="invoice-audit-note">{t.searchEmpty}</p>)}
+          {chosen ? <button className="button secondary" type="button" onClick={() => onAddress(check.sourceRow, "")}>
+            {t.undoManufacturer}</button> : <>
+            <label className="invoice-audit-confirm"><input type="checkbox" checked={decision.confirmed}
+              onChange={event => onMissing(check.sourceRow, { confirmed: event.target.checked })} />{t.confirmNotInList}</label>
+            <label className="invoice-audit-reason">{t.reason}<input required minLength={3} maxLength={1000} value={decision.reason}
+              onChange={event => onMissing(check.sourceRow, { reason: event.target.value })} /></label>
+          </>}
         </li>;
       })}
     </ul>}

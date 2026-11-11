@@ -8,7 +8,7 @@ import { classifyInvoiceDestination, distributeInvoiceParts, invoiceAssignmentsF
   invoiceKeyItems, InvoiceLinePricePoint, invoiceLinePricePoint, InvoicePackingChoice, invoicePackingChoiceReady,
   invoicePackingChoiceWeights, invoicePackingDivergences, InvoicePriceChoice, invoicePriceChoiceReady, invoicePriceTolerancePercent,
   InvoiceQuantityDecision, invoiceQuantityDecisionReady, invoiceQuantityPoint, invoiceSupplierMismatches, InvoiceCountryChoice,
-  InvoiceManufacturerCheck, invoiceManufacturerChecks, invoiceManufacturerCorrections, invoiceManufacturerCountryPoint,
+  InvoiceManufacturerCheck, invoiceManufacturerChecks, InvoiceManufacturerEntry, invoiceManufacturerCorrections, invoiceManufacturerCountryPoint,
   invoiceManufacturerId, invoiceManufacturerPending, invoiceOriginCountries } from "../lib/china-invoice-mapping";
 import { followUpCandidates, followUpImporters, followUpPoSuggestions, followUpSameIps, parseFollowUpXlsx, parseManufacturerListXlsx,
   parseProductDatabaseXlsx, type FollowUpCandidate, type FollowUpWorkbook, type ManufacturerList, type ProductDatabase } from "../lib/audit-reference-xlsx";
@@ -42,6 +42,7 @@ export default function InvoiceAuditWorkbench() {
   const [addressChoices, setAddressChoices] = useState<Record<number, string>>({});
   const [countryChoices, setCountryChoices] = useState<Record<number, InvoiceCountryChoice>>({});
   const [manufacturerMissing, setManufacturerMissing] = useState<Record<number, InvoiceQuantityDecision>>({});
+  const [pickedManufacturers, setPickedManufacturers] = useState<Record<number, InvoiceManufacturerEntry>>({});
   const [reading, setReading] = useState<"" | "invoice" | "followUp" | "database" | "manufacturers" | "download">("");
   const [error, setError] = useState("");
   const [importerChoice, setImporterChoice] = useState("");
@@ -83,7 +84,7 @@ export default function InvoiceAuditWorkbench() {
   }
 
   function resetManufacturerDecisions() {
-    setAddressChoices({}); setCountryChoices({}); setManufacturerMissing({});
+    setAddressChoices({}); setCountryChoices({}); setManufacturerMissing({}); setPickedManufacturers({});
   }
 
   async function selectManufacturers(event: ChangeEvent<HTMLInputElement>) {
@@ -144,7 +145,13 @@ export default function InvoiceAuditWorkbench() {
   const supplierMismatches = draft ? invoiceSupplierMismatches(draft.exporterText, allocatedItems.map(item => item.supplier)) : [];
   const divergences = draft?.packingList.status === "READ" ? invoicePackingDivergences(draft.lines, draft.packingList.lines) : [];
   const catalog = draft && database ? invoiceCatalogPoints(draft.lines, database.products) : { points: [], missing: [] };
-  const manufacturerChecks = draft && manufacturerList ? invoiceManufacturerChecks(draft.lines, manufacturerList.manufacturers) : [];
+  // An entry the analyst found by typing joins the line's candidates, so it is chosen like a similar one.
+  const manufacturerChecks = (draft && manufacturerList ? invoiceManufacturerChecks(draft.lines, manufacturerList.manufacturers) : [])
+    .map(check => {
+      const picked = pickedManufacturers[check.sourceRow];
+      return picked && !check.candidates.some(entry => invoiceManufacturerId(entry) === invoiceManufacturerId(picked))
+        ? { ...check, candidates: [...check.candidates, picked] } : check;
+    });
   const manufacturerCorrections = draft
     ? invoiceManufacturerCorrections(draft.lines, manufacturerChecks, addressChoices, countryChoices) : {};
   const origin = draft ? invoiceOriginCountries(draft.countryOfOrigin, draft.lines.map(line =>
@@ -254,7 +261,11 @@ export default function InvoiceAuditWorkbench() {
         <InvoiceManufacturerAudit t={t} hasList={Boolean(manufacturerList)} checks={manufacturerChecks}
           corrections={manufacturerCorrections} addressChoices={addressChoices} countryChoices={countryChoices}
           missingDecisions={manufacturerMissing} origin={origin} header={draft!.countryOfOrigin}
+          list={manufacturerList?.manufacturers ?? []}
           onAddress={(row, id) => { setAddressChoices(current => ({ ...current, [row]: id }));
+            setCountryChoices(current => { const next = { ...current }; delete next[row]; return next; }); }}
+          onPick={(row, entry) => { setPickedManufacturers(current => ({ ...current, [row]: entry }));
+            setAddressChoices(current => ({ ...current, [row]: invoiceManufacturerId(entry) }));
             setCountryChoices(current => { const next = { ...current }; delete next[row]; return next; }); }}
           onCountry={(row, change) => setCountryChoices(current =>
             ({ ...current, [row]: { ...(current[row] ?? { source: null, reason: "" }), ...change } }))}
@@ -287,7 +298,7 @@ export default function InvoiceAuditWorkbench() {
                     {t.useBalance(formatNumber(issue.available))}</button>}
                   {suggestions.length > 0 && <>
                     <p><strong>{t.poSuggestionsTitle}</strong></p>
-                    <ul className="invoice-po-suggestions">{suggestions.map(suggestion => <li key={suggestion.poNumber}>
+                    <ul className="invoice-suggestions">{suggestions.map(suggestion => <li key={suggestion.poNumber}>
                       <span>{t.poSuggestion(suggestion.poNumber, `${formatNumber(suggestion.available)} ${line.unit}`.trim(),
                         suggestion.ipNumber, suggestion.sourceRows.join(", "))}</span>
                       <button className="button secondary" type="button"
@@ -438,7 +449,7 @@ function auditSheet(m: Messages, input: AuditInput) {
     const row = String(check.sourceRow);
     const correction = input.corrections.find(entry => entry.sourceRow === check.sourceRow);
     const chosen = check.candidates.find(entry => invoiceManufacturerId(entry) === input.addressChoices[check.sourceRow]);
-    if (check.status === "MISSING") {
+    if (check.status === "MISSING" && !chosen) {
       rows.push([row, check.lineNumber, s.notInList, check.invoice.name, "—", s.confirmed,
         input.manufacturerMissing[check.sourceRow]?.reason.trim() ?? "", ""]);
       continue;
@@ -446,7 +457,8 @@ function auditSheet(m: Messages, input: AuditInput) {
     for (const field of ["manufacturer", "manufacturerAddress"] as const) {
       if (!correction?.changed.includes(field)) continue;
       rows.push([row, check.lineNumber, m.invoiceAudit.manufacturerField[field], correction.original[field],
-        correction.corrected[field], chosen ? s.chosenAddress(chosen.code || "—") : check.status === "NAME" ? s.listByName : s.listValue,
+        correction.corrected[field], chosen ? (check.status === "MISSING" ? s.chosenManufacturer(chosen.code || "—")
+          : s.chosenAddress(chosen.code || "—")) : check.status === "NAME" ? s.listByName : s.listValue,
         "", cells(check.sourceRow, [field])]);
     }
     const listCountry = invoiceManufacturerCountryPoint(check, input.addressChoices);

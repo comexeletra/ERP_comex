@@ -45,7 +45,7 @@ test("every class of the page has a style rule", async () => {
   const styles = await source("../app/styles/features/operations.css");
   for (const name of ["invoice-audit-page", "invoice-audit-files", "invoice-audit-importer", "invoice-audit-choice",
     "invoice-catalog", "invoice-catalog-table", "invoice-manufacturer-candidates",
-    "invoice-po-suggestions", "invoice-po-changed"]) {
+    "invoice-suggestions", "invoice-po-changed"]) {
     assert.match(styles, new RegExp(String.raw`\.${name}[\s,{.]`, "u"), name);
   }
 });
@@ -121,4 +121,17 @@ test("a line the cited PO cannot receive gets the Follow Up PO suggestions and t
   assert.match(component, /rows\.map\(row => \(\{ sourceRow: row\.part\.sourceRow, poNumber: row\.part\.poNumber, quantity: row\.part\.quantity \}\)\)/u);
   assert.match(component, /if \(part\.poNumber !== part\.sourcePoNumber\) \{/u);
   assert.match(component, /setPoChoices\(\{\}\)/u);
+});
+
+// Comparison of IPH034B (2026-11-11): a manufacturer out of the list is taken from the similar entries or by typing to
+// search the list; only without a chosen entry it is confirmed as out of the list.
+test("a manufacturer out of the list is chosen among the similar or searched entries, or confirmed", async () => {
+  const component = await source("../components/InvoiceAuditWorkbench.tsx");
+  const section = await source("../components/InvoiceManufacturerAudit.tsx");
+  assert.match(component, /onPick=\{\(row, entry\) => \{ setPickedManufacturers\(current => \(\{ \.\.\.current, \[row\]: entry \}\)\);/u);
+  assert.match(component, /\? \{ \.\.\.check, candidates: \[\.\.\.check\.candidates, picked\] \} : check;/u);
+  assert.match(component, /if \(check\.status === "MISSING" && !chosen\) \{/u);
+  assert.match(section, /const found = invoiceManufacturerSearch\(list, query\)/u);
+  assert.match(section, /name=\{`similar-\$\{check\.sourceRow\}`\}/u);
+  assert.match(section, /\{chosen \? <button className="button secondary" type="button" onClick=\{\(\) => onAddress\(check\.sourceRow, ""\)\}>/u);
 });

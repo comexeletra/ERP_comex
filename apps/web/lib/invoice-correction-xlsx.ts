@@ -204,7 +204,10 @@ export async function writeCorrectedInvoice(bytes: ArrayBuffer | Uint8Array, lay
   const packingSheet = workbook.getWorksheet("PKL");
   if (packingSheet) {
     for (const entry of invoicePackingCorrections(corrections, packing)) {
-      mark(packingSheet.getRow(entry.packingRow).getCell(entry.column), entry.value, note);
+      const cell = packingSheet.getRow(entry.packingRow).getCell(entry.column);
+      // A formula pointing at the INV (=INV!D16) already shows the corrected INV value: it keeps the formula.
+      if (cell.formula && /(^|[^A-Z0-9_])'?INV'?!/iu.test(cell.formula)) cell.value = { formula: cell.formula, result: entry.value };
+      else mark(cell, entry.value, note);
     }
   }
   if (countryOfOrigin !== null && layout.countryOfOrigin) {

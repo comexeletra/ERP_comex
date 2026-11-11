@@ -12,7 +12,7 @@ import { ptBR } from "../lib/i18n/pt-BR.ts";
 // User decision (2026-11-10): the audit page returns the invoice file itself, corrected with the analyst's
 // decisions, plus an AUDITORIA sheet. Lines destined with 0 stay as they came; the PKL sheet is not changed.
 
-async function invoiceBytes() {
+async function invoiceBytes(mutate) {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("INV");
   for (const [address, value] of [["J4", "IP REF.:"], ["K4", "IPH037A/2026"], ["J5", "INVOICE:"], ["K5", "PW-1"],
@@ -42,6 +42,7 @@ async function invoiceBytes() {
     packing.getCell(address).value = value;
   }
   workbook.addWorksheet("Other").getCell("B2").value = "keep me";
+  mutate?.(workbook);
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
@@ -227,4 +228,27 @@ test("writes the real IPH037A without changes and reads it again", { skip: !exis
   assert.equal(reread.lines.length, 62);
   assert.deepEqual(reread.issues, []);
   assert.deepEqual(reread.declaredTotals, draft.declaredTotals);
+});
+
+// Comparison of IPH034B (2026-11-11): its PKL NCM and description are formulas pointing at the INV (=INV!D16). They keep
+// the formula, which shows the corrected INV value, instead of becoming a fixed value.
+test("a PKL cell that is a formula pointing at the INV keeps the formula with the corrected result", async () => {
+  const original = await invoiceBytes(workbook => {
+    const pkl = workbook.getWorksheet("PKL");
+    pkl.getCell("B13").value = { formula: "INV!B16", result: "85423939" };
+    pkl.getCell("C13").value = { formula: "INV!D16", result: "Part A" };
+  });
+  const draft = await parse(original);
+  const corrections = invoiceLineCorrections(draft.lines, parts, {}, {}, { 16: { ncm: "85322410", description: "PART A (DATABASE)" } });
+  assert.deepEqual(invoicePackingCorrections(corrections, draft.packingList).map(entry => [entry.packingRow, entry.field]),
+    [[13, "ncm"], [13, "description"]]);
+  const written = await writeCorrectedInvoice(original, draft.layout, corrections, invoiceCorrectedTotals(corrections),
+    { sheetName: "AUDITORIA", summary: [], columns: ["Linha"], rows: [] }, value => `Valor original: ${value}`, draft.packingList);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(written);
+  const pkl = workbook.getWorksheet("PKL");
+  assert.deepEqual(pkl.getCell("B13").value, { formula: "INV!B16", result: "85322410" });
+  assert.deepEqual(pkl.getCell("C13").value, { formula: "INV!D16", result: "PART A (DATABASE)" });
+  assert.equal(pkl.getCell("C13").fill?.fgColor?.argb, undefined);
+  assert.equal(workbook.getWorksheet("INV").getCell("D16").value, "PART A (DATABASE)");
 });
