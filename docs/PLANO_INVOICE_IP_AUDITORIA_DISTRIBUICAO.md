@@ -217,9 +217,9 @@ revisa o IP `037D/2026` da carga do Follow Up em vez de criar outro.
 
 ## Decisões do usuário (2026-11-12)
 
-1. A criação pela invoice deixa escolher o status logístico. **Pendente:** o status exibido em toda a plataforma é calculado pelas
-   datas do IP (`af2f77b`; o informado só prevalece quando é cancelamento), então um status escolhido na criação não apareceria.
-   Ficou fora da B1 até o usuário decidir se o informado deve prevalecer sobre o cálculo.
+1. A criação pela invoice deixa escolher o status logístico. **Revista em 2026-11-12:** o status exibido em toda a plataforma é
+   calculado pelas datas do IP (`af2f77b`; o informado só prevalece quando é cancelamento); o usuário decidiu **manter o cálculo**,
+   e a invoice continua sem gravar status.
 2. Os portos são gravados com os códigos do cadastro, traduzidos do texto da invoice.
 3. O modal é pedido na tela.
 4. O IP revisado mantém o número sem `IPH`; o IP REF da invoice fica no documento (`ipNumberFromInvoice`).
@@ -227,7 +227,8 @@ revisa o IP `037D/2026` da carga do Follow Up em vez de criar outro.
 
 ## Requisitos
 
-1. **Status logístico:** sem mudança (decisão 1 pendente); a invoice continua mandando o status vazio e a revisão não o altera.
+1. **Status logístico:** sem mudança (decisão 1: manter o cálculo); a invoice continua mandando o status vazio e a revisão não o
+   altera.
 2. **Modal:** lista `TRANSPORT_MODE`, obrigatório; na revisão vem o modal do IP, na criação começa sem escolha.
 3. **Portos:** listas `PORT_LOADING` e `PORT_DISCHARGE`, opcionais, com sugestão pelo texto da invoice: Ningbo → `NGB`, Shanghai →
    `SGH`, Shekou → `SHEKOU (CHINA)`, Hong Kong → `HKG`, Hangzhou → `HGH`; Pecém → `PEC`, Fortaleza → `FOR`, Paranaguá → `PNG`,
@@ -283,5 +284,14 @@ Verificação: API 72 arquivos de teste; web 483 testes (6 pulados por arquivos 
 real DATABASE` lê `invoices_tests/DATABASE - Renew.xlsx`, trocada em 2026-11-12 às 11:40 por uma versão sem a aba `DATABASE`. Type-check,
 lint (sem erro; avisos iguais aos de antes) e build da web passaram.
 
-Pendente com o usuário: o status logístico na criação pela invoice (decisão 1 desta fase) e a fase B2 (etapa 6). O teste da 034C pela
-tela fica com o usuário: a invoice `IPH034C` deve abrir a revisão do `034C/2026` com SEA, NGB e PEC já preenchidos.
+Correção depois do teste do usuário (`0d4d3a8`): a revisão do `IPH037D/2026`, criado pela invoice antes da B1, trazia os portos com o
+texto da invoice (`NINGBO,CHINA`), fora das listas, e a API recusava; a tela agora só aproveita modal e portos do IP que estejam na
+lista, senão sugere pelo texto (`invoiceProcessPort`).
+
+Teste do usuário no Preview (2026-11-12, conferido só leitura no HML): nova carga da IPH037D auditada revisou o `IPH037D/2026` com SEA,
+NGB, PEC e prioridade; as 12 alocações (49.740) foram refeitas iguais às do `037D/2026` original (linha 20: 20 na 030888 e 60 na
+030201) e a invoice anterior ficou cancelada. O `037D/2026` continua cancelado (teste de 2026-11-12). Falta o teste de um IP do Follow
+Up sem `IPH` pela tela (por exemplo a IPH034C, que deve abrir a revisão do `034C/2026` com SEA, NGB e PEC).
+
+Decisões de 2026-11-12 no fim da B1: manter o status calculado (decisão 1) e seguir para a fase B2 (etapa 6) **numa nova sessão**,
+começando pela especificação para aprovação.
