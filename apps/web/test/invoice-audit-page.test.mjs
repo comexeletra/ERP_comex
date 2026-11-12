@@ -28,18 +28,24 @@ test("the page is a route in the menu and only reads the session and the referen
   assert.doesNotMatch(component, /method:/u);
   assert.match(component, /parseFollowUpXlsx\(file, getMessages\(\)\)/u);
   assert.match(component, /parseChinaInvoiceXlsx\(file, getMessages\(\)\)/u);
+  // The review shared with the IP screen calls no route: the page still reads only the session and the reference.
+  const { review, sheet, bulk } = await shared();
+  for (const code of [review, sheet, bulk]) assert.doesNotMatch(code, /apiFetch|method:/u);
 });
 
 test("the download waits for every decision and writes the corrections with the AUDITORIA sheet", async () => {
   const { model, review, sheet } = await shared();
+  const component = await source("../components/InvoiceAuditWorkbench.tsx");
   assert.match(model, /const canDownload = ready && pending === 0 && rows\.some\(row => row\.allocations\.length > 0\);/u);
   assert.match(review, /disabled=\{!canDownload \|\| reading\}/u);
+  // While the file is written the page keeps the invoice and the Follow Up from being replaced.
+  assert.match(component, /onBusy=\{busy => setReading\(busy \? "download" : ""\)\}/u);
+  assert.match(component, /disabled=\{Boolean\(reading\)\}/u);
   assert.match(model, /invoicePriceChoiceReady\(point, decisions\.priceChoices\[row\]\)/u);
   assert.match(model, /invoicePackingChoiceReady\(divergence, decisions\.packingChoices\[divergence\.key\]\)/u);
   assert.match(model, /supplierMismatches\.filter\(supplier => !decisions\.supplierConfirmed\[supplier\]\)/u);
   assert.match(review, /writeCorrectedInvoice\(bytes, draft\.layout, corrections, invoiceCorrectedTotals\(corrections\)/u);
   assert.match(sheet, /export const invoiceAuditSheetName = "AUDITORIA";/u);
-  const component = await source("../components/InvoiceAuditWorkbench.tsx");
   assert.match(component, /<InvoiceAuditReview draft=\{draft!\} bytes=\{invoice!\.bytes\} source=\{source\}/u);
 });
 
@@ -192,7 +198,8 @@ test("a line the cited PO cannot receive gets the Follow Up PO suggestions and t
   const { model, sheet, review, followUp } = await shared();
   assert.match(model, /const poNumber = decisions\.poChoices\[part\.key\] \?\? part\.poNumber;/u);
   assert.match(model, /source\.suggestions\(part\.productCode, part\.poNumber, part\.quantity, taken\)/u);
-  assert.match(followUp, /followUpPoSuggestions\(lines, importer, invoiceIp, productCode, citedPo, quantity, taken\)/u);
+  assert.match(followUp, /suggestions: \(productCode: string, citedPo: string, quantity: string, taken: readonly \{ itemId: string; quantity: string \}\[\]\) =>\s+followUpPoSuggestions\(lines, importer, invoiceIp, productCode, citedPo, quantity, taken\)/u);
+  assert.match(followUp, /purchaseOrder: \(poNumber: string\) => followUpCandidates\(lines, importer, poNumber, invoiceIp\)/u);
   assert.match(component, /followUpAuditSource\(followUp\.lines, importer, draft\.ipNumber\)/u);
   assert.match(model, /issue && issue\.kind !== "INVALID_QUANTITY"/u);
   assert.match(review, /change\("poChoices", current => \(\{ \.\.\.current, \[part\.key\]: suggestion\.poNumber \}\)\)/u);

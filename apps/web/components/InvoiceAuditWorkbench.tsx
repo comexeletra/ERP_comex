@@ -32,7 +32,7 @@ export default function InvoiceAuditWorkbench() {
   const [reference, setReference] = useState<AuditReference | null>(null);
   const [referenceFailed, setReferenceFailed] = useState(false);
   const [decisions, setDecisions] = useState<InvoiceAuditDecisions>(emptyInvoiceAuditDecisions);
-  const [reading, setReading] = useState<"" | "invoice" | "followUp">("");
+  const [reading, setReading] = useState<"" | "invoice" | "followUp" | "download">("");
   const [error, setError] = useState("");
   const [importerChoice, setImporterChoice] = useState("");
 
@@ -75,7 +75,8 @@ export default function InvoiceAuditWorkbench() {
   const ready = Boolean(draft && followUp && importer);
   const source = useMemo(() => draft && followUp && importer ? followUpAuditSource(followUp.lines, importer, draft.ipNumber) : null,
     [draft, followUp, importer]);
-  const sameIps = ready ? followUpSameIps(followUp!.lines, draft!.ipNumber) : [];
+  const sameIps = useMemo(() => draft && followUp && importer ? followUpSameIps(followUp.lines, draft.ipNumber) : [],
+    [draft, followUp, importer]);
   const allowed = identity ? identity.roles.some(role => allowedRoles.has(role)) : false;
   const onDecisions: InvoiceAuditDecisionsUpdate = update => setDecisions(update);
 
@@ -90,7 +91,7 @@ export default function InvoiceAuditWorkbench() {
             chooseLabel={t.chooseFile} emptyLabel={t.noFileChosen} accept=".xlsx" disabled={Boolean(reading)}
             onSelect={event => void select(event)} />)}
       </div>
-      {reading && <p role="status">{t.reading}</p>}
+      {reading && reading !== "download" && <p role="status">{t.reading}</p>}
       {draft && <p className="notice invoice-summary" role="status">{t.invoiceRead(draft.fileName, draft.lines.length, draft.ipNumber)}</p>}
       {followUp && <p className="muted">{t.followUpRead(followUp.fileName, followUp.lines.length, followUp.cancelled)}</p>}
       {!reference && !referenceFailed && <p role="status">{t.referenceLoading}</p>}
@@ -110,6 +111,7 @@ export default function InvoiceAuditWorkbench() {
         <p className="muted">{sameIps.length ? t.sameIps(sameIps.join(", ")) : t.noSameIp}</p>
         <InvoiceAuditReview draft={draft!} bytes={invoice!.bytes} source={source} reference={reference} importer={importer}
           user={identity?.name ?? ""} decisions={decisions} onDecisions={onDecisions}
+          onBusy={busy => setReading(busy ? "download" : "")}
           summary={{ kind: "followUp", fileName: followUp!.fileName, fileSha256: followUp!.fileSha256, sameIps }} />
       </>}
     </section>}

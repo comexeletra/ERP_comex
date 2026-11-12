@@ -67,6 +67,15 @@ test("a closed platform PO blocks its part, and the model asks the source for an
   assert.deepEqual(asked, [["P1", "030201", "10", []]]);
   assert.equal(model.rows[0].suggestions[0].poNumber, "030305");
   assert.equal(ptBR.invoiceAudit.platform.poNotActive.length > 0, true);
+  // The batch route lists no item of a PO that is not active: still only PO_NOT_ACTIVE, without "code out of the PO".
+  const empty = build([line(16)], platform({ "030201": { poExists: true, poStatus: "CANCELLED", items: [] } }));
+  assert.deepEqual(empty.rows[0].issue, { kind: "PO_NOT_ACTIVE", status: "CANCELLED" });
+  assert.deepEqual(empty.rows[0].points, []);
+  // Nor does its balance enter the split of an unreadable PO cell.
+  const unread = line(17, { quantity: "80", poCell: "PO 030888&030201", poAssignments: [] });
+  const split = build([unread], platform({ "030888": { poExists: true, poStatus: "CLOSED", items: [item("x", { poNumber: "030888" })] },
+    "030201": { poExists: true, items: [item("y", { remainingQuantity: "60" })] } }));
+  assert.deepEqual(split.unreadLines[0].split, ["0", "80"]);
 });
 
 test("an unreadable PO cell is split by the balance of the source and the chosen PO goes to the parts", () => {

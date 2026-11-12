@@ -38,9 +38,12 @@ import { classifyInvoiceDestination, distributeInvoiceParts, invoiceAssignmentsF
   invoicePriceTolerancePercent, invoiceSavePayload, invoiceSupplierMatchesExporter } from "../lib/china-invoice-mapping";
 import { createExporterAlias } from "./SupplierExporterAliases";
 import InvoiceConference from "./InvoiceConference";
+import InvoicePlatformAudit from "./InvoicePlatformAudit";
 
 const poRoles = new Set(["Master", "Administrador", "Importação", "Compras"]);
 const ipRoles = new Set(["Master", "Administrador", "Importação"]);
+// Compras opens the IP screen only to audit the invoice and download it (user decision, 2026-11-12).
+const ipAuditRoles = new Set([...ipRoles, "Compras"]);
 const supplierEditorRoles = ["Master", "Administrador", "Compras"];
 
 type PoItemDraft = {
@@ -271,6 +274,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   const [commonItemFields, setCommonItemFields] = useState<OperationalFieldDraft>(blankPurchaseOrderItemFields);
   const [createdPoId, setCreatedPoId] = useState("");
   const [invoiceDraft, setInvoiceDraft] = useState<ChinaInvoiceDraft | null>(null);
+  const [invoiceBytes, setInvoiceBytes] = useState<ArrayBuffer | null>(null);
+  const [userName, setUserName] = useState("");
   const [invoiceMatches, setInvoiceMatches] = useState<InvoiceMatch[]>([]);
   const [quantityDecisions, setQuantityDecisions] = useState<Record<number, InvoiceQuantityDecision>>({});
   const [packingDecisions, setPackingDecisions] = useState<Record<string, InvoiceQuantityDecision>>({});
@@ -334,10 +339,11 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     Promise.all([apiFetch("/auth/me"), apiFetch("/api/v1/importers", { cache: "no-store" }), loadOperationalCatalog()])
       .then(async ([identity, list, operationalCatalog]) => {
         if (!identity.ok || !list.ok) throw new Error(getMessages().newRecord.permissionsFailed);
-        const user = await identity.json() as { roles: string[] };
+        const user = await identity.json() as { roles: string[]; user?: { displayName: string | null } };
         const data = await list.json() as { items: InvoiceImporterOption[] };
         const visibleImporters = data.items.filter(item => kind !== "po" || Boolean(item.cnpj));
         setRoles(user.roles);
+        setUserName(user.user?.displayName ?? "");
         setOptions(operationalCatalog.items);
         setSupportsGroup(operationalCatalog.purchaseOrderGroup);
         setImporters(visibleImporters.map(item => item.code));
@@ -386,7 +392,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     return () => controller.abort();
   }, [kind]);
 
-  const allowed = roles.some(role => (kind === "po" ? poRoles : ipRoles).has(role));
+  const allowed = roles.some(role => (kind === "po" ? poRoles : ipAuditRoles).has(role));
+  const canSaveIp = roles.some(role => ipRoles.has(role));
   const invoiceDistribution = distributeInvoiceParts(invoiceMatches.map(match =>
     ({ key: match.key, quantity: match.quantity, items: match.candidates })));
   const invoiceRows = invoiceMatches.map(match => {
@@ -537,7 +544,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     const file = event.currentTarget.files?.[0]; event.currentTarget.value = "";
     if (!file) return;
     clearInvoiceCommandKey(sessionStorage);
-    setInvoiceError(""); setInvoiceDraft(null); setInvoiceMatches([]); setQuantityDecisions({}); setPackingDecisions({}); setInvoiceDuplicate(null);
+    setInvoiceError(""); setInvoiceDraft(null); setInvoiceBytes(null); setInvoiceMatches([]); setQuantityDecisions({}); setPackingDecisions({}); setInvoiceDuplicate(null);
     setDuplicateInvoiceIps([]); setConfirmDuplicateInvoice(false); setIpReferenceOtherImporter(false);
     setInvoiceExistingProcess(null); setOrphanPoDecisions({}); setExporterAliasNotice(""); setInvoiceLoading(true);
     try {
@@ -548,6 +555,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         throw new Error(t.ipRefMustBe(reviewTarget.ipNumber));
       }
       setInvoiceDraft(draft);
+      setInvoiceBytes(await file.arrayBuffer());
       setNumber(draft.ipNumber.trim());
       setStatus("WAITING SHIPMENT");
       const cnpj = normalizeCnpj(draft.importerCnpj);
@@ -561,6 +569,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         : cnpjMatches.length > 1 ? t.cnpjMultiple : cnpjMatches.length === 0 ? t.cnpjUnknown : "";
       const lineIssues = draft.lines.flatMap(line => line.issues.map(issue => t.lineIssue(line.sourceRow, issue)));
       if (lineIssues.length || draft.issues.length) { setInvoiceError([...draft.issues, ...lineIssues].join(" ")); return; }
+      // Audit only: the IP is not saved, so neither the duplicate checks nor the review below are loaded.
+      if (!canSaveIp) { setInvoiceError(!invoiceImporter ? importerWarning : ""); return; }
 
       if (invoiceImporter) {
         const preflight = await loadInvoicePreflight(invoiceImporter, draft);
@@ -648,6 +658,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   function changeImporter(value: string) {
     setImporter(value); setConfirmImporterCnpjMismatch(false); setInvoiceDuplicate(null); setInvoiceError("");
     setDuplicateInvoiceIps([]); setConfirmDuplicateInvoice(false); setIpReferenceOtherImporter(false);
+    // Audit only: the subsection reads the POs of the new importer; the review that saves the IP is not loaded.
+    if (!canSaveIp) return;
     if (invoiceDraft && value) void revalidateInvoiceMatches(value);
   }
 
@@ -884,6 +896,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (kind === "ip" && !canSaveIp) return;
     setSaving(true);
     setError("");
     try {
@@ -1214,6 +1227,10 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           {invoiceDraft && <>
             <p className="notice invoice-summary" role="status">{t.invoiceSummary(invoiceDraft.fileName, invoiceDraft.lines.length, invoiceMatches.length, formatNumber(invoiceDraft.totalQuantity), formatNumber(invoiceDraft.totalAmount))}</p>
               <p className="muted invoice-importer">{t.invoiceImporter(invoiceDraft.importerCnpj || t.notIdentified, importer || t.noMatch)}</p>
+            {!canSaveIp && <p className="notice">{t.auditOnly}</p>}
+            {invoiceBytes && importer && <InvoicePlatformAudit key={`${invoiceDraft.fileSha256}|${importer}`} draft={invoiceDraft}
+              bytes={invoiceBytes} importer={importer} user={userName} />}
+            {canSaveIp && <>
             {invoiceDuplicate && <p className="notice warning" role="alert">
                {invoiceDuplicate.recordStatus === "DRAFT"
                  ? t.draftExists(invoiceDraft.ipNumber) : t.ipExists(invoiceDraft.ipNumber)}
@@ -1422,6 +1439,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
               setDuplicateInvoiceIps([]); setConfirmDuplicateInvoice(false); setIpReferenceOtherImporter(false);
               setInvoiceExistingProcess(null); setOrphanPoDecisions({}); setInvoiceError("");
             }}>{t.removeInvoice}</button>
+            </>}
           </>}
           {invoiceError && <p className="notice error" role="alert">{invoiceError}</p>}
         </div>
@@ -1432,19 +1450,21 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         <label>{m.poPanel.importer}<SearchableSelect ariaLabel={m.poPanel.importer} required disabled={Boolean(reviewInvoiceId)} value={importer} onChange={changeImporter} options={importers.map(value => ({ value, label: value }))} /></label>
         <label>{t.ipReference}<input required maxLength={80} readOnly={Boolean(invoiceDraft || reviewInvoiceId)}
           value={invoiceDraft?.ipNumber ?? number} onChange={event => setNumber(event.target.value)} /></label>
+        {canSaveIp && <>
         {invoiceDraft ? <label>{t.logisticsStatus}<input readOnly value="WAITING SHIPMENT" /></label> :
           <label>{t.logisticsStatus}<OperationalOptionSelect entity="logistics_status" value={status} values={options} onChange={setStatus} /></label>}
         <label>{m.poPanel.priority}<OperationalOptionSelect entity="priority" value={priority} values={options}
           onChange={setPriority} /></label>
         <label>{m.poPanel.notes}<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
+        </>}
         </div>
-        <button className="button" disabled={saving || invoiceLoading || !importer || Boolean(invoiceDraft && (invoiceError
+        {canSaveIp && <button className="button" disabled={saving || invoiceLoading || !importer || Boolean(invoiceDraft && (invoiceError
           || !invoiceLinesReady || !packingDecisionsReady
           || ipReferenceOtherImporter || (duplicateInvoiceIps.length > 0 && !confirmDuplicateInvoice)
           || !shippedChangeReady(Boolean(invoiceDuplicate?.shipped), shippedChange)
           || orphanPos.some(order => !orphanPoDecisions[order.id])
           || (importerCnpjMismatch && !confirmImporterCnpjMismatch)))}>
-          {saving ? t.saving : invoiceDraft ? t.createIpWithInvoice : t.saveIp}</button>
+          {saving ? t.saving : invoiceDraft ? t.createIpWithInvoice : t.saveIp}</button>}
       </section>}
     </form>}
   </main>;

@@ -79,7 +79,9 @@ export default function ProcessDirectory() {
   return <main className="shell">
     <PageHeader eyebrow={t.eyebrow} title={t.title}
       actions={roles.some(role => ["Master", "Administrador", "Importação"].includes(role))
-        && <Link className="button" href="/processes/new">{t.create}</Link>}>
+        ? <Link className="button" href="/processes/new">{t.create}</Link>
+        // Compras audits the invoice on the same screen, without creating the IP (user decision, 2026-11-12).
+        : roles.includes("Compras") && <Link className="button" href="/processes/new">{t.auditInvoice}</Link>}>
       <p>{t.intro}</p>
     </PageHeader>
     <section className="card"><form className="portfolio-filter" onSubmit={apply}>

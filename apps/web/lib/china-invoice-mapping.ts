@@ -962,8 +962,10 @@ export function invoiceAuditModel<T extends InvoiceAuditCandidate>(input: { draf
   // pending point; the split of the line by the balance of each cited PO, in cell order, is proposed.
   const unreadLines = source && draft ? lines.filter(line => line.poAssignments.length === 0).map(line => {
     const numbers = invoicePoCellNumbers(line.poCell);
-    const split = invoicePoCellSplit(line.quantity, numbers.map(poNumber => invoiceKeyBalance(
-      invoiceKeyItems(source.purchaseOrder(poNumber).items, line.productCode))));
+    const split = invoicePoCellSplit(line.quantity, numbers.map(poNumber => {
+      const order = source.purchaseOrder(poNumber);
+      return invoiceKeyBalance((order.poStatus ?? "ACTIVE") === "ACTIVE" ? invoiceKeyItems(order.items, line.productCode) : []);
+    }));
     return { line, numbers, split };
   }) : [];
   const destinedParts = [...baseParts,
@@ -989,7 +991,8 @@ export function invoiceAuditModel<T extends InvoiceAuditCandidate>(input: { draf
       return item ? [{ item, quantity: allocation.quantity }] : [];
     });
     const points = [invoiceQuantityPoint(part.invoiceQuantity, part.quantity, line.unit, decision),
-      invoiceCodePoint(part.productCode, !part.poExists || part.keyItems.length > 0, part.quantity, decision)]
+      invoiceCodePoint(part.productCode, !part.poExists || part.poStatus !== "ACTIVE" || part.keyItems.length > 0, part.quantity,
+        decision)]
       .filter((point): point is InvoiceAuditPoint => point !== null);
     const issue = classifyInvoiceDestination(part.keyItems, part.poExists, part.quantity, partDistribution, part.poStatus);
     const suggestions = source && issue && issue.kind !== "INVALID_QUANTITY"
@@ -1076,4 +1079,105 @@ export function invoiceAuditCorrectionInput<T extends InvoiceAuditCandidate>(mod
   return { parts: model.rows.map(row => ({ sourceRow: row.part.sourceRow, poNumber: row.part.poNumber, quantity: row.part.quantity })),
     prices, weights: invoicePackingChoiceWeights(model.divergences, decisions.packingChoices), reference,
     ncmFlagRows: model.catalog.missing.filter(entry => decisions.flaggedNcms[entry.sourceRow]).map(entry => entry.sourceRow) };
+}
+
+/*
+ * The platform POs as the source of the audit of the IP screen (user decisions, 2026-11-12): the PO items of the cited
+ * POs (POST /api/v1/purchase-orders/invoice-candidates/batch) and, for the suggestions, the items of the same product with
+ * balance in the other POs of the importer (POST .../invoice-candidates/by-product). Balances discount the other IPs and
+ * not the IP under review, as the API computes them.
+ */
+
+export type InvoicePlatformItem = { id: string; lineNumber: number; poNumber: string; productCode: string; remainingQuantity: string;
+  unit: string | null; unitPrice: string | null; currency: string | null; poStatus?: string | null;
+  supplierText: string | null; supplierName: string | null; supplierCode: string | null; supplierExporterAliases?: readonly string[];
+  linkedToRevisingIp?: boolean };
+export type InvoicePlatformPurchaseOrder = { sourcePoNumber: string; poExists: boolean; poStatus: string | null;
+  items: readonly InvoicePlatformItem[] };
+export type InvoicePlatformCandidate = InvoiceAuditCandidate & { linkedToRevisingIp: boolean };
+
+/** Same normalization as the candidate routes: letters and digits, without the PO prefix. */
+export function invoicePlatformPoKey(value: string): string {
+  return value.toLocaleUpperCase("en-US").replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "");
+}
+
+function platformCandidate(item: InvoicePlatformItem): InvoicePlatformCandidate {
+  return { id: item.id, lineNumber: item.lineNumber, poNumber: item.poNumber, productCode: item.productCode,
+    remainingQuantity: item.remainingQuantity, unit: item.unit, unitPrice: item.unitPrice, currency: item.currency,
+    supplier: item.supplierCode || item.supplierName || item.supplierText || "",
+    supplierValues: [item.supplierText, item.supplierName, item.supplierCode], exporterAliases: item.supplierExporterAliases ?? [],
+    linkedToRevisingIp: Boolean(item.linkedToRevisingIp) };
+}
+
+/** The invoice POs and products the candidate routes are asked for: cited POs (also those of an unreadable cell) and codes. */
+export function invoicePlatformRequests(lines: readonly ChinaInvoiceLine[]): { poNumbers: string[];
+  products: { productCode: string; quantity: string }[] } {
+  const poNumbers = new Map<string, string>();
+  for (const line of lines) {
+    const numbers = line.poAssignments.length ? line.poAssignments.map(assignment => assignment.poNumber) : invoicePoCellNumbers(line.poCell);
+    for (const poNumber of numbers) if (invoicePlatformPoKey(poNumber) && !poNumbers.has(invoicePlatformPoKey(poNumber))) {
+      poNumbers.set(invoicePlatformPoKey(poNumber), poNumber);
+    }
+  }
+  const products = new Map<string, { productCode: string; quantity: string }>();
+  for (const line of lines) {
+    const productCode = line.productCode.trim();
+    const key = productCode.toLocaleUpperCase("en-US");
+    if (productCode && invoiceQuantityUnits(line.quantity) !== null && invoiceQuantityUnits(line.quantity)! > 0n && !products.has(key)) {
+      products.set(key, { productCode, quantity: line.quantity });
+    }
+  }
+  return { poNumbers: [...poNumbers.values()], products: [...products.values()] };
+}
+
+export function invoicePlatformAuditSource(purchaseOrders: readonly InvoicePlatformPurchaseOrder[],
+  byProduct: readonly { productCode: string; items: readonly InvoicePlatformItem[] }[],
+  revisingIpNumber: string): InvoiceAuditSource<InvoicePlatformCandidate> {
+  const cited = new Map(purchaseOrders.map(order => [invoicePlatformPoKey(order.sourcePoNumber),
+    { poExists: order.poExists, poStatus: order.poStatus ?? (order.poExists ? "ACTIVE" : undefined), items: order.items.map(platformCandidate) }]));
+  // The items with balance of each product and of each PO, in the order of the route, each item once.
+  const seen = new Set<string>();
+  const byCode = new Map<string, InvoicePlatformCandidate[]>();
+  const byPo = new Map<string, InvoicePlatformCandidate[]>();
+  for (const entry of byProduct) for (const item of entry.items) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    const candidate = platformCandidate(item);
+    const code = item.productCode.trim().toLocaleUpperCase("en-US");
+    byCode.set(code, [...(byCode.get(code) ?? []), candidate]);
+    const po = invoicePlatformPoKey(item.poNumber);
+    byPo.set(po, [...(byPo.get(po) ?? []), candidate]);
+  }
+  return {
+    purchaseOrder: poNumber => {
+      const key = invoicePlatformPoKey(poNumber);
+      const order = cited.get(key);
+      if (order) return order;
+      const items = byPo.get(key) ?? [];
+      return items.length ? { poExists: true, poStatus: "ACTIVE", items } : { poExists: false, items: [] };
+    },
+    suggestions: (productCode, citedPo, quantity, taken) => {
+      const requested = invoiceQuantityUnits(quantity);
+      if (requested === null || requested === 0n) return [];
+      const used = new Map<string, bigint>();
+      for (const entry of taken) used.set(entry.itemId, (used.get(entry.itemId) ?? 0n) + (invoiceQuantityUnits(entry.quantity) ?? 0n));
+      const citedKey = invoicePlatformPoKey(citedPo);
+      const pos = new Map<string, { poNumber: string; available: bigint; linked: boolean; sourceRows: number[]; order: number }>();
+      for (const item of byCode.get(productCode.trim().toLocaleUpperCase("en-US")) ?? []) {
+        const po = invoicePlatformPoKey(item.poNumber);
+        if (po === citedKey) continue;
+        const free = (invoiceQuantityUnits(item.remainingQuantity) ?? 0n) - (used.get(item.id) ?? 0n);
+        if (free <= 0n) continue;
+        const entry = pos.get(po) ?? { poNumber: item.poNumber, available: 0n, linked: false, sourceRows: [], order: pos.size };
+        pos.set(po, { ...entry, available: entry.available + free, linked: entry.linked || item.linkedToRevisingIp,
+          sourceRows: [...entry.sourceRows, item.lineNumber] });
+      }
+      // As the Follow Up suggestions: the POs on the IP of the invoice first, then the exact balance, then the order of the route.
+      return [...pos.values()].filter(entry => entry.available >= requested)
+        .sort((left, right) => Number(!left.linked) - Number(!right.linked)
+          || Number(left.available !== requested) - Number(right.available !== requested) || left.order - right.order)
+        .map(entry => ({ poNumber: entry.poNumber, available: formatInvoiceQuantity(entry.available),
+          ipNumber: entry.linked ? revisingIpNumber : "", sourceRows: entry.sourceRows }));
+    },
+  };
 }

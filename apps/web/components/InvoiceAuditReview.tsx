@@ -28,10 +28,12 @@ export type InvoiceAuditDecisionsUpdate = (update: (current: InvoiceAuditDecisio
  * The decisions belong to the screen that shows it, which clears them when the invoice or the POs change.
  */
 export default function InvoiceAuditReview<T extends InvoiceAuditCandidate>({ draft, bytes, source, summary, reference,
-  importer, user, decisions, onDecisions, onDownloaded }: {
+  importer, user, decisions, onDecisions, onDownloaded, onBusy }: {
   draft: ChinaInvoiceDraft; bytes: ArrayBuffer; source: InvoiceAuditSource<T>; summary: InvoiceAuditSourceSummary;
   reference: AuditReference | null; importer: string; user: string; decisions: InvoiceAuditDecisions;
   onDecisions: InvoiceAuditDecisionsUpdate; onDownloaded?: () => void;
+  /** While the file is written, the screen keeps the invoice from being replaced. */
+  onBusy?: (busy: boolean) => void;
 }) {
   const { m } = useI18n();
   const t = invoiceAuditTexts(m, summary.kind);
@@ -57,7 +59,7 @@ export default function InvoiceAuditReview<T extends InvoiceAuditCandidate>({ dr
 
   async function download() {
     if (!canDownload) return;
-    setError(""); setReading(true);
+    setError(""); setReading(true); onBusy?.(true);
     const messages = getMessages();
     try {
       const input = invoiceAuditCorrectionInput(model, decisions);
@@ -77,7 +79,7 @@ export default function InvoiceAuditReview<T extends InvoiceAuditCandidate>({ dr
       URL.revokeObjectURL(link.href);
       onDownloaded?.();
     } catch (cause) { setError(cause instanceof Error ? cause.message : messages.common.unexpectedError); }
-    finally { setReading(false); }
+    finally { setReading(false); onBusy?.(false); }
   }
 
   return <>
