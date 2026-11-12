@@ -1213,6 +1213,7 @@ export const ptBR = {
       failed: "Não foi possível ler as POs e os saldos da plataforma.",
       downloaded: "Invoice auditada baixada com as decisões atuais. Confira o arquivo.",
       changedAfterDownload: "Uma decisão mudou depois do download: baixe a invoice auditada de novo.",
+      systemIp: (stored: string, invoice: string) => `Saldo lido com o IP ${stored} do sistema, o mesmo IP ${invoice} da invoice gravado sem o prefixo IPH.`,
       column: { line: "Linha da INV", product: "Produto", quantity: "Quantidade destinada", destination: "Destino nas POs da plataforma" },
       takes: (po: string, line: number, quantity: string, price: string) => `PO ${po}, item ${line}: ${quantity} (${price})`,
       followUpValue: "PO",
@@ -1232,6 +1233,7 @@ export const ptBR = {
       sheet: {
         poSource: "Fonte das POs",
         poSourceValue: "POs da plataforma (HML)",
+        systemIp: "IP no sistema",
         destinationValue: (po: string, line: number, quantity: string) => `PO ${po}, item ${line}: ${quantity}`,
         splitByBalance: "Dividida pelo saldo das POs da plataforma",
         tookSuggestedPo: "PO sugerida pelo saldo das POs da plataforma",

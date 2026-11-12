@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { emptyInvoiceAuditDecisions, invoiceAuditModel, invoicePlatformAuditSource, invoicePlatformPoKey,
-  invoicePlatformRequests } from "../lib/china-invoice-mapping.ts";
+import { emptyInvoiceAuditDecisions, invoiceAuditModel, invoiceIpSearchText, invoicePlatformAuditSource, invoicePlatformPoKey,
+  invoicePlatformRequests, invoiceSystemIp } from "../lib/china-invoice-mapping.ts";
 import { en } from "../lib/i18n/en.ts";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
 import { zhCN } from "../lib/i18n/zh-CN.ts";
@@ -26,6 +26,25 @@ test("the routes are asked once for the cited POs (also those of an unreadable c
   assert.deepEqual(requests.poNumbers, ["030201", "30201", "030888"]);
   assert.deepEqual(requests.products, [{ productCode: "P1", quantity: "100" }, { productCode: "P2", quantity: "100" }]);
   assert.equal(invoicePlatformPoKey("PO 030201"), "030201");
+  // A code or PO the routes refuse (more than 80 characters) does not refuse the whole call.
+  const long = invoicePlatformRequests([line(16, { productCode: "X".repeat(81) }), line(17)]);
+  assert.deepEqual(long.products, [{ productCode: "P1", quantity: "100" }]);
+});
+
+// User decision (2026-11-12): the load of the Follow Up keeps the HEXING IPs without the IPH prefix (034B/2026), and the
+// audit reads the balance of that IP, as the audit page does with the Follow Up.
+test("the IP of the invoice is the one the system keeps, with or without the IPH prefix", () => {
+  assert.equal(invoiceIpSearchText(" IPH034B/2026 "), "034B/2026");
+  assert.equal(invoiceIpSearchText("Z-021B/2026"), "Z-021B/2026");
+  const stored = [{ ipNumber: "034B/2026", recordStatus: "ACTIVE" }, { ipNumber: "1034B/2026", recordStatus: "ACTIVE" }];
+  assert.equal(invoiceSystemIp("IPH034B/2026", stored), "034B/2026");
+  assert.equal(invoiceSystemIp("iph 034b/2026", stored), "034B/2026");
+  assert.equal(invoiceSystemIp("IPH034B/2026", [...stored, { ipNumber: "IPH034B/2026", recordStatus: "ACTIVE" }]), "IPH034B/2026");
+  assert.equal(invoiceSystemIp("IPH034B/2026", [{ ipNumber: "034B/2026", recordStatus: "CANCELLED" },
+    { ipNumber: "IPH034B/2026", recordStatus: "CANCELLED" }]), "IPH034B/2026");
+  assert.equal(invoiceSystemIp("IPH034B/2026", [{ ipNumber: "IPH034B/2026", recordStatus: "DELETED" }, stored[0]]), "034B/2026");
+  assert.equal(invoiceSystemIp("IPH099A/2026", stored), "IPH099A/2026");
+  assert.equal(invoiceSystemIp("Z-021B/2026", [{ ipNumber: "021B/2026" }]), "Z-021B/2026");
 });
 
 test("the platform source gives the cited PO from the batch and another PO from the items of the product", () => {
@@ -46,9 +65,13 @@ test("the platform source gives the cited PO from the batch and another PO from 
   // The PO on the IP under review first, then the exact balance, then the order of the route; the cited PO never.
   assert.deepEqual(platform.suggestions("p1", "030201", "100", []).map(entry => [entry.poNumber, entry.available, entry.ipNumber]),
     [["030600", "120", "IPH900A/2026"], ["030700", "100", ""], ["030500", "150", ""]]);
+  // Among the POs that are not exact, the PO number decides, not the order of the route.
+  const tie = invoicePlatformAuditSource([], [{ productCode: "P1", items: [item("e", { poNumber: "030900", remainingQuantity: "300" }),
+    item("f", { poNumber: "030100", remainingQuantity: "200" })] }], "");
+  assert.deepEqual(tie.suggestions("P1", "030201", "100", []).map(entry => entry.poNumber), ["030100", "030900"]);
   // What the other parts of the invoice took is discounted, and a PO that no longer covers the part leaves.
   assert.deepEqual(platform.suggestions("P1", "030201", "100", [{ itemId: "d", quantity: "30" }, { itemId: "c", quantity: "50" }])
-    .map(entry => [entry.poNumber, entry.available, entry.sourceRows]), [["030700", "100", [4]], ["030500", "100", [2]]]);
+    .map(entry => [entry.poNumber, entry.available, entry.sourceRows]), [["030500", "100", [2]], ["030700", "100", [4]]]);
   assert.deepEqual(platform.suggestions("P1", "030201", "0", []), []);
 });
 
@@ -74,16 +97,24 @@ test("the IP screen shows the audit subsection, and Compras audits without the r
   assert.match(screen, /const ipAuditRoles = new Set\(\[\.\.\.ipRoles, "Compras"\]\);/u);
   assert.match(screen, /const allowed = roles\.some\(role => \(kind === "po" \? poRoles : ipAuditRoles\)\.has\(role\)\);/u);
   assert.match(screen, /const canSaveIp = roles\.some\(role => ipRoles\.has\(role\)\);/u);
-  assert.match(screen, /if \(kind === "ip" && !canSaveIp\) return;/u);
   assert.match(screen, /if \(!canSaveIp\) \{ setInvoiceError\(!invoiceImporter \? importerWarning : ""\); return; \}/u);
   assert.match(screen, /<InvoicePlatformAudit key=\{`\$\{invoiceDraft\.fileSha256\}\|\$\{importer\}`\} draft=\{invoiceDraft\}/u);
   assert.match(screen, /\{canSaveIp && <button className="button" disabled=\{saving/u);
   // Until stage 6 the IP is still saved by the review that exists today (user decision, 2026-11-12).
   assert.match(screen, /invoiceSavePayload\(/u);
   assert.doesNotMatch(subsection, /method: "PUT"|import-invoice/u);
-  assert.match(subsection, /"\/api\/v1\/purchase-orders\/invoice-candidates\/batch", \{ importer, revisingIpNumber: ipNumber \|\| undefined, poNumbers \}/u);
-  assert.match(subsection, /"\/api\/v1\/purchase-orders\/invoice-candidates\/by-product", \{ importer, revisingIpNumber: ipNumber \|\| undefined, products \}/u);
-  assert.match(subsection, /summary=\{\{ kind: "platform" \}\}/u);
+  assert.match(subsection, /"\/api\/v1\/purchase-orders\/invoice-candidates\/batch", \{ importer, revisingIpNumber: systemIp \|\| undefined, poNumbers \}/u);
+  assert.match(subsection, /"\/api\/v1\/purchase-orders\/invoice-candidates\/by-product", \{ importer, revisingIpNumber: systemIp \|\| undefined, products \}/u);
+  assert.match(subsection, /const systemIp = invoiceSystemIp\(ipNumber, stored\);/u);
+  assert.match(subsection, /ipNumber: invoiceIpSearchText\(ipNumber\), importer,/u);
+  assert.match(subsection, /summary=\{\{ kind: "platform", systemIp: candidates!\.systemIp \}\}/u);
+  // The subsection is inside the form that saves the IP: its reasons do not block saving, and Enter in it does not save.
+  assert.match(subsection, /if \(event\.key === "Enter" && event\.target instanceof HTMLInputElement\) event\.preventDefault\(\);/u);
+  assert.match(screen, /if \(element\.closest\("\.invoice-platform-audit"\) \|\| element\.checkValidity\(\)\) continue;/u);
+  assert.match(screen, /if \(kind === "ip" && \(!canSaveIp \|\| !reportIpFormValidity\(event\.currentTarget\)\)\) return;/u);
+  assert.match(screen, /\|\| \(importerCnpjMismatch && !confirmImporterCnpjMismatch\)\)\)\} formNoValidate>/u);
+  // Compras sees the CNPJ that differs from the chosen importer, without the confirmation of who saves.
+  assert.match(screen, /\{!canSaveIp && importerCnpjMismatch && <p className="notice warning" role="alert">/u);
   assert.match(subsection, /\}, \[importer, ipNumber, requests\]\);/u);
   assert.match(directory, /: roles\.includes\("Compras"\) && <Link className="button" href="\/processes\/new">\{t\.auditInvoice\}<\/Link>/u);
   const styles = await source("../app/styles/features/operations.css");

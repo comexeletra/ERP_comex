@@ -1206,6 +1206,7 @@ export const zhCN: Messages = {
       failed: "无法读取平台的 PO 和余量。",
       downloaded: "已按当前决定下载已审核发票。请核对文件。",
       changedAfterDownload: "下载后有决定发生变化：请重新下载已审核发票。",
+      systemIp: (stored: string, invoice: string) => `余量按系统中的 IP ${stored} 读取，即发票的 IP ${invoice}，系统中保存时不带 IPH 前缀。`,
       column: { line: "INV 行", product: "产品", quantity: "分配数量", destination: "平台 PO 中的去向" },
       takes: (po: string, line: number, quantity: string, price: string) => `PO ${po}，第 ${line} 项：${quantity}（${price}）`,
       followUpValue: "PO",
@@ -1225,6 +1226,7 @@ export const zhCN: Messages = {
       sheet: {
         poSource: "PO 来源",
         poSourceValue: "平台 PO（HML）",
+        systemIp: "系统中的 IP",
         destinationValue: (po: string, line: number, quantity: string) => `PO ${po}，第 ${line} 项：${quantity}`,
         splitByBalance: "按平台 PO 余量拆分",
         tookSuggestedPo: "按平台 PO 余量建议的 PO",

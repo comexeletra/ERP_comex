@@ -119,6 +119,20 @@ const invoiceAuditConfirmationField = {
 } as const satisfies Record<Exclude<InvoiceAuditPointKind, "CURRENCY" | "CODE" | "QUANTITY">, keyof InvoiceMatch>;
 const noQuantityDecision: InvoiceQuantityDecision = { confirmed: false, reason: "" };
 
+/**
+ * The IP form is validated without the audit subsection: its reasons belong to the audited file and never block saving
+ * the IP (stage A of docs/PLANO_INVOICE_IP_AUDITORIA_DISTRIBUICAO.md); the other fields keep the browser validation.
+ */
+function reportIpFormValidity(form: HTMLFormElement): boolean {
+  for (const element of Array.from(form.elements)) {
+    if (!(element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement)) continue;
+    if (element.closest(".invoice-platform-audit") || element.checkValidity()) continue;
+    element.reportValidity();
+    return false;
+  }
+  return true;
+}
+
 function normalizePoNumber(value: string): string {
   return value.toLocaleUpperCase("en-US").replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "");
 }
@@ -896,7 +910,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (kind === "ip" && !canSaveIp) return;
+    if (kind === "ip" && (!canSaveIp || !reportIpFormValidity(event.currentTarget))) return;
     setSaving(true);
     setError("");
     try {
@@ -1228,6 +1242,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
             <p className="notice invoice-summary" role="status">{t.invoiceSummary(invoiceDraft.fileName, invoiceDraft.lines.length, invoiceMatches.length, formatNumber(invoiceDraft.totalQuantity), formatNumber(invoiceDraft.totalAmount))}</p>
               <p className="muted invoice-importer">{t.invoiceImporter(invoiceDraft.importerCnpj || t.notIdentified, importer || t.noMatch)}</p>
             {!canSaveIp && <p className="notice">{t.auditOnly}</p>}
+            {!canSaveIp && importerCnpjMismatch && <p className="notice warning" role="alert">
+              {t.cnpjMismatch(invoiceDraft.importerCnpj || t.notIdentified, importer, importerCnpjs[importer] || t.notRegistered)}</p>}
             {invoiceBytes && importer && <InvoicePlatformAudit key={`${invoiceDraft.fileSha256}|${importer}`} draft={invoiceDraft}
               bytes={invoiceBytes} importer={importer} user={userName} />}
             {canSaveIp && <>
@@ -1463,7 +1479,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           || ipReferenceOtherImporter || (duplicateInvoiceIps.length > 0 && !confirmDuplicateInvoice)
           || !shippedChangeReady(Boolean(invoiceDuplicate?.shipped), shippedChange)
           || orphanPos.some(order => !orphanPoDecisions[order.id])
-          || (importerCnpjMismatch && !confirmImporterCnpjMismatch)))}>
+          || (importerCnpjMismatch && !confirmImporterCnpjMismatch)))} formNoValidate>
           {saving ? t.saving : invoiceDraft ? t.createIpWithInvoice : t.saveIp}</button>}
       </section>}
     </form>}

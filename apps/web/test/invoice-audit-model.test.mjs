@@ -128,8 +128,9 @@ test("the AUDITORIA sheet names its source: the Follow Up file or the platform P
   assert.deepEqual(followUp.summary[1], ["Follow Up", `FUP.xlsx (SHA-256 ${"b".repeat(64)})`]);
   assert.ok(followUp.summary.some(([label, value]) => label === ptBR.invoiceAudit.sheet.sameIps && value === "900A/2026"));
   assert.ok(followUp.rows.some(row => row[4] === "linha 7 do Follow Up: 10"));
-  const fromPlatform = invoiceAuditSheet(ptBR, input({ kind: "platform" }), format);
+  const fromPlatform = invoiceAuditSheet(ptBR, input({ kind: "platform", systemIp: "900A/2026" }), format);
   assert.deepEqual(fromPlatform.summary[1], ["Fonte das POs", "POs da plataforma (HML)"]);
+  assert.deepEqual(fromPlatform.summary[2], ["IP no sistema", "900A/2026"]);
   assert.ok(!fromPlatform.summary.some(([label]) => label === ptBR.invoiceAudit.sheet.sameIps));
   assert.ok(fromPlatform.rows.some(row => row[4] === "PO 030201, item 7: 10"));
   assert.equal(fromPlatform.sheetName, "AUDITORIA");

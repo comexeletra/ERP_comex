@@ -13,7 +13,7 @@ export const invoiceAuditSheetName = "AUDITORIA"; // i18n-ignore: sheet name kep
 
 /** Where the POs of the audit came from. */
 export type InvoiceAuditSourceSummary = { kind: "followUp"; fileName: string; fileSha256: string; sameIps: readonly string[] }
-  | { kind: "platform" };
+  | { kind: "platform"; systemIp: string };
 type ReferenceSummary = { fileName: string; fileSha256: string; loadedAt: string; loadedBy: string } | null;
 export type InvoiceAuditFormat = { number: (value: string) => string; percent: (value: number) => string;
   dateTime: (value: string) => string };
@@ -154,7 +154,8 @@ export function invoiceAuditSheet<T extends InvoiceAuditCandidate>(m: Messages, 
     ? s.referenceLoad(load.fileName, load.fileSha256, format.dateTime(load.loadedAt), load.loadedBy) : empty;
   const sourceRows: [string, string][] = input.source.kind === "followUp"
     ? [[s.followUp, `${input.source.fileName} (SHA-256 ${input.source.fileSha256})`]]
-    : [[m.invoiceAudit.platform.sheet.poSource, m.invoiceAudit.platform.sheet.poSourceValue]];
+    : [[m.invoiceAudit.platform.sheet.poSource, m.invoiceAudit.platform.sheet.poSourceValue],
+      [m.invoiceAudit.platform.sheet.systemIp, input.source.systemIp]];
   return { sheetName: invoiceAuditSheetName, columns: s.columns, rows, summary: [
     [s.invoice, `${draft.fileName} (SHA-256 ${draft.fileSha256})`], ...sourceRows,
     [s.database, reference(input.database, s.noDatabase)],

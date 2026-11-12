@@ -1096,6 +1096,26 @@ export type InvoicePlatformPurchaseOrder = { sourcePoNumber: string; poExists: b
   items: readonly InvoicePlatformItem[] };
 export type InvoicePlatformCandidate = InvoiceAuditCandidate & { linkedToRevisingIp: boolean };
 
+/**
+ * The IP of the invoice as the system keeps it (user decision, 2026-11-12): the load of the Follow Up writes the HEXING IPs
+ * without the IPH prefix (IPH034B/2026 is 034B/2026), so the audit reads the balance of the IP that exists with either
+ * spelling, as the audit page does with the Follow Up. An active IP wins, then the exact spelling; without one, the invoice IP.
+ */
+const ipKey = (value: string) => value.toLocaleUpperCase("en-US").replace(/\s+/gu, "");
+export function invoiceIpSearchText(invoiceIp: string): string {
+  const ip = invoiceIp.trim();
+  return /^IPH/iu.test(ip) ? ip.slice(3) : ip;
+}
+export function invoiceSystemIp(invoiceIp: string, stored: readonly { ipNumber: string; recordStatus?: string | null }[]): string {
+  const invoice = ipKey(invoiceIp);
+  const same = (ipNumber: string) => Boolean(invoice) && (ipKey(ipNumber) === invoice
+    || (invoice.startsWith("IPH") && ipKey(ipNumber) === invoice.slice(3)));
+  const found = stored.filter(entry => same(entry.ipNumber))
+    .sort((left, right) => Number(left.recordStatus !== "ACTIVE") - Number(right.recordStatus !== "ACTIVE")
+      || Number(ipKey(left.ipNumber) !== invoice) - Number(ipKey(right.ipNumber) !== invoice));
+  return found[0]?.ipNumber.trim() ?? invoiceIp.trim();
+}
+
 /** Same normalization as the candidate routes: letters and digits, without the PO prefix. */
 export function invoicePlatformPoKey(value: string): string {
   return value.toLocaleUpperCase("en-US").replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "");
@@ -1115,7 +1135,9 @@ export function invoicePlatformRequests(lines: readonly ChinaInvoiceLine[]): { p
   const poNumbers = new Map<string, string>();
   for (const line of lines) {
     const numbers = line.poAssignments.length ? line.poAssignments.map(assignment => assignment.poNumber) : invoicePoCellNumbers(line.poCell);
-    for (const poNumber of numbers) if (invoicePlatformPoKey(poNumber) && !poNumbers.has(invoicePlatformPoKey(poNumber))) {
+    // The routes take PO numbers and codes of up to 80 characters; a longer one would refuse the whole call.
+    for (const poNumber of numbers) if (invoicePlatformPoKey(poNumber) && poNumber.trim().length <= 80
+      && !poNumbers.has(invoicePlatformPoKey(poNumber))) {
       poNumbers.set(invoicePlatformPoKey(poNumber), poNumber);
     }
   }
@@ -1123,7 +1145,8 @@ export function invoicePlatformRequests(lines: readonly ChinaInvoiceLine[]): { p
   for (const line of lines) {
     const productCode = line.productCode.trim();
     const key = productCode.toLocaleUpperCase("en-US");
-    if (productCode && invoiceQuantityUnits(line.quantity) !== null && invoiceQuantityUnits(line.quantity)! > 0n && !products.has(key)) {
+    if (productCode && productCode.length <= 80 && invoiceQuantityUnits(line.quantity) !== null
+      && invoiceQuantityUnits(line.quantity)! > 0n && !products.has(key)) {
       products.set(key, { productCode, quantity: line.quantity });
     }
   }
@@ -1144,9 +1167,11 @@ export function invoicePlatformAuditSource(purchaseOrders: readonly InvoicePlatf
     seen.add(item.id);
     const candidate = platformCandidate(item);
     const code = item.productCode.trim().toLocaleUpperCase("en-US");
-    byCode.set(code, [...(byCode.get(code) ?? []), candidate]);
+    const ofCode = byCode.get(code);
+    if (ofCode) ofCode.push(candidate); else byCode.set(code, [candidate]);
     const po = invoicePlatformPoKey(item.poNumber);
-    byPo.set(po, [...(byPo.get(po) ?? []), candidate]);
+    const ofPo = byPo.get(po);
+    if (ofPo) ofPo.push(candidate); else byPo.set(po, [candidate]);
   }
   return {
     purchaseOrder: poNumber => {
@@ -1162,20 +1187,22 @@ export function invoicePlatformAuditSource(purchaseOrders: readonly InvoicePlatf
       const used = new Map<string, bigint>();
       for (const entry of taken) used.set(entry.itemId, (used.get(entry.itemId) ?? 0n) + (invoiceQuantityUnits(entry.quantity) ?? 0n));
       const citedKey = invoicePlatformPoKey(citedPo);
-      const pos = new Map<string, { poNumber: string; available: bigint; linked: boolean; sourceRows: number[]; order: number }>();
+      const pos = new Map<string, { poNumber: string; key: string; available: bigint; linked: boolean; sourceRows: number[] }>();
       for (const item of byCode.get(productCode.trim().toLocaleUpperCase("en-US")) ?? []) {
         const po = invoicePlatformPoKey(item.poNumber);
         if (po === citedKey) continue;
         const free = (invoiceQuantityUnits(item.remainingQuantity) ?? 0n) - (used.get(item.id) ?? 0n);
         if (free <= 0n) continue;
-        const entry = pos.get(po) ?? { poNumber: item.poNumber, available: 0n, linked: false, sourceRows: [], order: pos.size };
+        const entry = pos.get(po) ?? { poNumber: item.poNumber, key: po, available: 0n, linked: false, sourceRows: [] };
         pos.set(po, { ...entry, available: entry.available + free, linked: entry.linked || item.linkedToRevisingIp,
           sourceRows: [...entry.sourceRows, item.lineNumber] });
       }
-      // As the Follow Up suggestions: the POs on the IP of the invoice first, then the exact balance, then the order of the route.
+      // As the Follow Up suggestions: the POs on the IP of the invoice first, then the exact balance of this part, then the
+      // PO number (the route ordered by the quantity of the first line of the code, not of this part).
       return [...pos.values()].filter(entry => entry.available >= requested)
         .sort((left, right) => Number(!left.linked) - Number(!right.linked)
-          || Number(left.available !== requested) - Number(right.available !== requested) || left.order - right.order)
+          || Number(left.available !== requested) - Number(right.available !== requested)
+          || left.key.localeCompare(right.key, "en-US", { numeric: true }) || left.sourceRows[0] - right.sourceRows[0])
         .map(entry => ({ poNumber: entry.poNumber, available: formatInvoiceQuantity(entry.available),
           ipNumber: entry.linked ? revisingIpNumber : "", sourceRows: entry.sourceRows }));
     },

@@ -1210,6 +1210,7 @@ export const en: Messages = {
       failed: "The POs and balances of the platform could not be read.",
       downloaded: "Audited invoice downloaded with the current decisions. Check the file.",
       changedAfterDownload: "A decision changed after the download: download the audited invoice again.",
+      systemIp: (stored: string, invoice: string) => `Balance read with IP ${stored} of the system, the same IP ${invoice} of the invoice kept without the IPH prefix.`,
       column: { line: "INV line", product: "Product", quantity: "Destined quantity", destination: "Destination in the platform POs" },
       takes: (po: string, line: number, quantity: string, price: string) => `PO ${po}, item ${line}: ${quantity} (${price})`,
       followUpValue: "PO",
@@ -1229,6 +1230,7 @@ export const en: Messages = {
       sheet: {
         poSource: "PO source",
         poSourceValue: "Platform POs (HML)",
+        systemIp: "IP in the system",
         destinationValue: (po: string, line: number, quantity: string) => `PO ${po}, item ${line}: ${quantity}`,
         splitByBalance: "Split by the balance of the platform POs",
         tookSuggestedPo: "PO suggested by the balance of the platform POs",
