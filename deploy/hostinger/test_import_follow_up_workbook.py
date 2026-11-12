@@ -183,7 +183,7 @@ class Suppliers(unittest.TestCase):
         self.assertEqual(load["orders"][0]["supplier"], "D-FLOW")
         self.assertEqual(len(load["allocations"]), 1)
         self.assertEqual(issues(load, "PO_WITHOUT_SUPPLIER"), [])
-        self.assertEqual(load["new_suppliers"], ["INFOVISTA", "D-FLOW", "IRAPTOR, LDA"])
+        self.assertEqual(load["new_suppliers"], ["INFOVISTA", "D-FLOW"])
 
     def test_the_ip_supplier_decision_replaces_a_zero_in_the_post_sheet(self):
         # Workbook of 2026-11-12: the Post sheet has 0 as the supplier of D-FLOW01/2026; the user kept D-FLOW.
@@ -193,11 +193,13 @@ class Suppliers(unittest.TestCase):
         self.assertEqual(load["processes"][0]["supplier"], "D-FLOW")
         self.assertEqual(issues(load, "PO_WITHOUT_SUPPLIER"), [])
 
-    def test_iraptor_is_registered_without_ex_code(self):
-        # Workbook of 2026-11-12: PO 033312 cites a supplier absent from the catalog; the user chose to register it.
-        load = build([pre_row(Supplier="IRAPTOR, LDA", **{"PO Totvs": 33312})])
+    def test_a_supplier_known_by_name_is_not_registered_again(self):
+        # Workbook of 2026-11-12: PO 033312 cites IRAPTOR, LDA, which HML has as EX000799 (list of manufacturers).
+        load = loader.build_load(list(enumerate([pre_row(Supplier="IRAPTOR, LDA", **{"PO Totvs": 33312})], 4)), [],
+                                 PRE_HEADERS, POST_HEADERS, REGISTERED, SUPPLIERS | {"IRAPTOR, LDA"}, "a" * 64, set(),
+                                 "planilha.xlsx")
         self.assertEqual(load["orders"][0]["supplier"], "IRAPTOR, LDA")
-        self.assertIn("IRAPTOR, LDA", load["new_suppliers"])
+        self.assertNotIn("IRAPTOR, LDA", load["new_suppliers"])
 
     def test_a_po_without_supplier_or_ip_goes_to_quality(self):
         load = build([pre_row(Supplier=None), pre_row(Supplier=None)])

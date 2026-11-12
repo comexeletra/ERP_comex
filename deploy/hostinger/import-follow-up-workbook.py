@@ -38,8 +38,7 @@ IMPORTERS = {
 PO_SUPPLIER_DECISIONS = {"018223": "HEXING", "018751": "ZLINK"}
 # Workbook of 2026-11-12: the Post sheet has 0 as the supplier of this IP; the user kept the supplier of the first load.
 IP_SUPPLIER_DECISIONS = {"D-FLOW01/2026": "D-FLOW"}
-# History suppliers without EX code; IRAPTOR, LDA (PO 033312) came with the workbook of 2026-11-12.
-NEW_SUPPLIERS = ("INFOVISTA", "D-FLOW", "IRAPTOR, LDA")
+NEW_SUPPLIERS = ("INFOVISTA", "D-FLOW")
 ANALYSTS = {"NATHALIA": "Nathália"}
 
 # Column keys every reader of migration.source_row uses (the approved 2026 layout), by header.
@@ -836,7 +835,11 @@ def read_workbook(path: Path) -> dict:
 
 
 def read_catalog(path: Path) -> tuple[dict[str, list[str]], set[str]]:
-    """Lines of `VALUE<TAB>entity<TAB>value` and `SUPPLIER<TAB>code` exported read-only from HML."""
+    """Lines of `VALUE<TAB>entity<TAB>value` and `SUPPLIER<TAB>code or name` exported read-only from HML.
+
+    Global suppliers are exported by code and by name, as catalog.sync_supplier_entity_reference finds them: a supplier
+    of the list of manufacturers is registered with its EX code and named as in the workbook (IRAPTOR, LDA = EX000799).
+    """
     registered: dict[str, list[str]] = defaultdict(list)
     suppliers: set[str] = set()
     for line in path.read_text(encoding="utf-8").splitlines():
