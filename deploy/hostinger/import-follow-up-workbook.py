@@ -36,7 +36,10 @@ IMPORTERS = {
 }
 # The Pre sheet disagrees on these POs; the decisions are recorded in the plan.
 PO_SUPPLIER_DECISIONS = {"018223": "HEXING", "018751": "ZLINK"}
-NEW_SUPPLIERS = ("INFOVISTA", "D-FLOW")
+# Workbook of 2026-11-12: the Post sheet has 0 as the supplier of this IP; the user kept the supplier of the first load.
+IP_SUPPLIER_DECISIONS = {"D-FLOW01/2026": "D-FLOW"}
+# History suppliers without EX code; IRAPTOR, LDA (PO 033312) came with the workbook of 2026-11-12.
+NEW_SUPPLIERS = ("INFOVISTA", "D-FLOW", "IRAPTOR, LDA")
 ANALYSTS = {"NATHALIA": "Nathália"}
 
 # Column keys every reader of migration.source_row uses (the approved 2026 layout), by header.
@@ -304,7 +307,9 @@ def build_load(pre_rows: list[tuple[int, dict]], post_rows: list[tuple[int, dict
 
     ip_supplier: dict[str, str | None] = {}
     for key in pre_by_ip:
-        if key in post_by_ip:
+        if key in IP_SUPPLIER_DECISIONS:
+            ip_supplier[key] = IP_SUPPLIER_DECISIONS[key]
+        elif key in post_by_ip:
             ip_supplier[key] = supplier_code(post(post_by_ip[key][1], "Supplier"), known_suppliers)
         else:
             names = {line["supplier"] for line in lines if line["ip"].upper() == key and line["supplier"]}
