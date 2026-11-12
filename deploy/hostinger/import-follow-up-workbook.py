@@ -848,6 +848,12 @@ def read_catalog(path: Path) -> tuple[dict[str, list[str]], set[str]]:
     return dict(registered), suppliers
 
 
+def write_text(path: Path, content: str) -> None:
+    """Always LF: psql runs the file on Linux, and a CR would also enter the quoted cells that break lines."""
+    with path.open("w", encoding="utf-8", newline="\n") as file:
+        file.write(content)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workbook", type=Path, required=True)
@@ -868,9 +874,9 @@ def main() -> None:
     registered, suppliers = read_catalog(args.catalog)
     load = build_load(data["pre_rows"], data["post_rows"], data["pre_headers"], data["post_headers"], registered, suppliers,
                       data["digest"], data["typed"], args.workbook.name)
-    args.sql.write_text(render_sql(load, args.commit, args.wipe_simulation, args.replace_previous_load), encoding="utf-8")
+    write_text(args.sql, render_sql(load, args.commit, args.wipe_simulation, args.replace_previous_load))
     report = summary(load)
-    args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    write_text(args.report, json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     print(json.dumps({key: value for key, value in report.items() if key not in ("orderTotals", "processStatuses")},
                      ensure_ascii=False, sort_keys=True))
 

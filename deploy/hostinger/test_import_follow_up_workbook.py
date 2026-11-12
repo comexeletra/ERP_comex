@@ -402,6 +402,14 @@ class Sql(unittest.TestCase):
         self.assertLess(deletes[-1], reloaded.index("SET LOCAL session_replication_role = origin;"))
         self.assertLess(deletes[-1], reloaded.index("INSERT INTO migration.import_batch"))
 
+    def test_the_files_are_written_with_lf_on_every_system(self):
+        # On Windows a text write turns each LF into CRLF, also inside the quoted cells that break lines.
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "load.sql"
+            loader.write_text(path, "SELECT 'a\nb';\nROLLBACK;\n")
+            self.assertEqual(path.read_bytes(), b"SELECT 'a\nb';\nROLLBACK;\n")
+
     def test_a_reload_needs_the_wipe(self):
         with self.assertRaises(ValueError):
             loader.render_sql(self.load, False, False, True)
