@@ -47,8 +47,9 @@ async function run(reportPath, planReportPath) {
   try {
     const target = await one("SELECT current_database() AS database, current_setting('default_transaction_read_only') AS read_only");
     check("session", [target.database, target.read_only], ["erp_po_totvs_hml", "on"]);
-    const batch = await one("SELECT file_sha256, state, source_row_count FROM migration.import_batch WHERE mapping_version = $1",
-      [report.mappingVersion]);
+    // A reload (2026-11-12) keeps the batch of the previous load as history: the batch is the one of this report.
+    const batch = await one(`SELECT file_sha256, state, source_row_count FROM migration.import_batch
+      WHERE mapping_version = $1 AND file_sha256 = $2`, [report.mappingVersion, report.sha256]);
     check("batch", [batch?.file_sha256, batch?.state, batch?.source_row_count], [report.sha256, "PROMOTED", report.sourceRows]);
 
     for (const [table, expected] of [["migration.source_row", report.sourceRows],
@@ -118,7 +119,7 @@ async function run(reportPath, planReportPath) {
     started = performance.now();
     const summary = await lines.queryE2eStageSummary(pool, scopes, { situation: "all" });
     console.log(`INFO End to End summary in ${Math.round(performance.now() - started)} ms: ${JSON.stringify(summary).slice(0, 300)}`);
-    const delivered = (await lines.queryShipmentLines(pool, scopes, { situation: "all", status: "ENTREGUE" }, 100000, 0)).lines;
+    const delivered = (await lines.queryShipmentLines(pool, scopes, { situation: "all", status: ["ENTREGUE"] }, 100000, 0)).lines;
     check("delivered lines end T3 on the BL date", delivered.filter(line => line.process.blDate
       && line.calculated.e2e.stages.T3.actual !== String(line.process.blDate).slice(0, 10)).length, 0);
   } finally {

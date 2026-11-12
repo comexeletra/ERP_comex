@@ -65,7 +65,11 @@ async function run(reportPath) {
     const lifecycles = await query(`SELECT count(*) FILTER (WHERE lifecycle_status <> 'ACTIVE' AND lifecycle_changed_at IS NULL)::int AS lost,
       count(*) FILTER (WHERE lifecycle_changed_by = '${report.actor}')::int AS touched FROM procurement.purchase_order`);
     check("closed POs kept their lifecycle data", lifecycles, [{ lost: 0, touched: 0 }]);
-    const [audit] = await query("SELECT count(*)::int AS total FROM audit.audit_log WHERE actor_id = $1 AND aggregate_type = 'PURCHASE_REQUEST'", [report.actor]);
+    // A reload (2026-11-12) keeps the audit of the previous load: only the SCs that exist now count, once each
+    // (SC 020328 has the row of its creation and the row of its date).
+    const [audit] = await query(`SELECT count(DISTINCT audit.aggregate_id)::int AS total FROM audit.audit_log AS audit
+      JOIN procurement.purchase_request AS request ON request.id::text = audit.aggregate_id::text
+      WHERE audit.actor_id = $1 AND audit.aggregate_type = 'PURCHASE_REQUEST'`, [report.actor]);
     check("audit rows of the SCs", audit.total, report.requests);
 
     const scopes = (await query("SELECT DISTINCT importer FROM procurement.purchase_order")).map(row => row.importer);
