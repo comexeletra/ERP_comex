@@ -7,7 +7,7 @@
 set -euo pipefail
 container=$(docker ps --filter name=postgres_postgres --format '{{.ID}}' | head -n 1)
 [[ -n $container ]] || { echo 'PostgreSQL container not found.' >&2; exit 1; }
-docker exec "$container" psql -U postgres -d erp_po_totvs_hml -v ON_ERROR_STOP=1 -At -F $'\t' <<'SQL'
+docker exec -i "$container" psql -U postgres -d erp_po_totvs_hml -v ON_ERROR_STOP=1 -At -F $'\t' <<'SQL'
 BEGIN TRANSACTION READ ONLY;
 \o /dev/null
 DO $$ BEGIN
