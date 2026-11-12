@@ -4,7 +4,7 @@
 |---|---|
 | Data | 2026-11-12 |
 | Branch de trabalho | `homologacao` |
-| Status | Especificação aprovada em 2026-11-12; etapa 0 (recarga do HML) feita em 2026-11-12; fase A (etapas 1 a 5, sem a confirmação) publicada no Preview em 2026-11-12; fase B1 (campos do IP e revisão do IP sem `IPH`) aprovada em 2026-11-12 |
+| Status | Especificação aprovada em 2026-11-12; etapa 0 (recarga do HML) feita em 2026-11-12; fase A (etapas 1 a 5, sem a confirmação) publicada no Preview em 2026-11-12; fase B1 (campos do IP e revisão do IP sem `IPH`) aprovada em 2026-11-12; fase B2 (gravação da invoice auditada) com especificação aprovada em 2026-11-12 |
 
 ## Contexto
 
@@ -295,3 +295,122 @@ Up sem `IPH` pela tela (por exemplo a IPH034C, que deve abrir a revisão do `034
 
 Decisões de 2026-11-12 no fim da B1: manter o status calculado (decisão 1) e seguir para a fase B2 (etapa 6) **numa nova sessão**,
 começando pela especificação para aprovação.
+
+# Fase B2: gravação da invoice auditada (etapa 6)
+
+Status: especificação aprovada em 2026-11-12.
+
+Decisões do usuário (2026-11-12):
+1. Especificação aprovada como está (uma revisão só; a API recusa gravação sem `metadata.audit`; API e web sobem juntas).
+2. A invoice auditada continua podendo ser baixada a qualquer momento; o download do estado atual é a condição da confirmação.
+3. Dúvida 1: o nome do fabricante é trocado pelo da lista quando a diferença é só de caracteres invisíveis ou pontuação de outro
+   alfabeto (etapa 6b).
+4. Dúvida 2: manter um ponto para toda diferença de preço (sem mudança).
+5. Dúvida 4: reexplicada ao usuário; resposta pendente (etapa 6b).
+
+## Objetivo
+
+O IP passa a ser gravado com a invoice auditada pela subseção "Auditoria da invoice pelas POs da plataforma", sem baixar e subir o
+arquivo de novo. A subseção vira a única revisão das linhas da tela; a API confere de novo cada alteração feita pela auditoria.
+
+## Situação atual (código lido em 2026-11-12)
+
+- A subseção (`InvoicePlatformAudit` + `InvoiceAuditReview`) monta `invoiceAuditModel`, baixa o arquivo e só guarda `downloaded`
+  (as decisões do momento do download). Não grava nada.
+- A revisão de baixo (`NewOperationalRecord`) tem um segundo cruzamento das linhas (`invoiceMatches`, decisões de quantidade, INV ×
+  PKL, confirmações de fornecedor, unidade e preço por linha, "Completar o cadastro"), lê o arquivo enviado sem correções e grava
+  por `POST /api/v1/processes/import-invoice`. Uma célula PO ilegível é erro de linha do leitor e bloqueia a invoice antes de tudo.
+- A API confere linhas, totais, PO + código, célula dividida com quantidade, saldo, unidade, preço (confirmação), fornecedor e
+  CNPJ; `metadata` é livre (`z.record`), e `catalogUpdates.products` não é comparado com os valores das linhas.
+
+## Requisitos
+
+1. **Uma revisão só.** A tabela de linhas da revisão de baixo, seus pontos e confirmações saem da tela; a subseção é a revisão. Ficam
+   na parte do IP: importadora e CNPJ divergente, invoice duplicada, IP embarcado, modal, portos, prioridade, observações, resumo por
+   PO e código, antes × depois com as decisões das POs que ficam sem alocação, e "Completar o cadastro", calculados pelas alocações
+   da subseção.
+2. **Cabeçalho da invoice só leitura.** Número e data vêm do arquivo e o total é o da invoice auditada (a tela não grava um valor que
+   o arquivo baixado não tem).
+3. **Célula PO ilegível não bloqueia a leitura.** Os demais erros do leitor continuam bloqueando; a célula ilegível vira o ponto da
+   subseção (dividir pelo saldo ou manter sem destino com motivo).
+4. **R4 "Confirmar distribuição"** fica na subseção, só para Master, Administrador e Importação, habilitado quando não há ponto
+   pendente, o arquivo baixado é do estado atual (qualquer decisão alterada depois pede novo download) e as condições do IP acima
+   estão resolvidas (modal, duplicada, embarcado, CNPJ, POs sem alocação). Compras continua só auditando e baixando.
+5. **Reler POs e saldos** na subseção: busca os candidatos de novo, mantém as decisões de conteúdo (DATABASE, fabricantes) e limpa
+   as de caminho (`invoiceAuditPathReset`), o que pede novo download. É o caminho depois de um `PO_BALANCE_CHANGED` (409) e depois
+   de cadastrar um apelido do Exporter, cujo botão passa para o aviso de fornecedor da subseção (Master, Administrador e Compras).
+6. **R5 Payload** montado por uma função de `lib/china-invoice-mapping.ts` (que recebe as correções já calculadas, sem importar outro
+   módulo de `lib/`), usada pela tela e pelo ensaio:
+   - `metadata.lines`, totais, `invoice.amount` e `countryOfOrigin`: os valores do arquivo baixado (`invoiceLineCorrections`,
+     `invoiceCorrectedTotals`, `origin.corrected`);
+   - `metadata.fileSha256`: o do arquivo enviado (a busca de duplicada continua por ele);
+   - `metadata.audit` (novo, `.strict()`): `auditedFileSha256` e `auditedFileName` (SHA-256 dos bytes baixados), as cargas usadas
+     (`productDatabaseLoadId`, `manufacturerListLoadId`), as linhas e o cabeçalho originais como o leitor os devolveu, e as decisões
+     por tipo, com linha, escolha e motivo: NCM não encontrada (manter ou sinalizar), fabricante (linha da lista escolhida, país da
+     invoice ou da lista, fora da lista com motivo), preço (aceitar ou corrigir), INV × PKL (INV ou PKL, motivo), célula ilegível
+     (dividir, com as POs e quantidades, ou manter sem destino, com motivo), PO trocada (de → para), fornecedor e unidade confirmados;
+   - destinos, `lineDecisions` e confirmações por destino como hoje (`invoiceSavePayload`, `invoiceLineDecisions`).
+7. **R6 A API confere de novo** (`apps/api/src/invoice-audit-check.ts`, funções puras, mais as consultas na rota):
+   - `metadata.audit` obrigatório: sem ele, `INVALID_INVOICE_AUDIT` (400). As linhas originais têm as mesmas linhas, códigos,
+     números e unidades das gravadas.
+   - Cada campo diferente entre a linha original e a gravada precisa da sua razão, senão `INVOICE_AUDIT_CHANGE_UNJUSTIFIED` (400,
+     com linha e campo):
+     - NCM e descrição: em toda linha cujo produto está na DATABASE com NCM, os valores gravados são os da carga citada (a DATABASE
+       manda sem pergunta); produto fora dela ou sem NCM mantém a NCM da invoice com a decisão de manter (motivo) ou sinalizar;
+     - fabricante, endereço e país: iguais aos da linha da lista citada na decisão; país da lista só com a escolha "lista";
+     - preço: escolha "corrigir" e igual ao único preço CNY dos itens de PO que recebem a linha (`INVOICE_AUDIT_PRICE_MISMATCH`);
+     - pesos: escolha "PKL" com motivo;
+     - quantidade e célula PO: coerentes com os destinos (conferências atuais); toda PO da célula gravada está na célula original
+       ou é o "para" de uma troca cujo "de" está nela (`INVOICE_AUDIT_PO_NOT_IN_CELL`); a divisão de célula ilegível só usa POs
+       lidas da célula original;
+     - valor da linha: quantidade × preço em centavos (conferência atual); país de origem do cabeçalho: a regra de
+       `invoiceOriginCountries` aplicada aos países gravados; totais: soma das linhas gravadas.
+   - As cargas citadas são as últimas de cada tipo, senão `INVOICE_AUDIT_REFERENCE_OUTDATED` (409); carga nula só quando não há
+     nenhuma daquele tipo.
+   - A busca de invoice duplicada também encontra a invoice cujo `auditedFileSha256` é o SHA do arquivo enviado (o arquivo auditado,
+     enviado depois como original, é a mesma invoice).
+   - Espelhos com teste de paridade com a web: números da célula (`invoicePoCellNumbers`), grafia da célula dividida, comparação de
+     NCM, países de origem e escolha do preço único CNY.
+8. **R7 Cadastro do produto:** "Completar o cadastro" usa os valores auditados da linha; a API recusa atualização cujo valor não é o
+   de uma linha gravada daquele produto (`INVOICE_CATALOG_UPDATE_MISMATCH`) e NCM de linha sinalizada
+   (`INVOICE_FLAGGED_NCM_TO_CATALOG`); continua só preenchendo campos vazios e nunca a descrição.
+9. **Auditoria do IP:** o registro do documento da invoice guarda o resumo (cargas, SHA do auditado, contagem de alterações por
+   campo, decisões com motivo); o documento guarda `metadata.audit` inteiro.
+10. **R8** textos nos três idiomas, layout e componentes padrão.
+
+## Restrições
+
+- A invoice nunca altera o item da PO; a página `/invoices/audit` continua sem gravar.
+- O contrato muda na API e na web no mesmo commit; a API exige `metadata.audit`, então a web anterior é recusada: API e web sobem
+  juntas (API na VPS, depois o push), como na B1, e voltam juntas.
+- Ensaio com ROLLBACK no HML antes do release; só `erp_po_totvs_hml`.
+- Os testes atuais da auditoria continuam passando sem mudança; os testes da revisão de baixo que saem com ela são listados no
+  commit, cada um com o teste que passa a cobrir a mesma regra na subseção.
+
+## Critérios de aceite
+
+| # | Critério | Teste |
+|---|---|---|
+| 1 | Confirmar só depois do download do estado atual; decisão alterada depois desabilita; Compras sem o botão | web |
+| 2 | O payload grava as linhas do arquivo baixado: relido pelo leitor, o arquivo da subseção dá as mesmas linhas e totais do payload (IPH034B, 034C, 037D original) | web (arquivos reais) |
+| 3 | A IPH037D original (célula `PO 030888&030201`) carrega, divide 20 + 60 e grava | web + ensaio HML |
+| 4 | A API recusa: sem `audit`; campo alterado sem decisão; NCM ou descrição fora da carga; fabricante fora da linha citada; carga desatualizada (409); preço corrigido diferente da PO; PO fora da célula sem troca; divisão com PO fora da célula; NCM sinalizada ou valor não auditado no cadastro | API |
+| 5 | Espelhos da API iguais à web; payload aceito pelos schemas `.strict()` | API (repositório) |
+| 6 | Duplicada encontrada pelo SHA do auditado | API |
+| 7 | Ensaio com ROLLBACK no HML: IPH034B revisando o `034B/2026` (troca de PO da linha 92, preços, DATABASE) e IPH037D original revisando o `IPH037D/2026`, mais as recusas; contagens iguais antes e depois | ensaio HML |
+| 8 | Três idiomas, suítes, lint, type-check e builds; API HML atualizada; Preview `Ready`; teste do usuário | geral |
+
+## Fora do escopo
+
+Mudar as regras da auditoria (dúvidas 1, 2 e 4, etapa 6b se o usuário escolher mudar); gravar pela página com o Follow Up; levar a
+descrição ao cadastro; produção e `main`.
+
+## Plano
+
+1. Testes da API (contrato `audit`, recusas, paridade) e da web (payload igual ao arquivo baixado, confirmação condicionada).
+2. API: `invoice-audit-check.ts` e espelhos; integração na rota; duplicada pelo SHA do auditado.
+3. Web, no mesmo commit do contrato: função do payload, confirmação e "Reler POs e saldos" na subseção, saída da revisão de baixo,
+   cabeçalho só leitura, célula ilegível sem bloqueio, botão do apelido na subseção.
+4. Ensaio no HML com `rehearse-invoice-save.mjs` (payload montado pelas funções da tela a partir das invoices reais e das cargas do HML).
+5. Release da API (roteiro de `hml-release-9e3a9a4`), push, Preview `Ready`, teste do usuário.
+6. Atualizar este plano, `AGENTS.md` e `deploy/hostinger/README.md`.
