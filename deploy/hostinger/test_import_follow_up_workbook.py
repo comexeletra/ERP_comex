@@ -377,6 +377,21 @@ class Sql(unittest.TestCase):
         self.assertNotIn("DELETE FROM audit", wiped)
         self.assertIn("SET LOCAL session_replication_role = origin;", wiped)
 
+    def test_a_reload_replaces_the_rows_of_the_previous_load(self):
+        # Reload of 2026-11-12: the quality reviews, issues and source rows of the previous load point to wiped records.
+        self.assertNotIn("DELETE FROM migration", loader.render_sql(self.load, False, True))
+        reloaded = loader.render_sql(self.load, False, True, True)
+        deletes = [reloaded.index(f"DELETE FROM migration.{table};") for table in ("quality_review", "data_issue", "source_row")]
+        self.assertEqual(deletes, sorted(deletes))
+        self.assertNotIn("DELETE FROM migration.import_batch", reloaded)
+        self.assertLess(reloaded.index("catalog.entry_alias"), deletes[0])
+        self.assertLess(deletes[-1], reloaded.index("SET LOCAL session_replication_role = origin;"))
+        self.assertLess(deletes[-1], reloaded.index("INSERT INTO migration.import_batch"))
+
+    def test_a_reload_needs_the_wipe(self):
+        with self.assertRaises(ValueError):
+            loader.render_sql(self.load, False, False, True)
+
     def test_allocations_are_inserted_before_the_lifecycle_changes(self):
         load = build([pre_row(Status="DELIVERED", **{"IP Number": "IP-1"})], [post_row(Status="DELIVERED")])
         sql = loader.render_sql(load, False, False)

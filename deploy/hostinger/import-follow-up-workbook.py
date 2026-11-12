@@ -634,11 +634,25 @@ DELETE FROM procurement.po_line_observation;
 DELETE FROM procurement.purchase_order;
 DELETE FROM imports.import_process;
 DELETE FROM procurement.purchase_request;
-SET LOCAL session_replication_role = origin;
+"""
+
+# A reload (user decision, 2026-11-12) also removes the source rows of the previous load, with their quality issues
+# and reviews, which point to the wiped records. The batch rows stay as history; nothing else may point to the rows.
+REPLACE_PREVIOUS_LOAD = """DO $aliases$
+BEGIN
+  IF EXISTS (SELECT 1 FROM catalog.entry_alias WHERE source_row_id IS NOT NULL) THEN
+    RAISE EXCEPTION 'catalog.entry_alias points to source rows of a previous load';
+  END IF;
+END $aliases$;
+DELETE FROM migration.quality_review;
+DELETE FROM migration.data_issue;
+DELETE FROM migration.source_row;
 """
 
 
-def render_sql(load: dict, commit: bool, wipe_simulation: bool) -> str:
+def render_sql(load: dict, commit: bool, wipe_simulation: bool, replace_previous_load: bool = False) -> str:
+    if replace_previous_load and not wipe_simulation:
+        raise ValueError("A reload replaces the previous load only together with the wipe of POs, IPs and SCs")
     digest, batch_id = load["digest"], load["batch_id"]
     expected = summary(load)
     parts = ["\\set ON_ERROR_STOP on", "BEGIN;", "SET LOCAL lock_timeout = '30s';",
@@ -657,6 +671,9 @@ BEGIN
 END $guard$;"""]
     if wipe_simulation:
         parts.append(WIPE_SIMULATION)
+        if replace_previous_load:
+            parts.append(REPLACE_PREVIOUS_LOAD)
+        parts.append("SET LOCAL session_replication_role = origin;")
     parts.append(f"""DO $empty$
 BEGIN
   IF EXISTS (SELECT 1 FROM procurement.purchase_order) OR EXISTS (SELECT 1 FROM imports.import_process)
@@ -835,14 +852,18 @@ def main() -> None:
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--commit", action="store_true", help="End the SQL with COMMIT; the default is ROLLBACK, a rehearsal")
     parser.add_argument("--wipe-simulation", action="store_true", help="Delete the POs, IPs and SCs of the HML simulation first")
+    parser.add_argument("--replace-previous-load", action="store_true",
+                        help="With --wipe-simulation: also delete the source rows, issues and reviews of the previous load")
     args = parser.parse_args()
+    if args.replace_previous_load and not args.wipe_simulation:
+        raise SystemExit("--replace-previous-load needs --wipe-simulation")
     data = read_workbook(args.workbook)
     if data["digest"] != args.expected_sha256:
         raise SystemExit(f"Workbook SHA-256 {data['digest']} differs from the approved {args.expected_sha256}")
     registered, suppliers = read_catalog(args.catalog)
     load = build_load(data["pre_rows"], data["post_rows"], data["pre_headers"], data["post_headers"], registered, suppliers,
                       data["digest"], data["typed"], args.workbook.name)
-    args.sql.write_text(render_sql(load, args.commit, args.wipe_simulation), encoding="utf-8")
+    args.sql.write_text(render_sql(load, args.commit, args.wipe_simulation, args.replace_previous_load), encoding="utf-8")
     report = summary(load)
     args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
     print(json.dumps({key: value for key, value in report.items() if key not in ("orderTotals", "processStatuses")},
