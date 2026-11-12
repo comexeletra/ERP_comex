@@ -1219,6 +1219,8 @@ export const en: Messages = {
       codeNotFound: (code: string) => `Code ${code} is not on this PO.`,
       poNotFound: "PO not registered for this importer.",
       poNotActive: "The PO is closed, cancelled or deleted and does not receive the invoice.",
+      poInOtherImporter: (importers: string) => `PO not registered for this importer: it is registered under ${importers}. Check the importer of the invoice.`,
+      useImporter: (importer: string) => `Switch the importer to ${importer} (the audit starts again with its POs)`,
       poSuggestionsTitle: "PO suggested by the balance of the platform POs (the invoice may cite the wrong PO):",
       poSuggestion: (po: string, quantity: string, ip: string, rows: string) =>
         `PO ${po}: ${quantity} of this product ${ip ? `already on IP ${ip}` : "with free balance"} (PO item(s) ${rows}).`,

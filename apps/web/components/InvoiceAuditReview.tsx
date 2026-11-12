@@ -28,12 +28,17 @@ export type InvoiceAuditDecisionsUpdate = (update: (current: InvoiceAuditDecisio
  * The decisions belong to the screen that shows it, which clears them when the invoice or the POs change.
  */
 export default function InvoiceAuditReview<T extends InvoiceAuditCandidate>({ draft, bytes, source, summary, reference,
-  importer, user, decisions, onDecisions, onDownloaded, onBusy }: {
+  importer, user, decisions, onDecisions, onDownloaded, onBusy, importerSwitch }: {
   draft: ChinaInvoiceDraft; bytes: ArrayBuffer; source: InvoiceAuditSource<T>; summary: InvoiceAuditSourceSummary;
   reference: AuditReference | null; importer: string; user: string; decisions: InvoiceAuditDecisions;
   onDecisions: InvoiceAuditDecisionsUpdate; onDownloaded?: () => void;
   /** While the file is written, the screen keeps the invoice from being replaced. */
   onBusy?: (busy: boolean) => void;
+  /**
+   * A PO registered under another importer: the names shown, the importers the screen can switch to, and the switch
+   * (the screen then audits the invoice again with the POs of that importer).
+   */
+  importerSwitch?: { names: Readonly<Record<string, string>>; codes: readonly string[]; change: (code: string) => void };
 }) {
   const { m } = useI18n();
   const t = invoiceAuditTexts(m, summary.kind);
@@ -180,7 +185,15 @@ export default function InvoiceAuditReview<T extends InvoiceAuditCandidate>({ dr
               <li key={item.id}>{t.takes(item.poNumber, item.lineNumber, formatNumber(quantity),
                 item.unitPrice === null ? "—" : `${formatDecimal(item.unitPrice)} ${item.currency ?? ""}`.trim())}</li>)}</ul>}
             {issue && <div className="notice error" role="alert">
-              <p>{issueText(t, issue, part.productCode)}</p>
+              <p>{issue.kind === "PO_NOT_REGISTERED" && part.otherImporters.length
+                ? t.platform.poInOtherImporter(part.otherImporters.map(code => importerSwitch?.names[code] || code).join(", "))
+                : issueText(t, issue, part.productCode)}</p>
+              {issue.kind === "PO_NOT_REGISTERED" && importerSwitch
+                && part.otherImporters.some(code => importerSwitch.codes.includes(code)) && <div className="button-row">
+                {part.otherImporters.filter(code => importerSwitch.codes.includes(code)).map(code =>
+                  <button key={code} className="button secondary" type="button" disabled={reading}
+                    onClick={() => importerSwitch.change(code)}>{t.platform.useImporter(importerSwitch.names[code] || code)}</button>)}
+              </div>}
               {issue.kind === "INSUFFICIENT_BALANCE" && <button className="button secondary" type="button"
                 onClick={() => setQuantity(part.key, issue.available)}>
                 {t.useBalance(formatNumber(issue.available))}</button>}

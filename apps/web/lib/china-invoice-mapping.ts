@@ -856,7 +856,9 @@ export type InvoiceAuditCandidate = InvoicePoItemCandidate & { lineNumber: numbe
   unitPrice: string | null; currency: string | null;
   /** The supplier confirmed once against the Exporter; `supplierValues` and the aliases are what matches it. */
   supplier: string; supplierValues?: readonly (string | null | undefined)[]; exporterAliases?: readonly string[] };
-export type InvoiceAuditPurchaseOrder<T extends InvoiceAuditCandidate> = { poExists: boolean; poStatus?: string; items: readonly T[] };
+/** `otherImporters`: the importers (visible to the user) where a PO missing from this importer is registered. */
+export type InvoiceAuditPurchaseOrder<T extends InvoiceAuditCandidate> = { poExists: boolean; poStatus?: string; items: readonly T[];
+  otherImporters?: readonly string[] };
 export type InvoiceAuditSuggestion = { poNumber: string; available: string; ipNumber: string; sourceRows: number[] };
 /** Where the POs come from: the items of a PO number, and the other POs that can take a part its PO cannot receive. */
 export type InvoiceAuditSource<T extends InvoiceAuditCandidate = InvoiceAuditCandidate> = {
@@ -920,7 +922,7 @@ type InvoiceAuditDraftInput = { lines: readonly ChinaInvoiceLine[]; ipNumber: st
 /** A line whose PO cell the reader could not split, with the POs found in it and the split proposed by balance. */
 export type InvoiceAuditUnreadLine = { line: ChinaInvoiceLine; numbers: string[]; split: string[] };
 export type InvoiceAuditPart<T extends InvoiceAuditCandidate> = ReturnType<typeof invoiceAssignmentsFromSplit>[number]
-  & { invoiceQuantity: string; poExists: boolean; poStatus: string; keyItems: T[] };
+  & { invoiceQuantity: string; poExists: boolean; poStatus: string; keyItems: T[]; otherImporters: readonly string[] };
 export type InvoiceAuditRow<T extends InvoiceAuditCandidate> = { part: InvoiceAuditPart<T>; line: ChinaInvoiceLine;
   decision: InvoiceQuantityDecision; allocations: { item: T; quantity: string }[]; points: InvoiceAuditPoint[];
   issue: InvoiceDestinationIssue | null; suggestions: InvoiceAuditSuggestion[] };
@@ -974,9 +976,10 @@ export function invoiceAuditModel<T extends InvoiceAuditCandidate>(input: { draf
     .sort((left, right) => left.sourceRow - right.sourceRow);
   const parts: InvoiceAuditPart<T>[] = source ? destinedParts.map(part => {
     const poNumber = decisions.poChoices[part.key] ?? part.poNumber;
-    const { poExists, poStatus, items } = source.purchaseOrder(poNumber);
+    const { poExists, poStatus, items, otherImporters } = source.purchaseOrder(poNumber);
     return { ...part, poNumber, invoiceQuantity: part.quantity, quantity: decisions.quantities[part.key] ?? part.quantity, poExists,
-      poStatus: poStatus ?? "ACTIVE", keyItems: invoiceKeyItems(items, part.productCode) };
+      poStatus: poStatus ?? "ACTIVE", keyItems: invoiceKeyItems(items, part.productCode),
+      otherImporters: poExists ? [] : otherImporters ?? [] };
   }) : [];
   // A PO that is closed, cancelled or deleted receives nothing (the platform lists no item of it; this keeps it so).
   const distribution = distributeInvoiceParts(parts.map(part => ({ key: part.key, quantity: part.quantity,
@@ -1093,7 +1096,7 @@ export type InvoicePlatformItem = { id: string; lineNumber: number; poNumber: st
   supplierText: string | null; supplierName: string | null; supplierCode: string | null; supplierExporterAliases?: readonly string[];
   linkedToRevisingIp?: boolean };
 export type InvoicePlatformPurchaseOrder = { sourcePoNumber: string; poExists: boolean; poStatus: string | null;
-  items: readonly InvoicePlatformItem[] };
+  otherImporters?: readonly string[]; items: readonly InvoicePlatformItem[] };
 export type InvoicePlatformCandidate = InvoiceAuditCandidate & { linkedToRevisingIp: boolean };
 
 /**
@@ -1157,7 +1160,8 @@ export function invoicePlatformAuditSource(purchaseOrders: readonly InvoicePlatf
   byProduct: readonly { productCode: string; items: readonly InvoicePlatformItem[] }[],
   revisingIpNumber: string): InvoiceAuditSource<InvoicePlatformCandidate> {
   const cited = new Map(purchaseOrders.map(order => [invoicePlatformPoKey(order.sourcePoNumber),
-    { poExists: order.poExists, poStatus: order.poStatus ?? (order.poExists ? "ACTIVE" : undefined), items: order.items.map(platformCandidate) }]));
+    { poExists: order.poExists, poStatus: order.poStatus ?? (order.poExists ? "ACTIVE" : undefined), items: order.items.map(platformCandidate),
+      ...(order.otherImporters?.length ? { otherImporters: order.otherImporters } : {}) }]));
   // The items with balance of each product and of each PO, in the order of the route, each item once.
   const seen = new Set<string>();
   const byCode = new Map<string, InvoicePlatformCandidate[]>();

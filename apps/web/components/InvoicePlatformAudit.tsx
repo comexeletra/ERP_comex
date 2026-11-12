@@ -28,8 +28,9 @@ async function postJson<T>(path: string, body: unknown, signal: AbortSignal): Pr
  * invoice": the rules, points and file of the audit page, with the balances of the system instead of the Follow Up. It
  * saves nothing: the analyst downloads the audited invoice and checks it. Until stage 6 the IP is still saved below.
  */
-export default function InvoicePlatformAudit({ draft, bytes, importer, user }: {
+export default function InvoicePlatformAudit({ draft, bytes, importer, user, importerSwitch }: {
   draft: ChinaInvoiceDraft; bytes: ArrayBuffer; importer: string; user: string;
+  importerSwitch?: { names: Readonly<Record<string, string>>; codes: readonly string[]; change: (code: string) => void };
 }) {
   const { m } = useI18n();
   const t = m.invoiceAudit.platform;
@@ -107,7 +108,7 @@ export default function InvoicePlatformAudit({ draft, bytes, importer, user }: {
     {source && referenceSettled && <InvoiceAuditReview draft={draft} bytes={bytes} source={source}
       summary={{ kind: "platform", systemIp: candidates!.systemIp }}
       reference={reference} importer={importer} user={user} decisions={decisions} onDecisions={setDecisions}
-      onDownloaded={() => setDownloaded(decisions)} />}
+      onDownloaded={() => setDownloaded(decisions)} importerSwitch={importerSwitch} />}
     {downloaded && <p className={`notice ${downloaded === decisions ? "success" : "warning"}`} role="status">
       {downloaded === decisions ? t.downloaded : t.changedAfterDownload}</p>}
   </section>;

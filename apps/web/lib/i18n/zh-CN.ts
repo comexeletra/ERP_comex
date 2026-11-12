@@ -1215,6 +1215,8 @@ export const zhCN: Messages = {
       codeNotFound: (code: string) => `代码 ${code} 不在此 PO 中。`,
       poNotFound: "此进口商未登记该 PO。",
       poNotActive: "该 PO 已关闭、取消或删除，不能接收此发票。",
+      poInOtherImporter: (importers: string) => `此进口商未登记该 PO：它登记在 ${importers} 下。请核对发票的进口商。`,
+      useImporter: (importer: string) => `将进口商改为 ${importer}（审核将按其 PO 重新开始）`,
       poSuggestionsTitle: "按平台 PO 余量建议的 PO（发票可能引用了错误的 PO）：",
       poSuggestion: (po: string, quantity: string, ip: string, rows: string) =>
         `PO ${po}：此产品 ${quantity}，${ip ? `已在 IP ${ip}` : "有可用余量"}（PO 第 ${rows} 项）。`,

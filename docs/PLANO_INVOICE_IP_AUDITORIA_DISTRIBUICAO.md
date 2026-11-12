@@ -139,6 +139,11 @@ dependem da IPH037A original, que continuam pulados.
 | 3 (API) | `674214c`, `b53ddcb` | Rota só leitura `POST /api/v1/purchase-orders/invoice-candidates/by-product`: itens com saldo das POs ativas da importadora para cada produto, sem o saldo do IP em revisão, na ordem POs ligadas ao IP, saldo exato, número. Release `hml-release-c1c04f6` ativo no HML (`deploy/hostinger/README.md`). |
 | 2 a 5 (web) | `c1c04f6` e o commit seguinte | Subseção "Auditoria da invoice pelas POs da plataforma" (`components/InvoicePlatformAudit.tsx`): referência da última carga, candidatos pelas rotas `batch` e `by-product`, as mesmas regras, pontos, decisões em massa (com o grupo "Unidade") e arquivo da página, com a fonte "POs da plataforma (HML)" e o IP no sistema na aba `AUDITORIA`. Compras só audita e baixa. A subseção não grava nada, e seus motivos e o Enter nos seus campos não interferem na gravação do IP. |
 
+Pedido do usuário (2026-11-12, depois da entrega): PO citada que não existe na importadora escolhida, mas existe em outra que o
+usuário enxerga (`otherImporters` da rota `batch`), diz em qual importadora está cadastrada e oferece "Trocar a importadora para
+…", o mesmo campo Importadora da tela; a subseção recomeça com as POs dessa importadora (as decisões tomadas se perdem). Sem
+importadora visível, continua "PO não cadastrada nesta importadora", com as sugestões de outra PO.
+
 A gravação do IP não mudou (`POST /api/v1/processes/import-invoice`, payload e bloqueios iguais). Montar 20 vezes a IPH034B com a
 referência leva cerca de 160 ms (critério: menos de 2 s).
 

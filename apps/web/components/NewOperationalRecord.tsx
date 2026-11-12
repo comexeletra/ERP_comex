@@ -1245,7 +1245,8 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
             {!canSaveIp && importerCnpjMismatch && <p className="notice warning" role="alert">
               {t.cnpjMismatch(invoiceDraft.importerCnpj || t.notIdentified, importer, importerCnpjs[importer] || t.notRegistered)}</p>}
             {invoiceBytes && importer && <InvoicePlatformAudit key={`${invoiceDraft.fileSha256}|${importer}`} draft={invoiceDraft}
-              bytes={invoiceBytes} importer={importer} user={userName} />}
+              bytes={invoiceBytes} importer={importer} user={userName}
+              importerSwitch={reviewInvoiceId ? undefined : { names: importerNames, codes: importers, change: changeImporter }} />}
             {canSaveIp && <>
             {invoiceDuplicate && <p className="notice warning" role="alert">
                {invoiceDuplicate.recordStatus === "DRAFT"

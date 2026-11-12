@@ -1222,6 +1222,8 @@ export const ptBR = {
       codeNotFound: (code: string) => `O código ${code} não está nesta PO.`,
       poNotFound: "PO não cadastrada nesta importadora.",
       poNotActive: "A PO está encerrada, cancelada ou excluída e não recebe a invoice.",
+      poInOtherImporter: (importers: string) => `PO não cadastrada nesta importadora: ela está cadastrada em ${importers}. Confira a importadora da invoice.`,
+      useImporter: (importer: string) => `Trocar a importadora para ${importer} (a auditoria recomeça com as POs dela)`,
       poSuggestionsTitle: "PO sugerida pelo saldo das POs da plataforma (a invoice pode citar a PO errada):",
       poSuggestion: (po: string, quantity: string, ip: string, rows: string) =>
         `PO ${po}: ${quantity} deste produto ${ip ? `já no IP ${ip}` : "com saldo livre"} (item(ns) ${rows} da PO).`,

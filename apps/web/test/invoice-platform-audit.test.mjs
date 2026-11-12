@@ -90,6 +90,38 @@ test("the audit with the platform source: the suggestion of another PO receives 
   assert.deepEqual([...after.unitPoints.keys()], []);
 });
 
+// User request (2026-11-12): a PO registered under another importer says where it is and offers to switch the importer,
+// as the review that saves the IP does, instead of only "not registered".
+test("a PO of another importer carries the importers where it is registered, and the screen offers the switch", async () => {
+  const platform = invoicePlatformAuditSource(
+    [{ sourcePoNumber: "030201", poExists: false, poStatus: null, otherImporters: ["ELETRA FILIAL"], items: [] },
+      { sourcePoNumber: "030202", poExists: true, poStatus: "ACTIVE", otherImporters: [], items: [item("a", { poNumber: "030202" })] }],
+    [{ productCode: "P1", items: [item("a", { poNumber: "030202" })] }], "");
+  assert.deepEqual(platform.purchaseOrder("030201"), { poExists: false, poStatus: undefined, items: [], otherImporters: ["ELETRA FILIAL"] });
+  const draft = { lines: [line(16), line(17, { poCell: "PO 030202", poAssignments: [{ poNumber: "030202", quantity: "100", explicitQuantity: false }] })],
+    ipNumber: "IPH900A/2026", exporterText: "HEXING", packingList: { status: "MISSING" }, countryOfOrigin: "" };
+  const model = invoiceAuditModel({ draft, source: platform, products: null, manufacturers: null, decisions: emptyInvoiceAuditDecisions });
+  assert.equal(model.rows[0].issue.kind, "PO_NOT_REGISTERED");
+  assert.deepEqual(model.rows[0].part.otherImporters, ["ELETRA FILIAL"]);
+  assert.deepEqual(model.rows[1].part.otherImporters, []);
+  // A suggested PO of this importer replaces the one of the other importer, and the line no longer cites it.
+  const moved = invoiceAuditModel({ draft, source: platform, products: null, manufacturers: null,
+    decisions: { ...emptyInvoiceAuditDecisions, poChoices: { "16:0": "030202" } } });
+  assert.deepEqual(moved.rows[0].part.otherImporters, []);
+  assert.equal(ptBR.invoiceAudit.platform.poInOtherImporter("ELETRA FILIAL"),
+    "PO não cadastrada nesta importadora: ela está cadastrada em ELETRA FILIAL. Confira a importadora da invoice.");
+
+  const review = await source("../components/InvoiceAuditReview.tsx");
+  const subsection = await source("../components/InvoicePlatformAudit.tsx");
+  const screen = await source("../components/NewOperationalRecord.tsx");
+  assert.match(review, /issue\.kind === "PO_NOT_REGISTERED" && part\.otherImporters\.length\s+\? t\.platform\.poInOtherImporter\(/u);
+  assert.match(review, /part\.otherImporters\.filter\(code => importerSwitch\.codes\.includes\(code\)\)/u);
+  assert.match(review, /onClick=\{\(\) => importerSwitch\.change\(code\)\}>\{t\.platform\.useImporter\(/u);
+  assert.match(subsection, /importerSwitch=\{importerSwitch\}/u);
+  // The switch is the one of the Importer field: the subsection mounts again (key) and reads the POs of that importer.
+  assert.match(screen, /importerSwitch=\{reviewInvoiceId \? undefined : \{ names: importerNames, codes: importers, change: changeImporter \}\}/u);
+});
+
 test("the IP screen shows the audit subsection, and Compras audits without the review that saves the IP", async () => {
   const screen = await source("../components/NewOperationalRecord.tsx");
   const subsection = await source("../components/InvoicePlatformAudit.tsx");
