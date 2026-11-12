@@ -37,7 +37,7 @@ import { classifyInvoiceDestination, distributeInvoiceParts, invoiceAssignmentsF
   invoiceBeforeAfterRows, invoicePackingDecisionsReady, invoicePackingDivergences, invoicePackingListDecisions,
   invoiceIpSearchText, invoicePriceTolerancePercent, invoiceSaveIpNumber, invoiceSavePayload,
   invoiceSupplierMatchesExporter } from "../lib/china-invoice-mapping";
-import { invoicePortSuggestion } from "../lib/invoice-ports";
+import { invoiceProcessPort } from "../lib/invoice-ports";
 import { createExporterAlias } from "./SupplierExporterAliases";
 import InvoiceConference from "./InvoiceConference";
 import InvoicePlatformAudit from "./InvoicePlatformAudit";
@@ -694,11 +694,13 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
    */
   function fillInvoiceProcessFields(draft: ChinaInvoiceDraft, existing: InvoiceExistingProcess | null) {
     const listed = (entity: string) => options.filter(option => option.entity === entity).map(option => option.value);
-    setTransportMode(current => current || existing?.transportMode || "");
+    // Only values of the lists: an IP saved before phase B1 keeps the invoice text of the ports, which the API refuses.
+    const mode = existing?.transportMode && listed("transport_mode").includes(existing.transportMode) ? existing.transportMode : "";
+    setTransportMode(current => current || mode);
     setPortLoading(current => current
-      || existing?.portLoading || invoicePortSuggestion(draft.originText, "loading", listed("port_loading")));
+      || invoiceProcessPort(existing?.portLoading, draft.originText, "loading", listed("port_loading")));
     setPortDischarge(current => current
-      || existing?.portDischarge || invoicePortSuggestion(draft.destinationText, "discharge", listed("port_discharge")));
+      || invoiceProcessPort(existing?.portDischarge, draft.destinationText, "discharge", listed("port_discharge")));
   }
 
   function changeImporter(value: string) {

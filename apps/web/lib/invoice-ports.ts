@@ -17,6 +17,15 @@ const portCities: Record<InvoicePortKind, ReadonlyArray<readonly [RegExp, string
 const plain = (value: string) => value.normalize("NFD").replace(/\p{M}/gu, "").toLocaleUpperCase("en-US").trim();
 
 /**
+ * The port a field starts with: the value the IP keeps when it is in the list, else the suggestion from the invoice text.
+ * An IP saved before phase B1 keeps the invoice text ("NINGBO,CHINA"), which the API refuses (user report, 2026-11-12).
+ */
+export function invoiceProcessPort(ipValue: string | null | undefined, text: string, kind: InvoicePortKind,
+  listed: readonly string[]): string {
+  return ipValue && listed.includes(ipValue) ? ipValue : invoicePortSuggestion(text, kind, listed);
+}
+
+/**
  * The listed port code of the city the invoice text names; without a known city, the listed value equal to the text (an
  * invoice that already brings "NGB"); "" when it names more than one city or nothing listed. The code wins over a listed
  * spelling of the city ("Pecém" suggests PEC), as the Follow Up writes it.

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { invoiceSaveIpNumber, invoiceSystemIp } from "../lib/china-invoice-mapping.ts";
-import { invoicePortSuggestion } from "../lib/invoice-ports.ts";
+import { invoicePortSuggestion, invoiceProcessPort } from "../lib/invoice-ports.ts";
 import { en } from "../lib/i18n/en.ts";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
 import { zhCN } from "../lib/i18n/zh-CN.ts";
@@ -43,6 +43,17 @@ test("the invoice port text suggests the listed port code the Follow Up uses", (
   assert.equal(invoicePortSuggestion("CHINA", "loading", loadingList), "China");
 });
 
+test("a revision starts with the IP ports only when they are in the lists", () => {
+  // User report (2026-11-12): IPH037D/2026, created before phase B1, kept NINGBO,CHINA and PECEM,BRASIL, which the API refuses.
+  assert.equal(invoiceProcessPort("NINGBO,CHINA", "NINGBO,CHINA", "loading", loadingList), "NGB");
+  assert.equal(invoiceProcessPort("PECEM,BRASIL", "PECEM,BRASIL", "discharge", dischargeList), "PEC");
+  // An IP of the Follow Up keeps its listed codes, even when the invoice names another port.
+  assert.equal(invoiceProcessPort("SGH", "NINGBO,CHINA", "loading", loadingList), "SGH");
+  assert.equal(invoiceProcessPort("Pecém", "PECEM,BRASIL", "discharge", dischargeList), "Pecém");
+  assert.equal(invoiceProcessPort(null, "NINGBO,CHINA", "loading", loadingList), "NGB");
+  assert.equal(invoiceProcessPort("ROTTERDAM", "ROTTERDAM", "loading", loadingList), "");
+});
+
 test("the invoice saves into the IP the Follow Up keeps without IPH, which the audit also reads", () => {
   const followUp = [{ ipNumber: "034C/2026", recordStatus: "ACTIVE" }];
   assert.equal(invoiceSaveIpNumber("IPH034C/2026", followUp), "034C/2026");
@@ -57,7 +68,7 @@ test("the invoice saves into the IP the Follow Up keeps without IPH, which the a
 
 test("the IP screen sends the mode and ports chosen and saves into the IP of the system", async () => {
   const screen = await source("../components/NewOperationalRecord.tsx");
-  assert.match(screen, /import \{ invoicePortSuggestion \} from "\.\.\/lib\/invoice-ports";/u);
+  assert.match(screen, /import \{ invoiceProcessPort \} from "\.\.\/lib\/invoice-ports";/u);
   // One lookup for the invoice IP: the processes of the importer with or without IPH, then the saving rule.
   assert.match(screen, /ipNumber: invoiceIpSearchText\(invoiceIp\)/u);
   assert.match(screen, /const ipNumber = invoiceSaveIpNumber\(invoiceIp, existing\.items\);/u);
@@ -75,8 +86,9 @@ test("the IP screen sends the mode and ports chosen and saves into the IP of the
   assert.match(screen, /<OperationalOptionSelect required entity="transport_mode" value=\{transportMode\}/u);
   assert.match(screen, /<OperationalOptionSelect entity="port_loading" value=\{portLoading\}/u);
   assert.match(screen, /<OperationalOptionSelect entity="port_discharge" value=\{portDischarge\}/u);
-  assert.match(screen, /existing\?\.portLoading \|\| invoicePortSuggestion\(draft\.originText, "loading"/u);
-  assert.match(screen, /existing\?\.portDischarge \|\| invoicePortSuggestion\(draft\.destinationText, "discharge"/u);
+  assert.match(screen, /invoiceProcessPort\(existing\?\.portLoading, draft\.originText, "loading", listed\("port_loading"\)\)/u);
+  assert.match(screen, /invoiceProcessPort\(existing\?\.portDischarge, draft\.destinationText, "discharge", listed\("port_discharge"\)\)/u);
+  assert.match(screen, /listed\("transport_mode"\)\.includes\(existing\.transportMode\)/u);
   assert.match(screen, /\|\| !transportMode/u);
   // The status shown stays the one calculated from the IP dates (af2f77b).
   assert.match(screen, /<label>\{t\.logisticsStatus\}<input readOnly value="WAITING SHIPMENT" \/><\/label>/u);
