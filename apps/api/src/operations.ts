@@ -208,6 +208,11 @@ const invoiceCandidateBatch = z.object({
   revisingIpNumber: z.string().trim().max(80).optional(),
   poNumbers: z.array(z.string().trim().min(1).max(80)).min(1).max(200),
 }).strict();
+const invoiceCandidateByProduct = z.object({
+  importer: z.string().trim().min(1).max(120),
+  revisingIpNumber: z.string().trim().max(80).optional(),
+  products: z.array(z.object({ productCode: z.string().trim().min(1).max(80), quantity }).strict()).min(1).max(500),
+}).strict();
 const invoiceCatalogUpdates = z.object({
   products: z.array(z.object({ productCode: z.string().trim().min(1).max(120),
     ncmCode: z.string().regex(/^\d{8}$/u).nullable(),
@@ -1665,6 +1670,95 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           purchaseOrderId: status?.purchaseOrderId ?? null, poStatus: status?.poStatus ?? null,
           otherImporters: status?.otherImporters ?? [], items: itemsByPo.get(sourcePoNumber) ?? [] };
       }) };
+    });
+
+  /**
+   * PO items of the importer with balance for each invoice product, used to suggest the PO when the cited one
+   * cannot take the line. Parameters: $1 importer, $2 product codes, $3 quantities, $4 IP under revision
+   * (or null), $5 importer scopes. The web discounts what other invoice parts already took.
+   */
+  app.post("/api/v1/purchase-orders/invoice-candidates/by-product", { config: permissionConfig("purchase-orders.read") },
+    async (request, reply) => {
+      const parsed = invoiceCandidateByProduct.safeParse(request.body);
+      if (!parsed.success) {
+        return problem(reply, 400, "INVALID_INVOICE_CANDIDATE_BY_PRODUCT",
+          "Informe a importadora e de um a quinhentos produtos da invoice, com código e quantidade positiva.");
+      }
+      try { inScope(parsed.data.importer, request.authorizationContext?.importerScopes ?? []); }
+      catch (error) {
+        if (error instanceof BusinessError) return problem(reply, error.status, error.code, error.message);
+        throw error;
+      }
+      const requestKeys = parsed.data.products.map(product => `${product.productCode}\u0000${product.quantity}`);
+      const unique = [...new Map(parsed.data.products.map((product, index) => [requestKeys[index], product])).values()];
+      const ordinalByKey = new Map(unique.map((product, index) =>
+        [`${product.productCode}\u0000${product.quantity}`, index + 1]));
+      const result = await pool.query<Record<string, unknown> & { requestOrdinal: unknown }>(
+        `WITH requested AS (
+           SELECT input.ordinal, input.quantity, upper(btrim(input.product_code)) AS normalized_code
+           FROM unnest($2::text[], $3::numeric[]) WITH ORDINALITY AS input(product_code, quantity, ordinal)
+         ), candidates AS (
+           SELECT item.id, item.purchase_order_id, item.line_number, po.normalized_number,
+                  upper(btrim(item.product_code)) AS normalized_code,
+                  item.ordered_quantity - coalesce(sum(allocation.quantity) FILTER (WHERE allocation.status = 'ACTIVE'
+                    AND process.record_status = 'ACTIVE'
+                    AND ($4::text IS NULL OR process.normalized_ip_number <> upper(btrim($4::text)))), 0) AS remaining,
+                  coalesce(bool_or(allocation.status = 'ACTIVE' AND process.record_status = 'ACTIVE'
+                    AND $4::text IS NOT NULL
+                    AND process.normalized_ip_number = upper(btrim($4::text))), false) AS linked
+           FROM procurement.purchase_order po
+           JOIN procurement.purchase_order_item item ON item.purchase_order_id = po.id
+           LEFT JOIN procurement.po_item_allocation allocation ON allocation.purchase_order_item_id = item.id
+           LEFT JOIN imports.import_process process ON process.id = allocation.process_id
+           WHERE po.importer = $1 AND po.importer = ANY($5::text[]) AND po.lifecycle_status = 'ACTIVE'
+             AND upper(coalesce(item.source_status, '')) NOT IN ('CANCELLED','CANCELED')
+             AND upper(btrim(item.product_code)) IN (SELECT requested.normalized_code FROM requested)
+           GROUP BY item.id, po.id
+         ), ranked AS (
+           SELECT requested.ordinal, requested.quantity AS requested_quantity, candidate.*,
+                  bool_or(candidate.linked) OVER po_window AS po_linked,
+                  sum(greatest(candidate.remaining, 0)) OVER po_window AS po_remaining
+           FROM requested
+           JOIN candidates candidate ON candidate.normalized_code = requested.normalized_code
+           WINDOW po_window AS (PARTITION BY requested.ordinal, candidate.purchase_order_id)
+         )
+         SELECT ranked.ordinal::int AS "requestOrdinal",
+                item.id, item.line_number AS "lineNumber", item.product_code AS "productCode",
+                item.description, item.ordered_quantity::text AS "orderedQuantity", item.unit,
+                item.unit_price::text AS "unitPrice", item.currency_code AS currency, item.ncm AS "poNcmCode",
+                po.id AS "purchaseOrderId", po.external_number AS "poNumber",
+                po.lifecycle_status AS "poStatus",
+                po.supplier_entry_id AS "supplierEntryId", po.supplier_text AS "supplierText",
+                supplier.name AS "supplierName", supplier.code AS "supplierCode",
+                ${exporterAliasesSql} AS "supplierExporterAliases",
+                product.id AS "productId", product.name AS "productName",
+                product.product_ncm_code AS "productNcmCode", product.manufacturer,
+                product.manufacturer_address AS "manufacturerAddress",
+                product.manufacturer_country AS "manufacturerCountry",
+                ranked.remaining::text AS "remainingQuantity", ranked.linked AS "linkedToRevisingIp"
+         FROM ranked
+         JOIN procurement.purchase_order_item item ON item.id = ranked.id
+         JOIN procurement.purchase_order po ON po.id = item.purchase_order_id
+         LEFT JOIN catalog.entry supplier ON supplier.id = po.supplier_entry_id
+         LEFT JOIN catalog.entry product ON product.kind = 'PRODUCT' AND product.importer IS NULL
+           AND product.normalized_code = upper(btrim(item.product_code))
+         WHERE ranked.remaining > 0
+         ORDER BY ranked.ordinal, ranked.po_linked DESC,
+           (ranked.po_remaining = ranked.requested_quantity) DESC,
+           ranked.normalized_number, ranked.line_number, ranked.id`,
+        [parsed.data.importer, unique.map(product => product.productCode),
+          unique.map(product => product.quantity), parsed.data.revisingIpNumber || null,
+          request.authorizationContext?.importerScopes ?? []]);
+      const itemsByOrdinal = new Map<number, Record<string, unknown>[]>();
+      for (const { requestOrdinal, ...item } of result.rows) {
+        const ordinal = Number(requestOrdinal);
+        const items = itemsByOrdinal.get(ordinal) ?? [];
+        items.push({ ...item, linkedToRevisingIp: item.linkedToRevisingIp === true });
+        itemsByOrdinal.set(ordinal, items);
+      }
+      return { products: parsed.data.products.map((product, index) => ({
+        productCode: product.productCode, quantity: product.quantity,
+        items: itemsByOrdinal.get(ordinalByKey.get(requestKeys[index]) ?? 0) ?? [] })) };
     });
 
   app.get("/api/v1/purchase-orders/invoice-candidates", { config: permissionConfig("purchase-orders.read") },

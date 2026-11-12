@@ -906,6 +906,108 @@ test("invoice candidate batch validates input and importer scope before data que
   assert.equal(connections(), 0);
 });
 
+const byProductUrl = "/api/v1/purchase-orders/invoice-candidates/by-product";
+function byProductRow(requestOrdinal, overrides) {
+  return { requestOrdinal, id: poId, lineNumber: 1, productCode: "CODE-A", description: "PO item",
+    orderedQuantity: "10", unit: "PCS", unitPrice: "2", currency: "CNY", poNcmCode: "85044090",
+    purchaseOrderId: "po-1", poNumber: "030201", poStatus: "ACTIVE", supplierEntryId: "supplier-1",
+    supplierText: "Supplier", supplierName: "HEXING", supplierCode: "EX000495",
+    supplierExporterAliases: ["HEXING ELECTRICAL CO.,LTD"], productId: null, productName: null,
+    productNcmCode: null, manufacturer: null, manufacturerAddress: null, manufacturerCountry: null,
+    remainingQuantity: "10", linkedToRevisingIp: false, ...overrides };
+}
+
+test("invoice candidates by product read the balance of every requested product in one query", async t => {
+  const { app, dataQueries, connections } = await invoiceCandidateBatchApp(t, {
+    dataQuery: () => ({ rows: [
+      byProductRow("1", { id: secondItemId, purchaseOrderId: "po-ip", poNumber: "030631", remainingQuantity: "7500",
+        linkedToRevisingIp: true }),
+      byProductRow("1", { remainingQuantity: "10" }),
+      byProductRow("2", { productCode: "CODE-B", remainingQuantity: "5" }),
+    ], rowCount: 3 }),
+  });
+  const response = await app.inject({ method: "POST", url: byProductUrl, headers: { "x-test-subject": "writer" },
+    payload: { importer: "ELETRA MATRIZ", revisingIpNumber: "IPH/TEST", products: [
+      { productCode: " CODE-A ", quantity: "10" }, { productCode: "CODE-B", quantity: "5,5" },
+      { productCode: "CODE-A", quantity: "10" }, { productCode: "CODE-C", quantity: "1" },
+    ] } });
+
+  assert.equal(response.statusCode, 200, response.body);
+  const result = response.json();
+  assert.deepEqual(result.products.map(product => [product.productCode, product.quantity, product.items.length]),
+    [["CODE-A", "10", 2], ["CODE-B", "5.5", 1], ["CODE-A", "10", 2], ["CODE-C", "1", 0]]);
+  assert.deepEqual(result.products[0].items[0], { id: secondItemId, lineNumber: 1, productCode: "CODE-A",
+    description: "PO item", orderedQuantity: "10", unit: "PCS", unitPrice: "2", currency: "CNY",
+    poNcmCode: "85044090", purchaseOrderId: "po-ip", poNumber: "030631", poStatus: "ACTIVE",
+    supplierEntryId: "supplier-1", supplierText: "Supplier", supplierName: "HEXING", supplierCode: "EX000495",
+    supplierExporterAliases: ["HEXING ELECTRICAL CO.,LTD"], productId: null, productName: null,
+    productNcmCode: null, manufacturer: null, manufacturerAddress: null, manufacturerCountry: null,
+    remainingQuantity: "7500", linkedToRevisingIp: true });
+  assert.equal(result.products[0].items[1].linkedToRevisingIp, false);
+  for (const product of result.products) for (const item of product.items) {
+    assert.equal("requestOrdinal" in item, false);
+    assert.equal(typeof item.linkedToRevisingIp, "boolean");
+  }
+
+  assert.equal(dataQueries.length, 1);
+  assert.equal(connections(), 0);
+  const [{ sql, params }] = dataQueries;
+  // $1 importer, $2 codes, $3 quantities (exact duplicates read once), $4 revising IP, $5 importer scopes.
+  assert.deepEqual(params, ["ELETRA MATRIZ", ["CODE-A", "CODE-B", "CODE-C"], ["10", "5.5", "1"], "IPH/TEST",
+    ["ELETRA MATRIZ"]]);
+  assert.match(sql, /unnest\(\$2::text\[\], \$3::numeric\[\]\) WITH ORDINALITY/u);
+  assert.match(sql, /po\.importer = \$1 AND po\.importer = ANY\(\$5::text\[\]\) AND po\.lifecycle_status = 'ACTIVE'/u);
+  assert.match(sql, /upper\(coalesce\(item\.source_status, ''\)\) NOT IN \('CANCELLED','CANCELED'\)/u);
+  assert.match(sql, /upper\(btrim\(item\.product_code\)\)/u);
+  // The balance ignores the allocations of the IP under revision, which mark the item as linked to it.
+  assert.match(sql, /process\.normalized_ip_number <> upper\(btrim\(\$4::text\)\)/u);
+  assert.match(sql, /process\.normalized_ip_number = upper\(btrim\(\$4::text\)\)/u);
+  assert.match(sql, /AS "linkedToRevisingIp"/u);
+  assert.match(sql, /FROM catalog\.supplier_exporter_alias alias/u);
+  assert.match(sql, /remaining > 0/u);
+  assert.match(sql, /PARTITION BY requested\.ordinal, candidate\.purchase_order_id/u);
+  assert.match(sql, /ORDER BY ranked\.ordinal, ranked\.po_linked DESC,\s+\(ranked\.po_remaining = ranked\.requested_quantity\) DESC,\s+ranked\.normalized_number, ranked\.line_number/u);
+  assert.doesNotMatch(sql, /LIMIT/u);
+});
+
+test("invoice candidates by product without an IP under revision pass a null IP", async t => {
+  const { app, dataQueries } = await invoiceCandidateBatchApp(t);
+  const response = await app.inject({ method: "POST", url: byProductUrl, headers: { "x-test-subject": "writer" },
+    payload: { importer: "ELETRA MATRIZ", products: [{ productCode: "CODE-A", quantity: "2.25" }] } });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.deepEqual(response.json(), { products: [{ productCode: "CODE-A", quantity: "2.25", items: [] }] });
+  assert.deepEqual(dataQueries[0].params, ["ELETRA MATRIZ", ["CODE-A"], ["2.25"], null, ["ELETRA MATRIZ"]]);
+});
+
+test("invoice candidates by product validate input and importer scope before data queries", async t => {
+  const { app, dataQueries, connections } = await invoiceCandidateBatchApp(t);
+  const call = payload => app.inject({ method: "POST", url: byProductUrl,
+    headers: { "x-test-subject": "writer" }, payload });
+  const product = { productCode: "CODE-A", quantity: "1" };
+  for (const payload of [
+    { importer: "ELETRA MATRIZ", products: [] },
+    { importer: "ELETRA MATRIZ", products: Array.from({ length: 501 }, (_, index) => ({ productCode: `P-${index}`, quantity: "1" })) },
+    { importer: "ELETRA MATRIZ", products: [product], extra: true },
+    { importer: "ELETRA MATRIZ", products: [{ ...product, extra: true }] },
+    { importer: "ELETRA MATRIZ", products: [{ productCode: "CODE-A", quantity: "0" }] },
+    { importer: "ELETRA MATRIZ", products: [{ productCode: "CODE-A", quantity: "-1" }] },
+    { importer: "ELETRA MATRIZ", products: [{ productCode: "CODE-A", quantity: "1.123456789" }] },
+    { importer: "ELETRA MATRIZ", products: [{ productCode: "CODE-A", quantity: "12345678901234567" }] },
+    { importer: "ELETRA MATRIZ", products: [{ productCode: "   ", quantity: "1" }] },
+    { importer: "ELETRA MATRIZ", products: [{ productCode: "X".repeat(81), quantity: "1" }] },
+    { importer: "ELETRA MATRIZ", revisingIpNumber: "I".repeat(81), products: [product] },
+  ]) {
+    const response = await call(payload);
+    assert.equal(response.statusCode, 400, response.body);
+    assert.equal(response.json().code, "INVALID_INVOICE_CANDIDATE_BY_PRODUCT");
+  }
+  const outsideScope = await call({ importer: "OTHER IMPORTER", products: [product] });
+  assert.equal(outsideScope.statusCode, 404, outsideScope.body);
+  assert.equal(outsideScope.json().code, "RESOURCE_NOT_FOUND");
+  assert.equal(dataQueries.length, 0);
+  assert.equal(connections(), 0);
+});
+
 test("invoice balance errors identify the affected invoice row", async t => {
   const { client } = invoiceImportClient({ insufficientBalance: true });
   const app = await invoiceImportApp(t, client);

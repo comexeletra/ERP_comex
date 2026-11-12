@@ -51,6 +51,7 @@ const webRoutes = [
   ["GET", "/api/v1/purchase-orders/:id/operational"],
   ["GET", "/api/v1/purchase-orders/invoice-candidates"],
   ["POST", "/api/v1/purchase-orders/invoice-candidates/batch"],
+  ["POST", "/api/v1/purchase-orders/invoice-candidates/by-product"],
   ["GET", "/api/v1/purchase-requests"], ["POST", "/api/v1/purchase-requests"],
   ["GET", "/api/v1/purchase-requests/:id/history"], ["PATCH", "/api/v1/purchase-requests/:id"],
   ["DELETE", "/api/v1/purchase-requests/:id"],
