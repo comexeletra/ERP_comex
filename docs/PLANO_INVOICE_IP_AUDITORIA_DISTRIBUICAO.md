@@ -4,7 +4,7 @@
 |---|---|
 | Data | 2026-11-12 |
 | Branch de trabalho | `homologacao` |
-| Status | Especificação aprovada em 2026-11-12; etapa 0 (recarga do HML) feita em 2026-11-12 |
+| Status | Especificação aprovada em 2026-11-12; etapa 0 (recarga do HML) feita em 2026-11-12; fase A (etapas 1 a 5, sem a confirmação) publicada no Preview em 2026-11-12, aguardando a avaliação do usuário |
 
 ## Contexto
 
@@ -114,3 +114,80 @@ Gravar a partir da página com o Follow Up; mudar as cargas de referência; prod
 Os testes com arquivos reais são pulados quando os arquivos não existem; em 2026-11-12 a pasta só tinha a DATABASE, a lista e
 `reference-hml.json`. Para a etapa 0 e a paridade são necessários: o Follow Up atualizado, o `FUP POS - MRP.xlsx` atualizado e as
 invoices originais e auditadas pelas analistas da IPH034B, 037A, 037C e 037D.
+
+Situação depois da recarga (2026-11-12): há o Follow Up e o MRP atualizados, a IPH034B, 034C e 037D (original e auditada) e a
+IPH037A só auditada. Faltam a IPH037A original e a IPH037C (as duas versões). Os testes com arquivos reais rodam, exceto os 6 que
+dependem da IPH037A original, que continuam pulados.
+
+## Decisões do usuário na fase A (2026-11-12)
+
+1. **Testes de fonte da página de auditoria:** os testes que conferiam trechos do código de `InvoiceAuditWorkbench.tsx` passam a ler
+   os arquivos para onde o código foi (lib/ e o componente comum), com a mesma regra e o mesmo rigor. Nenhuma verificação foi
+   removida; algumas ficaram mais estritas (a revisão comum não chama a API; a página desativa os arquivos durante o download).
+2. **Convivência na fase A:** a subseção de auditoria fica na tela "Criar IP pela invoice" ao lado da revisão atual, que continua
+   sendo o que grava. Uma célula PO ilegível é auditável e baixável na subseção, mas continua bloqueando a gravação até a fase B.
+3. **Compras:** o diretório de IPs mostra o botão "Auditar invoice" para Compras, que abre a mesma tela só para auditar e baixar.
+4. **Número do IP:** a carga do Follow Up grava os IPs da HEXING sem `IPH` (`034B/2026`). A subseção lê o saldo do IP que existe com
+   ou sem `IPH` (o ativo primeiro, depois a grafia exata), como a página faz com o Follow Up. A gravação desse caso (revisar o
+   `034B/2026` ou criar `IPH034B/2026`) fica para decidir na fase B.
+
+## Resultado da fase A (2026-11-12)
+
+| Etapa | Commit | O que mudou |
+|---|---|---|
+| 1 | `f40a479` | Peças comuns: `invoiceAuditModel` (montagem das regras com uma fonte de POs), `InvoiceAuditDecisions`, `invoiceAuditBulkGroups`, `invoiceAuditSheet` (aba `AUDITORIA`), `followUpAuditSource` e o componente `InvoiceAuditReview`. A página `/invoices/audit` usa as peças comuns com o mesmo resultado (revisão independente linha a linha). |
+| 3 (API) | `674214c`, `b53ddcb` | Rota só leitura `POST /api/v1/purchase-orders/invoice-candidates/by-product`: itens com saldo das POs ativas da importadora para cada produto, sem o saldo do IP em revisão, na ordem POs ligadas ao IP, saldo exato, número. Release `hml-release-c1c04f6` ativo no HML (`deploy/hostinger/README.md`). |
+| 2 a 5 (web) | `c1c04f6` e o commit seguinte | Subseção "Auditoria da invoice pelas POs da plataforma" (`components/InvoicePlatformAudit.tsx`): referência da última carga, candidatos pelas rotas `batch` e `by-product`, as mesmas regras, pontos, decisões em massa (com o grupo "Unidade") e arquivo da página, com a fonte "POs da plataforma (HML)" e o IP no sistema na aba `AUDITORIA`. Compras só audita e baixa. A subseção não grava nada, e seus motivos e o Enter nos seus campos não interferem na gravação do IP. |
+
+A gravação do IP não mudou (`POST /api/v1/processes/import-invoice`, payload e bloqueios iguais). Montar 20 vezes a IPH034B com a
+referência leva cerca de 160 ms (critério: menos de 2 s).
+
+## Avaliação com invoices reais contra o HML (2026-11-12, só leitura)
+
+Método: as rotas `batch` e `by-product` do `dist` do release foram executadas contra o HML em transações `READ ONLY`
+(`deploy/hostinger/rehearse-invoice-candidates.mjs`, contagens iguais antes e depois). As respostas alimentaram, no repositório, a
+montagem da subseção; o resultado foi comparado com a página de auditoria (Follow Up `Follow Up Import 2026 (4).xlsx`) e com o
+arquivo da analista, célula a célula nas colunas de dados da INV e da PKL. As decisões imitaram a analista: 1ª PO sugerida quando
+a citada não recebe a linha, divisão da célula ilegível pelo saldo, preço da invoice aceito, INV mantida nos pesos, fornecedor e
+unidade confirmados, NCM não encontrada mantida, fabricante parecido escolhido, país da invoice mantido. A IPH037A entrou pelo
+arquivo da analista (o original falta): a comparação mostra o que o sistema ainda alteraria nele.
+
+| Invoice | Pontos sem decisão: página (Follow Up) / subseção (HML) | Alterações da analista reproduzidas | Alterações a mais | Arquivo da subseção = arquivo da página |
+|---|---|---|---|---|
+| IPH034B (91 linhas) | 58 / 57 | 195 de 196 (99,5%) | 0 | sim |
+| IPH034C (13 linhas) | 4 / 3 | 5 de 6 (83,3%) | 26 | sim |
+| IPH037D (11 linhas) | 10 / 9 | 9 de 9 (100%) | 0 | sim |
+| IPH037A (arquivo da analista, 62 linhas) | 18 / 17 | — | 1 | sim |
+
+Pontos de cada invoice (iguais nas duas fontes, exceto o fornecedor, que a plataforma reconhece pelo apelido do Exporter):
+- **IPH034B:** linha 92 sem saldo na PO 029720, com a sugestão 030631 (no IP 034B/2026) e 031178; 55 pontos de preço, todos
+  corrigíveis e dentro dos 20% (maior 1,18%); DATABASE com 10 NCMs e 83 descrições corrigidas (82 só de caixa e acentos);
+  fabricantes 88 pelo endereço, 2 pelo nome e 1 fora da lista (linha 54, parecidos EX000639 e EX000693).
+- **IPH034C:** 3 pontos de preço (até 0,0005%); 3 NCMs e 12 descrições corrigidas.
+- **IPH037D:** linha 20 com a célula `PO 030888&030201`, proposta 20 + 60, igual à analista; 8 NCMs não encontradas na DATABASE
+  (linhas 16 a 23); 2 NCMs e 2 descrições corrigidas.
+- **IPH037A:** 12 pontos de preço; 4 NCMs não encontradas (linhas 28, 34, 36 e 37); país da linha 27 anotado pela analista.
+
+Diferenças e classificação:
+
+| Invoice | Célula(s) | Diferença | Tipo |
+|---|---|---|---|
+| IPH034B | N92 | Mesma PO; o sistema escreve `PO030631` (grafia da invoice), a analista `PO 030631` | regra já aceita (etapa 1e) |
+| IPH034C | D16–D28, B21 e as mesmas na PKL (26) | O sistema aplica a DATABASE atual; nesta invoice a analista usou outra base (`Foreign Trade - Products database - Single list.xlsx`, vínculo do XLOOKUP dela), com NCM 73181500 e as descrições da invoice | dado |
+| IPH034C | E23 | Nome do fabricante com um caractere invisível (U+200C) e uma vírgula chinesa; a analista trocou pelo nome da lista (EX000583), o sistema mantém porque o nome só muda quando as letras e os dígitos diferem | regra: dúvida 1 |
+| IPH037A | K12 | O país de origem do cabeçalho recebe `TAIWAN OR CHINA?`, a anotação da analista na linha 27 | dado (arquivo já anotado) |
+| Todas | IP | Com o número da invoice (`IPH…`), o próprio IP consome o saldo: na IPH034B as 91 partes ficam sem saldo e a 1ª sugestão troca a PO certa em 29 linhas; na IPH037D a divisão vira 0 + 80 | regra corrigida pela decisão 4 acima |
+
+Tempos no HML: `batch` e `by-product` de 19 a 445 ms por invoice (a primeira chamada fria, 1,1 s); heap até 33 MB. Montagem
+da subseção: 9 a 81 ms.
+
+### Dúvidas para o usuário
+
+1. **Nome de fabricante com caracteres invisíveis** (IPH034C, linha 23): trocar o nome da invoice pelo da lista quando a diferença
+   é só de caracteres invisíveis ou pontuação de outro alfabeto? Hoje a regra (etapa 1c) só troca quando as letras e os dígitos
+   diferem.
+2. **Pontos de preço muito pequenos:** toda diferença acima de 0,00000001 CNY pede decisão (decisão de 2026-11-10); na IPH034B são
+   55 pontos, 45 abaixo de 0,1%. A ação em massa resolve, mas o analista pode querer que diferenças só de arredondamento (preço da
+   invoice igual ao da PO nas casas da PO) não gerem ponto.
+3. **Gravação do IP com o número sem `IPH`** (fase B): revisar o IP existente `034B/2026` ou criar `IPH034B/2026`?
+4. **"(HML)" na aba `AUDITORIA`:** o texto é fixo; antes da produção ele precisa citar o ambiente certo.
