@@ -211,7 +211,9 @@ const invoiceCandidateBatch = z.object({
 const invoiceCandidateByProduct = z.object({
   importer: z.string().trim().min(1).max(120),
   revisingIpNumber: z.string().trim().max(80).optional(),
-  products: z.array(z.object({ productCode: z.string().trim().min(1).max(80), quantity }).strict()).min(1).max(500),
+  // A NUL character is refused here: PostgreSQL refuses it in text and the route would answer 500.
+  products: z.array(z.object({ productCode: z.string().trim().min(1).max(80).regex(/^[^\u0000]*$/u), quantity }).strict())
+    .min(1).max(500),
 }).strict();
 const invoiceCatalogUpdates = z.object({
   products: z.array(z.object({ productCode: z.string().trim().min(1).max(120),

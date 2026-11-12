@@ -964,7 +964,10 @@ test("invoice candidates by product read the balance of every requested product 
   assert.match(sql, /process\.normalized_ip_number = upper\(btrim\(\$4::text\)\)/u);
   assert.match(sql, /AS "linkedToRevisingIp"/u);
   assert.match(sql, /FROM catalog\.supplier_exporter_alias alias/u);
-  assert.match(sql, /remaining > 0/u);
+  assert.match(sql, /WHERE ranked\.remaining > 0/u);
+  // Only active allocations of active processes count, for the balance and for the link to the IP under revision.
+  assert.match(sql, /FILTER \(WHERE allocation\.status = 'ACTIVE'\s+AND process\.record_status = 'ACTIVE'\s+AND \(\$4::text IS NULL OR process\.normalized_ip_number <> upper/u);
+  assert.match(sql, /bool_or\(allocation\.status = 'ACTIVE' AND process\.record_status = 'ACTIVE'\s+AND \$4::text IS NOT NULL\s+AND process\.normalized_ip_number = upper/u);
   assert.match(sql, /PARTITION BY requested\.ordinal, candidate\.purchase_order_id/u);
   assert.match(sql, /ORDER BY ranked\.ordinal, ranked\.po_linked DESC,\s+\(ranked\.po_remaining = ranked\.requested_quantity\) DESC,\s+ranked\.normalized_number, ranked\.line_number/u);
   assert.doesNotMatch(sql, /LIMIT/u);
@@ -977,6 +980,22 @@ test("invoice candidates by product without an IP under revision pass a null IP"
   assert.equal(response.statusCode, 200, response.body);
   assert.deepEqual(response.json(), { products: [{ productCode: "CODE-A", quantity: "2.25", items: [] }] });
   assert.deepEqual(dataQueries[0].params, ["ELETRA MATRIZ", ["CODE-A"], ["2.25"], null, ["ELETRA MATRIZ"]]);
+});
+
+// Stage 3 of docs/PLANO_INVOICE_IP_AUDITORIA_DISTRIBUICAO.md: the audit of the IP screen asks the route with the body its
+// lib builds; it must pass the strict schema (runs in the repository, skipped in the release with "built by the web").
+test("the by-product body built by the web audit is accepted by the strict schema", async t => {
+  const { invoicePlatformRequests } = await import("../../web/lib/china-invoice-mapping.ts");
+  const line = (sourceRow, productCode, quantity, poCell = "PO 030201") => ({ sourceRow, lineNumber: String(sourceRow), productCode,
+    quantity, poCell, poAssignments: poCell.includes("&") ? [] : [{ poNumber: "030201", quantity, explicitQuantity: false }] });
+  const { poNumbers, products } = invoicePlatformRequests([line(16, "2050101801", "7500"), line(17, "2050101801", "20"),
+    line(18, "2090102170", "0.5"), line(19, "2070700600", "80", "PO 030888&030201")]);
+  const { app, dataQueries } = await invoiceCandidateBatchApp(t);
+  const response = await app.inject({ method: "POST", url: byProductUrl, headers: { "x-test-subject": "writer" },
+    payload: { importer: "ELETRA MATRIZ", revisingIpNumber: "IPH034B/2026", products } });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.deepEqual(dataQueries[0].params[1], ["2050101801", "2090102170", "2070700600"]);
+  assert.deepEqual(poNumbers, ["030201", "030888"]);
 });
 
 test("invoice candidates by product validate input and importer scope before data queries", async t => {
@@ -995,6 +1014,7 @@ test("invoice candidates by product validate input and importer scope before dat
     { importer: "ELETRA MATRIZ", products: [{ productCode: "CODE-A", quantity: "12345678901234567" }] },
     { importer: "ELETRA MATRIZ", products: [{ productCode: "   ", quantity: "1" }] },
     { importer: "ELETRA MATRIZ", products: [{ productCode: "X".repeat(81), quantity: "1" }] },
+    { importer: "ELETRA MATRIZ", products: [{ productCode: "CODE\u0000A", quantity: "1" }] },
     { importer: "ELETRA MATRIZ", revisingIpNumber: "I".repeat(81), products: [product] },
   ]) {
     const response = await call(payload);
