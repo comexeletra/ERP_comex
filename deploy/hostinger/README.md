@@ -1,5 +1,19 @@
 # API ERP na VPS Hostinger
 
+## Rota de candidatos por produto (sugestão de PO) no HML (2026-11-12)
+
+Os commits `674214c` e `b53ddcb` (API) criam a rota só de leitura `POST /api/v1/purchase-orders/invoice-candidates/by-product`, que devolve os itens das POs ativas da importadora com saldo para cada produto da invoice (sugestão de PO quando a citada não recebe a linha); `c1c04f6` só mudou a web. Não há migration.
+
+O release `/opt/import-erp/apps/api/hml-release-c1c04f6` (`git -c core.autocrlf=false archive c1c04f6:apps/api`, SHA-256 `3945e511…76885`, nenhuma fonte com CR; `deploy.tar` com os três arquivos do worker, SHA-256 `031b0283…f2e1`) reaproveita o `node_modules` de `hml-release-f7cfbb8` (lockfile, `package.json` e migrations iguais; ledger 82).
+- **Testes no release** (com `--test-skip-pattern="built by the web"`; os que importam a web rodaram no repositório): `operations` (46), `web-route-contract` (1) e `api-error-response` (2).
+- **Ensaio só leitura antes de ativar:** `rehearse-invoice-candidates.mjs` (nesta pasta) chama as rotas `invoice-candidates/batch` e `/by-product` do `dist` do release contra o HML, com cada consulta em `BEGIN READ ONLY … ROLLBACK` (papel `import_erp_hml_app`, Master com `purchase-orders.read`), para as invoices IPH034B, IPH034C, IPH037D e IPH037A (versão da analista), com as POs e os produtos que o parser da tela extrai. As quatro têm uma só importadora (`ELETRA INDUSTRIA E COMERCIO DE MEDIDORES ELETRICOS L`) e todas as POs citadas existem e estão ativas. Todas as chamadas responderam 200; por-produto em 445 ms (90 produtos, primeira chamada), 19, 26 e 58 ms; heap até 31 MB. IPs, alocações, documentos, auditoria, POs e itens iguais antes e depois (233, 6.324, 422, 22.204, 382, 7.906).
+- **Número do IP:** os IPs `IPH0xx/2026` não existem no HML, porque o Follow Up grava o IP da HEXING sem `IPH` (`034B/2026`, ativo com 91 alocações; `034C` 13, `037D` 12, `037A` 62). Revisando pelo número da invoice, as alocações do próprio IP contam como consumidas e quase nenhum item das POs citadas tem saldo (por-produto: 38 de 90, 4 de 13, 4 de 11 e 39 de 60 produtos com candidato). Repetido só leitura com o número do Follow Up, os 174 produtos têm candidato, todos ligados ao IP em revisão.
+- **Ativação:** drop-in de 79 `z` `…-release-c1c04f6.conf`; worker movido com `enable-homologation-export-worker.sh c1c04f6`. Drop-ins anteriores: `/var/backups/import-erp/hml-invoice-by-product-c1c04f6-predeploy`.
+- **Conferência depois de ativar:** `/health/live` 200, `POST …/invoice-candidates/by-product` sem sessão 401, API e worker ativos no `c1c04f6`, RSS 138 MB.
+- **Rollback somente do código:** remova o drop-in `c1c04f6`, execute `systemctl daemon-reload`, reinicie `import-erp-hml-api` (volta a `hml-release-f7cfbb8`) e rode `enable-homologation-export-worker.sh f7cfbb8`.
+
+Script de release, ensaio, entradas, respostas (`eval-candidates.json` e `eval-candidates-fup.json`) e log em `/root/claude-release-c1c04f6`. Nada foi gravado no banco. Produção, `main` e as variáveis da Vercel não foram alteradas.
+
 ## Recarga do Follow Up, do T0 e das estimativas de desembaraço no HML (2026-11-12)
 
 Pedido do usuário: dados atualizados e sem os testes no HML, para testar com invoices reais. Arquivos em `invoices_tests/` (fora do Git): `Follow Up Import 2026 (4).xlsx` (SHA-256 `46086299…e9962`) e `FUP POS - MRP (1).xlsx` (SHA-256 `1499264c…bd3a3`). API, web e banco de produção não mudaram; o release ativo continuou `hml-release-f7cfbb8`.
