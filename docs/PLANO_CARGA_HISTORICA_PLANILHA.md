@@ -195,9 +195,9 @@ Pedido do usuário: dados atualizados e sem os testes no HML, para testar a audi
 | T0 | 144 SCs e 6.299 linhas | 144 SCs e 6.301 linhas (127 pela coluna `Q`, 17 pela PO) |
 | Estimativas de desembaraço | 177 IPs | 183 IPs |
 
-O aceite pelas rotas reais e a conferência do T0 passaram. A reconciliação do Follow Up tem duas diferenças conhecidas: a
-alocação criada e liberada pelo aceite fica `CANCELLED` na tabela, e o IP `H-CWB010A/2026` está sem Status na planilha (o
-sistema calcula AGUARDANDO EMBARQUE). Detalhes, backup e rollback em `deploy/hostinger/README.md`.
+O aceite pelas rotas reais e a conferência do T0 passaram. A alocação criada e liberada pelo aceite ficava `CANCELLED` na
+tabela e foi apagada com a aprovação do usuário. Fica registrada uma divergência da planilha: o IP `H-CWB010A/2026` está sem
+Status (o sistema calcula AGUARDANDO EMBARQUE). Detalhes, backup e rollback em `deploy/hostinger/README.md`.
 
 ## Data do plano comercial (T0)
 
