@@ -23,7 +23,7 @@
 .operational-fields select { overflow: hidden; text-overflow: ellipsis; }
 .po-header-fields { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .po-header-fields > label { align-content: start; display: grid; gap: 6px; }
-.po-header-fields .po-field-hint { color: var(--color-text-muted); font-size: var(--fs-xs); font-weight: 400; line-height: 1.25; }
+.po-header-fields .po-field-hint, .invoice-ip-fields .po-field-hint { color: var(--color-text-muted); font-size: var(--fs-xs); font-weight: 400; line-height: 1.25; }
 .operational-search { align-items: end; display: flex; flex-wrap: wrap; gap: 12px; }
 .operational-search input, .allocation-search-row input { min-width: 0; width: 100%; }
 .operational-search label { color: var(--color-text-muted); display: grid; font-size: var(--fs-md); font-weight: 700; gap: 6px; min-width: min(100%, 240px); }

@@ -35,7 +35,9 @@ import { classifyInvoiceDestination, distributeInvoiceParts, invoiceAssignmentsF
   invoiceAuditProgress, invoiceCodePoint, invoiceComparisonRows, invoiceExporterAliasSuggestion, invoiceKeyItems, invoiceLineDecisions,
   invoicePartAuditPoints, invoicePoCodeSummary, invoiceProductFillFields, InvoiceQuantityDecision, invoiceQuantityPoint,
   invoiceBeforeAfterRows, invoicePackingDecisionsReady, invoicePackingDivergences, invoicePackingListDecisions,
-  invoicePriceTolerancePercent, invoiceSavePayload, invoiceSupplierMatchesExporter } from "../lib/china-invoice-mapping";
+  invoiceIpSearchText, invoicePriceTolerancePercent, invoiceSaveIpNumber, invoiceSavePayload,
+  invoiceSupplierMatchesExporter } from "../lib/china-invoice-mapping";
+import { invoicePortSuggestion } from "../lib/invoice-ports";
 import { createExporterAlias } from "./SupplierExporterAliases";
 import InvoiceConference from "./InvoiceConference";
 import InvoicePlatformAudit from "./InvoicePlatformAudit";
@@ -94,6 +96,7 @@ type InvoiceMatch = { key: string; sourceRow: number; sourcePoNumber: string; in
 type InvoiceDuplicate = { id: string; ipNumber: string; recordStatus: string; version: string;
   logisticsStatus: string | null; lifecycleStatus: string; shipped?: boolean };
 type InvoiceExistingProcess = { id: string; ipNumber: string; importer: string; recordStatus: string; version: string;
+  transportMode?: string | null; portLoading?: string | null; portDischarge?: string | null;
   purchaseOrders: Array<{ id: string; number: string }>;
   operationalAllocations: Array<{ id: string; poId: string; poNumber: string; productCode: string;
     quantity: string; unit: string }> };
@@ -208,17 +211,30 @@ async function loadInvoiceCandidates(importer: string, ipNumber: string, poNumbe
   return new Map(result.purchaseOrders.map(purchaseOrder =>
     [normalizePoNumber(purchaseOrder.sourcePoNumber), purchaseOrder]));
 }
+/**
+ * The IP the invoice saves into (phase B1, user decision 2026-11-12): the IP REF, or the same IP that the Follow Up load keeps
+ * without the IPH prefix (IPH037D/2026 is 037D/2026), which is revised and keeps its number. The API applies the same rule.
+ */
+async function loadInvoiceProcess(importer: string, invoiceIp: string) {
+  const query = new URLSearchParams({ ipNumber: invoiceIpSearchText(invoiceIp), importer, page: "1", pageSize: "200",
+    recordStatus: "all" });
+  const existing = await readResponse<{ items: InvoiceDuplicate[] }>(
+    await apiFetch(`/api/v1/processes?${query}`, { cache: "no-store" }));
+  const ipNumber = invoiceSaveIpNumber(invoiceIp, existing.items);
+  const key = (value: string) => value.trim().toLocaleUpperCase("en-US");
+  return { ipNumber, duplicate: existing.items.find(item => key(item.ipNumber) === key(ipNumber)) ?? null };
+}
 type InvoicePreflight = { ipNumbers: string[]; ipReferenceOtherImporter: boolean };
 type PurchaseOrderPreflight = { importerAcceptsNewPurchaseOrders: boolean; sameImporterDuplicate: boolean;
   sameImporterDeleted?: boolean;
   sameImporterDeletedPurchaseOrder?: { id: string; version: string; replaceSupported: boolean } | null;
   otherImporterDuplicates: string[]; supplierFound: boolean; missingProducts: string[];
   missingUnits: string[]; missingCostCenters: string[] };
-async function loadInvoicePreflight(importer: string, draft: ChinaInvoiceDraft): Promise<InvoicePreflight> {
+async function loadInvoicePreflight(importer: string, draft: ChinaInvoiceDraft, ipNumber: string): Promise<InvoicePreflight> {
   if (!importer || !draft.invoiceNumber.trim() || !draft.exporterText.trim()) {
     return { ipNumbers: [], ipReferenceOtherImporter: false };
   }
-  const params = new URLSearchParams({ importer, ipNumber: draft.ipNumber.trim(),
+  const params = new URLSearchParams({ importer, ipNumber: ipNumber.trim(),
     invoiceNumber: draft.invoiceNumber.trim(), exporterText: draft.exporterText.trim(),
     fileSha256: draft.fileSha256 });
   return readResponse<InvoicePreflight>(await apiFetch(
@@ -250,6 +266,11 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   const [number, setNumber] = useState("");
   const [supplier, setSupplier] = useState("");
   const [status, setStatus] = useState("");
+  // The IP from an invoice (phase B1): the IP of the system it saves into, its transport mode and its port codes.
+  const [invoiceIpNumber, setInvoiceIpNumber] = useState("");
+  const [transportMode, setTransportMode] = useState("");
+  const [portLoading, setPortLoading] = useState("");
+  const [portDischarge, setPortDischarge] = useState("");
   const [priority, setPriority] = useState("");
   const [notes, setNotes] = useState("");
   const [demandType, setDemandType] = useState("");
@@ -561,10 +582,12 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     setInvoiceError(""); setInvoiceDraft(null); setInvoiceBytes(null); setInvoiceMatches([]); setQuantityDecisions({}); setPackingDecisions({}); setInvoiceDuplicate(null);
     setDuplicateInvoiceIps([]); setConfirmDuplicateInvoice(false); setIpReferenceOtherImporter(false);
     setInvoiceExistingProcess(null); setOrphanPoDecisions({}); setExporterAliasNotice(""); setInvoiceLoading(true);
+    setInvoiceIpNumber(""); setTransportMode(""); setPortLoading(""); setPortDischarge("");
     try {
       const draft = await parseChinaInvoiceXlsx(file, m);
       if (!draft.ipNumber.trim()) throw new Error(t.ipRefEmpty);
-      if (reviewTarget && draft.ipNumber.trim().toLocaleUpperCase("en-US")
+      // A review opened from an IP accepts the invoice whose IP REF is that IP, with or without the IPH prefix.
+      if (reviewTarget && invoiceSaveIpNumber(draft.ipNumber, [reviewTarget]).toLocaleUpperCase("en-US")
         !== reviewTarget.ipNumber.trim().toLocaleUpperCase("en-US")) {
         throw new Error(t.ipRefMustBe(reviewTarget.ipNumber));
       }
@@ -586,17 +609,14 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
       // Audit only: the IP is not saved, so neither the duplicate checks nor the review below are loaded.
       if (!canSaveIp) { setInvoiceError(!invoiceImporter ? importerWarning : ""); return; }
 
+      let systemIp = draft.ipNumber.trim();
       if (invoiceImporter) {
-        const preflight = await loadInvoicePreflight(invoiceImporter, draft);
+        const { ipNumber, duplicate } = await loadInvoiceProcess(invoiceImporter, draft.ipNumber);
+        systemIp = ipNumber;
+        setInvoiceIpNumber(systemIp);
+        const preflight = await loadInvoicePreflight(invoiceImporter, draft, systemIp);
         setDuplicateInvoiceIps(preflight.ipNumbers);
         setIpReferenceOtherImporter(preflight.ipReferenceOtherImporter);
-        const query = new URLSearchParams({ ipNumber: draft.ipNumber.trim(), importer: invoiceImporter,
-          page: "1", pageSize: "200", recordStatus: "all" });
-        const existing = await readResponse<{ items: Array<{ id: string; ipNumber: string; recordStatus: string; version: string;
-          logisticsStatus: string | null; lifecycleStatus: string; shipped?: boolean }> }>(
-          await apiFetch(`/api/v1/processes?${query}`, { cache: "no-store" }));
-        const duplicate = existing.items.find(item => item.ipNumber.trim().toLocaleUpperCase("en-US")
-          === draft.ipNumber.trim().toLocaleUpperCase("en-US"));
         if (reviewInvoiceId && duplicate?.id !== reviewInvoiceId) {
           throw new Error(t.reviewIpNotFound);
         }
@@ -610,13 +630,15 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           setInvoiceError(t.ipCancelledOrClosed);
           return;
         }
-        setInvoiceExistingProcess(duplicate ? await readResponse<InvoiceExistingProcess>(
-          await apiFetch(`/api/v1/processes/${duplicate.id}`, { cache: "no-store" })) : null);
+        const existingProcess = duplicate ? await readResponse<InvoiceExistingProcess>(
+          await apiFetch(`/api/v1/processes/${duplicate.id}`, { cache: "no-store" })) : null;
+        setInvoiceExistingProcess(existingProcess);
+        fillInvoiceProcessFields(draft, existingProcess);
       }
 
       const assignments = invoiceAssignmentsFromLines(draft.lines);
       const candidatesByPo = invoiceImporter
-        ? await loadInvoiceCandidates(invoiceImporter, draft.ipNumber, assignments.map(assignment => assignment.sourcePoNumber))
+        ? await loadInvoiceCandidates(invoiceImporter, systemIp, assignments.map(assignment => assignment.sourcePoNumber))
         : new Map<string, InvoiceCandidatePurchaseOrder>();
       setInvoiceMatches(invoiceMatchesFromCandidates(assignments, candidatesByPo));
       setInvoiceError(!invoiceImporter ? importerWarning : "");
@@ -630,18 +652,13 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
     if (!targetImporter) { setInvoiceError(t.selectImporterFirst); return false; }
     setInvoiceLoading(true); setInvoiceError("");
     try {
-      const duplicateQuery = new URLSearchParams({ ipNumber: invoiceDraft.ipNumber.trim(), importer: targetImporter,
-        page: "1", pageSize: "200", recordStatus: "all" });
-      const existing = await readResponse<{ items: Array<{ id: string; ipNumber: string; recordStatus: string; version: string;
-        logisticsStatus: string | null; lifecycleStatus: string }> }>(
-        await apiFetch(`/api/v1/processes?${duplicateQuery}`, { cache: "no-store" }));
-      const duplicate = existing.items.find(item => item.ipNumber.trim().toLocaleUpperCase("en-US")
-        === invoiceDraft.ipNumber.trim().toLocaleUpperCase("en-US"));
+      const { ipNumber: systemIp, duplicate } = await loadInvoiceProcess(targetImporter, invoiceDraft.ipNumber);
+      setInvoiceIpNumber(systemIp);
       if (reviewInvoiceId && duplicate?.id !== reviewInvoiceId) {
         throw new Error(t.reviewIpNotFound);
       }
-      setInvoiceDuplicate(duplicate ?? null);
-      const preflight = await loadInvoicePreflight(targetImporter, invoiceDraft);
+      setInvoiceDuplicate(duplicate);
+      const preflight = await loadInvoicePreflight(targetImporter, invoiceDraft, systemIp);
       setDuplicateInvoiceIps(preflight.ipNumbers);
       setIpReferenceOtherImporter(preflight.ipReferenceOtherImporter);
       setConfirmDuplicateInvoice(false);
@@ -654,10 +671,12 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         setInvoiceError(t.ipCancelledOrClosed);
         return false;
       }
-      setInvoiceExistingProcess(duplicate ? await readResponse<InvoiceExistingProcess>(
-        await apiFetch(`/api/v1/processes/${duplicate.id}`, { cache: "no-store" })) : null);
+      const existingProcess = duplicate ? await readResponse<InvoiceExistingProcess>(
+        await apiFetch(`/api/v1/processes/${duplicate.id}`, { cache: "no-store" })) : null;
+      setInvoiceExistingProcess(existingProcess);
+      fillInvoiceProcessFields(invoiceDraft, existingProcess);
       const assignments = invoiceAssignmentsFromLines(invoiceDraft.lines);
-      const candidatesByPo = await loadInvoiceCandidates(targetImporter, invoiceDraft.ipNumber,
+      const candidatesByPo = await loadInvoiceCandidates(targetImporter, systemIp,
         assignments.map(match => match.sourcePoNumber));
       setInvoiceMatches(invoiceMatchesFromCandidates(assignments, candidatesByPo, invoiceMatches));
       return true;
@@ -669,8 +688,22 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
   }
 
   /** A new importer changes which POs exist for the IP, so the invoice lines are matched again right away. */
+  /**
+   * Fills the empty mode and port fields: on a revision with those of the IP, else the ports from the invoice text (phase B1).
+   * The analyst's choice is kept when the balances are read again.
+   */
+  function fillInvoiceProcessFields(draft: ChinaInvoiceDraft, existing: InvoiceExistingProcess | null) {
+    const listed = (entity: string) => options.filter(option => option.entity === entity).map(option => option.value);
+    setTransportMode(current => current || existing?.transportMode || "");
+    setPortLoading(current => current
+      || existing?.portLoading || invoicePortSuggestion(draft.originText, "loading", listed("port_loading")));
+    setPortDischarge(current => current
+      || existing?.portDischarge || invoicePortSuggestion(draft.destinationText, "discharge", listed("port_discharge")));
+  }
+
   function changeImporter(value: string) {
     setImporter(value); setConfirmImporterCnpjMismatch(false); setInvoiceDuplicate(null); setInvoiceError("");
+    setInvoiceIpNumber(""); setTransportMode(""); setPortLoading(""); setPortDischarge("");
     setDuplicateInvoiceIps([]); setConfirmDuplicateInvoice(false); setIpReferenceOtherImporter(false);
     // Audit only: the subsection reads the POs of the new importer; the review that saves the IP is not loaded.
     if (!canSaveIp) return;
@@ -924,7 +957,7 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         return;
       }
       if (invoiceDraft) {
-        const preflight = await loadInvoicePreflight(importer, invoiceDraft);
+        const preflight = await loadInvoicePreflight(importer, invoiceDraft, invoiceIpNumber);
         const currentDuplicateIps = preflight.ipNumbers;
         setIpReferenceOtherImporter(preflight.ipReferenceOtherImporter);
         if (preflight.ipReferenceOtherImporter) {
@@ -967,7 +1000,9 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
           confirmDuplicateInvoice: currentDuplicateIps.length > 0 && confirmDuplicateInvoice,
           ...(invoiceIpShipped ? { confirmShippedChange: true, shippedChangeReason: shippedChange.reason.trim() } : {}),
           orphanPoDecisions: orphanPos.map(order => ({ purchaseOrderId: order.id, action: orphanPoDecisions[order.id] })),
-          process: { importer, supplierText: invoiceDraft.exporterText, ipNumber: invoiceDraft.ipNumber.trim(), logisticsStatus: null,
+          process: { importer, supplierText: invoiceDraft.exporterText,
+            ipNumber: invoiceIpNumber || invoiceDraft.ipNumber.trim(), logisticsStatus: null,
+            transportMode, portLoading: portLoading || null, portDischarge: portDischarge || null,
             priority: priority || null, notes, reason: automaticAuditReason },
           invoice: { fileName: invoiceDraft.fileName, number: invoiceDraft.invoiceNumber,
             issueDate: /^\d{4}-\d{2}-\d{2}$/u.test(invoiceDraft.invoiceDate) ? invoiceDraft.invoiceDate : null,
@@ -1455,11 +1490,15 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
               setInvoiceDraft(null); setInvoiceMatches([]); setQuantityDecisions({}); setPackingDecisions({}); setInvoiceDuplicate(null);
               setDuplicateInvoiceIps([]); setConfirmDuplicateInvoice(false); setIpReferenceOtherImporter(false);
               setInvoiceExistingProcess(null); setOrphanPoDecisions({}); setInvoiceError("");
+              setInvoiceIpNumber(""); setTransportMode(""); setPortLoading(""); setPortDischarge("");
             }}>{t.removeInvoice}</button>
             </>}
           </>}
           {invoiceError && <p className="notice error" role="alert">{invoiceError}</p>}
         </div>
+        {canSaveIp && invoiceDraft && invoiceIpNumber
+          && invoiceIpNumber.toLocaleUpperCase("en-US") !== invoiceDraft.ipNumber.trim().toLocaleUpperCase("en-US")
+          && <p className="notice" role="status">{t.revisesSystemIp(invoiceIpNumber, invoiceDraft.ipNumber.trim())}</p>}
         <div className="ip-entry-grid invoice-ip-fields">
         {invoiceDraft ? <label>{t.exporterSupplier}<input readOnly value={invoiceDraft.exporterText} /></label> :
           <label>{m.poPanel.supplier}<SearchableSelect ariaLabel={m.poPanel.supplier} required value={supplier} onChange={setSupplier}
@@ -1470,13 +1509,23 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
         {canSaveIp && <>
         {invoiceDraft ? <label>{t.logisticsStatus}<input readOnly value="WAITING SHIPMENT" /></label> :
           <label>{t.logisticsStatus}<OperationalOptionSelect entity="logistics_status" value={status} values={options} onChange={setStatus} /></label>}
+        {invoiceDraft && <>
+          <label>{t.transportMode}<OperationalOptionSelect required entity="transport_mode" value={transportMode} values={options}
+            onChange={setTransportMode} /></label>
+          <label>{t.portLoading}<OperationalOptionSelect entity="port_loading" value={portLoading} values={options}
+            onChange={setPortLoading} />
+            {invoiceDraft.originText && <small className="po-field-hint">{t.portFromInvoice(invoiceDraft.originText)}</small>}</label>
+          <label>{t.portDischarge}<OperationalOptionSelect entity="port_discharge" value={portDischarge} values={options}
+            onChange={setPortDischarge} />
+            {invoiceDraft.destinationText && <small className="po-field-hint">{t.portFromInvoice(invoiceDraft.destinationText)}</small>}</label>
+        </>}
         <label>{m.poPanel.priority}<OperationalOptionSelect entity="priority" value={priority} values={options}
           onChange={setPriority} /></label>
         <label>{m.poPanel.notes}<textarea maxLength={4000} value={notes} onChange={event => setNotes(event.target.value)} /></label>
         </>}
         </div>
         {canSaveIp && <button className="button" disabled={saving || invoiceLoading || !importer || Boolean(invoiceDraft && (invoiceError
-          || !invoiceLinesReady || !packingDecisionsReady
+          || !invoiceLinesReady || !packingDecisionsReady || !transportMode
           || ipReferenceOtherImporter || (duplicateInvoiceIps.length > 0 && !confirmDuplicateInvoice)
           || !shippedChangeReady(Boolean(invoiceDuplicate?.shipped), shippedChange)
           || orphanPos.some(order => !orphanPoDecisions[order.id])

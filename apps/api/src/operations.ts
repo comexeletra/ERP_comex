@@ -7,6 +7,7 @@ import { unitsDiffer } from "./unit-equivalence.js";
 import { exporterMatchesAlias } from "./exporter-alias.js";
 import { parseInvoicePoCell } from "./invoice-po-cell.js";
 import { invoicePriceDifference } from "./invoice-price.js";
+import { invoiceIpWithoutPrefix, invoiceSaveIpNumber } from "./invoice-ip-number.js";
 
 const quantity = z.string().trim().regex(/^(?:0|[1-9]\d{0,15})(?:[.,]\d{1,8})?$/u)
   .refine(value => !/^0(?:[.,]0+)?$/u.test(value)).transform(value => value.replace(",", "."));
@@ -117,13 +118,21 @@ const createProcess = processFields.extend({
   importer: z.string().trim().min(1).max(120),
   supplierText: z.string().trim().min(1).max(240),
 });
+// Phase B1 (user decisions, 2026-11-12): the IP saved from an invoice has the transport mode and ports the analyst chose from
+// the operational lists, never the port text of the invoice, which stays in the document. The logistics status is not
+// chosen: the status shown comes from the IP dates (af2f77b), so the invoice keeps sending it empty.
+const invoiceProcess = createProcess.extend({
+  transportMode: z.string().trim().min(1).max(40),
+  portLoading: nullableText(160).transform(value => value || null),
+  portDischarge: nullableText(160).transform(value => value || null),
+});
 const invoiceImport = z.object({
   confirmDuplicateInvoice: z.boolean().optional(),
   confirmShippedChange: z.boolean().optional(),
   shippedChangeReason: z.string().trim().min(3).max(1000).optional(),
   orphanPoDecisions: z.array(z.object({ purchaseOrderId: z.uuid(),
     action: z.enum(["KEEP", "REMOVE"]) }).strict()).max(200).optional(),
-  process: createProcess,
+  process: invoiceProcess,
   invoice: z.object({
     fileName: z.string().trim().min(1).max(255), number: z.string().trim().min(1).max(120),
     issueDate: z.iso.date().nullable(), amount: nonnegative, currency: z.string().regex(/^[A-Z]{3}$/u),
@@ -1112,8 +1121,18 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         }
         const invoiceIpReference = typeof body.invoice.metadata.ipNumberFromInvoice === "string"
           ? body.invoice.metadata.ipNumberFromInvoice.trim() : "";
-        if (!invoiceIpReference || invoiceIpReference.toLocaleUpperCase("en-US") !== body.process.ipNumber.trim().toLocaleUpperCase("en-US")) {
-          throw new BusinessError(400, "INVOICE_IP_REFERENCE_MISMATCH", "O IP do processo precisa ser o IP REF do cabeçalho da invoice.");
+        // The IP of the invoice (phase B1): the IP REF, or the same IP that the Follow Up load keeps without the IPH prefix,
+        // which is revised and keeps its number. The screen chooses it with the same rule (invoiceSaveIpNumber).
+        const storedIps = invoiceIpReference ? await client.query<{ ip_number: string; record_status: string }>(
+          `SELECT ip_number, record_status FROM imports.import_process
+           WHERE normalized_ip_number = ANY($1::text[]) AND importer = $2`,
+          [[invoiceIpReference.toLocaleUpperCase("en-US"), invoiceIpWithoutPrefix(invoiceIpReference)].filter(Boolean),
+            body.process.importer]) : { rows: [] };
+        const invoiceIpNumber = invoiceIpReference ? invoiceSaveIpNumber(invoiceIpReference,
+          storedIps.rows.map(row => ({ ipNumber: row.ip_number, recordStatus: row.record_status }))) : "";
+        if (!invoiceIpNumber || invoiceIpNumber.toLocaleUpperCase("en-US") !== body.process.ipNumber.trim().toLocaleUpperCase("en-US")) {
+          throw new BusinessError(400, "INVOICE_IP_REFERENCE_MISMATCH",
+            "O IP do processo precisa ser o IP REF do cabeçalho da invoice ou o mesmo IP gravado sem o prefixo IPH.");
         }
         const fileSha256 = body.invoice.metadata.fileSha256;
         if (fileSha256 !== undefined && (typeof fileSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(fileSha256))) {
@@ -1370,6 +1389,16 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const processSupplierEntryId = [...supplierByItemId.values()].every(item => item.matchesExporter && item.supplierEntryId)
           && supplierIdsForProcess.size === 1 ? [...supplierIdsForProcess][0] : null;
         const invoiceSupplierDivergence = processSupplierEntryId === null;
+        const processFieldValues: Array<[string, string | null]> = [["TRANSPORT_MODE", body.process.transportMode],
+          ["PORT_LOADING", body.process.portLoading], ["PORT_DISCHARGE", body.process.portDischarge]];
+        for (const [entity, value] of processFieldValues) {
+          if (value === null) continue;
+          const listed = await client.query(
+            `SELECT 1 FROM catalog.operational_value WHERE entity_key = $1 AND value = $2 LIMIT 1`, [entity, value]);
+          if (!listed.rowCount) {
+            throw new BusinessError(400, "INVALID_INVOICE_PROCESS_FIELDS", "Escolha o modal e os portos nas listas do cadastro.");
+          }
+        }
         const previousProcess = await client.query<Record<string, unknown>>(
           `SELECT * FROM imports.import_process
            WHERE normalized_ip_number = upper(btrim($1)) FOR UPDATE`,
@@ -1449,12 +1478,10 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
             `UPDATE imports.import_process SET record_status = 'ACTIVE', source_kind = 'CHINA_INVOICE',
                priority = $2, notes = $3, supplier_text = $4,
                supplier_entry_id = $5, incoterm = $6, port_loading = $7, port_discharge = $8,
-               invoice_supplier_divergence = $9, version = version + 1, updated_at = now() WHERE id = $1`,
+               invoice_supplier_divergence = $9, transport_mode = $10, version = version + 1, updated_at = now() WHERE id = $1`,
             [processId, body.process.priority, body.process.notes, exporterText, processSupplierEntryId,
               typeof body.invoice.metadata.incoterm === "string" ? body.invoice.metadata.incoterm : null,
-              typeof body.invoice.metadata.originText === "string" ? body.invoice.metadata.originText : null,
-              typeof body.invoice.metadata.destinationText === "string" ? body.invoice.metadata.destinationText : null,
-              invoiceSupplierDivergence]);
+              body.process.portLoading, body.process.portDischarge, invoiceSupplierDivergence, body.process.transportMode]);
           await record(client, "IMPORT_PROCESS", processId, "IMPORT_PROCESS", processId, "REVISION", previous,
             { ...body.process, logisticsStatus: previous.logistics_status ?? null, recordStatus: "ACTIVE",
               source: "CHINA_INVOICE", invoiceNumber: body.invoice.number,
@@ -1469,14 +1496,12 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           await client.query(
             `INSERT INTO imports.import_process
              (id,importer,ip_number,normalized_ip_number,priority,notes,source_kind,version,supplier_text,supplier_entry_id,
-              incoterm,port_loading,port_discharge,record_status,invoice_supplier_divergence)
-             VALUES ($1,$2,$3::text,upper(btrim($3::text)),$4,$5,'CHINA_INVOICE',1,$6,$7,$8,$9,$10,'ACTIVE',$11)`,
+              incoterm,port_loading,port_discharge,record_status,invoice_supplier_divergence,transport_mode)
+             VALUES ($1,$2,$3::text,upper(btrim($3::text)),$4,$5,'CHINA_INVOICE',1,$6,$7,$8,$9,$10,'ACTIVE',$11,$12)`,
             [processId, body.process.importer, body.process.ipNumber, body.process.priority, body.process.notes,
               exporterText, processSupplierEntryId,
               typeof body.invoice.metadata.incoterm === "string" ? body.invoice.metadata.incoterm : null,
-              typeof body.invoice.metadata.originText === "string" ? body.invoice.metadata.originText : null,
-              typeof body.invoice.metadata.destinationText === "string" ? body.invoice.metadata.destinationText : null,
-              invoiceSupplierDivergence],
+              body.process.portLoading, body.process.portDischarge, invoiceSupplierDivergence, body.process.transportMode],
           );
           await record(client, "IMPORT_PROCESS", processId, "IMPORT_PROCESS", processId, "CREATE", null,
             { ...body.process, logisticsStatus: null, recordStatus: "ACTIVE",

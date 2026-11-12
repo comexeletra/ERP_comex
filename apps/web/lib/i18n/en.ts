@@ -921,6 +921,12 @@ export const en: Messages = {
     exporterSupplier: "Supplier (invoice Exporter)",
     ipReference: "IP Reference",
     logisticsStatus: "Logistics status",
+    transportMode: "Transport mode",
+    portLoading: "Port of loading (POL)",
+    portDischarge: "Port of discharge (POD)",
+    portFromInvoice: (text: string) => `On the invoice: ${text}`,
+    revisesSystemIp: (systemIp: string, invoiceIp: string) =>
+      `Invoice ${invoiceIp} revises IP ${systemIp} of the system, which keeps its number; the invoice IP REF is recorded in the document.`,
     saving: "Saving…",
     createIpWithInvoice: "Create IP, distribute POs and register invoice",
     saveIp: "Save IP",

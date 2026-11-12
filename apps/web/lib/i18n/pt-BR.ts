@@ -924,6 +924,12 @@ export const ptBR = {
     exporterSupplier: "Fornecedor (Exporter da invoice)",
     ipReference: "IP Reference",
     logisticsStatus: "Logistics status",
+    transportMode: "Modal",
+    portLoading: "Porto de embarque (POL)",
+    portDischarge: "Porto de descarga (POD)",
+    portFromInvoice: (text: string) => `Na invoice: ${text}`,
+    revisesSystemIp: (systemIp: string, invoiceIp: string) =>
+      `A invoice ${invoiceIp} revisa o IP ${systemIp} do sistema, que mantém o número; o IP REF da invoice fica registrado no documento.`,
     saving: "Salvando…",
     createIpWithInvoice: "Criar IP, distribuir POs e registrar invoice",
     saveIp: "Salvar IP",

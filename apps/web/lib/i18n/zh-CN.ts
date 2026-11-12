@@ -917,6 +917,12 @@ export const zhCN: Messages = {
     exporterSupplier: "供应商（发票出口商）",
     ipReference: "IP 参考号",
     logisticsStatus: "物流状态",
+    transportMode: "运输方式",
+    portLoading: "装货港（POL）",
+    portDischarge: "卸货港（POD）",
+    portFromInvoice: (text: string) => `发票上：${text}`,
+    revisesSystemIp: (systemIp: string, invoiceIp: string) =>
+      `发票 ${invoiceIp} 修订系统中的 IP ${systemIp}，该 IP 保留原编号；发票的 IP REF 记录在单据中。`,
     saving: "正在保存…",
     createIpWithInvoice: "创建 IP、分配 PO 并登记发票",
     saveIp: "保存 IP",

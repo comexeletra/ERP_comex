@@ -112,6 +112,8 @@ export async function registerProcessReadRoutes(app: FastifyInstance, pool: Pool
          'supplierText', coalesce(supplier.code, process.supplier_text), 'supplierName', supplier.name,
           'invoiceSupplierDivergence', process.invoice_supplier_divergence,
          'logisticsStatus', process.logistics_status, 'qualityStatus', process.quality_status,
+         'transportMode', process.transport_mode, 'portLoading', process.port_loading,
+         'portDischarge', process.port_discharge,
          'recordStatus', process.record_status,
          'sourceKind', process.source_kind, 'priority', process.priority,
          'notes', process.notes, 'version', process.version::text,

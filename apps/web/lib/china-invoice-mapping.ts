@@ -1119,6 +1119,26 @@ export function invoiceSystemIp(invoiceIp: string, stored: readonly { ipNumber: 
   return found[0]?.ipNumber.trim() ?? invoiceIp.trim();
 }
 
+/**
+ * The IP an invoice saves into (phase B1, user decision 2026-11-12): the IP with the invoice number when it can still be
+ * revised (active or draft); else the same IP that the Follow Up load keeps without the IPH prefix, which is revised and keeps
+ * its number; else the invoice number, which creates the IP or meets the cancelled or closed IP with that number. Unlike
+ * invoiceSystemIp (the balance the audit reads), a cancelled IP without the prefix does not take the invoice. The stored IPs
+ * must be those of the invoice importer. Mirrored by apps/api/src/invoice-ip-number.ts (test invoice-ip-number.test.mjs).
+ */
+export function invoiceSaveIpNumber(invoiceIp: string, stored: readonly { ipNumber: string; recordStatus?: string | null }[]): string {
+  const key = (value: string) => value.trim().toLocaleUpperCase("en-US");
+  const revisable = (status: string | null | undefined) => status === "ACTIVE" || status === "DRAFT";
+  const invoice = key(invoiceIp);
+  if (!invoice) return invoiceIp.trim();
+  const exact = stored.find(entry => key(entry.ipNumber) === invoice);
+  if (exact && revisable(exact.recordStatus)) return exact.ipNumber.trim();
+  const withoutPrefix = invoice.startsWith("IPH") ? invoice.slice(3).trim() : "";
+  const kept = withoutPrefix
+    ? stored.find(entry => key(entry.ipNumber) === withoutPrefix && revisable(entry.recordStatus)) : undefined;
+  return (kept ?? exact)?.ipNumber.trim() ?? invoiceIp.trim();
+}
+
 /** Same normalization as the candidate routes: letters and digits, without the PO prefix. */
 export function invoicePlatformPoKey(value: string): string {
   return value.toLocaleUpperCase("en-US").replace(/[^A-Z0-9]/gu, "").replace(/^PO/u, "");

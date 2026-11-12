@@ -45,9 +45,11 @@ function invoicePayload({ confirmSupplierMismatch = false, fileSha256 = "a".repe
   return {
     confirmDuplicateInvoice,
     process: { importer: "ELETRA MATRIZ", ipNumber: "IPH/TEST", supplierText: "Exporter Ltd",
-      logisticsStatus: "WAITING SHIPMENT", priority: null, notes: "", reason: "Invoice review" },
+      logisticsStatus: null, transportMode: "SEA", portLoading: "NGB", portDischarge: "PEC",
+      priority: null, notes: "", reason: "Invoice review" },
     invoice: { fileName: "invoice.xlsx", number: "INV-1", issueDate: null, amount: "10", currency: "CNY",
       metadata: { importerCnpj: "12345678000190", ipNumberFromInvoice: "IPH/TEST", exporterText: "Exporter Ltd", fileSha256,
+        originText: "NINGBO,CHINA", destinationText: "PECEM,BRASIL",
         lines: [{ sourceRow: 16, productCode: "PO-CODE", quantity: "5", poCell: "PO030201" }],
         assignments: [{ itemId: poId, sourceRow: 16, sourcePoNumber: "PO030201", poNumber: "PO030201",
           poProductCode: "PO-CODE", productCode: "PO-CODE", quantity: "5",
@@ -104,7 +106,7 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true,
   canceledItem = false, duplicateKind = null, poUnit = null, poUnitPrice = null, poCurrency = null,
   linkedOrphanPo = false, draft = false, insufficientBalance = false, purchaseOrderStatus = "ACTIVE",
   previousAllocationPoStatus = "ACTIVE", recordStatus = "ACTIVE", shipped = false, exporterAliases = [],
-  catalogProduct = null, secondItem = false, codesInPo = [] } = {}) {
+  catalogProduct = null, secondItem = false, codesInPo = [], storedIps = [], unknownOperationalValues = [] } = {}) {
   const processId = "00000000-0000-4000-8000-000000000021";
   const oldDocumentId = "00000000-0000-4000-8000-000000000022";
   const oldAllocationId = "00000000-0000-4000-8000-000000000023";
@@ -116,7 +118,14 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true,
       if (sql.includes("UNION SELECT importer FROM imports.import_process")) {
         return { rows: [{ importer: "ELETRA MATRIZ" }], rowCount: 1 };
       }
+      if (sql.includes("FROM catalog.operational_value") && sql.includes("entity_key = $1 AND value = $2")) {
+        return unknownOperationalValues.includes(params[0]) ? { rows: [], rowCount: 0 } : { rows: [{ ok: true }], rowCount: 1 };
+      }
       if (sql.includes("FROM catalog.operational_value")) return { rows: [{ ok: true }], rowCount: 1 };
+      if (sql.includes("normalized_ip_number = ANY($1::text[])")) {
+        const rows = storedIps.map(([ip_number, record_status]) => ({ ip_number, record_status }));
+        return { rows, rowCount: rows.length };
+      }
       if (sql.includes("FROM imports.process_document document") && sql.includes("document.notes LIKE")) {
         return duplicateKind ? { rows: [{ number: duplicateKind === "number" ? "INV-1" : "OTHER-INV",
           notes: JSON.stringify({ fileSha256: duplicateKind === "hash" ? "a".repeat(64) : "b".repeat(64) }),
@@ -474,7 +483,8 @@ test("invoice import rejects a header CNPJ that does not map to the selected imp
 
   const invoicePayload = {
       process: { importer: "ELETRA MATRIZ", ipNumber: "IPH/TEST", supplierText: "SUP-TEST",
-        logisticsStatus: "WAITING SHIPMENT", priority: null, notes: "", reason: "Invoice review" },
+        logisticsStatus: "WAITING SHIPMENT", transportMode: "SEA", portLoading: null, portDischarge: null,
+        priority: null, notes: "", reason: "Invoice review" },
       invoice: { fileName: "invoice.xlsx", number: "INV-1", issueDate: null, amount: "10", currency: "CNY",
         metadata: { importerCnpj: "12345678000190", ipNumberFromInvoice: "IPH/TEST" } },
       allocations: [{ itemId: poId, quantity: "1", notes: "" }],
@@ -543,7 +553,8 @@ test("invoice import requires explicit confirmation for a PO supplier mismatch",
     headers: { "x-test-subject": "writer", "idempotency-key": "invoice-supplier-check" },
     payload: {
       process: { importer: "ELETRA MATRIZ", ipNumber: "IPH/TEST", supplierText: "Exporter Ltd",
-        logisticsStatus: "WAITING SHIPMENT", priority: null, notes: "", reason: "Invoice review" },
+        logisticsStatus: "WAITING SHIPMENT", transportMode: "SEA", portLoading: null, portDischarge: null,
+        priority: null, notes: "", reason: "Invoice review" },
       invoice: { fileName: "invoice.xlsx", number: "INV-1", issueDate: null, amount: "10", currency: "CNY",
         metadata: { importerCnpj: "12345678000190", ipNumberFromInvoice: "IPH/TEST", exporterText: "Exporter Ltd",
           lines: [{ sourceRow: 16, productCode: "PO-CODE", quantity: "5", poCell: "PO030201" }],
@@ -663,6 +674,107 @@ test("invoice revision cancels the previous allocation and invoice before replac
   // A revision keeps whatever status was informed on the IP.
   const processUpdate = queries.find(query => query.sql.includes("UPDATE imports.import_process SET record_status = 'ACTIVE'"));
   assert.equal(processUpdate.sql.includes("logistics_status"), false);
+  // Phase B1 (user decisions, 2026-11-12): it saves the mode and ports chosen on the screen, which starts with those of the
+  // IP, and never the port text of the invoice.
+  assert.match(processUpdate.sql, /port_loading = \$7, port_discharge = \$8,\s+invoice_supplier_divergence = \$9, transport_mode = \$10/u);
+  assert.deepEqual(processUpdate.params.slice(6, 10), ["NGB", "PEC", processUpdate.params[8], "SEA"]);
+  for (const value of ["NINGBO,CHINA", "PECEM,BRASIL"]) assert.equal(processUpdate.params.includes(value), false, value);
+});
+
+test("invoice import creates the IP with the mode and ports chosen on the screen", async t => {
+  const { client, queries } = invoiceImportClient();
+  const app = await invoiceImportApp(t, client);
+  const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-process-fields" }, payload: invoicePayload() });
+  assert.equal(response.statusCode, 201, response.body);
+  const insert = queries.find(query => query.sql.includes("INSERT INTO imports.import_process"));
+  assert.match(insert.sql, /incoterm,port_loading,port_discharge,record_status,invoice_supplier_divergence,transport_mode\)/u);
+  assert.deepEqual([insert.params[8], insert.params[9], insert.params[11]], ["NGB", "PEC", "SEA"]);
+  for (const value of ["NINGBO,CHINA", "PECEM,BRASIL"]) assert.equal(insert.params.includes(value), false, value);
+  // The status shown comes from the IP dates (af2f77b); the invoice does not save one.
+  assert.equal(insert.sql.includes("logistics_status"), false);
+  const checked = queries.filter(query => query.sql.includes("entity_key = $1 AND value = $2")).map(query => query.params);
+  assert.deepEqual(checked, [["TRANSPORT_MODE", "SEA"], ["PORT_LOADING", "NGB"], ["PORT_DISCHARGE", "PEC"]]);
+  // The invoice text of the ports stays in the document.
+  const document = queries.find(query => query.sql.includes("INSERT INTO imports.process_document"));
+  assert.equal(JSON.parse(document.params[6]).originText, "NINGBO,CHINA");
+
+  const { client: withoutPorts, queries: withoutPortsQueries } = invoiceImportClient();
+  const portless = await invoiceImportApp(t, withoutPorts);
+  const payload = invoicePayload();
+  Object.assign(payload.process, { portLoading: null, portDischarge: null });
+  const saved = await portless.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-process-without-ports" }, payload });
+  assert.equal(saved.statusCode, 201, saved.body);
+  assert.deepEqual(withoutPortsQueries.filter(query => query.sql.includes("entity_key = $1 AND value = $2"))
+    .map(query => query.params[0]), ["TRANSPORT_MODE"]);
+  const portlessInsert = withoutPortsQueries.find(query => query.sql.includes("INSERT INTO imports.import_process"));
+  assert.deepEqual([portlessInsert.params[8], portlessInsert.params[9]], [null, null]);
+});
+
+test("invoice import refuses a mode or port outside the operational lists", async t => {
+  for (const entity of ["TRANSPORT_MODE", "PORT_LOADING", "PORT_DISCHARGE"]) {
+    const { client, queries } = invoiceImportClient({ unknownOperationalValues: [entity] });
+    const app = await invoiceImportApp(t, client);
+    const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+      headers: { "x-test-subject": "writer", "idempotency-key": `invoice-unknown-${entity}` }, payload: invoicePayload() });
+    assert.equal(response.statusCode, 400, `${entity}: ${response.body}`);
+    assert.equal(response.json().code, "INVALID_INVOICE_PROCESS_FIELDS", entity);
+    assert.equal(queries.some(query => /^\s*(?:UPDATE|INSERT)\b/u.test(query.sql)), false, entity);
+  }
+  const { client } = invoiceImportClient();
+  const app = await invoiceImportApp(t, client);
+  for (const [name, change, code] of [
+    ["missing mode", process => { delete process.transportMode; }, "INVALID_INVOICE_IMPORT"],
+    ["empty mode", process => { process.transportMode = " "; }, "INVALID_INVOICE_IMPORT"],
+    ["missing ports", process => { delete process.portLoading; }, "INVALID_INVOICE_IMPORT"],
+  ]) {
+    const payload = invoicePayload();
+    change(payload.process);
+    const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+      headers: { "x-test-subject": "writer", "idempotency-key": `invoice-process-${name.replaceAll(" ", "-")}` }, payload });
+    assert.equal(response.statusCode, 400, `${name}: ${response.body}`);
+    assert.equal(response.json().code, code, name);
+  }
+});
+
+test("an IPH invoice revises the IP the Follow Up keeps without the prefix, keeping its number", async t => {
+  const iphPayload = ipNumber => {
+    const payload = invoicePayload();
+    payload.process.ipNumber = ipNumber;
+    payload.invoice.metadata.ipNumberFromInvoice = "IPH034C/2026";
+    return payload;
+  };
+  const { client, queries } = invoiceImportClient({ revision: true, storedIps: [["034C/2026", "ACTIVE"]] });
+  const app = await invoiceImportApp(t, client);
+  const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+    headers: { "x-test-subject": "writer", "idempotency-key": "invoice-follow-up-ip", "x-record-version": '"2"' },
+    payload: iphPayload("034C/2026") });
+  assert.equal(response.statusCode, 201, response.body);
+  assert.equal(response.json().revision, true);
+  const stored = queries.find(query => query.sql.includes("normalized_ip_number = ANY($1::text[])"));
+  assert.deepEqual(stored.params, [["IPH034C/2026", "034C/2026"], "ELETRA MATRIZ"]);
+  assert.equal(queries.find(query => query.sql.includes("normalized_ip_number = upper(btrim($1))")
+    && query.sql.includes("FOR UPDATE")).params[0], "034C/2026");
+  assert.equal(queries.some(query => query.sql.includes("INSERT INTO imports.import_process")), false);
+  const document = queries.find(query => query.sql.includes("INSERT INTO imports.process_document"));
+  assert.equal(JSON.parse(document.params[6]).ipNumberFromInvoice, "IPH034C/2026");
+
+  for (const [name, ipNumber, storedIps] of [
+    ["prefix-less IP that does not exist", "034C/2026", []],
+    ["prefix-less IP cancelled", "034C/2026", [["034C/2026", "CANCELLED"]]],
+    ["new IPH IP beside the Follow Up IP", "IPH034C/2026", [["034C/2026", "ACTIVE"]]],
+    ["another number", "034D/2026", [["034D/2026", "ACTIVE"]]],
+  ]) {
+    const { client: refused, queries: refusedQueries } = invoiceImportClient({ storedIps });
+    const refusedApp = await invoiceImportApp(t, refused);
+    const result = await refusedApp.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
+      headers: { "x-test-subject": "writer", "idempotency-key": `invoice-ip-${name.replaceAll(" ", "-")}` },
+      payload: iphPayload(ipNumber) });
+    assert.equal(result.statusCode, 400, `${name}: ${result.body}`);
+    assert.equal(result.json().code, "INVOICE_IP_REFERENCE_MISMATCH", name);
+    assert.equal(refusedQueries.some(query => /^\s*(?:UPDATE|INSERT)\b/u.test(query.sql)), false, name);
+  }
 });
 
 test("invoice revision of a shipped IP requires confirmation and a typed reason", async t => {

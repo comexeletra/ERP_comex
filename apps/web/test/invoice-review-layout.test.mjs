@@ -19,7 +19,8 @@ test("invoice review uses a fluid, readable table layout", () => {
 test("IP review entry fixes the IP and shows allocation changes and orphan PO choices", () => {
   assert.match(processWorkspace, /href=\{`\/processes\/new\?reviewInvoice=\$\{encodeURIComponent\(id\)\}`\}/u);
   assert.match(newProcessPage, /reviewInvoiceId=/u);
-  assert.match(component, /draft\.ipNumber\.trim\(\)\.toLocaleUpperCase/u);
+  // The review only takes the invoice of that IP; phase B1 (2026-11-12) also accepts its IPH number for an IP of the Follow Up.
+  assert.match(component, /if \(reviewTarget && invoiceSaveIpNumber\(draft\.ipNumber, \[reviewTarget\]\)\.toLocaleUpperCase\("en-US"\)\s+!== reviewTarget\.ipNumber\.trim\(\)\.toLocaleUpperCase\("en-US"\)\) \{\s+throw new Error\(t\.ipRefMustBe\(reviewTarget\.ipNumber\)\);/u);
   assert.match(component, /<h3>\{t\.beforeAfter\}<\/h3>/u);
   assert.equal(ptBR.newRecord.beforeAfter, "Resumo antes × depois");
   assert.match(component, /orphanPoDecisions: orphanPos\.map/u);

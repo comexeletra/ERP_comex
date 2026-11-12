@@ -4,7 +4,7 @@
 |---|---|
 | Data | 2026-11-12 |
 | Branch de trabalho | `homologacao` |
-| Status | Especificação aprovada em 2026-11-12; etapa 0 (recarga do HML) feita em 2026-11-12; fase A (etapas 1 a 5, sem a confirmação) publicada no Preview em 2026-11-12, aguardando a avaliação do usuário |
+| Status | Especificação aprovada em 2026-11-12; etapa 0 (recarga do HML) feita em 2026-11-12; fase A (etapas 1 a 5, sem a confirmação) publicada no Preview em 2026-11-12; fase B1 (campos do IP e revisão do IP sem `IPH`) aprovada em 2026-11-12 |
 
 ## Contexto
 
@@ -194,5 +194,80 @@ da subseção: 9 a 81 ms.
 2. **Pontos de preço muito pequenos:** toda diferença acima de 0,00000001 CNY pede decisão (decisão de 2026-11-10); na IPH034B são
    55 pontos, 45 abaixo de 0,1%. A ação em massa resolve, mas o analista pode querer que diferenças só de arredondamento (preço da
    invoice igual ao da PO nas casas da PO) não gerem ponto.
-3. **Gravação do IP com o número sem `IPH`** (fase B): revisar o IP existente `034B/2026` ou criar `IPH034B/2026`?
+3. **Gravação do IP com o número sem `IPH`** (fase B): revisar o IP existente `034B/2026` ou criar `IPH034B/2026`? Respondida em
+   2026-11-12: revisar o existente e manter o número (fase B1).
 4. **"(HML)" na aba `AUDITORIA`:** o texto é fixo; antes da produção ele precisa citar o ambiente certo.
+
+## Teste do usuário com a IPH037D (2026-11-12)
+
+O usuário criou o IP pela invoice auditada da IPH037D (célula da linha 20 dividida pela auditoria e baixada) depois de cancelar no
+Preview o `037D/2026` da carga do Follow Up, com as POs ociosas. Cópia anterior ao cancelamento:
+`/var/backups/import-erp/hml-ip-037D-pre-cancel-20261112T183050Z.json` (IP, alocações, documentos e vínculos). Comparação só leitura
+no HML: as 12 alocações (49.740 unidades) e as 5 POs do `IPH037D/2026` são iguais às do `037D/2026`; a invoice ficou com moeda,
+data, SHA-256, linhas e decisões. Diferenças no IP: status logístico, modal e prioridade vazios, e os portos com o texto da invoice
+(`NINGBO,CHINA`, `PECEM,BRASIL`) no lugar dos códigos do Follow Up (`NGB`, `PEC`). O status vazio é a regra de `af2f77b`
+(2026-10-22): o status exibido é calculado pelas datas do IP, e o "WAITING SHIPMENT" só leitura da tela é esse cálculo.
+
+# Fase B1: campos do IP e revisão do IP do Follow Up pela invoice
+
+## Objetivo
+
+Na criação ou revisão do IP pela invoice, a pessoa escolhe modal e portos nas listas do cadastro, e uma invoice `IPH037D/2026`
+revisa o IP `037D/2026` da carga do Follow Up em vez de criar outro.
+
+## Decisões do usuário (2026-11-12)
+
+1. A criação pela invoice deixa escolher o status logístico. **Pendente:** o status exibido em toda a plataforma é calculado pelas
+   datas do IP (`af2f77b`; o informado só prevalece quando é cancelamento), então um status escolhido na criação não apareceria.
+   Ficou fora da B1 até o usuário decidir se o informado deve prevalecer sobre o cálculo.
+2. Os portos são gravados com os códigos do cadastro, traduzidos do texto da invoice.
+3. O modal é pedido na tela.
+4. O IP revisado mantém o número sem `IPH`; o IP REF da invoice fica no documento (`ipNumberFromInvoice`).
+5. Xangai sugere o código mais usado no HML, `SGH` (24 IPs; `SH` 7, `SHG` 5, `SHA` 4).
+
+## Requisitos
+
+1. **Status logístico:** sem mudança (decisão 1 pendente); a invoice continua mandando o status vazio e a revisão não o altera.
+2. **Modal:** lista `TRANSPORT_MODE`, obrigatório; na revisão vem o modal do IP, na criação começa sem escolha.
+3. **Portos:** listas `PORT_LOADING` e `PORT_DISCHARGE`, opcionais, com sugestão pelo texto da invoice: Ningbo → `NGB`, Shanghai →
+   `SGH`, Shekou → `SHEKOU (CHINA)`, Hong Kong → `HKG`, Hangzhou → `HGH`; Pecém → `PEC`, Fortaleza → `FOR`, Paranaguá → `PNG`,
+   Santos → `SSZ`, Viracopos → `VCP`. Sem correspondência, a pessoa escolhe; na revisão vêm os portos do IP. O texto da invoice
+   continua no documento (`originText`, `destinationText`).
+4. **IP sem `IPH`:** a invoice `IPH037D/2026` revisa o `037D/2026` quando não há IP com o número exato que possa ser revisado
+   (ativo ou rascunho) e o `037D/2026` está ativo ou em rascunho na mesma importadora. Tela e API usam a mesma regra
+   (`invoiceSaveIpNumber` na web, `apps/api/src/invoice-ip-number.ts` na API, com teste de paridade), inclusive na revisão aberta
+   pelo IP e na busca de invoice duplicada.
+5. **API:** recusa modal ou porto fora das listas (`INVALID_INVOICE_PROCESS_FIELDS`) e número de IP diferente do que a regra 4
+   escolhe (`INVOICE_IP_REFERENCE_MISMATCH`). Na revisão grava os campos escolhidos em vez do texto da invoice.
+6. `GET /api/v1/processes/:id` devolve modal e portos para a tela preencher a revisão.
+
+## Restrições
+
+Valores do cadastro trocados com a API como estão; rótulos nos três idiomas; schema `.strict()` mudado na API e na web no mesmo
+commit; a API sobe antes da web; ensaio da revisão de um IP do Follow Up no HML com ROLLBACK antes do release.
+
+## Critérios de aceite
+
+| # | Critério | Teste |
+|---|---|---|
+| 1 | Criação grava modal e portos escolhidos | API + web |
+| 2 | A sugestão de portos dá `NGB`/`PEC` na 037D e vazio no que não reconhece | web |
+| 3 | Na revisão, os campos vêm do IP e não são trocados pelo texto da invoice | API + web |
+| 4 | `IPH034C/2026` revisa o `034C/2026` do HML, mantendo o número | API + ensaio HML com ROLLBACK |
+| 5 | A API recusa valor fora das listas e número sem `IPH` fora da regra; espelho igual à web | API |
+
+Testes alterados com a regra: em `apps/api/test/operations.test.mjs` os payloads de invoice levam modal e portos (campos novos
+obrigatórios do contrato), e a revisão confere também modal e portos; em `apps/web/test/invoice-review-layout.test.mjs` a revisão
+aberta pelo IP aceita o número com `IPH` do IP do Follow Up. Nenhuma verificação anterior foi removida.
+| 6 | Três idiomas, suítes, lint, type-check e builds; API HML atualizada; Preview `Ready` | geral |
+
+## Fora do escopo
+
+Gravar a invoice auditada (fase B2, etapa 6 acima); prioridade ("Normal" continua vazia); limpar códigos duplicados do cadastro;
+produção.
+
+## Plano
+
+1. Testes da regra de portos e do número sem `IPH` (web e API).
+2. API: schema, conferência nas listas, regra do número, gravação dos campos, detalhe do IP; ensaio no HML; release.
+3. Web: campos, sugestões, revisão do IP sem `IPH`; Preview e teste com a 034C.
