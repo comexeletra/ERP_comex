@@ -271,3 +271,17 @@ produção.
 1. Testes da regra de portos e do número sem `IPH` (web e API).
 2. API: schema, conferência nas listas, regra do número, gravação dos campos, detalhe do IP; ensaio no HML; release.
 3. Web: campos, sugestões, revisão do IP sem `IPH`; Preview e teste com a 034C.
+
+## Resultado da fase B1 (2026-11-12)
+
+| Etapa | Commit | O que mudou |
+|---|---|---|
+| 1 a 3 | `9e3a9a4` | API: `transportMode` obrigatório e portos opcionais no `process` da invoice, conferidos nas listas; criação e revisão gravam os escolhidos; regra do número sem `IPH` (`invoice-ip-number.ts`, paridade com a web); detalhe do IP com modal e portos. Web: campos Modal, POL e POD com sugestão pelo texto da invoice; a busca do IP, o saldo, a checagem de duplicada e a gravação usam o IP do sistema; aviso quando a invoice revisa o IP sem `IPH`. |
+| Release | `4785982` (registro) | `hml-release-9e3a9a4` ativo no HML depois do ensaio com ROLLBACK da revisão do `034C/2026` pela `IPH034C` (201, mesmo IP, 13 alocações) e das recusas do `IPH034C/2026` ao lado e do modal fora da lista (`deploy/hostinger/README.md`). |
+
+Verificação: API 72 arquivos de teste; web 483 testes (6 pulados por arquivos reais ausentes) e 1 falha anterior e alheia: `reads the
+real DATABASE` lê `invoices_tests/DATABASE - Renew.xlsx`, trocada em 2026-11-12 às 11:40 por uma versão sem a aba `DATABASE`. Type-check,
+lint (sem erro; avisos iguais aos de antes) e build da web passaram.
+
+Pendente com o usuário: o status logístico na criação pela invoice (decisão 1 desta fase) e a fase B2 (etapa 6). O teste da 034C pela
+tela fica com o usuário: a invoice `IPH034C` deve abrir a revisão do `034C/2026` com SEA, NGB e PEC já preenchidos.
