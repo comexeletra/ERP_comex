@@ -1,5 +1,34 @@
 # API ERP na VPS Hostinger
 
+## Fase B1: modal e portos do IP pela invoice e revisão do IP do Follow Up no HML (2026-11-12)
+
+O commit `9e3a9a4` muda a gravação da invoice (`POST /api/v1/processes/import-invoice`): o `process` passa a exigir `transportMode` e
+`portLoading`/`portDischarge` (nulos permitidos), conferidos em `catalog.operational_value`, gravados na criação e na revisão no lugar do
+texto da invoice; e uma invoice `IPH…` revisa o IP que o Follow Up grava sem o prefixo (`invoice-ip-number.ts`, espelho da web).
+`GET /api/v1/processes/:id` devolve modal e portos. Não há migration.
+
+O release `/opt/import-erp/apps/api/hml-release-9e3a9a4` (`git -c core.autocrlf=false archive 9e3a9a4:apps/api`, SHA-256 `62bd903b…0e2f`,
+nenhuma fonte com CR; `deploy.tar` com os três arquivos do worker e `rehearse-invoice-save.mjs`, SHA-256 `33f8fdc8…9f33`) reaproveita o
+`node_modules` de `hml-release-c1c04f6` (lockfile e migrations iguais; no `package.json` só mudou a lista de testes; ledger 82).
+- **Testes no release** (com `--test-skip-pattern="built by the web"`; `invoice-ip-number` e os que importam a web rodaram no
+  repositório): `operations` (49), `web-route-contract` (1) e `api-error-response` (2).
+- **Ensaio da gravação antes de ativar** (`rehearse-invoice-save.mjs`, `COMMIT` trocado por `ROLLBACK`, `SET CONSTRAINTS ALL IMMEDIATE`),
+  com o payload montado pelas funções da tela a partir da `IPH034C 2026 INV+PL.xlsx` original e do estado do `034C/2026` no HML (13
+  alocações na PO 030201, SEA, NGB, PEC, embarcado): a revisão respondeu 201 no mesmo IP `034C/2026` (`revision: true`, 13 alocações,
+  122 comandos); a mesma invoice com `IPH034C/2026` foi recusada (`INVOICE_IP_REFERENCE_MISMATCH`) e um modal fora da lista também
+  (`INVALID_INVOICE_PROCESS_FIELDS`). Contagens iguais antes e depois (alocações 6.336, documentos 423, auditoria 22.237).
+- **Ativação:** drop-in de 80 `z` `…-release-9e3a9a4.conf`; worker movido com `enable-homologation-export-worker.sh 9e3a9a4`. Drop-ins
+  anteriores: `/var/backups/import-erp/hml-invoice-ip-fields-9e3a9a4-predeploy`.
+- **Conferência depois de ativar:** `/health/live` 200, `import-invoice` sem sessão 401, API e worker ativos no `9e3a9a4`, RSS 139 MB.
+- **Rollback somente do código:** remova o drop-in `9e3a9a4`, execute `systemctl daemon-reload`, reinicie `import-erp-hml-api` (volta a
+  `hml-release-c1c04f6`) e rode `enable-homologation-export-worker.sh c1c04f6`. A web anterior não manda modal nem portos e seria
+  recusada por esta API: volte as duas juntas. Scripts, payloads e log em `/root/claude-release-9e3a9a4`.
+- **Antes, no mesmo dia:** o usuário cancelou no Preview o `037D/2026` (POs ociosas) para testar a criação do `IPH037D/2026` pela
+  invoice auditada; cópia do IP, alocações, documentos e vínculos anterior ao cancelamento em
+  `/var/backups/import-erp/hml-ip-037D-pre-cancel-20261112T183050Z.json`.
+
+Produção, `main` e as variáveis da Vercel não foram alteradas.
+
 ## Rota de candidatos por produto (sugestão de PO) no HML (2026-11-12)
 
 Os commits `674214c` e `b53ddcb` (API) criam a rota só de leitura `POST /api/v1/purchase-orders/invoice-candidates/by-product`, que devolve os itens das POs ativas da importadora com saldo para cada produto da invoice (sugestão de PO quando a citada não recebe a linha); `c1c04f6` só mudou a web. Não há migration.
