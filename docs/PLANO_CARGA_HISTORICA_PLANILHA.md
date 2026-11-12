@@ -1,7 +1,7 @@
 # Tarefa: carga histórica da planilha Follow Up (Pré e Pós Embarque)
 
-Status: **carregada no HML em 2026-10-30, com o T0 da planilha MRP, aguardando validação do usuário no Preview**. Produção não foi
-alterada.
+Status: **carregada no HML em 2026-10-30 e recarregada em 2026-11-12 com o Follow Up e o MRP atualizados** (seção "Recarga de
+2026-11-12"). Produção não foi alterada.
 
 Arquivo: `Follow Up Import 2026 - atualizado .xlsx`, SHA-256
 `a913434489b8ba9af81803bcd0661b4cc7aa212206a3d0fbb6d1dbacd3e315bc`, confirmado pelo usuário como a versão a carregar.
@@ -169,6 +169,35 @@ de moeda e exportações), desfazendo cada alteração.
 
 Divergências que ficam registradas: em 3 IPs (`H-CWB008/2026`, `H-CWB009A/2026` e `H-CWB009B/2026`) o Due Storage da planilha é
 de 4 dias, enquanto o sistema calcula 9.
+
+## Recarga de 2026-11-12
+
+Pedido do usuário: dados atualizados e sem os testes no HML, para testar a auditoria e a criação de IP com invoices reais
+(`docs/PLANO_INVOICE_IP_AUDITORIA_DISTRIBUICAO.md`, etapa 0). Arquivos: `Follow Up Import 2026 (4).xlsx` (SHA-256
+`46086299ce155d11a8d3d7098dc513c7819bc8783b2476dc63fe16fda1a9e962`) e `FUP POS - MRP (1).xlsx` (SHA-256
+`1499264c5a55c99b443f0c43447c3e0f580553678f1b0cb84ae90b92bd5bd3a3`). O layout das abas Pré e Pós é o mesmo da primeira carga.
+
+| Tema | Decisão do usuário |
+|---|---|
+| Limpeza | Apagar todas as POs, IPs e SCs do HML, inclusive os de teste; manter os cadastros |
+| Carga anterior | Linhas de origem, pendências e revisões de qualidade dela saem com a limpeza; o lote fica como histórico |
+| D-FLOW01/2026 | A aba Pós traz `0` como fornecedor; fica D-FLOW, como na primeira carga |
+| IRAPTOR, LDA (PO 033312) | Registrado sem código EX, salvo se já tiver um: tem, é o EX000799 da carga da lista de fabricantes |
+
+| Verificação | Antes | Depois |
+|---|---|---|
+| Linhas de origem | 7.859 | 8.160 (7.938 Pré + 222 Pós) |
+| SCs | 365 | 376 + 1 criada pelo T0 (020328) |
+| POs | 367 | 382: 37 `CANCELLED`, 235 `CLOSED`, 110 `ACTIVE` |
+| Itens | 7.749 | 7.906, 19 com preço sem moeda |
+| IPs e alocações | 225 e 6.214 | 233 e 6.324 |
+| Pendências de qualidade | 174 | 66: 32 `MISSING_PO`, 19 `PRICE_WITHOUT_CURRENCY`, 8 `INVALID_DATE`, 4 `SC_MULTIPLE_SUPPLIERS`, 2 `PO_WITHOUT_SUPPLIER`, 1 `PO_IP_SUPPLIER_DIVERGENCE` |
+| T0 | 144 SCs e 6.299 linhas | 144 SCs e 6.301 linhas (127 pela coluna `Q`, 17 pela PO) |
+| Estimativas de desembaraço | 177 IPs | 183 IPs |
+
+O aceite pelas rotas reais e a conferência do T0 passaram. A reconciliação do Follow Up tem duas diferenças conhecidas: a
+alocação criada e liberada pelo aceite fica `CANCELLED` na tabela, e o IP `H-CWB010A/2026` está sem Status na planilha (o
+sistema calcula AGUARDANDO EMBARQUE). Detalhes, backup e rollback em `deploy/hostinger/README.md`.
 
 ## Data do plano comercial (T0)
 

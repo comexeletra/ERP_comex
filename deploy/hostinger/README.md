@@ -1,5 +1,18 @@
 # API ERP na VPS Hostinger
 
+## Recarga do Follow Up, do T0 e das estimativas de desembaraço no HML (2026-11-12)
+
+Pedido do usuário: dados atualizados e sem os testes no HML, para testar com invoices reais. Arquivos em `invoices_tests/` (fora do Git): `Follow Up Import 2026 (4).xlsx` (SHA-256 `46086299…e9962`) e `FUP POS - MRP (1).xlsx` (SHA-256 `1499264c…bd3a3`). API, web e banco de produção não mudaram; o release ativo continuou `hml-release-f7cfbb8`.
+
+- **Cadastro para o carregador:** `export-follow-up-catalog.sh` (só leitura) exporta os valores dos seletores e os fornecedores globais por código e por nome, como `catalog.sync_supplier_entity_reference` os encontra. O IRAPTOR, LDA da PO 033312 é o EX000799, criado pela carga da lista de fabricantes.
+- **Recarga:** `import-follow-up-workbook.py --wipe-simulation --replace-previous-load` apaga POs, itens, IPs, alocações, documentos, custos e SCs, e também as linhas de origem, pendências e revisões de qualidade da carga anterior; o lote de 2026-10-30 fica em `migration.import_batch` como histórico. Decisão do usuário: o D-FLOW01/2026 (fornecedor `0` na aba Pós) mantém D-FLOW.
+- **Backup antes:** `/var/backups/import-erp/erp_po_totvs_hml_pre_follow_up_reload_20261112T134658Z.dump` (474.144.568 bytes, 62 tabelas com dados no `pg_restore --list`, SHA-256 `4b5e031c…20b9`). Rollback do banco: restaurar esse arquivo.
+- **Ensaio com ROLLBACK e gravação:** 13 s e 10 s. Resultado: 382 POs, 7.906 itens, 233 IPs, 6.324 alocações, 376 SCs, 422 documentos, 8.160 linhas de origem e 66 pendências; cadastro (2.880) e cargas de referência sem mudança; IP de teste IPH034A/2026 e PO de teste 030201 da GALPAO-FORTALEZA removidos.
+- **T0 (MRP):** cada passo ensaiado e gravado em sequência (os dois passos criam a mesma tabela temporária e não cabem numa transação só): pela SC, 127 SCs e 6.260 linhas; pela PO, 144 SCs e 6.301 linhas.
+- **Estimativas de desembaraço:** `import-clearance-estimates.py` com o Follow Up novo preencheu 183 IPs; 2 IPs repetidos na aba com valores diferentes ficaram fora (028A/2025 e Z-004B/2026), e os IPs de 2024 e 2025 da aba não existem no sistema.
+- **Conferências:** `accept-follow-up-load.mjs` passou inteiro (rotas reais, alterações desfeitas); `verify-commercial-plan-dates.mjs` passou. `verify-follow-up-load.mjs` tem 2 diferenças conhecidas: a alocação criada e liberada pelo aceite fica `CANCELLED` na tabela (6.325 linhas, 6.324 ativas), e o H-CWB010A/2026 está com Status vazio na planilha (o sistema calcula AGUARDANDO EMBARQUE).
+- **Correções no caminho:** o carregador do Follow Up gravava o SQL com CRLF no Windows (agora LF, como os do T0 e das estimativas); os verificadores escolhem o lote pelo SHA-256 do relatório, contam as SCs (não as linhas) da auditoria e mandam o filtro de status como lista.
+
 ## Cargas da DATABASE e da lista de fabricantes (M082) no HML (2026-11-11)
 
 Os commits `e587341` (API), `127ac44` (web) e `f7cfbb8` (ensaio) fazem a etapa 1f de `docs/PLANO_AUDITORIA_INVOICE_AVULSA.md`. Master e Administrador carregam a DATABASE e a lista de fabricantes em Cadastros > Cargas de referência, e cada carga faz duas coisas:

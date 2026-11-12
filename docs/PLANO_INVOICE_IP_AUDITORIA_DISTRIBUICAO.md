@@ -4,7 +4,7 @@
 |---|---|
 | Data | 2026-11-12 |
 | Branch de trabalho | `homologacao` |
-| Status | Especificação aprovada pelo usuário em 2026-11-12; aguardando os arquivos para a etapa 0 |
+| Status | Especificação aprovada em 2026-11-12; etapa 0 (recarga do HML) feita em 2026-11-12 |
 
 ## Contexto
 
@@ -100,7 +100,7 @@ Gravar a partir da página com o Follow Up; mudar as cargas de referência; prod
 
 ## Plano
 
-0. Carga do HML com o Follow Up e o MRP atualizados.
+0. Carga do HML com o Follow Up e o MRP atualizados. **Feita em 2026-11-12** (`docs/PLANO_CARGA_HISTORICA_PLANILHA.md`, "Recarga de 2026-11-12").
 1. Extrair as peças comuns e ligar os arquivos reais nos testes.
 2. Subseção, parte de conteúdo: DATABASE, NCM não encontrada e fabricantes (web).
 3. Subseção, parte de caminho: preço, INV × PKL, destino 0, célula ilegível, PO sugerida (rota e API), fornecedor.
