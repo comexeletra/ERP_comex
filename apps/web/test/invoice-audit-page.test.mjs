@@ -9,6 +9,11 @@ import { zhCN } from "../lib/i18n/zh-CN.ts";
 // and returns the corrected invoice file.
 
 const source = path => readFile(new URL(path, import.meta.url), "utf8");
+// Stage 1 of docs/PLANO_INVOICE_IP_AUDITORIA_DISTRIBUICAO.md (2026-11-12): the rules of the page are shared with the audit
+// of the IP screen. They live in the audit model (lib), the bulk decisions (lib), the AUDITORIA sheet (lib) and the review.
+const shared = () => Promise.all(["../lib/china-invoice-mapping.ts", "../lib/invoice-bulk-decisions.ts",
+  "../lib/invoice-audit-sheet.ts", "../components/InvoiceAuditReview.tsx", "../lib/audit-reference-xlsx.ts"].map(source))
+  .then(([model, bulk, sheet, review, followUp]) => ({ model, bulk, sheet, review, followUp }));
 
 // Stage 1f (user decision, 2026-11-11): the DATABASE and the manufacturer list come from their latest load, kept
 // apart from the catalog; the page only reads the session and that reference, and still saves nothing.
@@ -26,22 +31,24 @@ test("the page is a route in the menu and only reads the session and the referen
 });
 
 test("the download waits for every decision and writes the corrections with the AUDITORIA sheet", async () => {
+  const { model, review, sheet } = await shared();
+  assert.match(model, /const canDownload = ready && pending === 0 && rows\.some\(row => row\.allocations\.length > 0\);/u);
+  assert.match(review, /disabled=\{!canDownload \|\| reading\}/u);
+  assert.match(model, /invoicePriceChoiceReady\(point, decisions\.priceChoices\[row\]\)/u);
+  assert.match(model, /invoicePackingChoiceReady\(divergence, decisions\.packingChoices\[divergence\.key\]\)/u);
+  assert.match(model, /supplierMismatches\.filter\(supplier => !decisions\.supplierConfirmed\[supplier\]\)/u);
+  assert.match(review, /writeCorrectedInvoice\(bytes, draft\.layout, corrections, invoiceCorrectedTotals\(corrections\)/u);
+  assert.match(sheet, /export const invoiceAuditSheetName = "AUDITORIA";/u);
   const component = await source("../components/InvoiceAuditWorkbench.tsx");
-  assert.match(component, /const canDownload = ready && pending === 0 && rows\.some\(row => row\.allocations\.length > 0\);/u);
-  assert.match(component, /disabled=\{!canDownload \|\| Boolean\(reading\)\}/u);
-  assert.match(component, /invoicePriceChoiceReady\(point, priceChoices\[row\]\)/u);
-  assert.match(component, /invoicePackingChoiceReady\(divergence, packingChoices\[divergence\.key\]\)/u);
-  assert.match(component, /supplierMismatches\.filter\(supplier => !supplierConfirmed\[supplier\]\)/u);
-  assert.match(component, /writeCorrectedInvoice\(invoice\.bytes, invoice\.draft\.layout, corrections, invoiceCorrectedTotals\(corrections\)/u);
-  assert.match(component, /const auditSheetName = "AUDITORIA";/u);
+  assert.match(component, /<InvoiceAuditReview draft=\{draft!\} bytes=\{invoice!\.bytes\} source=\{source\}/u);
 });
 
 test("the conference panel takes the page's own INV × PKL decision and keeps the IP screen's confirmation", async () => {
   const panel = await source("../components/InvoiceConference.tsx");
   assert.match(panel, /decisionReady \? decisionReady\(divergence\) : invoiceQuantityDecisionReady\(decision\)/u);
   assert.match(panel, /\{renderDecision \? renderDecision\(divergence\) : <>/u);
-  const component = await source("../components/InvoiceAuditWorkbench.tsx");
-  assert.match(component, /renderDecision=\{divergence => \{/u);
+  const { review } = await shared();
+  assert.match(review, /renderDecision=\{divergence => \{/u);
 });
 
 test("every class of the page has a style rule", async () => {
@@ -70,14 +77,16 @@ test("the page texts exist in the three languages", () => {
 // without question (user decision): its divergences are only listed; a product out of it waits for the analyst.
 test("the DATABASE corrections go to the file without a choice and a product out of it waits for the analyst", async () => {
   const component = await source("../components/InvoiceAuditWorkbench.tsx");
+  const { model, review } = await shared();
   assert.match(component, /const database = reference\?\.productDatabase \?\? null;/u);
-  assert.doesNotMatch(component, /parseProductDatabaseXlsx/u);
-  assert.match(component, /\+ catalog\.missing\.filter\(entry => !flaggedNcms\[entry\.sourceRow\]\s+&& !invoiceQuantityDecisionReady\(missingDecisions\[entry\.sourceRow\] \?\? noDecision\)\)/u);
-  assert.doesNotMatch(component, /catalogChoices|useDatabaseAll|name=\{`catalog-/u);
-  assert.match(component, /\{ \.\.\.invoiceCatalogCorrections\(catalog\.points\) \};/u);
-  assert.match(component, /<details><summary>\{t\.catalogDetails\(points\.length\)\}<\/summary>/u);
-  assert.match(component, /messages\.invoiceAudit\.noteOriginal, invoice\.draft\.packingList, origin\.corrected,/u);
-  assert.match(component, /\{!database \? <p className="notice warning">\{t\.noDatabase\}<\/p>/u);
+  assert.match(review, /const database = reference\?\.productDatabase \?\? null;/u);
+  for (const code of [component, review]) assert.doesNotMatch(code, /parseProductDatabaseXlsx/u);
+  assert.match(model, /\+ catalog\.missing\.filter\(entry => !decisions\.flaggedNcms\[entry\.sourceRow\]\s+&& !invoiceQuantityDecisionReady\(decisions\.missingDecisions\[entry\.sourceRow\] \?\? noAuditDecision\)\)/u);
+  for (const code of [component, review]) assert.doesNotMatch(code, /catalogChoices|useDatabaseAll|name=\{`catalog-/u);
+  assert.match(model, /\{ \.\.\.invoiceCatalogCorrections\(model\.catalog\.points\) \};/u);
+  assert.match(review, /<details><summary>\{t\.catalogDetails\(points\.length\)\}<\/summary>/u);
+  assert.match(review, /messages\.invoiceAudit\.noteOriginal, draft\.packingList, origin\.corrected,/u);
+  assert.match(review, /\{!database \? <p className="notice warning">\{t\.noDatabase\}<\/p>/u);
 });
 
 // User decisions (2026-11-10): the manufacturer list rules the address; the analyst chooses among several addresses,
@@ -85,11 +94,13 @@ test("the DATABASE corrections go to the file without a choice and a product out
 test("the manufacturer list decisions wait for the analyst and the corrections go to the file with the header", async () => {
   const component = await source("../components/InvoiceAuditWorkbench.tsx");
   const section = await source("../components/InvoiceManufacturerAudit.tsx");
+  const { model, review } = await shared();
   assert.match(component, /const manufacturerList = reference\?\.manufacturerList \?\? null;/u);
-  assert.doesNotMatch(component, /parseManufacturerListXlsx/u);
-  assert.match(component, /\+ invoiceManufacturerPending\(manufacturerChecks, addressChoices, countryChoices, manufacturerMissing\);/u);
-  assert.match(component, /messages\.invoiceAudit\.noteOriginal, invoice\.draft\.packingList, origin\.corrected,/u);
-  assert.match(component, /referenceCorrections\[Number\(row\)\] = \{ \.\.\.referenceCorrections\[Number\(row\)\], \.\.\.values \};/u);
+  assert.match(review, /const manufacturerList = reference\?\.manufacturerList \?\? null;/u);
+  for (const code of [component, review]) assert.doesNotMatch(code, /parseManufacturerListXlsx/u);
+  assert.match(model, /\+ invoiceManufacturerPending\(manufacturerChecks, decisions\.addressChoices, decisions\.countryChoices, decisions\.manufacturerMissing\);/u);
+  assert.match(review, /messages\.invoiceAudit\.noteOriginal, draft\.packingList, origin\.corrected,/u);
+  assert.match(model, /reference\[Number\(row\)\] = \{ \.\.\.reference\[Number\(row\)\], \.\.\.values \};/u);
   assert.match(section, /name=\{`address-\$\{check\.sourceRow\}`\}/u);
   assert.match(section, /name=\{`country-\$\{check\.sourceRow\}`\}/u);
   assert.match(section, /<label className="invoice-audit-confirm"><input type="checkbox" checked=\{decision\.confirmed\}/u);
@@ -119,10 +130,11 @@ test("each file field shows the name of the file the page read", async () => {
 // User report (2026-11-11): a code out of the PO stayed red after the confirmation, with no hint why. Confirming does
 // not settle it (the rule of the IP screen): the point says so and destines 0 to the PO in one click.
 test("a code out of the PO tells how to settle it and destines 0 in one click", async () => {
-  const component = await source("../components/InvoiceAuditWorkbench.tsx");
-  assert.match(component, /\{point\.kind === "CODE" && !point\.confirmed && <>/u);
-  assert.match(component, /<p className="invoice-audit-note">\{t\.codeNeedsZero\}<\/p>/u);
-  assert.match(component, /onClick=\{\(\) => setQuantities\(current => \(\{ \.\.\.current, \[part\.key\]: "0" \}\)\)\}>\{t\.destineZero\}/u);
+  const { review } = await shared();
+  assert.match(review, /\{point\.kind === "CODE" && !point\.confirmed && <>/u);
+  assert.match(review, /<p className="invoice-audit-note">\{t\.codeNeedsZero\}<\/p>/u);
+  assert.match(review, /onClick=\{\(\) => setQuantity\(part\.key, "0"\)\}>\{t\.destineZero\}/u);
+  assert.match(review, /const setQuantity = \(key: string, value: string\) => change\("quantities", current => \(\{ \.\.\.current, \[key\]: value \}\)\);/u);
   for (const dictionary of [ptBR, en, zhCN]) {
     assert.equal(typeof dictionary.invoiceAudit.codeNeedsZero, "string");
     assert.equal(typeof dictionary.invoiceAudit.destineZero, "string");
@@ -132,14 +144,15 @@ test("a code out of the PO tells how to settle it and destines 0 in one click", 
 // User decision (2026-11-11): an NCM not found in the DATABASE is kept (confirmation with reason) or flagged in the file,
 // orange with the warning in column O of the line; the page then explains the orange cell. Bulk does both.
 test("an NCM not found in the DATABASE is kept or flagged, and the page explains the flag", async () => {
-  const component = await source("../components/InvoiceAuditWorkbench.tsx");
-  assert.match(component, /messages\.invoiceAudit\.noteOriginal, invoice\.draft\.packingList, origin\.corrected,\s+\{ rows: ncmFlagRows, text: messages\.invoiceAudit\.ncmFlagCell \}\);/u);
-  assert.match(component, /const ncmFlagRows = catalog\.missing\.filter\(entry => flaggedNcms\[entry\.sourceRow\]\)\.map\(entry => entry\.sourceRow\);/u);
-  assert.match(component, /\{flagged\.length > 0 && <p className="notice warning" role="status">\{t\.ncmFlagNotice\}<\/p>\}/u);
-  assert.match(component, /onClick=\{\(\) => onFlag\(entry\.sourceRow, true\)\}>\{t\.flagNcm\}/u);
-  assert.match(component, /\{ id: "flagCatalog", needsReason: false, run: \(\) => apply\(bulkFlags\(/u);
-  assert.match(component, /const flagged = Boolean\(input\.flaggedNcms\[entry\.sourceRow\]\);/u);
-  assert.match(component, /flagged \? invoiceNcmFlagCells\(draft\.layout, entry\.sourceRow\)\.join\(", "\)/u);
+  const { model, bulk, sheet, review } = await shared();
+  assert.match(review, /messages\.invoiceAudit\.noteOriginal, draft\.packingList, origin\.corrected,\s+\{ rows: input\.ncmFlagRows, text: messages\.invoiceAudit\.ncmFlagCell \}\);/u);
+  assert.match(model, /ncmFlagRows: model\.catalog\.missing\.filter\(entry => decisions\.flaggedNcms\[entry\.sourceRow\]\)\.map\(entry => entry\.sourceRow\)/u);
+  assert.match(review, /\{flagged\.length > 0 && <p className="notice warning" role="status">\{t\.ncmFlagNotice\}<\/p>\}/u);
+  assert.match(review, /onClick=\{\(\) => onFlag\(entry\.sourceRow, true\)\}>\{t\.flagNcm\}/u);
+  assert.match(bulk, /\{ id: "flagCatalog", needsReason: false, run: \(\) => into\("flaggedNcms", bulkFlags\(/u);
+  assert.match(sheet, /const flagged = Boolean\(decisions\.flaggedNcms\[entry\.sourceRow\]\);/u);
+  assert.match(sheet, /flagged \? input\.ncmFlagCells\(entry\.sourceRow\)\.join\(", "\)/u);
+  assert.match(review, /ncmFlagCells: row => invoiceNcmFlagCells\(draft\.layout, row\)/u);
   assert.equal(ptBR.invoiceAudit.ncmFlagNotice, "A célula da coluna de NCM destacada indica que a NCM não foi encontrada no Database");
   assert.equal(ptBR.invoiceAudit.ncmFlagCell, "NCM não encontrada na DATABASE");
   for (const dictionary of [en, zhCN]) {
@@ -153,15 +166,15 @@ test("an NCM not found in the DATABASE is kept or flagged, and the page explains
 // User decision (2026-11-11, IPH037D): a line whose PO cell the reader cannot split is a pending point that blocks the
 // download; the page proposes the split by the Follow Up balance, or the line is kept without destination with a reason.
 test("a PO cell the reader cannot split blocks the download until it is split by balance or kept", async () => {
-  const component = await source("../components/InvoiceAuditWorkbench.tsx");
-  assert.match(component, /const unreadLines = ready \? draft!\.lines\.filter\(line => line\.poAssignments\.length === 0\)/u);
-  assert.match(component, /invoicePoCellSplit\(line\.quantity, numbers\.map\(poNumber =>/u);
-  assert.match(component, /\.\.\.unreadLines\.filter\(entry => splitAccepted\[entry\.line\.sourceRow\] && entry\.split\.length > 0\)/u);
-  assert.match(component, /\+ unreadLines\.filter\(entry => !poCellSettled\(entry\.line\.sourceRow\)\)\.length/u);
-  assert.match(component, /onClick=\{\(\) => setSplitAccepted\(current => \(\{ \.\.\.current, \[entry\.line\.sourceRow\]: true \}\)\)\}>\{t\.acceptSplit\}/u);
-  assert.match(component, /\{ id: "acceptSplit", needsReason: false, run: \(\) =>/u);
-  assert.match(component, /\{ id: "keepPoCell", needsReason: true, run: reason =>/u);
-  assert.match(component, /s\.splitByBalance/u);
+  const { model, bulk, sheet, review } = await shared();
+  assert.match(model, /const unreadLines = source && draft \? lines\.filter\(line => line\.poAssignments\.length === 0\)/u);
+  assert.match(model, /invoicePoCellSplit\(line\.quantity, numbers\.map\(poNumber =>/u);
+  assert.match(model, /\.\.\.unreadLines\.filter\(entry => decisions\.splitAccepted\[entry\.line\.sourceRow\] && entry\.split\.length > 0\)/u);
+  assert.match(model, /\+ unreadLines\.filter\(entry => !invoicePoCellSettled\(decisions, entry\.line\.sourceRow\)\)\.length/u);
+  assert.match(review, /onClick=\{\(\) => change\("splitAccepted", current => \(\{ \.\.\.current, \[entry\.line\.sourceRow\]: true \}\)\)\}>\{t\.acceptSplit\}/u);
+  assert.match(bulk, /\{ id: "acceptSplit", needsReason: false, run: \(\) =>/u);
+  assert.match(bulk, /\{ id: "keepPoCell", needsReason: true, run: reason =>/u);
+  assert.match(sheet, /s\.splitByBalance/u);
   for (const dictionary of [en, zhCN]) {
     for (const key of ["poCellTitle", "poCellUnreadable", "poCellProposal", "poCellNoProposal", "acceptSplit", "undoSplit",
       "splitAccepted", "keepWithoutDestination"]) {
@@ -176,23 +189,28 @@ test("a PO cell the reader cannot split blocks the download until it is split by
 // the product on the invoice IP; the analyst takes it with one click and the PO cell is corrected in the file.
 test("a line the cited PO cannot receive gets the Follow Up PO suggestions and the chosen PO goes to the file", async () => {
   const component = await source("../components/InvoiceAuditWorkbench.tsx");
-  assert.match(component, /const poNumber = poChoices\[part\.key\] \?\? part\.poNumber;/u);
-  assert.match(component, /followUpPoSuggestions\(followUp!\.lines, importer, draft!\.ipNumber, part\.productCode, part\.poNumber,\s+part\.quantity, taken\)/u);
-  assert.match(component, /issue && issue\.kind !== "INVALID_QUANTITY"/u);
-  assert.match(component, /setPoChoices\(current => \(\{ \.\.\.current, \[part\.key\]: suggestion\.poNumber \}\)\)/u);
-  assert.match(component, /rows\.map\(row => \(\{ sourceRow: row\.part\.sourceRow, poNumber: row\.part\.poNumber, quantity: row\.part\.quantity \}\)\)/u);
-  assert.match(component, /if \(part\.poNumber !== part\.sourcePoNumber\) \{/u);
-  assert.match(component, /setPoChoices\(\{\}\)/u);
+  const { model, sheet, review, followUp } = await shared();
+  assert.match(model, /const poNumber = decisions\.poChoices\[part\.key\] \?\? part\.poNumber;/u);
+  assert.match(model, /source\.suggestions\(part\.productCode, part\.poNumber, part\.quantity, taken\)/u);
+  assert.match(followUp, /followUpPoSuggestions\(lines, importer, invoiceIp, productCode, citedPo, quantity, taken\)/u);
+  assert.match(component, /followUpAuditSource\(followUp\.lines, importer, draft\.ipNumber\)/u);
+  assert.match(model, /issue && issue\.kind !== "INVALID_QUANTITY"/u);
+  assert.match(review, /change\("poChoices", current => \(\{ \.\.\.current, \[part\.key\]: suggestion\.poNumber \}\)\)/u);
+  assert.match(model, /rows\.map\(row => \(\{ sourceRow: row\.part\.sourceRow, poNumber: row\.part\.poNumber, quantity: row\.part\.quantity \}\)\)/u);
+  assert.match(sheet, /if \(part\.poNumber !== part\.sourcePoNumber\) \{/u);
+  // A new Follow Up or importer clears the chosen POs with the other decisions on the path of the lines.
+  assert.match(component, /setDecisions\(invoiceAuditPathReset\)/u);
+  assert.match(model, /packingChoices: \{\}, poChoices: \{\}, splitAccepted: \{\}, poCellKept: \{\} \};/u);
 });
 
 // Comparison of IPH034B (2026-11-11): a manufacturer out of the list is taken from the similar entries or by typing to
 // search the list; only without a chosen entry it is confirmed as out of the list.
 test("a manufacturer out of the list is chosen among the similar or searched entries, or confirmed", async () => {
-  const component = await source("../components/InvoiceAuditWorkbench.tsx");
   const section = await source("../components/InvoiceManufacturerAudit.tsx");
-  assert.match(component, /onPick=\{\(row, entry\) => \{ setPickedManufacturers\(current => \(\{ \.\.\.current, \[row\]: entry \}\)\);/u);
-  assert.match(component, /\? \{ \.\.\.check, candidates: \[\.\.\.check\.candidates, picked\] \} : check;/u);
-  assert.match(component, /if \(check\.status === "MISSING" && !chosen\) \{/u);
+  const { model, sheet, review } = await shared();
+  assert.match(review, /onPick=\{\(row, entry\) => onDecisions\(current => \(\{ \.\.\.current,\s+pickedManufacturers: \{ \.\.\.current\.pickedManufacturers, \[row\]: entry \},/u);
+  assert.match(model, /\? \{ \.\.\.check, candidates: \[\.\.\.check\.candidates, picked\] \} : check;/u);
+  assert.match(sheet, /if \(check\.status === "MISSING" && !chosen\) \{/u);
   assert.match(section, /const found = invoiceManufacturerSearch\(list, query\)/u);
   assert.match(section, /name=\{`similar-\$\{check\.sourceRow\}`\}/u);
   assert.match(section, /\{chosen \? <button className="button secondary" type="button" onClick=\{\(\) => onAddress\(check\.sourceRow, ""\)\}>/u);

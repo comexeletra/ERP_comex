@@ -295,6 +295,18 @@ export function followUpPoSuggestions(lines: readonly FollowUpPoLine[], importer
     .map(entry => ({ ...entry, available: quantityText(entry.available) }));
 }
 
+/**
+ * The Follow Up as the source of POs of the invoice audit (shared with the IP screen, 2026-11-12): the lines of one PO
+ * in the importer, and the suggestions of another PO. It has the shape of `InvoiceAuditSource` (lib/china-invoice-mapping.ts).
+ */
+export function followUpAuditSource(lines: readonly FollowUpPoLine[], importer: string, invoiceIp: string) {
+  return {
+    purchaseOrder: (poNumber: string) => followUpCandidates(lines, importer, poNumber, invoiceIp),
+    suggestions: (productCode: string, citedPo: string, quantity: string, taken: readonly { itemId: string; quantity: string }[]) =>
+      followUpPoSuggestions(lines, importer, invoiceIp, productCode, citedPo, quantity, taken),
+  };
+}
+
 const databaseSheetName = "DATABASE"; // i18n-ignore: sheet name of the product DATABASE workbook
 const databaseHeaders = ["Product Code", "Product Description", "NCM DATABASE"] as const; // i18n-ignore: DATABASE headers
 type DatabaseHeader = typeof databaseHeaders[number];

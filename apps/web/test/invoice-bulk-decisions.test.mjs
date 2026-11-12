@@ -61,12 +61,16 @@ test("the bulk confirmation without a reason marks every supplier not yet confir
 });
 
 test("the panel is at the top of the page, uses the lib functions and asks a reason where it is needed", async () => {
-  const component = await source("../components/InvoiceAuditWorkbench.tsx");
+  // Stage 1 of docs/PLANO_INVOICE_IP_AUDITORIA_DISTRIBUICAO.md (2026-11-12): the panel is in the review shared with the
+  // IP screen, and the groups are built by invoiceAuditBulkGroups in lib/.
+  const component = await source("../components/InvoiceAuditReview.tsx");
+  const groups = await source("../lib/invoice-bulk-decisions.ts");
   const panel = await source("../components/InvoiceBulkDecisions.tsx");
   const top = component.indexOf("<InvoiceBulkDecisions");
   assert.ok(top > 0 && top < component.indexOf("<InvoiceConference"), "the panel comes before the points");
+  assert.match(component, /invoiceAuditBulkGroups\(model\.bulk, supplierMismatches, decisions\)/u);
   for (const name of ["bulkPriceChoices", "bulkSourceChoices", "bulkConfirmations", "bulkFlags"]) {
-    assert.match(component, new RegExp(String.raw`${name}\(`, "u"), name);
+    assert.match(groups.slice(groups.indexOf("export function invoiceAuditBulkGroups")), new RegExp(String.raw`${name}\(`, "u"), name);
   }
   assert.match(panel, /disabled=\{group\.pending === 0 \|\| \(action\.needsReason && !reasonReady\)\}/u);
   assert.match(panel, /const reasonReady = reason\.trim\(\)\.length >= 3;/u);

@@ -1,3 +1,5 @@
+import type { ChinaInvoiceLine, InvoicePackingList } from "./china-invoice-xlsx";
+
 export type InvoicePoItemCandidate = { id: string; productCode: string; remainingQuantity: string };
 export type InvoiceDestinationIssue = { kind: "PO_NOT_REGISTERED" } | { kind: "PO_NOT_ACTIVE"; status: "CANCELLED" | "CLOSED" | "DELETED" }
   | { kind: "ITEM_NOT_FOUND" } | { kind: "INVALID_QUANTITY" }
@@ -842,4 +844,236 @@ export function invoicePackingChoiceWeights(divergences: readonly InvoicePacking
     && divergence.invoiceRow !== null && divergence.packing)
     .map(divergence => [divergence.invoiceRow!, { netWeightKg: divergence.packing!.netWeightKg,
       grossWeightKg: divergence.packing!.grossWeightKg }]));
+}
+
+/*
+ * The invoice audit shared by the audit page (POs of the Follow Up sent at the moment) and the IP screen (POs of the
+ * platform), user decisions of 2026-11-12: the same rules, the same decisions and the same file, whatever the source.
+ */
+
+/** A PO item that can receive the invoice: a Follow Up line or a PO item of the platform. */
+export type InvoiceAuditCandidate = InvoicePoItemCandidate & { lineNumber: number; poNumber: string; unit: string | null;
+  unitPrice: string | null; currency: string | null;
+  /** The supplier confirmed once against the Exporter; `supplierValues` and the aliases are what matches it. */
+  supplier: string; supplierValues?: readonly (string | null | undefined)[]; exporterAliases?: readonly string[] };
+export type InvoiceAuditPurchaseOrder<T extends InvoiceAuditCandidate> = { poExists: boolean; poStatus?: string; items: readonly T[] };
+export type InvoiceAuditSuggestion = { poNumber: string; available: string; ipNumber: string; sourceRows: number[] };
+/** Where the POs come from: the items of a PO number, and the other POs that can take a part its PO cannot receive. */
+export type InvoiceAuditSource<T extends InvoiceAuditCandidate = InvoiceAuditCandidate> = {
+  purchaseOrder: (poNumber: string) => InvoiceAuditPurchaseOrder<T>;
+  suggestions: (productCode: string, citedPo: string, quantity: string,
+    taken: readonly { itemId: string; quantity: string }[]) => InvoiceAuditSuggestion[];
+};
+
+/** Every decision of the analyst in the audit, kept in one object so both screens share it and the bulk actions. */
+export type InvoiceAuditDecisions = {
+  quantities: Readonly<Record<string, string>>;
+  quantityDecisions: Readonly<Record<number, InvoiceQuantityDecision>>;
+  priceChoices: Readonly<Record<number, InvoicePriceChoice>>;
+  supplierConfirmed: Readonly<Record<string, boolean>>;
+  unitConfirmed: Readonly<Partial<Record<number, boolean>>>;
+  packingChoices: Readonly<Record<string, InvoicePackingChoice>>;
+  poChoices: Readonly<Record<string, string>>;
+  splitAccepted: Readonly<Partial<Record<number, boolean>>>;
+  poCellKept: Readonly<Record<number, InvoiceQuantityDecision>>;
+  missingDecisions: Readonly<Record<number, InvoiceQuantityDecision>>;
+  flaggedNcms: Readonly<Partial<Record<number, boolean>>>;
+  addressChoices: Readonly<Record<number, string>>;
+  countryChoices: Readonly<Record<number, InvoiceCountryChoice>>;
+  manufacturerMissing: Readonly<Record<number, InvoiceQuantityDecision>>;
+  pickedManufacturers: Readonly<Record<number, InvoiceManufacturerEntry>>;
+};
+
+export const emptyInvoiceAuditDecisions: InvoiceAuditDecisions = { quantities: {}, quantityDecisions: {}, priceChoices: {},
+  supplierConfirmed: {}, unitConfirmed: {}, packingChoices: {}, poChoices: {}, splitAccepted: {}, poCellKept: {},
+  missingDecisions: {}, flaggedNcms: {}, addressChoices: {}, countryChoices: {}, manufacturerMissing: {}, pickedManufacturers: {} };
+
+/** The decisions on the path of the lines (destination, price, weights, supplier, unit), cleared when the POs change. */
+export function invoiceAuditPathReset(decisions: InvoiceAuditDecisions): InvoiceAuditDecisions {
+  return { ...decisions, quantities: {}, quantityDecisions: {}, priceChoices: {}, supplierConfirmed: {}, unitConfirmed: {},
+    packingChoices: {}, poChoices: {}, splitAccepted: {}, poCellKept: {} };
+}
+
+/** The Follow Up or platform suppliers of the destined items that do not match the Exporter, each confirmed once. */
+export function invoiceAuditSupplierMismatches(exporter: string,
+  items: readonly Pick<InvoiceAuditCandidate, "supplier" | "supplierValues" | "exporterAliases">[]): string[] {
+  const matches = new Map<string, boolean>();
+  for (const item of items) {
+    const supplier = item.supplier.trim().toLocaleUpperCase("en-US");
+    if (!supplier) continue;
+    matches.set(supplier, Boolean(matches.get(supplier))
+      || invoiceSupplierMatchesExporter(item.supplierValues ?? [supplier], exporter, item.exporterAliases ?? []));
+  }
+  return [...matches].filter(([, matched]) => !matched).map(([supplier]) => supplier);
+}
+
+export type InvoiceLineUnitPoint = { invoiceUnit: string; poUnits: string[] };
+
+/** The invoice unit of a line against the units of the PO items that receive it; the Follow Up has no unit, so no point. */
+export function invoiceLineUnitPoint(invoiceUnit: string, poItems: readonly { unit: string | null }[]): InvoiceLineUnitPoint | null {
+  const poUnits = [...new Set(poItems.map(item => item.unit?.trim() ?? "").filter(unit => invoicePoUnitDiffers(invoiceUnit, unit)))];
+  return poUnits.length ? { invoiceUnit, poUnits } : null;
+}
+
+type InvoiceAuditDraftInput = { lines: readonly ChinaInvoiceLine[]; ipNumber: string; exporterText: string;
+  packingList: InvoicePackingList; countryOfOrigin: string };
+/** A line whose PO cell the reader could not split, with the POs found in it and the split proposed by balance. */
+export type InvoiceAuditUnreadLine = { line: ChinaInvoiceLine; numbers: string[]; split: string[] };
+export type InvoiceAuditPart<T extends InvoiceAuditCandidate> = ReturnType<typeof invoiceAssignmentsFromSplit>[number]
+  & { invoiceQuantity: string; poExists: boolean; poStatus: string; keyItems: T[] };
+export type InvoiceAuditRow<T extends InvoiceAuditCandidate> = { part: InvoiceAuditPart<T>; line: ChinaInvoiceLine;
+  decision: InvoiceQuantityDecision; allocations: { item: T; quantity: string }[]; points: InvoiceAuditPoint[];
+  issue: InvoiceDestinationIssue | null; suggestions: InvoiceAuditSuggestion[] };
+/** The points of each kind that one bulk action can decide (stage 1g), computed with the rules of the points. */
+export type InvoiceAuditBulkRows = { prices: (readonly [number, InvoiceLinePricePoint])[]; packingKeys: string[];
+  packingBothSheets: string[]; quantityRows: number[]; quantitySettledByConfirmation: number[]; unitRows: number[];
+  catalogRows: number[]; countryRows: number[]; missingManufacturerRows: number[]; poCellRows: number[]; splittableRows: number[] };
+export type InvoiceAuditModel<T extends InvoiceAuditCandidate> = {
+  ready: boolean; unreadLines: InvoiceAuditUnreadLine[]; rows: InvoiceAuditRow<T>[];
+  pricePoints: Map<number, InvoiceLinePricePoint>; unitPoints: Map<number, InvoiceLineUnitPoint>; supplierMismatches: string[];
+  divergences: InvoicePackingDivergence[]; catalog: { points: InvoiceCatalogPoint[]; missing: InvoiceCatalogMissing[] };
+  manufacturerChecks: InvoiceManufacturerCheck[]; manufacturerCorrections: ReturnType<typeof invoiceManufacturerCorrections>;
+  /** Per manufacturer check: the list entry the analyst chose among the candidates, and the list country that differs. */
+  manufacturerChoices: Map<number, { chosen: InvoiceManufacturerEntry | null; listCountry: string | null }>;
+  origin: { missing: string[]; corrected: string | null }; pending: number; canDownload: boolean; bulk: InvoiceAuditBulkRows;
+};
+
+const noAuditDecision: InvoiceQuantityDecision = { confirmed: false, reason: "" };
+
+/** A line whose PO cell is settled: split by balance, or kept without destination with a reason. */
+export function invoicePoCellSettled(decisions: InvoiceAuditDecisions, sourceRow: number): boolean {
+  return Boolean(decisions.splitAccepted[sourceRow]) || invoiceQuantityDecisionReady(decisions.poCellKept[sourceRow] ?? noAuditDecision);
+}
+
+/**
+ * The whole audit of one invoice: destinations by PO and code (with the split of an unreadable PO cell and the PO
+ * suggestions), the points of quantity, code, price, unit, supplier and INV × PKL, the DATABASE and the manufacturer
+ * list, and what is still pending. Without a source the POs are not known yet, and only the content is audited.
+ */
+export function invoiceAuditModel<T extends InvoiceAuditCandidate>(input: { draft: InvoiceAuditDraftInput | null;
+  source: InvoiceAuditSource<T> | null; products: readonly { productCode: string; ncm: string; description: string }[] | null;
+  manufacturers: readonly InvoiceManufacturerEntry[] | null; decisions: InvoiceAuditDecisions }): InvoiceAuditModel<T> {
+  const { draft, source, decisions } = input;
+  const ready = Boolean(draft && source);
+  const lines = draft?.lines ?? [];
+  const lineByRow = new Map(lines.map(line => [line.sourceRow, line]));
+  const baseParts = invoiceAssignmentsFromLines(lines);
+  // IPH037D (2026-11-11): a PO cell the reader cannot split ("PO 030888&030201") leaves its line without parts. It is a
+  // pending point; the split of the line by the balance of each cited PO, in cell order, is proposed.
+  const unreadLines = source && draft ? lines.filter(line => line.poAssignments.length === 0).map(line => {
+    const numbers = invoicePoCellNumbers(line.poCell);
+    const split = invoicePoCellSplit(line.quantity, numbers.map(poNumber => invoiceKeyBalance(
+      invoiceKeyItems(source.purchaseOrder(poNumber).items, line.productCode))));
+    return { line, numbers, split };
+  }) : [];
+  const destinedParts = [...baseParts,
+    ...unreadLines.filter(entry => decisions.splitAccepted[entry.line.sourceRow] && entry.split.length > 0)
+      .flatMap(entry => invoiceAssignmentsFromSplit(entry.line, entry.numbers, entry.split))]
+    .sort((left, right) => left.sourceRow - right.sourceRow);
+  const parts: InvoiceAuditPart<T>[] = source ? destinedParts.map(part => {
+    const poNumber = decisions.poChoices[part.key] ?? part.poNumber;
+    const { poExists, poStatus, items } = source.purchaseOrder(poNumber);
+    return { ...part, poNumber, invoiceQuantity: part.quantity, quantity: decisions.quantities[part.key] ?? part.quantity, poExists,
+      poStatus: poStatus ?? "ACTIVE", keyItems: invoiceKeyItems(items, part.productCode) };
+  }) : [];
+  // A PO that is closed, cancelled or deleted receives nothing (the platform lists no item of it; this keeps it so).
+  const distribution = distributeInvoiceParts(parts.map(part => ({ key: part.key, quantity: part.quantity,
+    items: part.poStatus === "ACTIVE" ? part.keyItems : [] })));
+  const taken = [...distribution.values()].flatMap(entry => entry.allocations);
+  const rows = parts.map((part): InvoiceAuditRow<T> => {
+    const line = lineByRow.get(part.sourceRow)!;
+    const decision = decisions.quantityDecisions[part.sourceRow] ?? noAuditDecision;
+    const partDistribution = distribution.get(part.key);
+    const allocations = (partDistribution?.allocations ?? []).flatMap(allocation => {
+      const item = part.keyItems.find(candidate => candidate.id === allocation.itemId);
+      return item ? [{ item, quantity: allocation.quantity }] : [];
+    });
+    const points = [invoiceQuantityPoint(part.invoiceQuantity, part.quantity, line.unit, decision),
+      invoiceCodePoint(part.productCode, !part.poExists || part.keyItems.length > 0, part.quantity, decision)]
+      .filter((point): point is InvoiceAuditPoint => point !== null);
+    const issue = classifyInvoiceDestination(part.keyItems, part.poExists, part.quantity, partDistribution, part.poStatus);
+    const suggestions = source && issue && issue.kind !== "INVALID_QUANTITY"
+      ? source.suggestions(part.productCode, part.poNumber, part.quantity, taken) : [];
+    return { part, line, decision, allocations, points, issue, suggestions };
+  });
+  const itemsByRow = new Map<number, T[]>();
+  for (const row of rows) {
+    itemsByRow.set(row.part.sourceRow, [...(itemsByRow.get(row.part.sourceRow) ?? []), ...row.allocations.map(entry => entry.item)]);
+  }
+  const pricePoints = new Map<number, InvoiceLinePricePoint>();
+  const unitPoints = new Map<number, InvoiceLineUnitPoint>();
+  for (const line of lines) {
+    const items = itemsByRow.get(line.sourceRow) ?? [];
+    const price = invoiceLinePricePoint(line.unitPrice, items);
+    if (price) pricePoints.set(line.sourceRow, price);
+    const unit = invoiceLineUnitPoint(line.unit, items);
+    if (unit) unitPoints.set(line.sourceRow, unit);
+  }
+  const supplierMismatches = draft ? invoiceAuditSupplierMismatches(draft.exporterText, [...itemsByRow.values()].flat()) : [];
+  const divergences = draft?.packingList.status === "READ" ? invoicePackingDivergences(lines, draft.packingList.lines) : [];
+  const catalog = draft && input.products ? invoiceCatalogPoints(lines, input.products) : { points: [], missing: [] };
+  // An entry the analyst found by typing joins the line's candidates, so it is chosen like a similar one.
+  const manufacturerChecks = (draft && input.manufacturers ? invoiceManufacturerChecks(lines, input.manufacturers) : [])
+    .map(check => {
+      const picked = decisions.pickedManufacturers[check.sourceRow];
+      return picked && !check.candidates.some(entry => invoiceManufacturerId(entry) === invoiceManufacturerId(picked))
+        ? { ...check, candidates: [...check.candidates, picked] } : check;
+    });
+  const manufacturerCorrections = draft
+    ? invoiceManufacturerCorrections(lines, manufacturerChecks, decisions.addressChoices, decisions.countryChoices) : {};
+  const origin = draft ? invoiceOriginCountries(draft.countryOfOrigin, lines.map(line =>
+    manufacturerCorrections[line.sourceRow]?.manufacturerCountry ?? line.manufacturerCountry)) : { missing: [], corrected: null };
+  const pending = rows.filter(row => row.issue !== null).length
+    + unreadLines.filter(entry => !invoicePoCellSettled(decisions, entry.line.sourceRow)).length
+    + rows.reduce((total, row) => total + row.points.filter(point => point.confirmed === false).length, 0)
+    + [...pricePoints].filter(([row, point]) => !invoicePriceChoiceReady(point, decisions.priceChoices[row])).length
+    + [...unitPoints.keys()].filter(row => !decisions.unitConfirmed[row]).length
+    + supplierMismatches.filter(supplier => !decisions.supplierConfirmed[supplier]).length
+    + divergences.filter(divergence => !invoicePackingChoiceReady(divergence, decisions.packingChoices[divergence.key])).length
+    + catalog.missing.filter(entry => !decisions.flaggedNcms[entry.sourceRow]
+      && !invoiceQuantityDecisionReady(decisions.missingDecisions[entry.sourceRow] ?? noAuditDecision)).length
+    + invoiceManufacturerPending(manufacturerChecks, decisions.addressChoices, decisions.countryChoices, decisions.manufacturerMissing);
+  const canDownload = ready && pending === 0 && rows.some(row => row.allocations.length > 0);
+  const quantityRows = [...new Set(rows.filter(row => row.points.some(point => point.confirmed === false))
+    .map(row => row.part.sourceRow))];
+  // A code out of the PO is settled only by destining 0; confirming alone leaves it pending.
+  const settledByConfirmation = (sourceRow: number) => rows.filter(row => row.part.sourceRow === sourceRow).every(row =>
+    !row.points.some(point => point.kind === "CODE")
+    || invoiceCodePoint(row.part.productCode, false, row.part.quantity, { confirmed: true, reason: "bulk" })?.confirmed === true);
+  const poCellRows = unreadLines.filter(entry => !invoicePoCellSettled(decisions, entry.line.sourceRow)).map(entry => entry.line.sourceRow);
+  const bulk: InvoiceAuditBulkRows = {
+    prices: [...pricePoints].map(([row, point]) => [row, point] as const),
+    packingKeys: divergences.map(divergence => divergence.key),
+    packingBothSheets: divergences.filter(divergence => divergence.invoice && divergence.packing).map(divergence => divergence.key),
+    quantityRows, quantitySettledByConfirmation: quantityRows.filter(settledByConfirmation), unitRows: [...unitPoints.keys()],
+    // An NCM not found in the DATABASE is kept (confirmation) or flagged; neither action changes the other's points.
+    catalogRows: catalog.missing.map(entry => entry.sourceRow).filter(row => !decisions.flaggedNcms[row]),
+    countryRows: manufacturerChecks.filter(check => invoiceManufacturerCountryPoint(check, decisions.addressChoices))
+      .map(check => check.sourceRow),
+    missingManufacturerRows: manufacturerChecks.filter(check => check.status === "MISSING"
+      && !check.candidates.some(entry => invoiceManufacturerId(entry) === decisions.addressChoices[check.sourceRow]))
+      .map(check => check.sourceRow),
+    // A PO cell without a proposal (no PO found in it) cannot be split: it stays pending for the split action.
+    poCellRows, splittableRows: unreadLines.filter(entry => poCellRows.includes(entry.line.sourceRow) && entry.split.length > 0)
+      .map(entry => entry.line.sourceRow),
+  };
+  const manufacturerChoices = new Map(manufacturerChecks.map(check => [check.sourceRow, {
+    chosen: check.candidates.find(entry => invoiceManufacturerId(entry) === decisions.addressChoices[check.sourceRow]) ?? null,
+    listCountry: invoiceManufacturerCountryPoint(check, decisions.addressChoices) }]));
+  return { ready, unreadLines, rows, pricePoints, unitPoints, supplierMismatches, divergences, catalog, manufacturerChecks,
+    manufacturerCorrections, manufacturerChoices, origin, pending, canDownload, bulk };
+}
+
+/** What the corrected invoice file takes from the audit: destined parts, corrected prices, PKL weights and references. */
+export function invoiceAuditCorrectionInput<T extends InvoiceAuditCandidate>(model: InvoiceAuditModel<T>,
+  decisions: InvoiceAuditDecisions) {
+  const prices = Object.fromEntries([...model.pricePoints].filter(([row]) => decisions.priceChoices[row] === "CORRECT")
+    .map(([row, point]) => [row, point.poPrices[0]]));
+  const reference: Record<number, Record<string, string>> = { ...invoiceCatalogCorrections(model.catalog.points) };
+  for (const [row, values] of Object.entries(model.manufacturerCorrections)) {
+    reference[Number(row)] = { ...reference[Number(row)], ...values };
+  }
+  return { parts: model.rows.map(row => ({ sourceRow: row.part.sourceRow, poNumber: row.part.poNumber, quantity: row.part.quantity })),
+    prices, weights: invoicePackingChoiceWeights(model.divergences, decisions.packingChoices), reference,
+    ncmFlagRows: model.catalog.missing.filter(entry => decisions.flaggedNcms[entry.sourceRow]).map(entry => entry.sourceRow) };
 }

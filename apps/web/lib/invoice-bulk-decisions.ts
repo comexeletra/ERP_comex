@@ -1,4 +1,5 @@
-import type { InvoicePriceChoice, InvoiceQuantityDecision } from "./china-invoice-mapping";
+import type { InvoiceAuditBulkRows, InvoiceAuditDecisions, InvoicePriceChoice, InvoiceQuantityDecision } from "./china-invoice-mapping";
+import type { Messages } from "./i18n/pt-BR";
 
 /**
  * Bulk decisions of the invoice audit page (stage 1g, user decisions of 2026-11-11): one action decides every point
@@ -80,4 +81,66 @@ export function bulkFlags<K extends string | number>(keys: readonly K[],
   const pending = pendingFlags(keys, current);
   return { next: { ...current, ...Object.fromEntries(pending.map(key => [key, true])) } as Partial<Record<K, boolean>>,
     applied: pending.length, left: 0 };
+}
+
+export type InvoiceAuditBulkGroup = { id: keyof Messages["invoiceAudit"]["bulk"]["groups"]; pending: number;
+  actions: { id: keyof Messages["invoiceAudit"]["bulk"]["actions"]; needsReason: boolean;
+    run: (reason: string) => BulkOutcome<InvoiceAuditDecisions> }[] };
+
+/**
+ * Every kind of point that one decision can settle (stage 1g), with the points still without a decision, for the audit
+ * page and the audit of the IP screen; each action returns the next decisions, filling only the points without one.
+ */
+export function invoiceAuditBulkGroups(rows: InvoiceAuditBulkRows, supplierMismatches: readonly string[],
+  decisions: InvoiceAuditDecisions): InvoiceAuditBulkGroup[] {
+  const into = <K extends keyof InvoiceAuditDecisions>(key: K, outcome: BulkOutcome<unknown>,
+    left = outcome.left): BulkOutcome<InvoiceAuditDecisions> =>
+    ({ next: { ...decisions, [key]: outcome.next as InvoiceAuditDecisions[K] }, applied: outcome.applied, left });
+  const catalogRows = pendingConfirmations(rows.catalogRows, decisions.missingDecisions);
+  return [
+    { id: "poCell", pending: rows.poCellRows.length, actions: [
+      { id: "acceptSplit", needsReason: false, run: () => into("splitAccepted", bulkFlags(rows.splittableRows, decisions.splitAccepted),
+        rows.poCellRows.length - rows.splittableRows.length) },
+      { id: "keepPoCell", needsReason: true, run: reason => into("poCellKept", bulkConfirmations(rows.poCellRows, decisions.poCellKept,
+        reason)) },
+    ] },
+    { id: "price", pending: pendingPrices(rows.prices, decisions.priceChoices).length, actions: [
+      { id: "acceptPrice", needsReason: false, run: () => into("priceChoices", bulkPriceChoices(rows.prices, decisions.priceChoices,
+        "ACCEPT")) },
+      { id: "correctPrice", needsReason: false, run: () => into("priceChoices", bulkPriceChoices(rows.prices, decisions.priceChoices,
+        "CORRECT")) },
+    ] },
+    { id: "packing", pending: pendingSources(rows.packingKeys, decisions.packingChoices).length, actions: [
+      { id: "keepInvoice", needsReason: true, run: reason => into("packingChoices", bulkSourceChoices(rows.packingKeys,
+        decisions.packingChoices, "INVOICE", reason)) },
+      { id: "usePacking", needsReason: true, run: reason => into("packingChoices", bulkSourceChoices(rows.packingKeys,
+        decisions.packingChoices, "PACKING", reason, key => rows.packingBothSheets.includes(key))) },
+    ] },
+    { id: "quantity", pending: pendingConfirmations(rows.quantityRows, decisions.quantityDecisions).length, actions: [
+      { id: "confirmQuantity", needsReason: true, run: reason => into("quantityDecisions", bulkConfirmations(rows.quantityRows,
+        decisions.quantityDecisions, reason, row => rows.quantitySettledByConfirmation.includes(row))) },
+    ] },
+    { id: "supplier", pending: pendingFlags(supplierMismatches, decisions.supplierConfirmed).length, actions: [
+      { id: "confirmSupplier", needsReason: false, run: () => into("supplierConfirmed", bulkFlags(supplierMismatches,
+        decisions.supplierConfirmed)) },
+    ] },
+    { id: "unit", pending: pendingFlags(rows.unitRows, decisions.unitConfirmed).length, actions: [
+      { id: "confirmUnit", needsReason: false, run: () => into("unitConfirmed", bulkFlags(rows.unitRows, decisions.unitConfirmed)) },
+    ] },
+    { id: "catalog", pending: catalogRows.length, actions: [
+      { id: "confirmCatalog", needsReason: true, run: reason => into("missingDecisions", bulkConfirmations(catalogRows,
+        decisions.missingDecisions, reason)) },
+      { id: "flagCatalog", needsReason: false, run: () => into("flaggedNcms", bulkFlags(catalogRows, decisions.flaggedNcms)) },
+    ] },
+    { id: "country", pending: pendingSources(rows.countryRows, decisions.countryChoices).length, actions: [
+      { id: "keepInvoiceCountry", needsReason: true, run: reason => into("countryChoices", bulkSourceChoices(rows.countryRows,
+        decisions.countryChoices, "INVOICE", reason)) },
+      { id: "useListCountry", needsReason: true, run: reason => into("countryChoices", bulkSourceChoices(rows.countryRows,
+        decisions.countryChoices, "LIST", reason)) },
+    ] },
+    { id: "manufacturer", pending: pendingConfirmations(rows.missingManufacturerRows, decisions.manufacturerMissing).length, actions: [
+      { id: "confirmManufacturer", needsReason: true, run: reason => into("manufacturerMissing", bulkConfirmations(
+        rows.missingManufacturerRows, decisions.manufacturerMissing, reason)) },
+    ] },
+  ];
 }
