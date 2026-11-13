@@ -432,5 +432,12 @@ da revisão que saiu foram levados para a subseção, com a mesma regra (lista n
 leitor o arquivo auditado das três invoices reais e confere que o payload grava as mesmas linhas e totais; na IPH037D, a linha 20 vai
 20 para a 030888 e 60 para a 030201. Type-check, lint (sem erro; avisos já existentes) e builds passaram.
 
-Pendências com o usuário: o teste no Preview (por exemplo a IPH034B, que revisa o `034B/2026`, e a IPH037D original, sem baixar e subir de
-novo); a etapa 6b (dúvida 1 aprovada; dúvida 4 em aberto); a versão certa de `invoices_tests/DATABASE - Renew.xlsx`.
+Teste do usuário no Preview (2026-11-13, conferido só leitura no HML): a IPH037D original (`IPH037D 2026       INV+PL.xlsx`, sem
+baixar e subir de novo) revisou o `IPH037D/2026` (versão 2 → 3, SEA, NGB, PEC e prioridade mantidos). O documento ativo guarda o SHA-256 do
+arquivo original e `metadata.audit` com o SHA-256 do arquivo auditado e as últimas cargas (DATABASE `3c9b5202…`, lista `a874732f…`). As 12
+alocações (49.740) são as mesmas da gravação anterior, com a linha 20 dividida (20 na 030888 e 60 na 030201); a invoice e as alocações
+anteriores ficaram canceladas pela revisão. Alterações gravadas: a célula da linha 20 e a NCM e a descrição das linhas 25 e 26 pela
+DATABASE. As 8 NCMs fora da DATABASE (linhas 16 a 23) foram sinalizadas, e nenhuma NCM foi ao cadastro; "Completar o cadastro" preencheu
+o fabricante vazio de 11 produtos.
+
+Pendências com o usuário: o teste da IPH034B, que revisa o `034B/2026`; a etapa 6b (dúvida 1 aprovada; dúvida 4 em aberto); a versão certa de `invoices_tests/DATABASE - Renew.xlsx`.
