@@ -1,5 +1,33 @@
 # API ERP na VPS Hostinger
 
+## Saldo sem IP como Aguardando produção e filtro "Sem IP" no HML (2026-11-13)
+
+O commit `88160e6` junta o status A DISTRIBUIR ao AGUARDANDO PRODUÇÃO, como o *Waiting Production* do BI, e cria o filtro
+`ip=with|without` nas linhas de produto, no resumo do End to End, no painel de Pré Embarque e nas exportações
+(`docs/PLANO_SEM_IP_AGUARDANDO_PRODUCAO.md`). `status=A DISTRIBUIR` passa a responder 400. Não há migration.
+
+O release `/opt/import-erp/apps/api/hml-release-4a655ab` (`git -c core.autocrlf=false archive 4a655ab:apps/api`, SHA-256 `eccfc09c…3f14a`,
+nenhuma fonte com CR; `deploy.tar` com os três arquivos do worker e `rehearse-line-status.mjs`, SHA-256 `255ff956…a498`) reaproveita o
+`node_modules` de `hml-release-000f84e` (lockfile, `package.json` e migrations iguais; ledger 82).
+- **Testes no release** (com `--test-skip-pattern` para os que importam a web, que rodaram no repositório): `shipment-lines` (21),
+  `pre-shipment-dashboard` (12), `purchase-order-export` (5), `export-jobs` (11), `followup-calculations` (26), `web-route-contract` (1)
+  e `api-error-response` (2).
+- **Ensaio só leitura antes de ativar** (`rehearse-line-status.mjs`, cada consulta em `BEGIN READ ONLY … ROLLBACK`): resumos do release
+  anterior e do novo com o filtro do exemplo do usuário (necessidade 2027-01-01 a 2027-02-28, Prioridade). Pré Embarque: antes A
+  distribuir 242.066 (7) + Aguardando produção 23.500 (1); depois Aguardando produção 265.566 (8), igual ao BI (265,57 mil); Sem IP
+  242.066; Com IP mais Sem IP igual ao total; demais status, total e aging iguais. End to End (só a necessidade): Aguardando produção
+  19.420.767 = 8.091.323 + 11.329.444, demais iguais. Contagens iguais antes e depois (alocações 6.360, itens 7.906, auditoria 22.570);
+  518 ms e 802 ms, heap 21 MB.
+- **Ativação:** drop-in de 82 `z` `…-release-4a655ab.conf`; worker movido com `enable-homologation-export-worker.sh 4a655ab`. Drop-ins
+  anteriores: `/var/backups/import-erp/hml-line-status-4a655ab-predeploy`.
+- **Conferência depois de ativar:** `/health/live` 200, `GET /api/v1/purchase-order-lines?ip=without` sem sessão 401, API e worker ativos
+  no `4a655ab`, RSS 142 MB. O Preview da `homologacao` (14:54) já traz os rótulos novos.
+- **Rollback somente do código:** remova o drop-in `4a655ab`, execute `systemctl daemon-reload`, reinicie `import-erp-hml-api` (volta a
+  `hml-release-000f84e`) e rode `enable-homologation-export-worker.sh 000f84e`. A web anterior pede `status=A DISTRIBUIR`, recusado por
+  esta API: volte as duas juntas. Script, filtros, resultado do ensaio e log em `/root/claude-release-4a655ab`.
+
+Produção, `main` e as variáveis da Vercel não foram alteradas.
+
 ## Fase B2: gravação da invoice auditada na tela do IP no HML (2026-11-13)
 
 O commit `000f84e` muda a gravação da invoice (`POST /api/v1/processes/import-invoice`): `metadata.audit` passa a ser obrigatório

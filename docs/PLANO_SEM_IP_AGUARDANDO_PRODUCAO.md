@@ -1,6 +1,6 @@
 # Tarefa: juntar "A distribuir" em "Aguardando produção" e criar o filtro "Sem IP"
 
-Status: implementada em 2026-11-13 (commit `88160e6`), aprovada pelo usuário antes da implementação.
+Status: implementada em 2026-11-13 (commit `88160e6`), aprovada pelo usuário antes da implementação; API HML no release `4a655ab` (`deploy/hostinger/README.md`).
 
 ## Objetivo
 
