@@ -17,7 +17,7 @@ const line = { lineId: "00000000-0000-4000-8000-000000000044", lineKind: "ALLOCA
   importer: "ELETRA MATRIZ", purpose: "Estoque Insumos (Componente)", poSentDate: "2025-10-24", priority: null,
   demand: "MRP", group: "Energy" };
 const summaryRows = [
-  { line_status: "A DISTRIBUIR", aging_days: 30, products: 2, quantity: "20.00000000" },
+  { line_status: "AGUARDANDO PRODUÇÃO", aging_days: 30, products: 2, quantity: "20.00000000" },
   { line_status: "AGUARDANDO PRODUÇÃO", aging_days: 50, products: 3, quantity: "30.50000000" },
   { line_status: "AGUARDANDO PRODUÇÃO", aging_days: null, products: 1, quantity: "5.00000000" },
   { line_status: "AGUARDANDO EMBARQUE", aging_days: 130, products: 4, quantity: "40.00000000" },
@@ -58,7 +58,7 @@ test("the aging ranges follow the BI: the upper bound belongs to the range, and 
     [61, "days60To90"], [90, "days60To90"], [91, "days90To120"], [120, "days90To120"], [121, "days120Plus"],
     [900, "days120Plus"], [null, null]];
   for (const [days, range] of cases) assert.equal(agingRange(days), range, String(days));
-  assert.deepEqual([...PRE_SHIPMENT_AGING_STATUSES], ["A DISTRIBUIR", "AGUARDANDO PRODUÇÃO", "AGUARDANDO EMBARQUE"]);
+  assert.deepEqual([...PRE_SHIPMENT_AGING_STATUSES], ["AGUARDANDO PRODUÇÃO", "AGUARDANDO EMBARQUE"]);
   assert.deepEqual([...PRE_SHIPMENT_DIRECT_PURPOSES], ["Estoque Insumos (Componente)", "Estoque Insumos (Policarbonato)"]);
 });
 
@@ -67,7 +67,7 @@ test("the summary counts products and exact quantities by status and aging range
   assert.equal(summary.totalProducts, 26);
   assert.equal(summary.totalQuantity, "1152.5");
   assert.deepEqual(Object.keys(summary.byStatus), [...shipmentLineStatuses]);
-  assert.deepEqual(summary.byStatus["AGUARDANDO PRODUÇÃO"], { products: 4, quantity: "35.5" });
+  assert.deepEqual(summary.byStatus["AGUARDANDO PRODUÇÃO"], { products: 6, quantity: "55.5" });
   assert.deepEqual(summary.byStatus.CANCELADO, { products: 1, quantity: "7" });
   assert.deepEqual(summary.byStatus.DESEMBARAÇO, { products: 0, quantity: "0" });
   // Only the lines waiting for the factory or the shipment have an aging; delivered and in transit do not.
@@ -82,17 +82,17 @@ test("each chart ignores its own selection and follows the other one", () => {
   // The status cards keep every status, limited to the chosen aging range.
   assert.equal(byAging.byStatus["AGUARDANDO EMBARQUE"].products, 4);
   assert.equal(byAging.byStatus.ENTREGUE.products, 0);
-  assert.equal(byAging.byStatus["A DISTRIBUIR"].products, 0);
+  assert.equal(byAging.byStatus["AGUARDANDO PRODUÇÃO"].products, 0);
   // The aging chart keeps every range.
   assert.equal(byAging.aging.upTo45.products, 2);
   assert.equal(byAging.totalProducts, 4);
 
   const byStatus = summarizePreShipment(summaryRows, { status: ["AGUARDANDO PRODUÇÃO"] });
   assert.equal(byStatus.byStatus.ENTREGUE.products, 10);
-  assert.deepEqual(byStatus.aging.upTo45, { products: 0, quantity: "0" });
+  assert.deepEqual(byStatus.aging.upTo45, { products: 2, quantity: "20" });
   assert.equal(byStatus.aging.days45To60.products, 3);
   assert.equal(byStatus.agingWithoutSentDate.products, 1);
-  assert.equal(byStatus.totalProducts, 4);
+  assert.equal(byStatus.totalProducts, 6);
 
   // A status outside the aging leaves the aging chart empty instead of showing other lines.
   const delivered = summarizePreShipment(summaryRows, { status: ["ENTREGUE"] });
@@ -101,7 +101,7 @@ test("each chart ignores its own selection and follows the other one", () => {
 
 test("the summary route takes the filters, keeps the scope and calculates the aging from today in Brasília", async t => {
   const { app, queries } = await dashboardApp(t);
-  const url = "/api/v1/reports/pre-shipment/summary?status=ENTREGUE&aging=upTo45&priority=normal&direct=direct"
+  const url = "/api/v1/reports/pre-shipment/summary?status=ENTREGUE&aging=upTo45&priority=normal&direct=direct&ip=without"
     + "&demand=MRP&requester=PCM%20-%20JOSIVAN&group=Energy&supplier=Hexing&purpose=Despesa&importers=FOR&modes=SEA"
     + "&scNumber=238&ipNumber=H-For&purchaseOrder=235&productCode=2140&productDescription=antena"
     + "&necessityFrom=2026-02-01&necessityTo=2026-02-28";
@@ -114,6 +114,8 @@ test("the summary route takes the filters, keeps the scope and calculates the ag
   // The status and aging selections are applied by the summary (cross-filter), not by the query.
   assert.equal(params.includes("ENTREGUE"), false);
   assert.match(sql, /nullif\(btrim\(item\.priority\), ''\) IS NULL/u);
+  // Sem IP keeps only the balance without IP; Com IP only the allocations.
+  assert.match(sql, /\n {6}AND l\.line_kind = 'BALANCE'/u);
   assert.match(sql, /lower\(btrim\(coalesce\(item\.purpose, ''\)\)\) IN \(SELECT lower\(value\) FROM unnest\(\$\d+::text\[\]\)/u);
   for (const value of [["MRP"], ["PCM - JOSIVAN"], ["Energy"], ["Hexing"], ["Despesa"], ["FOR"], ["SEA"], [...PRE_SHIPMENT_DIRECT_PURPOSES],
     "238", "H-For", "235", "2140", "antena", "2026-02-01", "2026-02-28"]) {
@@ -122,6 +124,10 @@ test("the summary route takes the filters, keeps the scope and calculates the ag
   const body = response.json();
   assert.equal(body.byStatus.ENTREGUE.products, 0);
   assert.equal(body.aging.upTo45.products, 0);
+  assert.equal((await app.inject("/api/v1/reports/pre-shipment/summary?ip=with")).statusCode, 200);
+  const withIp = queries.filter(query => query.sql.includes("GROUP BY line_status, aging_days")).at(-1).sql;
+  assert.match(withIp, /\n {6}AND l\.line_kind = 'ALLOCATION'/u);
+  assert.doesNotMatch(withIp, /\n {6}AND l\.line_kind = 'BALANCE'/u);
 });
 
 test("cancelled POs and the balance of items cancelled in TOTVS count as cancelled; deleted POs stay out", async t => {
@@ -158,6 +164,7 @@ test("the routes refuse unknown or invalid parameters", async t => {
   const { app, queries } = await dashboardApp(t);
   for (const url of ["/api/v1/reports/pre-shipment/summary?other=1", "/api/v1/reports/pre-shipment/summary?aging=days200",
     "/api/v1/reports/pre-shipment/summary?priority=high", "/api/v1/reports/pre-shipment/summary?direct=yes",
+    "/api/v1/reports/pre-shipment/summary?ip=sem", "/api/v1/reports/pre-shipment/summary?status=A%20DISTRIBUIR",
     "/api/v1/reports/pre-shipment/lines?page=0", "/api/v1/reports/pre-shipment/lines?pageSize=500",
     "/api/v1/reports/pre-shipment/summary?necessityFrom=01/02/2026"]) {
     const response = await app.inject(url);
@@ -192,7 +199,7 @@ test("the filters built by the web pass the API query schema", async () => {
   const { emptyPreShipmentFilters, preShipmentLinesQuery, preShipmentSummaryQuery } =
     await import("../../web/lib/pre-shipment-dashboard.ts");
   const filters = { ...emptyPreShipmentFilters, status: ["AGUARDANDO PRODUÇÃO", "CANCELADO"], aging: ["days120Plus"],
-    priority: "priority", direct: "notDirect", demand: ["MRP"], requester: ["PCM - JOSIVAN"], group: ["Energy"],
+    priority: "priority", direct: "notDirect", ip: "with", demand: ["MRP"], requester: ["PCM - JOSIVAN"], group: ["Energy"],
     supplier: ["Hexing"], purpose: ["Despesa", "Software"], importers: ["FOR"], modes: ["SEA"], scNumber: " 238 ",
     ipNumber: "H-For", purchaseOrder: "235", productCode: "2140", productDescription: "antena",
     necessityFrom: "2026-02-01", necessityTo: "2026-02-28", necessityPeriod: "month:0:0" };
@@ -201,8 +208,8 @@ test("the filters built by the web pass the API query schema", async () => {
   const summary = asQuery(preShipmentSummaryQuery(filters));
   const parsed = preShipmentQuery.strict().safeParse(summary);
   assert.equal(parsed.success, true, JSON.stringify(summary));
-  assert.deepEqual([parsed.data.status, parsed.data.aging, parsed.data.purpose, parsed.data.scNumber, parsed.data.necessityTo],
-    [["AGUARDANDO PRODUÇÃO", "CANCELADO"], ["days120Plus"], ["Despesa", "Software"], "238", "2026-02-28"]);
+  assert.deepEqual([parsed.data.status, parsed.data.aging, parsed.data.purpose, parsed.data.scNumber, parsed.data.necessityTo,
+    parsed.data.ip], [["AGUARDANDO PRODUÇÃO", "CANCELADO"], ["days120Plus"], ["Despesa", "Software"], "238", "2026-02-28", "with"]);
   const page = asQuery(preShipmentLinesQuery(filters, 3, 50));
   assert.equal(preShipmentQuery.extend({ page: z.coerce.number(), pageSize: z.coerce.number() }).strict()
     .safeParse(page).success, true, JSON.stringify(page));
@@ -217,7 +224,7 @@ test("the web lists of statuses and aging ranges match the API", async () => {
 
 const pivotLine = (status, quantity, poSentDate) => ({ ...line, status, quantity, poSentDate });
 const pivotLines = [
-  pivotLine("A DISTRIBUIR", "20.00000000", "2026-09-21"), // 45 days before 2026-11-05: up to 45
+  pivotLine("AGUARDANDO PRODUÇÃO", "20.00000000", "2026-09-21"), // 45 days before 2026-11-05: up to 45
   pivotLine("AGUARDANDO PRODUÇÃO", "10.50000000", "2026-09-20"), // 46 days: 45 to 60
   pivotLine("AGUARDANDO PRODUÇÃO", "5.00000000", null), // no sent date
   pivotLine("AGUARDANDO EMBARQUE", "40.00000000", "2026-07-07"), // 121 days: over 120
@@ -230,14 +237,14 @@ test("the export summary is a pivot of the exported lines, with the aging of the
   const pivot = summarizePreShipmentLines(pivotLines, "2026-11-05");
   assert.equal(pivot.totalProducts, 6);
   assert.equal(pivot.totalQuantity, "1082.5");
-  assert.deepEqual(pivot.byStatus["AGUARDANDO PRODUÇÃO"], { products: 2, quantity: "15.5" });
+  assert.deepEqual(pivot.byStatus["AGUARDANDO PRODUÇÃO"], { products: 3, quantity: "35.5" });
   assert.deepEqual(pivot.byStatus.DESEMBARAÇO, { products: 0, quantity: "0" });
   assert.deepEqual(Object.fromEntries(Object.entries(pivot.aging).map(([range, part]) => [range, part.products])),
     { upTo45: 1, days45To60: 1, days60To90: 0, days90To120: 0, days120Plus: 1 });
   assert.deepEqual(pivot.agingWithoutSentDate, { products: 1, quantity: "5" });
   // Aging by status: the waiting statuses by range, and those without a sent date.
   assert.deepEqual(Object.keys(pivot.agingByStatus), [...PRE_SHIPMENT_AGING_STATUSES]);
-  assert.equal(pivot.agingByStatus["A DISTRIBUIR"].upTo45.products, 1);
+  assert.equal(pivot.agingByStatus["AGUARDANDO PRODUÇÃO"].upTo45.products, 1);
   assert.equal(pivot.agingByStatus["AGUARDANDO PRODUÇÃO"].days45To60.products, 1);
   assert.equal(pivot.agingByStatus["AGUARDANDO PRODUÇÃO"].none.products, 1);
   assert.equal(pivot.agingByStatus["AGUARDANDO EMBARQUE"].days120Plus.products, 1);
@@ -249,7 +256,7 @@ test("the export has a Resumo sheet before the lines, with the filters and the p
   const { resolveExportColumns } = await import("../dist/export-columns.js");
   const columns = resolveExportColumns("pre-shipment", [{ key: "status", header: "Status" }], {});
   const buffer = await preShipmentXlsx(pivotLines, columns, { today: "2026-11-05",
-    filters: { status: ["AGUARDANDO PRODUÇÃO", "ENTREGUE"], aging: ["days120Plus"], direct: "direct", demand: ["MRP"],
+    filters: { status: ["AGUARDANDO PRODUÇÃO", "ENTREGUE"], aging: ["days120Plus"], direct: "direct", ip: "without", demand: ["MRP"],
       productCode: "3090", necessityFrom: "2026-02-01", necessityTo: "2026-02-28" } });
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
@@ -263,13 +270,14 @@ test("the export has a Resumo sheet before the lines, with the filters and the p
   assert.deepEqual(find("Status"), ["Status", "AGUARDANDO PRODUÇÃO, ENTREGUE"]);
   assert.deepEqual(find("Aging"), ["Aging", "Acima de 120 dias"]);
   assert.deepEqual(find("Direct"), ["Direct", "Direct"]);
+  assert.deepEqual(find("Distribuição em IP"), ["Distribuição em IP", "Sem IP"]);
   assert.deepEqual(find("Demanda"), ["Demanda", "MRP"]);
   assert.deepEqual(find("Código do produto (contém)"), ["Código do produto (contém)", "3090"]);
   assert.deepEqual(find("Necessidade"), ["Necessidade", "2026-02-01 a 2026-02-28"]);
   // Products and quantity by status, with shares and the total.
   const production = find("AGUARDANDO PRODUÇÃO");
   assert.deepEqual(production.slice(0, 5).map(value => typeof value === "number" ? Number(value.toFixed(4)) : value),
-    ["AGUARDANDO PRODUÇÃO", 2, 0.3333, 15.5, 0.0143]);
+    ["AGUARDANDO PRODUÇÃO", 3, 0.5, 35.5, 0.0328]);
   const totals = rows.filter(row => row[0] === "Total");
   assert.deepEqual(totals[0].slice(0, 5), ["Total", 6, 1, 1082.5, 1]);
   // Aging by range, out of the total the products without a PO sent date.
@@ -281,7 +289,7 @@ test("the export has a Resumo sheet before the lines, with the filters and the p
   assert.deepEqual(header, ["Status / Faixa", "Até 45 dias", "45 a 60 dias", "60 a 90 dias", "90 a 120 dias",
     "Acima de 120 dias", "Sem PO Sent Date", "Total"]);
   const matrixProduction = rows.filter(row => row[0] === "AGUARDANDO PRODUÇÃO").at(-1);
-  assert.deepEqual(matrixProduction, ["AGUARDANDO PRODUÇÃO", 0, 1, 0, 0, 0, 1, 2]);
+  assert.deepEqual(matrixProduction, ["AGUARDANDO PRODUÇÃO", 1, 1, 0, 0, 0, 1, 3]);
   // The lines sheet keeps the chosen columns.
   assert.equal(workbook.getWorksheet("Pré Embarque").actualRowCount, pivotLines.length + 1);
 });

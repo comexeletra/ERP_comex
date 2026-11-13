@@ -85,6 +85,11 @@ export default function ProductLinesView({ initialQuery }: { initialQuery: strin
           <option value="">{m.processDirectory.all}</option>
           {productLineStatuses.map(status => <option key={status} value={status}>{statusLabel(m, status)}</option>)}
         </select></label>
+        <label>{t.ipFilter}<select value={draft.ip} onChange={event => setDraft({ ...draft, ip: event.target.value as ProductLineFilters["ip"] })}>
+          <option value="">{m.processDirectory.all}</option>
+          <option value="with">{t.withIp}</option>
+          <option value="without">{t.withoutIp}</option>
+        </select></label>
         <label>{t.etaFrom}<input type="date" value={draft.etaFrom} onChange={event => setDraft({ ...draft, etaFrom: event.target.value })} /></label>
         <label>{t.etaTo}<input type="date" value={draft.etaTo} onChange={event => setDraft({ ...draft, etaTo: event.target.value })} /></label>
         <label>{t.situation}<select value={draft.situation} onChange={event => setDraft({ ...draft, situation: event.target.value as ProductLineFilters["situation"] })}>

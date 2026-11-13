@@ -22,7 +22,7 @@ const defaultRows = [
       etd: "2026-09-01", bl_number: "BL-1", bl_date: "2026-09-03", arrival_date: null, logistics_status: null,
       freight_cost: 1500, taxes_paid_brl: 900, demurrage_brl: 10 } },
   { line_id: itemId, line_kind: "BALANCE", line_quantity: "40.00000000",
-    factory_ship_date: null, line_status: "A DISTRIBUIR", purchase_order: purchaseOrder, item, process: null },
+    factory_ship_date: null, line_status: "AGUARDANDO PRODUÇÃO", purchase_order: purchaseOrder, item, process: null },
 ];
 const defaultDocuments = [{ id: "00000000-0000-4000-8000-000000000045", process_id: processId, kind: "INVOICE",
   status: "ACTIVE", number: "INV-1", purchase_order_item_id: null }];
@@ -73,10 +73,11 @@ test("product lines repeat the IP dates on each allocation and show the remainin
   assert.equal(balance.quantity, "40.00000000");
   assert.equal(balance.process, null);
   assert.deepEqual(Object.keys(balance.calculated), ["status", "e2e"]);
-  assert.equal(balance.calculated.status, "A DISTRIBUIR");
+  // The balance without IP waits for production, as in the Follow Up and the BI (user decision of 2026-11-13).
+  assert.equal(balance.calculated.status, "AGUARDANDO PRODUÇÃO");
   // The balance without IP still runs the E2E stages that do not depend on an IP.
   assert.equal(balance.calculated.e2e.stages.T0.deadline, "2026-08-01");
-  assert.equal(balance.calculated.e2e.currentStatus, "A DISTRIBUIR");
+  assert.equal(balance.calculated.e2e.currentStatus, "AGUARDANDO PRODUÇÃO");
   assert.equal(balance.calculated.e2e.stages.T4.deadline, null);
   assert.equal(allocation.calculated.e2e.stages.T4.targetDays, 55);
   const documents = queries.find(query => query.sql.includes("WHERE process_id = ANY($1::uuid[])"));
@@ -96,8 +97,29 @@ test("filters are validated and passed to the query; open lines are the default"
   assert.ok(lines.params.includes("2026-10-01") && lines.params.includes("2026-10-31"));
   assert.ok(lines.params.includes("open"));
   assert.ok(lines.params.includes(25) && lines.params.includes(25));
-  assert.deepEqual(shipmentLineStatuses, ["A DISTRIBUIR", "AGUARDANDO PRODUÇÃO", "AGUARDANDO EMBARQUE",
+  assert.deepEqual(shipmentLineStatuses, ["AGUARDANDO PRODUÇÃO", "AGUARDANDO EMBARQUE",
     "AGUARDANDO CHEGADA", "DESEMBARAÇO", "ENTREGUE", "CANCELADO"]);
+});
+
+test("the IP filter keeps the lines with an IP or only the balance without IP", async t => {
+  const { app, queries } = await linesApp(t);
+  const lineQuery = () => queries.filter(query => query.sql.includes("line_kind")).at(-1);
+  for (const [query, value] of [["ip=without", "without"], ["ip=with", "with"], ["", null]]) {
+    for (const route of ["/api/v1/purchase-order-lines", "/api/v1/purchase-order-lines/e2e-stages"]) {
+      const response = await app.inject({ method: "GET", url: `${route}?${query}` });
+      assert.equal(response.statusCode, 200, response.body);
+      // The IP filter is the last parameter before the page.
+      assert.equal(lineQuery().params.at(-3), value, `${route}?${query}`);
+    }
+  }
+  assert.match(lineQuery().sql, /\$18::text IS NULL OR \(\$18::text = 'without'\) = \(l\.line_kind = 'BALANCE'\)/u);
+  assert.match(lineQuery().sql, /LIMIT \$19 OFFSET \$20/u);
+  // The balance status was merged into AGUARDANDO PRODUÇÃO: the old status and unknown IP values are refused.
+  for (const query of ["ip=sem", "ip=", "status=A%20DISTRIBUIR"]) {
+    const invalid = await app.inject({ method: "GET", url: `/api/v1/purchase-order-lines?${query}` });
+    assert.equal(invalid.statusCode, 400, query);
+  }
+  assert.deepEqual(shipmentLineQuery.parse({ ip: "without" }), { ip: "without", situation: "open" });
 });
 
 test("a delivered or cancelled status reaches its lines even with the open lines default", async t => {
@@ -220,7 +242,7 @@ test("the End to End summary filters built by the web pass the API query schema"
   const { from, to } = resolveDateRange({ kind: "relative", range: thisMonth, excludeOpen: false }, "2026-11-04");
   const filters = { ...emptyProductLineFilters, status: ["AGUARDANDO CHEGADA", "ENTREGUE"], group: [" Energy ", "Water"],
     purpose: ["Despesa"], importers: ["FOR"], purchaseOrders: ["PO-9", "PO-10"], ipNumbers: ["IP-1"], productCodes: ["P-2"],
-    necessityFrom: from, necessityTo: to, necessityPeriod: formatRelativeSpec(thisMonth, false) };
+    ip: "without", necessityFrom: from, necessityTo: to, necessityPeriod: formatRelativeSpec(thisMonth, false) };
   const stage = { ...emptyE2eStageFilter, stage: "T4", demandType: "mts" };
   // The query string repeats a key for each value, as Fastify reads it: one value is a string, more an array.
   const asQuery = params => Object.fromEntries([...new Set(params.keys())].map(key =>
@@ -232,6 +254,7 @@ test("the End to End summary filters built by the web pass the API query schema"
     parsed.data.purchaseOrders, parsed.data.ipNumbers, parsed.data.productCodes, parsed.data.necessityFrom, parsed.data.necessityTo],
   [["AGUARDANDO CHEGADA", "ENTREGUE"], ["Energy", "Water"], ["Despesa"], ["FOR"], ["PO-9", "PO-10"], ["IP-1"], ["P-2"],
     "2026-11-01", "2026-11-30"]);
+  assert.equal(parsed.data.ip, "without");
   const page = asQuery(productLineQuery(filters, 2, 50, stage));
   assert.equal(shipmentLineQuery.extend({ page: z.coerce.number(), pageSize: z.coerce.number() }).strict()
     .safeParse(page).success, true, JSON.stringify(page));
@@ -281,7 +304,7 @@ const stageRows = [
   allocation("00000000-0000-4000-8000-000000000061", stageProcess(processIds[0], "IP-SEA")),
   // Balance planned for 2099: in T0 and on time.
   { line_id: futureItem.id, line_kind: "BALANCE", line_quantity: "5.00000000", factory_ship_date: null,
-    line_status: "A DISTRIBUIR", purchase_order: purchaseOrder, item: futureItem, process: null },
+    line_status: "AGUARDANDO PRODUÇÃO", purchase_order: purchaseOrder, item: futureItem, process: null },
   // Delivered: out of the current stages, but it went through T3 (+7) and T4 (on time).
   allocation("00000000-0000-4000-8000-000000000062", stageProcess(processIds[1], "IP-DONE",
     { arrival_date: "2020-11-20", delivery_date: "2020-11-28" })),
@@ -337,13 +360,12 @@ test("the E2E stage summary counts stages and exact item quantities by status an
   assert.deepEqual(body.stages.T3, { current: 0, currentLate: 0, reached: 3, reachedLate: 3 });
   assert.deepEqual(body.stages.T4, { current: 2, currentLate: 2, reached: 1, reachedLate: 0 });
   assert.deepEqual(body.stages.T5, { current: 0, currentLate: 0, reached: 1, reachedLate: 0 });
-  assert.deepEqual(Object.keys(body.overview.byStatus), ["A DISTRIBUIR", "AGUARDANDO PRODUÇÃO",
+  assert.deepEqual(Object.keys(body.overview.byStatus), ["AGUARDANDO PRODUÇÃO",
     "AGUARDANDO EMBARQUE", "AGUARDANDO CHEGADA", "DESEMBARAÇO", "ENTREGUE"]);
   assert.deepEqual(Object.keys(body.overview.byDeadline), ["onTime", "onLimit", "late", "noData"]);
-  assert.deepEqual(body.overview.byStatus["A DISTRIBUIR"], { quantity: "5", lines: 1 });
+  assert.deepEqual(body.overview.byStatus["AGUARDANDO PRODUÇÃO"], { quantity: "5", lines: 1 });
   assert.deepEqual(body.overview.byStatus["AGUARDANDO CHEGADA"], { quantity: "0.3", lines: 2 });
   assert.deepEqual(body.overview.byStatus.ENTREGUE, { quantity: "1", lines: 1 });
-  assert.deepEqual(body.overview.byStatus["AGUARDANDO PRODUÇÃO"], { quantity: "0", lines: 0 });
   assert.deepEqual(body.overview.byDeadline.noData, { quantity: "5", lines: 1 });
   assert.deepEqual(body.overview.byDeadline.late, { quantity: "1.3", lines: 3 });
   assert.equal(Object.values(body.overview.byStatus).reduce((sum, part) => sum + part.lines, 0), body.totalCount);
@@ -405,12 +427,12 @@ test("the delay range chart cross-filters with the status and deadline charts", 
 
   const upTo30 = await get("delayRange=upTo30");
   assert.deepEqual(upTo30.overview.byDelayRange, all.overview.byDelayRange);
-  assert.deepEqual(upTo30.overview.byStatus["A DISTRIBUIR"], { quantity: "0", lines: 0 });
+  assert.deepEqual(upTo30.overview.byStatus["AGUARDANDO PRODUÇÃO"], { quantity: "0", lines: 0 });
   assert.deepEqual(upTo30.overview.byStatus["AGUARDANDO CHEGADA"], { quantity: "1", lines: 1 });
   assert.deepEqual(upTo30.overview.byDeadline.late, { quantity: "2", lines: 2 });
   assert.deepEqual([upTo30.totalCount, upTo30.delivered], [2, 1]);
 
-  const balance = await get("status=A%20DISTRIBUIR");
+  const balance = await get("status=AGUARDANDO%20PRODU%C3%87%C3%83O");
   assert.deepEqual(balance.overview.byDelayRange.noData, { quantity: "5", lines: 1 });
   assert.deepEqual(balance.overview.byDelayRange.upTo30, { quantity: "0", lines: 0 });
 
@@ -454,7 +476,7 @@ test("the charts follow the table filters while the stage cards keep every stage
   // Demand type and transport mode filter everything, the stage cards included.
   const sea = await get("modal=sea");
   assert.deepEqual([sea.totalCount, sea.delivered, sea.stages.T0.current, sea.stages.T4.current], [2, 1, 0, 1]);
-  assert.deepEqual(sea.overview.byStatus["A DISTRIBUIR"], { quantity: "0", lines: 0 });
+  assert.deepEqual(sea.overview.byStatus["AGUARDANDO PRODUÇÃO"], { quantity: "0", lines: 0 });
   assert.deepEqual(sea.overview.byStatus["AGUARDANDO CHEGADA"], { quantity: "1", lines: 1 });
   const notMts = await get("demandType=notMts");
   assert.deepEqual([notMts.totalCount, notMts.overview.byDeadline.late.lines], [0, 0]);
@@ -493,13 +515,13 @@ test("each summary chart ignores its own filter and follows the other one", asyn
 
   const late = await get("deadline=late");
   assert.deepEqual(late.overview.byDeadline, all.overview.byDeadline);
-  assert.deepEqual(late.overview.byStatus["A DISTRIBUIR"], { quantity: "0", lines: 0 });
+  assert.deepEqual(late.overview.byStatus["AGUARDANDO PRODUÇÃO"], { quantity: "0", lines: 0 });
   assert.deepEqual(late.overview.byStatus["AGUARDANDO CHEGADA"], { quantity: "0.3", lines: 2 });
   assert.deepEqual(late.overview.byStatus.ENTREGUE, { quantity: "1", lines: 1 });
   assert.deepEqual([late.totalCount, late.delivered, late.stages.T0.current], [3, 1, 0]);
 
   const both = await get("status=ENTREGUE&deadline=noData");
-  assert.deepEqual(both.overview.byStatus["A DISTRIBUIR"], { quantity: "5", lines: 1 });
+  assert.deepEqual(both.overview.byStatus["AGUARDANDO PRODUÇÃO"], { quantity: "5", lines: 1 });
   assert.equal(Object.values(both.overview.byStatus).reduce((sum, part) => sum + part.lines, 0), 1);
   assert.deepEqual(both.overview.byDeadline.late, { quantity: "1", lines: 1 });
   assert.equal(Object.values(both.overview.byDeadline).reduce((sum, part) => sum + part.lines, 0), 1);
@@ -541,7 +563,7 @@ test("the deadline and delay range filters take one or more values, in the table
   assert.equal(Object.values(both.overview.byStatus).reduce((sum, part) => sum + part.lines, 0), 3);
   const ranges = await get("/e2e-stages", "delayRange=upTo30&delayRange=inAdvance");
   assert.deepEqual(ranges.overview.byDelayRange, all.overview.byDelayRange);
-  assert.deepEqual(ranges.overview.byStatus["A DISTRIBUIR"], { quantity: "0", lines: 0 });
+  assert.deepEqual(ranges.overview.byStatus["AGUARDANDO PRODUÇÃO"], { quantity: "0", lines: 0 });
   assert.equal(ranges.totalCount, 2);
   for (const query of ["deadline=late&deadline=foo", "delayRange=upTo30&delayRange=late"]) {
     const invalid = await app.inject({ method: "GET", url: `/api/v1/purchase-order-lines?${query}` });

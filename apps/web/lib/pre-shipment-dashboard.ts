@@ -3,14 +3,17 @@
  * GET /api/v1/reports/pre-shipment/summary and /lines. The API test checks that these lists match its own.
  */
 
-/** Status of a product line, as calculated by the API (the same list as the product lines). */
-export const preShipmentStatuses = ["A DISTRIBUIR", "AGUARDANDO PRODUÇÃO", "AGUARDANDO EMBARQUE",
+/**
+ * Status of a product line, as calculated by the API (the same list as the product lines). The balance without IP
+ * is AGUARDANDO PRODUÇÃO, as the BI "Waiting Production"; the IP filter tells it apart.
+ */
+export const preShipmentStatuses = ["AGUARDANDO PRODUÇÃO", "AGUARDANDO EMBARQUE",
   "AGUARDANDO CHEGADA", "DESEMBARAÇO", "ENTREGUE", "CANCELADO"] as const;
 export type PreShipmentStatus = typeof preShipmentStatuses[number];
 
 /** Colours of the statuses: those of the End to End status chart, and grey for the cancelled lines. */
 export const preShipmentStatusColors: Record<PreShipmentStatus, string> = {
-  "A DISTRIBUIR": "--color-chart-status-1", "AGUARDANDO PRODUÇÃO": "--color-chart-status-2",
+  "AGUARDANDO PRODUÇÃO": "--color-chart-status-2",
   "AGUARDANDO EMBARQUE": "--color-chart-status-3", "AGUARDANDO CHEGADA": "--color-chart-status-4",
   DESEMBARAÇO: "--color-chart-status-5", ENTREGUE: "--color-chart-status-6", CANCELADO: "--color-chart-no-data",
 };
@@ -32,13 +35,15 @@ export const preShipmentAgingColors: Record<PreShipmentAgingRange, string> = {
 export type PreShipmentFilters = {
   status: PreShipmentStatus[]; aging: PreShipmentAgingRange[];
   priority: "" | "priority" | "normal"; direct: "" | "direct" | "notDirect";
+  /** Only the lines with an IP or only the balance without IP. */
+  ip: "" | "with" | "without";
   demand: string[]; requester: string[]; group: string[]; supplier: string[]; purpose: string[]; importers: string[];
   modes: string[];
   scNumber: string; ipNumber: string; purchaseOrder: string; productCode: string; productDescription: string;
   necessityFrom: string; necessityTo: string; necessityPeriod: string;
 };
 
-export const emptyPreShipmentFilters: PreShipmentFilters = { status: [], aging: [], priority: "", direct: "",
+export const emptyPreShipmentFilters: PreShipmentFilters = { status: [], aging: [], priority: "", direct: "", ip: "",
   demand: [], requester: [], group: [], supplier: [], purpose: [], importers: [], modes: [],
   scNumber: "", ipNumber: "", purchaseOrder: "", productCode: "", productDescription: "",
   necessityFrom: "", necessityTo: "", necessityPeriod: "" };
@@ -54,10 +59,12 @@ export function parsePreShipmentFilters(params: URLSearchParams): PreShipmentFil
   const date = (key: string) => { const value = params.get(key) ?? ""; return isoDate.test(value) ? value : ""; };
   const priority = params.get("priority");
   const direct = params.get("direct");
+  const ip = params.get("ip");
   const filters: PreShipmentFilters = { ...emptyPreShipmentFilters,
     status: inOrder(preShipmentStatuses, params.getAll("status")), aging: inOrder(preShipmentAgingRanges, params.getAll("aging")),
     priority: priority === "priority" || priority === "normal" ? priority : "",
     direct: direct === "direct" || direct === "notDirect" ? direct : "",
+    ip: ip === "with" || ip === "without" ? ip : "",
     necessityFrom: date("necessityFrom"), necessityTo: date("necessityTo"),
     necessityPeriod: (params.get("necessityPeriod") ?? "").slice(0, 24) };
   for (const key of listKeys) filters[key] = cleanList(params.getAll(key));
@@ -77,6 +84,7 @@ export function preShipmentFilterBody(filters: PreShipmentFilters): Record<strin
   if (aging.length) body.aging = aging;
   if (filters.priority) body.priority = filters.priority;
   if (filters.direct) body.direct = filters.direct;
+  if (filters.ip) body.ip = filters.ip;
   for (const key of listKeys) { const values = cleanList(filters[key]); if (values.length) body[key] = values; }
   for (const key of textKeys) if (filters[key].trim()) body[key] = filters[key].trim();
   if (filters.necessityFrom) body.necessityFrom = filters.necessityFrom;

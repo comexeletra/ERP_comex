@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { activeProductLineFilterCount, e2eDeadlineStatuses, e2eDelayRanges, e2eOverviewFilterCount, e2eStageCodes, e2eStageFilterBody,
   e2eSummaryQuery, emptyE2eStageFilter, emptyProductLineFilters, itemShipmentSummary, nextChartSelection, parseE2eStageFilter,
-  parseProductLineFilters, productLineFilterBody, productLineQuery, withE2eLists, withProductLineStatus } from "../lib/purchase-order-lines.ts";
+  parseProductLineFilters, productLineFilterBody, productLineQuery, productLineStatuses, withE2eLists,
+  withProductLineStatus } from "../lib/purchase-order-lines.ts";
 
 test("product line filters round-trip through the URL and ignore invalid values", () => {
   const filters = parseProductLineFilters(new URLSearchParams(
@@ -23,16 +24,17 @@ test("product line filters round-trip through the URL and ignore invalid values"
 
 test("the list filters keep several values in the URL, repeating the key, and send them to the API", () => {
   const filters = parseProductLineFilters(new URLSearchParams("status=ENTREGUE&status=WAITING&status=A%20DISTRIBUIR"
-    + "&status=ENTREGUE&group=Energy&group=%20Water%20&group=&importers=FOR&purchaseOrders=PO-9&purchaseOrders=PO-10"
-    + "&ipNumbers=IP-1&productCodes=P-2"));
-  // Statuses keep the order of the list; invalid, empty and repeated values are dropped.
-  assert.deepEqual(filters.status, ["A DISTRIBUIR", "ENTREGUE"]);
+    + "&status=AGUARDANDO%20PRODU%C3%87%C3%83O&status=ENTREGUE&group=Energy&group=%20Water%20&group=&importers=FOR"
+    + "&purchaseOrders=PO-9&purchaseOrders=PO-10&ipNumbers=IP-1&productCodes=P-2"));
+  // Statuses keep the order of the list; invalid, empty and repeated values are dropped. A DISTRIBUIR of an older
+  // link is now part of AGUARDANDO PRODUÇÃO, so it is dropped too.
+  assert.deepEqual(filters.status, ["AGUARDANDO PRODUÇÃO", "ENTREGUE"]);
   assert.deepEqual([filters.group, filters.importers, filters.purchaseOrders, filters.ipNumbers, filters.productCodes],
     [["Energy", "Water"], ["FOR"], ["PO-9", "PO-10"], ["IP-1"], ["P-2"]]);
-  assert.deepEqual(productLineFilterBody(filters), { situation: "open", status: ["A DISTRIBUIR", "ENTREGUE"],
+  assert.deepEqual(productLineFilterBody(filters), { situation: "open", status: ["AGUARDANDO PRODUÇÃO", "ENTREGUE"],
     group: ["Energy", "Water"], importers: ["FOR"], purchaseOrders: ["PO-9", "PO-10"], ipNumbers: ["IP-1"], productCodes: ["P-2"] });
   const query = productLineQuery(filters, 1, 50);
-  assert.deepEqual(query.getAll("status"), ["A DISTRIBUIR", "ENTREGUE"]);
+  assert.deepEqual(query.getAll("status"), ["AGUARDANDO PRODUÇÃO", "ENTREGUE"]);
   assert.deepEqual(query.getAll("purchaseOrders"), ["PO-9", "PO-10"]);
   assert.deepEqual(parseProductLineFilters(query), { ...filters, necessityPeriod: "" });
   // "Todas" sends nothing; a list counts as one filter.
@@ -53,7 +55,24 @@ test("choosing a delivered or cancelled status shows every situation, as the API
   const all = withProductLineStatus(emptyProductLineFilters, ["ENTREGUE"]);
   assert.deepEqual(withProductLineStatus(all, []), { ...emptyProductLineFilters, situation: "all" });
   // The statuses keep the order of the list.
-  assert.deepEqual(withProductLineStatus(emptyProductLineFilters, ["ENTREGUE", "A DISTRIBUIR"]).status, ["A DISTRIBUIR", "ENTREGUE"]);
+  assert.deepEqual(withProductLineStatus(emptyProductLineFilters, ["ENTREGUE", "AGUARDANDO PRODUÇÃO"]).status,
+    ["AGUARDANDO PRODUÇÃO", "ENTREGUE"]);
+});
+
+test("the IP filter keeps the lines with an IP or only the balance without IP, in the URL and the API body", () => {
+  assert.deepEqual([...productLineStatuses], ["AGUARDANDO PRODUÇÃO", "AGUARDANDO EMBARQUE", "AGUARDANDO CHEGADA",
+    "DESEMBARAÇO", "ENTREGUE", "CANCELADO"]);
+  assert.equal(emptyProductLineFilters.ip, "");
+  for (const ip of ["with", "without"]) {
+    const filters = parseProductLineFilters(new URLSearchParams(`ip=${ip}`));
+    assert.equal(filters.ip, ip);
+    assert.deepEqual(productLineFilterBody(filters), { situation: "open", ip });
+    assert.equal(productLineQuery(filters, 1, 50).get("ip"), ip);
+    assert.equal(e2eSummaryQuery(filters, emptyE2eStageFilter).get("ip"), ip);
+    assert.equal(activeProductLineFilterCount(filters), 1);
+  }
+  assert.equal(parseProductLineFilters(new URLSearchParams("ip=sem")).ip, "");
+  assert.equal(productLineQuery(emptyProductLineFilters, 1, 50).has("ip"), false);
 });
 
 test("on the End to End screen a text filter from an older link becomes one value of its list", () => {
@@ -75,19 +94,19 @@ test("a chart click keeps only its category, Ctrl+click adds or removes it, as i
   assert.deepEqual(nextChartSelection(["DESEMBARAÇO", "ENTREGUE"], "ENTREGUE", true), ["DESEMBARAÇO"]);
 });
 
-test("an item split across IPs shows how much is in each status and what is left to distribute", () => {
+test("an item split across IPs shows how much is in each status and how much is still without IP", () => {
   const summary = itemShipmentSummary("100.00000000", false, [
     { quantity: "60.00000000", status: "ENTREGUE", eta: "2026-09-01" },
     { quantity: "25.5", status: "AGUARDANDO CHEGADA", eta: "2026-11-10" },
     { quantity: "4.5", status: "AGUARDANDO EMBARQUE", eta: "2026-10-30" },
   ]);
-  assert.equal(summary.toDistribute, "10");
+  assert.equal(summary.withoutIp, "10");
   assert.deepEqual(summary.byStatus, [
     { status: "AGUARDANDO EMBARQUE", quantity: "4.5" }, { status: "AGUARDANDO CHEGADA", quantity: "25.5" },
     { status: "ENTREGUE", quantity: "60" },
   ]);
   assert.equal(summary.nextEta, "2026-10-30");
-  assert.equal(itemShipmentSummary("10", true, []).toDistribute, "0");
+  assert.equal(itemShipmentSummary("10", true, []).withoutIp, "0");
   assert.equal(itemShipmentSummary("10", false, []).nextEta, null);
 });
 

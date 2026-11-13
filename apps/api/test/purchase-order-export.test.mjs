@@ -57,7 +57,7 @@ test("product line export follows the Pré Embarque columns and repeats the IP d
           stages: { T3: { deadline: "2026-07-12", actual: "2026-09-02", source: "actual", targetDays: 30, actualDays: 82, delayDays: 52 },
             T4: { deadline: "2026-10-27", actual: "2026-10-26", source: "forecast", targetDays: 55, actualDays: 54, delayDays: -1 } } } } },
     { lineId: "item-1", lineKind: "BALANCE", quantity: "40.00000000", factoryShipDate: null, purchaseOrder, item,
-      process: null, calculated: { status: "A DISTRIBUIR" } },
+      process: null, calculated: { status: "AGUARDANDO PRODUÇÃO" } },
   ]);
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(bytes);
@@ -96,7 +96,7 @@ test("product line export follows the Pré Embarque columns and repeats the IP d
   assert.equal(cell(2, "Remarks"), "=cmd");
   assert.equal(sheet.getRow(2).getCell(headers.indexOf("Remarks") + 1).type, ExcelJS.ValueType.String);
   assert.equal(cell(2, "Line Type"), "Distribuição no IP");
-  assert.equal(cell(3, "Status"), "A DISTRIBUIR");
+  assert.equal(cell(3, "Status"), "AGUARDANDO PRODUÇÃO");
   assert.equal(cell(3, "Qty"), 40);
   assert.equal(cell(3, "IP Number"), null);
   assert.equal(cell(3, "Line Type"), "Saldo sem IP");

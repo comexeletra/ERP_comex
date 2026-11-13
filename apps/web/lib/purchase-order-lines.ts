@@ -1,12 +1,24 @@
 import type { E2eStageCode } from "./e2e-analysis";
 
-/** Status of a product line, as calculated by the API from the dates of its IP. */
-export const productLineStatuses = ["A DISTRIBUIR", "AGUARDANDO PRODUÇÃO", "AGUARDANDO EMBARQUE",
+/**
+ * Status of a product line, as calculated by the API from the dates of its IP. The balance without IP is
+ * AGUARDANDO PRODUÇÃO, as in the Follow Up and the BI; the IP filter tells it apart.
+ */
+export const productLineStatuses = ["AGUARDANDO PRODUÇÃO", "AGUARDANDO EMBARQUE",
   "AGUARDANDO CHEGADA", "DESEMBARAÇO", "ENTREGUE", "CANCELADO"] as const;
 export type ProductLineStatus = typeof productLineStatuses[number];
 
-/** Colours of the status chart, in the order of the statuses; CANCELADO stays out of the chart. */
-export const e2eStatusColors = ["--color-chart-status-1", "--color-chart-status-2", "--color-chart-status-3",
+/** Lines with an IP (the allocations) or only the balance without IP; "" is every line. */
+export const productLineIpFilters = ["with", "without"] as const;
+export type ProductLineIpFilter = "" | typeof productLineIpFilters[number];
+export const parseIpFilter = (value: string | null): ProductLineIpFilter =>
+  (productLineIpFilters as readonly string[]).includes(value ?? "") ? value as ProductLineIpFilter : "";
+
+/**
+ * Colours of the status chart, in the order of the statuses; CANCELADO stays out of the chart. Status 1 was the
+ * balance without IP, now part of AGUARDANDO PRODUÇÃO: the other statuses keep their colours.
+ */
+export const e2eStatusColors = ["--color-chart-status-2", "--color-chart-status-3",
   "--color-chart-status-4", "--color-chart-status-5", "--color-chart-status-6"] as const;
 
 export const e2eStatusColor = (status: string): string | undefined =>
@@ -20,13 +32,13 @@ export const e2eStatusColor = (status: string): string | undefined =>
  */
 export type ProductLineFilters = {
   importer: string; purchaseOrder: string; ipNumber: string; product: string;
-  status: ProductLineStatus[]; etaFrom: string; etaTo: string; situation: "open" | "all";
+  status: ProductLineStatus[]; etaFrom: string; etaTo: string; situation: "open" | "all"; ip: ProductLineIpFilter;
   group: string[]; purpose: string[]; importers: string[]; purchaseOrders: string[]; ipNumbers: string[]; productCodes: string[];
   necessityFrom: string; necessityTo: string; necessityPeriod: string;
 };
 
 export const emptyProductLineFilters: ProductLineFilters = { importer: "", purchaseOrder: "", ipNumber: "", product: "",
-  status: [], etaFrom: "", etaTo: "", situation: "open", group: [], purpose: [], importers: [], purchaseOrders: [],
+  status: [], etaFrom: "", etaTo: "", situation: "open", ip: "", group: [], purpose: [], importers: [], purchaseOrders: [],
   ipNumbers: [], productCodes: [], necessityFrom: "", necessityTo: "", necessityPeriod: "" };
 
 const textKeys = ["importer", "purchaseOrder", "ipNumber", "product"] as const;
@@ -47,7 +59,7 @@ export function parseProductLineFilters(params: URLSearchParams): ProductLineFil
     ipNumber: params.get("ipNumber") ?? "", product: params.get("product") ?? "",
     status: statusList(params.getAll("status")),
     etaFrom: date("etaFrom"), etaTo: date("etaTo"),
-    situation: params.get("situation") === "all" ? "all" : "open",
+    situation: params.get("situation") === "all" ? "all" : "open", ip: parseIpFilter(params.get("ip")),
     group: list("group"), purpose: list("purpose"), importers: list("importers"), purchaseOrders: list("purchaseOrders"),
     ipNumbers: list("ipNumbers"), productCodes: list("productCodes"),
     necessityFrom: date("necessityFrom"), necessityTo: date("necessityTo"),
@@ -143,6 +155,7 @@ export function productLineFilterBody(filters: ProductLineFilters, stage = empty
   const body: Record<string, string | string[]> = { situation: filters.situation };
   for (const key of textKeys) if (filters[key].trim()) body[key] = filters[key].trim();
   if (filters.status.length) body.status = statusList(filters.status);
+  if (filters.ip) body.ip = filters.ip;
   for (const key of listKeys) {
     const values = cleanList(filters[key]);
     if (values.length) body[key] = values;
@@ -204,7 +217,7 @@ function quantityText(value: bigint): string {
 
 export type ItemShipment = { quantity: string; status: string; eta: string | null };
 
-/** Where the ordered quantity of one PO item is: per shipment status, still to distribute, and the next ETA. */
+/** Where the ordered quantity of one PO item is: per shipment status, still without IP, and the next ETA. */
 export function itemShipmentSummary(orderedQuantity: string, cancelledAtSource: boolean, shipments: ItemShipment[]) {
   const byStatus = new Map<string, bigint>();
   let allocated = 0n;
@@ -217,7 +230,7 @@ export function itemShipmentSummary(orderedQuantity: string, cancelledAtSource: 
   const nextEta = shipments.filter(shipment => !["ENTREGUE", "CANCELADO"].includes(shipment.status) && shipment.eta)
     .map(shipment => shipment.eta as string).sort()[0] ?? null;
   return {
-    toDistribute: quantityText(cancelledAtSource || remaining < 0n ? 0n : remaining),
+    withoutIp: quantityText(cancelledAtSource || remaining < 0n ? 0n : remaining),
     byStatus: productLineStatuses.filter(status => byStatus.has(status))
       .map(status => ({ status, quantity: quantityText(byStatus.get(status)!) })),
     nextEta,

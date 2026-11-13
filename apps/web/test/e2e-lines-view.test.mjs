@@ -15,7 +15,8 @@ const [view, overview, panels, parts, tabs, page, modelPage, styles, flowLib] = 
   read("app/styles/features/e2e.css"), read("lib/e2e-flow.ts")]);
 
 test("the current status column takes the colours of the status chart", () => {
-  assert.equal(e2eStatusColor("A DISTRIBUIR"), "--color-chart-status-1");
+  // The balance without IP is part of AGUARDANDO PRODUÇÃO (2026-11-13); the other statuses keep their colours.
+  assert.equal(e2eStatusColor("A DISTRIBUIR"), undefined);
   assert.equal(e2eStatusColor("AGUARDANDO PRODUÇÃO"), "--color-chart-status-2");
   assert.equal(e2eStatusColor("AGUARDANDO EMBARQUE"), "--color-chart-status-3");
   assert.equal(e2eStatusColor("AGUARDANDO CHEGADA"), "--color-chart-status-4");
@@ -55,6 +56,9 @@ test("the optional overview precedes the model and cross-filters by status and d
   assert.match(view, /onStatusSelect=\{filterByStatus\}/u);
   assert.match(view, /selectedDeadlines=\{deadline\} onDeadlineSelect=\{selectDeadline\} onDeadlineClear=\{\(\) => changeDeadline\(\[\]\)\}/u);
   assert.match(overview, /onClick=\{event => onDeadlineSelect\(entry\.key, additive\(event\)\)\}/u);
+  // The IP filter keeps only the lines with an IP or only the balance without IP.
+  assert.match(view, /<label>\{p\.ipFilter\}<select value=\{draft\.ip\}/u);
+  assert.match(view, /<option value="with">\{p\.withIp\}<\/option>\s*<option value="without">\{p\.withoutIp\}<\/option>/u);
   // Clear also removes the deadline and delay range chosen on the charts, the current stage and the demand type.
   assert.match(view, /setDraft\(emptyProductLineFilters\); setDeadline\(\[\]\); setDelayRange\(\[\]\);/u);
   assert.match(view, /stepper\.goTo\(null\); setDemandType\(""\);/u);
@@ -181,9 +185,9 @@ test("the filter form lists the available values with search and has the summary
   assert.match(view, /const filters = withE2eLists\(parseProductLineFilters\(query\)\);/u);
   assert.match(view, /apiFetch\("\/api\/v1\/purchase-order-lines\/filter-options", \{ signal: controller\.signal \}\)/u);
   assert.match(view, /label: product\.description \? `\$\{product\.code\} · \$\{product\.description\}` : product\.code/u);
-  // Dropdowns of one value: current stage, MTS / not MTS and situation; ETA keeps two date fields.
-  assert.equal((form.match(/<select /gu) ?? []).length, 3);
-  for (const label of ["f.currentStage", "f.demandType", "p.situation"]) {
+  // Dropdowns of one value: IP distribution, current stage, MTS / not MTS and situation; ETA keeps two date fields.
+  assert.equal((form.match(/<select /gu) ?? []).length, 4);
+  for (const label of ["p.ipFilter", "f.currentStage", "f.demandType", "p.situation"]) {
     assert.match(form, new RegExp(`\\{${label.replaceAll(".", "\\.")}\\}<select `, "u"), label);
   }
   assert.equal((form.match(/type="date"/gu) ?? []).length, 2);

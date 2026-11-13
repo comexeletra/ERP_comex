@@ -277,14 +277,14 @@ test("E2E target sets apply from their necessity date", () => {
 });
 
 test("E2E of a balance without IP plans the HQ shipment from the PO and leaves later stages empty", () => {
-  const e2e = calculateE2e(resistor, {}, "A DISTRIBUIR", DEFAULT_E2E_TARGET_SET, null);
+  const e2e = calculateE2e(resistor, {}, "AGUARDANDO PRODUÇÃO", DEFAULT_E2E_TARGET_SET, null);
   assert.equal(e2e.stages.T3.deadline, "2026-09-23");
   assert.equal(e2e.stages.T3.actual, null);
   assert.equal(e2e.stages.T4.deadline, null);
   assert.equal(e2e.totalActualDays, null);
   assert.equal(e2e.bottleneck, "T1");
   // Without the commercial plan date the chain cannot start.
-  const noPlan = calculateE2e({ ...resistor, commercialPlanReceivedDate: null }, {}, "A DISTRIBUIR", DEFAULT_E2E_TARGET_SET, null);
+  const noPlan = calculateE2e({ ...resistor, commercialPlanReceivedDate: null }, {}, "AGUARDANDO PRODUÇÃO", DEFAULT_E2E_TARGET_SET, null);
   assert.deepEqual([noPlan.stages.T0.actualDays, noPlan.stages.T1.deadline, noPlan.stages.T1.actualDays], [null, null, null]);
 });
 
@@ -297,9 +297,9 @@ test("E2E current stage follows the last actual date and is late only after its 
   // A missing date in the middle does not pull the line back: shipped without the PO sent date is still in T4.
   assert.equal(calculateFollowup({ ...resistor, poSentDate: null }, shippedBySea, invoice, "2026-10-26").e2e.currentStage, "T4");
   // The balance without IP waits for the HQ shipment (T3), due on 2026-09-23.
-  const balance = calculateE2e(resistor, {}, "A DISTRIBUIR", DEFAULT_E2E_TARGET_SET, null, "2026-10-26");
+  const balance = calculateE2e(resistor, {}, "AGUARDANDO PRODUÇÃO", DEFAULT_E2E_TARGET_SET, null, "2026-10-26");
   assert.deepEqual([balance.currentStage, balance.currentStageLate], ["T3", true]);
-  const notStarted = calculateE2e({ necessityDate: "2026-12-01" }, {}, "A DISTRIBUIR", DEFAULT_E2E_TARGET_SET, null, "2026-07-31");
+  const notStarted = calculateE2e({ necessityDate: "2026-12-01" }, {}, "AGUARDANDO PRODUÇÃO", DEFAULT_E2E_TARGET_SET, null, "2026-07-31");
   assert.deepEqual([notStarted.currentStage, notStarted.currentStageLate], ["T0", false]);
 });
 
@@ -312,7 +312,7 @@ test("E2E lines delivered or cancelled leave the flow; a stage without deadline 
   // Without a transport mode the transit has no target, so there is no deadline to miss.
   const noMode = calculateFollowup(resistor, { ...shippedBySea, transportMode: null }, invoice, "2027-06-01").e2e;
   assert.deepEqual([noMode.currentStage, noMode.stages.T4.deadline, noMode.currentStageLate], ["T4", null, false]);
-  const noNeed = calculateE2e({}, {}, "A DISTRIBUIR", DEFAULT_E2E_TARGET_SET, null, "2026-10-26");
+  const noNeed = calculateE2e({}, {}, "AGUARDANDO PRODUÇÃO", DEFAULT_E2E_TARGET_SET, null, "2026-10-26");
   assert.deepEqual([noNeed.currentStage, noNeed.stages.T0.deadline, noNeed.currentStageLate], ["T0", null, false]);
 });
 
@@ -324,14 +324,14 @@ test("E2E accumulated delay adds the stage delays from T0 and stops at the first
 });
 
 test("E2E T0 is due four months before the need date plus four days, as on the End-to-End sheet", () => {
-  const deadline = necessityDate => calculateE2e({ necessityDate }, {}, "A DISTRIBUIR", DEFAULT_E2E_TARGET_SET, null, "2026-10-26").stages.T0.deadline;
+  const deadline = necessityDate => calculateE2e({ necessityDate }, {}, "AGUARDANDO PRODUÇÃO", DEFAULT_E2E_TARGET_SET, null, "2026-10-26").stages.T0.deadline;
   assert.equal(deadline("2026-01-01"), "2025-09-05");
   // The month keeps the need day when it exists; the four days can cross into the next month.
   assert.equal(deadline("2026-06-30"), "2026-03-04");
   assert.equal(deadline("2026-06-28"), "2026-03-04");
   assert.equal(deadline(null), null);
   // The sheet's row: need 2026-01-01, plan received 2025-08-05, actual -31 and delay -39 days.
-  const { stages } = calculateE2e({ necessityDate: "2026-01-01", commercialPlanReceivedDate: "2025-08-05" }, {}, "A DISTRIBUIR",
+  const { stages } = calculateE2e({ necessityDate: "2026-01-01", commercialPlanReceivedDate: "2025-08-05" }, {}, "AGUARDANDO PRODUÇÃO",
     DEFAULT_E2E_TARGET_SET, null, "2026-10-26");
   assert.deepEqual([stages.T0.actualDays, stages.T0.delayDays], [-31, -39]);
 });

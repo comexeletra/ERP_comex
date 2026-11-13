@@ -171,7 +171,7 @@ test("HML propagates each IP's post-shipment data to the product shares inside i
       line.process?.id ?? null, line.calculated.status]).sort(), [
       ["HMLVAL-PO-SHIPA", "ALLOCATION", "40.00000000", ip2, "AGUARDANDO PRODUÇÃO"],
       ["HMLVAL-PO-SHIPA", "ALLOCATION", "50.00000000", ip1, "AGUARDANDO CHEGADA"],
-      ["HMLVAL-PO-SHIPA", "BALANCE", "10.00000000", null, "A DISTRIBUIR"],
+      ["HMLVAL-PO-SHIPA", "BALANCE", "10.00000000", null, "AGUARDANDO PRODUÇÃO"],
       ["HMLVAL-PO-SHIPB", "ALLOCATION", "50.00000000", ip1, "AGUARDANDO CHEGADA"],
     ].sort());
     for (const line of ours.filter(entry => entry.process)) {

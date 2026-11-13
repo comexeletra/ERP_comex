@@ -148,6 +148,7 @@ export default function PreShipmentDashboard({ initialQuery }: { initialQuery: s
 
   const date = (value: string | null) => formatE2eDate(value, locale);
   const all = d.allOption;
+  const p = m.productLines;
   const statusOptions: SearchableOption[] = preShipmentStatuses.map(status => ({ value: status, label: statusLabel(m, status) }));
   const list = (key: "demand" | "requester" | "group" | "supplier" | "purpose" | "importers" | "modes", label: string,
     values: string[] | undefined) => <label>{label}<MultiSelectFilter ariaLabel={label} allLabel={all} values={draft[key]}
@@ -183,6 +184,12 @@ export default function PreShipmentDashboard({ initialQuery }: { initialQuery: s
           <option value="">{all}</option>
           <option value="direct">{d.directOption}</option>
           <option value="notDirect">{d.notDirectOption}</option>
+        </select></label>
+        <label>{p.ipFilter}<select value={draft.ip}
+          onChange={event => setDraft({ ...draft, ip: event.target.value as PreShipmentFilters["ip"] })}>
+          <option value="">{all}</option>
+          <option value="with">{p.withIp}</option>
+          <option value="without">{p.withoutIp}</option>
         </select></label>
         {list("group", d.group, options?.groups)}
         {list("supplier", d.supplier, options?.suppliers)}

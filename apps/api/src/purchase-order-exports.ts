@@ -210,6 +210,7 @@ function filterRows(filters: Partial<PreShipmentFilters>): [string, string][] {
   if (filters.aging?.length) rows.push(["Aging", filters.aging.map(range => agingLabels[range]).join(", ")]);
   if (filters.priority) rows.push(["Prioridade", filters.priority === "priority" ? "Prioridade" : "Normal"]);
   if (filters.direct) rows.push(["Direct", filters.direct === "direct" ? "Direct" : "Não direct"]);
+  if (filters.ip) rows.push(["Distribuição em IP", filters.ip === "without" ? "Sem IP" : "Com IP"]);
   for (const [key, label] of listFilters) if (list(filters[key])) rows.push([label, list(filters[key])]);
   for (const [key, label] of textFilters) {
     const value = filters[key];

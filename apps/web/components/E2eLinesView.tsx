@@ -373,6 +373,11 @@ export default function E2eLinesView({ initialQuery }: { initialQuery: string })
         <label>{m.calc.status}<MultiSelectFilter ariaLabel={m.calc.status} allLabel={all} values={draft.status}
           options={statusOptions}
           onChange={values => setDraft(withProductLineStatus(draft, values as ProductLineStatus[]))} /></label>
+        <label>{p.ipFilter}<select value={draft.ip} onChange={event => setDraft({ ...draft, ip: event.target.value as ProductLineFilters["ip"] })}>
+          <option value="">{all}</option>
+          <option value="with">{p.withIp}</option>
+          <option value="without">{p.withoutIp}</option>
+        </select></label>
         <label>{f.currentStage}<select value={stage.stage} onChange={event => selectCurrentStage(event.target.value as "" | E2eStageCode)}>
           <option value="">{all}</option>
           {E2E_STAGE_CODES.map(code => <option key={code} value={code}>{t.stageTitles[code]}</option>)}

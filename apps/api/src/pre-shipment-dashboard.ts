@@ -3,8 +3,8 @@ import type { Pool } from "pg";
 import { z } from "zod";
 import { permissionConfig } from "./authorization.js";
 import { todayInBrasilia } from "./followup-calculations.js";
-import { decimalQuantity, E2E_CALCULATION_CONCURRENCY, scaledQuantity, shipmentLineStatuses,
-  shipmentStatusSql } from "./shipment-lines.js";
+import { BALANCE_STATUS, decimalQuantity, E2E_CALCULATION_CONCURRENCY, LINE_IP_FILTERS, scaledQuantity,
+  shipmentLineStatuses, shipmentStatusSql } from "./shipment-lines.js";
 import { createWorkGate, WorkCancelledError, type WorkGate } from "./work-gate.js";
 
 type Status = (typeof shipmentLineStatuses)[number];
@@ -21,7 +21,7 @@ export type PreShipmentAgingRange = (typeof PRE_SHIPMENT_AGING_RANGES)[number]["
 const agingKeys = PRE_SHIPMENT_AGING_RANGES.map(range => range.key) as [PreShipmentAgingRange, ...PreShipmentAgingRange[]];
 
 /** Lines still waiting for the factory or the shipment: the only ones the aging chart counts. */
-export const PRE_SHIPMENT_AGING_STATUSES = ["A DISTRIBUIR", "AGUARDANDO PRODUÇÃO", "AGUARDANDO EMBARQUE"] as const satisfies readonly Status[];
+export const PRE_SHIPMENT_AGING_STATUSES = ["AGUARDANDO PRODUÇÃO", "AGUARDANDO EMBARQUE"] as const satisfies readonly Status[];
 
 /** Purposes of the BI "Direct" filter (user decision of 2026-11-05). */
 export const PRE_SHIPMENT_DIRECT_PURPOSES = ["Estoque Insumos (Componente)", "Estoque Insumos (Policarbonato)"] as const;
@@ -57,6 +57,7 @@ const textList = (max: number) => valueList(z.string().trim().max(max));
 export const preShipmentQuery = z.object({
   status: valueList(z.enum(shipmentLineStatuses)), aging: valueList(z.enum(agingKeys)),
   priority: z.enum(["priority", "normal"]).optional(), direct: z.enum(["direct", "notDirect"]).optional(),
+  ip: z.enum(LINE_IP_FILTERS).optional(),
   demand: textList(200), requester: textList(200), group: textList(120), supplier: textList(240), purpose: textList(160),
   importers: textList(120), modes: textList(40),
   scNumber: optionalText(80), ipNumber: optionalText(80), purchaseOrder: optionalText(80), productCode: optionalText(200),
@@ -104,6 +105,7 @@ function dashboardSql(scopes: readonly string[], filters: PreShipmentFilters, to
     const direct = `lower(btrim(coalesce(item.purpose, ''))) IN (SELECT lower(value) FROM unnest(${param([...PRE_SHIPMENT_DIRECT_PURPOSES])}::text[]) AS value)`;
     where.push(filters.direct === "direct" ? direct : `NOT ${direct}`);
   }
+  if (filters.ip) where.push(`l.line_kind = '${filters.ip === "without" ? "BALANCE" : "ALLOCATION"}'`);
   if (filters.necessityFrom) where.push(`item.necessity_date >= ${param(filters.necessityFrom)}::date`);
   if (filters.necessityTo) where.push(`item.necessity_date <= ${param(filters.necessityTo)}::date`);
 
@@ -125,7 +127,7 @@ function dashboardSql(scopes: readonly string[], filters: PreShipmentFilters, to
       po.normalized_number, p.ip_number AS sort_ip_number,
       CASE WHEN po.lifecycle_status = 'CANCELLED' THEN 'CANCELADO'
         WHEN l.line_kind = 'BALANCE' AND upper(coalesce(item.source_status, '')) IN ('CANCELLED', 'CANCELED') THEN 'CANCELADO'
-        WHEN l.line_kind = 'BALANCE' THEN 'A DISTRIBUIR'
+        WHEN l.line_kind = 'BALANCE' THEN '${BALANCE_STATUS}'
         ELSE ${shipmentStatusSql("p", "l.item_id")} END AS line_status,
       CASE WHEN item.po_sent_date IS NULL THEN NULL ELSE $2::date - item.po_sent_date END AS aging_days,
       jsonb_build_object('lineId', l.line_id, 'lineKind', l.line_kind, 'quantity', l.line_quantity::text, 'unit', item.unit,

@@ -15,6 +15,9 @@ test("the product lines view reads the API lines and exports the filtered lines 
   assert.match(view, /useProductLineExport\("carteira-por-produto"\)/u);
   assert.match(view, /downloadExcel\(applied, emptyE2eStageFilter, columns\)/u);
   assert.match(exportHook, /\/api\/v1\/exports\/purchase-order-lines/u);
+  // The IP filter: every line, the lines with an IP or only the balance without IP.
+  assert.match(view, /<label>\{t\.ipFilter\}<select value=\{draft\.ip\}/u);
+  assert.match(view, /<option value="with">\{t\.withIp\}<\/option>\s*<option value="without">\{t\.withoutIp\}<\/option>/u);
   assert.match(exportHook, /anchor\.download = `\$\{filePrefix\}-.*\.xlsx`/u);
   for (const column of ["ETD", "ETA", "ETE"]) assert.match(view, new RegExp(`<th>${column}</th>`, "u"));
   for (const [key, label] of [["m.followup.departure", ptBR.followup.departure], ["m.fields.blDate", ptBR.fields.blDate],
@@ -22,6 +25,17 @@ test("the product lines view reads the API lines and exports the filtered lines 
     assert.match(view, new RegExp(`<th>\\{${key.replaceAll(".", "\\.")}\\}</th>`, "u"));
     assert.ok(["Departure", "BL date", "Chegada", "Entrega"].includes(label), key);
   }
+});
+
+test("the PO screen shows the balance without IP as waiting for production and its quantity as Sem IP", async () => {
+  const panel = await readFile(new URL("../components/FollowupPanel.tsx", import.meta.url), "utf8");
+  assert.match(panel, /<th>\{t\.ordered\}<\/th><th>\{t\.noIp\}<\/th><th>\{t\.byStatus\}<\/th>/u);
+  assert.match(panel, /const balanceStatus = "AGUARDANDO PRODUÇÃO";/u);
+  assert.match(panel, /\? t\.lineCancelled : statusLabel\(m, balanceStatus\)\}<\/td>/u);
+  assert.doesNotMatch(panel, /toDistribute/u);
+  assert.equal(ptBR.followup.noIp, "Sem IP");
+  assert.equal("toDistribute" in ptBR.followup, false);
+  assert.equal("A DISTRIBUIR" in ptBR.statuses, false);
 });
 
 test("the product lines show the importer in its own column and truncate long names with the full text on hover", async () => {

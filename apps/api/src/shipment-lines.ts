@@ -9,15 +9,24 @@ import { calculateE2e, calculateFollowup, E2E_DELAY_RANGES, E2E_STAGE_CODES, e2e
 
 type Row = Record<string, unknown>;
 
-/** Status of a product line: its IP shipment status, or A DISTRIBUIR for the balance without IP. */
-export const shipmentLineStatuses = ["A DISTRIBUIR", "AGUARDANDO PRODUÇÃO", "AGUARDANDO EMBARQUE",
+/**
+ * Status of a product line: its IP shipment status. The balance without IP waits for production, as in the Follow Up
+ * and the BI "Waiting Production" (user decision of 2026-11-13); the IP filter tells it apart from the allocations.
+ */
+export const shipmentLineStatuses = ["AGUARDANDO PRODUÇÃO", "AGUARDANDO EMBARQUE",
   "AGUARDANDO CHEGADA", "DESEMBARAÇO", "ENTREGUE", "CANCELADO"] as const;
+/** Status of the balance without IP. */
+export const BALANCE_STATUS = "AGUARDANDO PRODUÇÃO" satisfies (typeof shipmentLineStatuses)[number];
+/** Lines with an IP (the allocations) or only the balance without IP. */
+export const LINE_IP_FILTERS = ["with", "without"] as const;
 
 export type ShipmentLineFilters = {
   /** Parts of the importer, PO number, IP number and product code or description (the product lines screen). */
   importer?: string; purchaseOrder?: string; ipNumber?: string; product?: string;
   /** Any of the statuses. */
   status?: (typeof shipmentLineStatuses)[number][]; etaFrom?: string; etaTo?: string; situation: "open" | "all";
+  /** Only the lines with an IP or only the balance without IP. */
+  ip?: (typeof LINE_IP_FILTERS)[number];
   /**
    * Any of the values (exact, ignoring case and outer spaces): group and purpose of the PO product, importers,
    * PO numbers, IP numbers and product codes (the End to End screen); and the necessity period.
@@ -51,8 +60,8 @@ function processView(process: unknown): Row | null {
     .map(column => [camelKey(column), source[column]]));
 }
 
-/** Statuses an IP can have; product lines add A DISTRIBUIR for the balance without IP. */
-export const processStatuses = shipmentLineStatuses.filter(status => status !== "A DISTRIBUIR");
+/** Statuses an IP can have: the same as the product lines. */
+export const processStatuses = shipmentLineStatuses;
 
 /**
  * SQL for the status calculated from the IP dates. It mirrors shipmentStatus() in
@@ -96,7 +105,7 @@ const linesSql = `WITH balance AS (
   ), enriched AS MATERIALIZED (
     SELECT l.line_id, l.line_kind, l.line_quantity, l.factory_ship_date, item.line_number, po.id AS po_id,
       po.normalized_number, p.ip_number AS sort_ip_number,
-      CASE WHEN l.line_kind = 'BALANCE' THEN 'A DISTRIBUIR' ELSE ${shipmentStatusSql("p", "l.item_id")} END AS line_status,
+      CASE WHEN l.line_kind = 'BALANCE' THEN '${BALANCE_STATUS}' ELSE ${shipmentStatusSql("p", "l.item_id")} END AS line_status,
       CASE WHEN p.id IS NULL THEN NULL ELSE coalesce(p.eta_confirmed,
         CASE WHEN nullif(btrim(p.transport_mode), '') IS NULL THEN NULL
           WHEN upper(btrim(p.transport_mode)) IN ('SEA', 'MARITIMO', 'MARÍTIMO') THEN p.etd + 55
@@ -138,6 +147,7 @@ const linesSql = `WITH balance AS (
       AND ($13::date IS NULL OR item.necessity_date <= $13::date)
       AND ${anyValue("po.importer", 14)} AND ${anyValue("po.external_number", 15)}
       AND ${anyValue("p.ip_number", 16)} AND ${anyValue("item.product_code", 17)}
+      AND ($18::text IS NULL OR ($18::text = 'without') = (l.line_kind = 'BALANCE'))
   ), filtered AS MATERIALIZED (
     SELECT * FROM enriched
     WHERE ($6::text[] IS NULL OR line_status = ANY($6::text[]))
@@ -146,7 +156,7 @@ const linesSql = `WITH balance AS (
   ), page AS (
     SELECT * FROM filtered
     ORDER BY normalized_number, po_id, line_number, line_kind, sort_ip_number NULLS LAST, line_id
-    LIMIT $18 OFFSET $19
+    LIMIT $19 OFFSET $20
   )
   SELECT (SELECT count(*)::int FROM filtered) AS total_count,
     coalesce(jsonb_agg(jsonb_build_object('line_id', page.line_id, 'line_kind', page.line_kind,
@@ -273,7 +283,7 @@ async function queryLineRows(pool: Pool, scopes: readonly string[], filters: Shi
     values(filters.status), filters.etaFrom ?? null, filters.etaTo ?? null, lineSituation(filters),
     values(filters.group), values(filters.purpose), filters.necessityFrom ?? null, filters.necessityTo ?? null,
     values(filters.importers), values(filters.purchaseOrders), values(filters.ipNumbers), values(filters.productCodes),
-    limit, offset]);
+    filters.ip ?? null, limit, offset]);
   return { totalCount: Number(result.rows[0]?.total_count ?? 0), rows: result.rows[0]?.items ?? [] };
 }
 
@@ -362,7 +372,7 @@ async function calculateLines(pool: Pool, rows: Row[]) {
       ? calculateFollowup({ ...item, allocationQuantity: quantity, actualFactoryShipDate: factoryShipDate }, process,
         documents.filter(document => document.processId === process.id), today, targetSets)
       // The balance without IP still runs the stages up to the HQ shipment deadline.
-      : { status: "A DISTRIBUIR", e2e: calculateE2e(item, {}, "A DISTRIBUIR", // i18n-ignore: API status
+      : { status: BALANCE_STATUS, e2e: calculateE2e(item, {}, BALANCE_STATUS,
         e2eTargetSetFor(targetSets, item.necessityDate, today), null, today) };
     return {
       lineId: row.line_id, lineKind: row.line_kind, quantity, factoryShipDate,
@@ -385,6 +395,7 @@ const textList = (max: number) => valueList(z.string().trim().max(max));
 const lineFilterQuery = z.object({
   importer: optionalText(120), purchaseOrder: optionalText(80), ipNumber: optionalText(80), product: optionalText(200),
   status: valueList(z.enum(shipmentLineStatuses)), etaFrom: z.iso.date().optional(), etaTo: z.iso.date().optional(),
+  ip: z.enum(LINE_IP_FILTERS).optional(),
   situation: z.enum(["open", "all"]).default("open"), deadline: valueList(z.enum(deadlineStatuses)),
   group: textList(120), purpose: textList(160), importers: textList(120), purchaseOrders: textList(80),
   ipNumbers: textList(80), productCodes: textList(200),

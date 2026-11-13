@@ -81,6 +81,8 @@ const calcKeys: (keyof Messages["calc"])[] = [
 const numericCalculatedFields = new Set(["totalPrice", "transitDays", "leadTimeDays", "poApprovalDays", "poAfterScDays",
   "poDeviationDays", "factoryLeadDays", "actualTransitDays", "clearanceDays", "invoiceQuantity", "invoiceUnitPrice",
   "totalTargetDays", "totalActualDays", "totalDelayDays"]);
+/** Status of the balance without IP, as the API labels it (product lines and the BI "Waiting Production"). */
+const balanceStatus = "AGUARDANDO PRODUÇÃO"; // i18n-ignore: API status value
 const e2eOf = (shipment: Shipment) => (shipment.calculated as { e2e?: E2eResult | null }).e2e ?? null;
 function eventSnapshot(value: unknown, m: Messages) { return value == null ? m.events.noPrevious : JSON.stringify(value, null, 2); }
 function eventDate(value: string) { return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short",
@@ -200,7 +202,7 @@ export default function FollowupPanel({ id }: { id: string }) {
         <h3>{t.itemSummary}</h3>
         <p className="muted">{t.itemSummaryHelp}</p>
         <div className="table-scroll"><table><thead><tr>
-          <th>{t.product}</th><th>{t.ordered}</th><th>{t.toDistribute}</th><th>{t.byStatus}</th><th>{t.nextEta}</th>
+          <th>{t.product}</th><th>{t.ordered}</th><th>{t.noIp}</th><th>{t.byStatus}</th><th>{t.nextEta}</th>
         </tr></thead><tbody>{data.items.map(item => {
           const summary = itemShipmentSummary(item.orderedQuantity,
             /^(CANCELLED|CANCELED)$/i.test(String(item.sourceStatus ?? "")),
@@ -210,7 +212,7 @@ export default function FollowupPanel({ id }: { id: string }) {
           return <tr key={item.id}>
             <td><strong>{item.productCode}</strong><small>{value(item.description)}</small></td>
             <td>{formatNumber(item.orderedQuantity)} {value(item.unit) === "—" ? "" : value(item.unit)}</td>
-            <td>{formatNumber(summary.toDistribute)}</td>
+            <td>{formatNumber(summary.withoutIp)}</td>
             <td>{summary.byStatus.length ? summary.byStatus.map(entry => `${statusLabel(m, entry.status)}: ${formatNumber(entry.quantity)}`).join(" · ") : "—"}</td>
             <td>{value(summary.nextEta)}</td>
           </tr>;
@@ -233,7 +235,7 @@ export default function FollowupPanel({ id }: { id: string }) {
             <td>{formatNumber(item.orderedQuantity)} {value(item.unit) === "—" ? "" : value(item.unit)}</td>
             <td>{shipment ? <strong>{shipment.process.ipNumber}</strong> : <span className="po-ip-pending">{t.noIp}</span>}</td>
             <td>{shipment ? `${formatNumber(shipment.allocationQuantity)} ${item.unit ?? ""}` : "—"}</td>
-            <td>{shipment ? value(statusLabel(m, shipment.calculated.status)) : /^(CANCELLED|CANCELED)$/i.test(String(item.sourceStatus ?? "")) ? t.lineCancelled : t.toDistribute}</td>
+            <td>{shipment ? value(statusLabel(m, shipment.calculated.status)) : /^(CANCELLED|CANCELED)$/i.test(String(item.sourceStatus ?? "")) ? t.lineCancelled : statusLabel(m, balanceStatus)}</td>
             <td>{shipment ? value(shipment.process.etd) : "—"}</td>
             <td>{shipment ? value(shipment.process.actualPortDepartureDate) : "—"}</td>
             <td>{shipment ? value(shipment.process.blDate) : "—"}</td>

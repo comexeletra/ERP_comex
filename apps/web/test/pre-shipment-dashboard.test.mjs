@@ -17,13 +17,17 @@ const [dashboard, charts, reports, page, styles] = await Promise.all([read("comp
 
 test("a link keeps the filters and the chart selections; invalid values are left out", () => {
   const filters = parsePreShipmentFilters(new URLSearchParams("status=ENTREGUE&status=OUTRO&status=A%20DISTRIBUIR"
-    + "&aging=days120Plus&aging=days200&priority=normal&direct=yes&demand=%20MRP%20&demand=MRP&modes=SEA"
+    + "&status=AGUARDANDO%20PRODU%C3%87%C3%83O&aging=days120Plus&aging=days200&priority=normal&direct=yes&ip=without"
+    + "&demand=%20MRP%20&demand=MRP&modes=SEA"
     + "&scNumber=238&necessityFrom=2026-02-01&necessityTo=01/03/2026&necessityPeriod=month:0:0"));
-  // Statuses and ranges in the order of the charts, whatever the order of the link.
-  assert.deepEqual(filters.status, ["A DISTRIBUIR", "ENTREGUE"]);
+  // Statuses and ranges in the order of the charts, whatever the order of the link. A DISTRIBUIR of an older link
+  // is now part of AGUARDANDO PRODUÇÃO, so it is dropped.
+  assert.deepEqual(filters.status, ["AGUARDANDO PRODUÇÃO", "ENTREGUE"]);
   assert.deepEqual(filters.aging, ["days120Plus"]);
   assert.equal(filters.priority, "normal");
   assert.equal(filters.direct, "");
+  assert.equal(filters.ip, "without");
+  assert.equal(parsePreShipmentFilters(new URLSearchParams("ip=sem")).ip, "");
   assert.deepEqual(filters.demand, ["MRP"]);
   assert.deepEqual(filters.modes, ["SEA"]);
   assert.equal(filters.scNumber, "238");
@@ -34,10 +38,11 @@ test("a link keeps the filters and the chart selections; invalid values are left
 });
 
 test("the API query repeats a list key per value and leaves out empty fields and the relative period", () => {
-  const filters = { ...emptyPreShipmentFilters, status: ["ENTREGUE", "A DISTRIBUIR"], purpose: ["Despesa", " ", "Despesa"],
-    productDescription: "  antena ", necessityFrom: "2026-02-01", necessityTo: "2026-02-28", necessityPeriod: "month:0:0" };
-  assert.equal(preShipmentSummaryQuery(filters).toString(),
-    "status=A+DISTRIBUIR&status=ENTREGUE&purpose=Despesa&productDescription=antena&necessityFrom=2026-02-01&necessityTo=2026-02-28");
+  const filters = { ...emptyPreShipmentFilters, status: ["ENTREGUE", "AGUARDANDO PRODUÇÃO"], ip: "without",
+    purpose: ["Despesa", " ", "Despesa"], productDescription: "  antena ", necessityFrom: "2026-02-01", necessityTo: "2026-02-28",
+    necessityPeriod: "month:0:0" };
+  assert.equal(preShipmentSummaryQuery(filters).toString(), "status=AGUARDANDO+PRODU%C3%87%C3%83O&status=ENTREGUE&ip=without"
+    + "&purpose=Despesa&productDescription=antena&necessityFrom=2026-02-01&necessityTo=2026-02-28");
   const lines = preShipmentLinesQuery(filters, 2, 50);
   assert.deepEqual([lines.get("page"), lines.get("pageSize"), lines.get("necessityPeriod")], ["2", "50", null]);
   // The screen URL keeps the relative period, and the first page is the default.
@@ -51,12 +56,17 @@ test("the collapsed filter panel counts each applied filter once, the period inc
   assert.equal(preShipmentFilterCount(emptyPreShipmentFilters), 0);
   assert.equal(preShipmentFilterCount({ ...emptyPreShipmentFilters, demand: ["MRP", "AP"], direct: "direct",
     necessityFrom: "2026-02-01", necessityTo: "2026-02-28" }), 3);
+  assert.equal(preShipmentFilterCount({ ...emptyPreShipmentFilters, ip: "with" }), 1);
 });
 
 test("the statuses take the colours of the End to End charts, and the cancelled ones grey", () => {
   assert.deepEqual([...preShipmentStatuses], [...productLineStatuses]);
   assert.deepEqual(preShipmentStatuses.slice(0, -1).map(status => preShipmentStatusColors[status]), [...e2eStatusColors]);
   assert.equal(preShipmentStatusColors.CANCELADO, "--color-chart-no-data");
+  // The balance without IP is part of AGUARDANDO PRODUÇÃO; the IP filter of the form tells it apart.
+  assert.equal("A DISTRIBUIR" in preShipmentStatusColors, false);
+  assert.match(dashboard, /<label>\{p\.ipFilter\}<select value=\{draft\.ip\}/u);
+  assert.match(dashboard, /<option value="with">\{p\.withIp\}<\/option>\s*<option value="without">\{p\.withoutIp\}<\/option>/u);
   assert.deepEqual(Object.keys(preShipmentAgingColors), [...preShipmentAgingRanges]);
 });
 
@@ -110,9 +120,10 @@ test("the export offers the data columns of the table, in its order, with PO and
 });
 
 test("the export sends the filters and the chart selections of the table as the API body", () => {
-  assert.deepEqual(preShipmentFilterBody({ ...emptyPreShipmentFilters, status: ["ENTREGUE", "A DISTRIBUIR"], aging: ["upTo45"],
-    priority: "priority", demand: [" MRP ", "MRP"], scNumber: " 238 ", necessityPeriod: "month:0:0" }),
-  { status: ["A DISTRIBUIR", "ENTREGUE"], aging: ["upTo45"], priority: "priority", demand: ["MRP"], scNumber: "238" });
+  assert.deepEqual(preShipmentFilterBody({ ...emptyPreShipmentFilters, status: ["ENTREGUE", "AGUARDANDO PRODUÇÃO"],
+    aging: ["upTo45"], priority: "priority", ip: "without", demand: [" MRP ", "MRP"], scNumber: " 238 ", necessityPeriod: "month:0:0" }),
+  { status: ["AGUARDANDO PRODUÇÃO", "ENTREGUE"], aging: ["upTo45"], priority: "priority", ip: "without", demand: ["MRP"],
+    scNumber: "238" });
   assert.deepEqual(preShipmentFilterBody(emptyPreShipmentFilters), {});
   assert.match(dashboard, /runExport\("\/api\/v1\/exports\/pre-shipment", \{ \.\.\.preShipmentFilterBody\(applied\), \.\.\.columns \}\)/u);
   assert.match(dashboard, /<ExportColumnsDialog context="pre-shipment"/u);
