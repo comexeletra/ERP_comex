@@ -1,4 +1,5 @@
 import type { ChinaInvoiceLine, InvoicePackingList } from "./china-invoice-xlsx";
+import type { InvoiceCorrectedTotals, InvoiceLineCorrection } from "./invoice-correction-xlsx";
 
 export type InvoicePoItemCandidate = { id: string; productCode: string; remainingQuantity: string };
 export type InvoiceDestinationIssue = { kind: "PO_NOT_REGISTERED" } | { kind: "PO_NOT_ACTIVE"; status: "CANCELLED" | "CLOSED" | "DELETED" }
@@ -1091,13 +1092,17 @@ export function invoiceAuditCorrectionInput<T extends InvoiceAuditCandidate>(mod
  * not the IP under review, as the API computes them.
  */
 
-export type InvoicePlatformItem = { id: string; lineNumber: number; poNumber: string; productCode: string; remainingQuantity: string;
-  unit: string | null; unitPrice: string | null; currency: string | null; poStatus?: string | null;
+/** The PO, product and supplier data the IP screen shows next to the audit (before × after, product completion, alias). */
+type InvoicePlatformDetails = { purchaseOrderId?: string | null; orderedQuantity?: string | null; supplierEntryId?: string | null;
+  productId?: string | null; productNcmCode?: string | null; manufacturer?: string | null; manufacturerAddress?: string | null;
+  manufacturerCountry?: string | null };
+export type InvoicePlatformItem = InvoicePlatformDetails & { id: string; lineNumber: number; poNumber: string; productCode: string;
+  remainingQuantity: string; unit: string | null; unitPrice: string | null; currency: string | null; poStatus?: string | null;
   supplierText: string | null; supplierName: string | null; supplierCode: string | null; supplierExporterAliases?: readonly string[];
   linkedToRevisingIp?: boolean };
 export type InvoicePlatformPurchaseOrder = { sourcePoNumber: string; poExists: boolean; poStatus: string | null;
   otherImporters?: readonly string[]; items: readonly InvoicePlatformItem[] };
-export type InvoicePlatformCandidate = InvoiceAuditCandidate & { linkedToRevisingIp: boolean };
+export type InvoicePlatformCandidate = InvoiceAuditCandidate & InvoicePlatformDetails & { linkedToRevisingIp: boolean };
 
 /**
  * The IP of the invoice as the system keeps it (user decision, 2026-11-12): the load of the Follow Up writes the HEXING IPs
@@ -1149,7 +1154,10 @@ function platformCandidate(item: InvoicePlatformItem): InvoicePlatformCandidate 
     remainingQuantity: item.remainingQuantity, unit: item.unit, unitPrice: item.unitPrice, currency: item.currency,
     supplier: item.supplierCode || item.supplierName || item.supplierText || "",
     supplierValues: [item.supplierText, item.supplierName, item.supplierCode], exporterAliases: item.supplierExporterAliases ?? [],
-    linkedToRevisingIp: Boolean(item.linkedToRevisingIp) };
+    linkedToRevisingIp: Boolean(item.linkedToRevisingIp), purchaseOrderId: item.purchaseOrderId ?? null,
+    orderedQuantity: item.orderedQuantity ?? null, supplierEntryId: item.supplierEntryId ?? null, productId: item.productId ?? null,
+    productNcmCode: item.productNcmCode ?? null, manufacturer: item.manufacturer ?? null,
+    manufacturerAddress: item.manufacturerAddress ?? null, manufacturerCountry: item.manufacturerCountry ?? null };
 }
 
 /** The invoice POs and products the candidate routes are asked for: cited POs (also those of an unreadable cell) and codes. */
@@ -1231,4 +1239,117 @@ export function invoicePlatformAuditSource(purchaseOrders: readonly InvoicePlatf
           ipNumber: entry.linked ? revisingIpNumber : "", sourceRows: entry.sourceRows }));
     },
   };
+}
+
+/*
+ * Phase B2 (docs/PLANO_INVOICE_IP_AUDITORIA_DISTRIBUICAO.md, user decisions of 2026-11-12): the IP is saved with the invoice
+ * audited on the IP screen, as the analyst downloaded it. The API checks every changed value again
+ * (apps/api/src/invoice-audit-check.ts), so the payload carries the lines of the file, the lines as the reader returned them
+ * from the original file and every decision of the audit.
+ */
+
+export type InvoiceAuditReferenceLoads = { productDatabaseLoadId: string | null; manufacturerListLoadId: string | null };
+/** The audited invoice of the last download: the model and decisions of that moment, the file lines and the file itself. */
+export type InvoiceAuditedFile<T extends InvoiceAuditCandidate = InvoiceAuditCandidate> = {
+  model: InvoiceAuditModel<T>; decisions: InvoiceAuditDecisions; corrections: readonly InvoiceLineCorrection[];
+  totals: InvoiceCorrectedTotals; sha256: string; fileName: string; references: InvoiceAuditReferenceLoads };
+
+const invoiceAuditLineFields = ["quantity", "poCell", "unitPrice", "netWeightKg", "grossWeightKg", "amount", "ncm", "description",
+  "manufacturer", "manufacturerAddress", "manufacturerCountry"] as const;
+const supplierKey = (item: Pick<InvoiceAuditCandidate, "supplier">) => item.supplier.trim().toLocaleUpperCase("en-US");
+
+/** A product the invoice can complete: the first destined line of the code and the empty fields it fills (R7). */
+export type InvoiceAuditProductFill = { productCode: string; productId: string; sourceRow: number; fields: InvoiceProductFillField[];
+  values: { ncmCode: string | null; manufacturer: string | null; manufacturerAddress: string | null; manufacturerCountry: string | null } };
+
+/**
+ * The products of the audited invoice that have empty fields the audited values fill. A flagged NCM (not found in the
+ * DATABASE) never goes to the catalog (user decision 7, 2026-11-12), and the description is never offered.
+ */
+export function invoiceAuditProductFills<T extends InvoicePlatformCandidate>(audited: InvoiceAuditedFile<T>): InvoiceAuditProductFill[] {
+  const corrected = new Map(audited.corrections.map(correction => [correction.sourceRow, correction.corrected]));
+  const fills = new Map<string, InvoiceAuditProductFill>();
+  for (const row of audited.model.rows) for (const { item } of row.allocations) {
+    const code = item.productCode.trim().toLocaleUpperCase("en-US");
+    const line = corrected.get(row.part.sourceRow);
+    if (fills.has(code) || !item.productId || !line) continue;
+    const flagged = Boolean(audited.decisions.flaggedNcms[row.part.sourceRow]);
+    const fields = invoiceProductFillFields({ ...line, ncm: flagged ? "" : line.ncm }, { ncmCode: item.productNcmCode ?? null,
+      manufacturer: item.manufacturer ?? null, manufacturerAddress: item.manufacturerAddress ?? null,
+      manufacturerCountry: item.manufacturerCountry ?? null });
+    if (!fields.length) continue;
+    const value = (field: InvoiceProductFillField, text: string) => fields.includes(field) && text.trim() ? text.trim() : null;
+    fills.set(code, { productCode: item.productCode, productId: item.productId, sourceRow: row.part.sourceRow, fields,
+      values: { ncmCode: value("ncm", line.ncm), manufacturer: value("manufacturer", line.manufacturer),
+        manufacturerAddress: value("manufacturerAddress", line.manufacturerAddress),
+        manufacturerCountry: value("manufacturerCountry", line.manufacturerCountry) } });
+  }
+  return [...fills.values()];
+}
+
+/**
+ * What the IP saves from the audited invoice: the lines and totals of the downloaded file, the destinations of the audit
+ * with their confirmations, the line decisions and `audit` (original lines, reference loads and decisions with reasons).
+ * `fills` are the products the analyst chose to complete.
+ */
+export function invoiceAuditSavePayload<T extends InvoicePlatformCandidate>(input: { lines: readonly ChinaInvoiceLine[];
+  countryOfOrigin: string; invoiceLabel: string; audited: InvoiceAuditedFile<T>; fills: readonly InvoiceAuditProductFill[] }) {
+  const { audited, lines } = input;
+  const { model, decisions } = audited;
+  const corrected = new Map(audited.corrections.map(correction => [correction.sourceRow, correction.corrected]));
+  const savedLines = lines.map(line => {
+    const values = corrected.get(line.sourceRow);
+    return { sourceRow: line.sourceRow, lineNumber: line.lineNumber, productCode: line.productCode, unit: line.unit,
+      ...Object.fromEntries(invoiceAuditLineFields.map(field => [field, values ? values[field] : line[field]])) } as
+      { sourceRow: number; lineNumber: string; productCode: string; unit: string } & Record<typeof invoiceAuditLineFields[number], string>;
+  });
+  const mismatched = new Set(model.supplierMismatches);
+  const { assignments, allocations } = invoiceSavePayload(input.invoiceLabel, model.rows.flatMap(row =>
+    row.allocations.map(({ item, quantity }) => ({ sourceRow: row.part.sourceRow, sourcePoNumber: row.part.poNumber,
+      productCode: row.part.productCode, itemId: item.id, poNumber: item.poNumber, poProductCode: item.productCode, quantity,
+      confirmSupplierMismatch: mismatched.has(supplierKey(item)) && Boolean(decisions.supplierConfirmed[supplierKey(item)]),
+      confirmUnitMismatch: model.unitPoints.has(row.part.sourceRow) && Boolean(decisions.unitConfirmed[row.part.sourceRow]),
+      confirmPriceMismatch: model.pricePoints.has(row.part.sourceRow) && decisions.priceChoices[row.part.sourceRow] === "ACCEPT" }))));
+  // A line kept without destination (unreadable PO cell) is destined with 0 and the reason of that decision.
+  const kept = model.unreadLines.filter(entry => !decisions.splitAccepted[entry.line.sourceRow]).map(entry => entry.line);
+  const lineDecisions = invoiceLineDecisions(savedLines,
+    [...model.rows.map(row => ({ sourceRow: row.part.sourceRow, invoiceQuantity: row.part.invoiceQuantity, quantity: row.part.quantity })),
+      ...kept.map(line => ({ sourceRow: line.sourceRow, invoiceQuantity: line.quantity, quantity: "0" }))],
+    { ...decisions.quantityDecisions, ...Object.fromEntries(kept.map(line => [line.sourceRow, decisions.poCellKept[line.sourceRow]])) });
+  const reason = (decision: { reason: string } | undefined) => decision?.reason.trim() ?? "";
+  const audit = {
+    auditedFileSha256: audited.sha256, auditedFileName: audited.fileName, references: audited.references,
+    originalHeader: { countryOfOrigin: input.countryOfOrigin },
+    originalLines: lines.map(line => ({ sourceRow: line.sourceRow, lineNumber: line.lineNumber, productCode: line.productCode,
+      unit: line.unit, ...Object.fromEntries(invoiceAuditLineFields.map(field => [field, line[field]])) })),
+    decisions: {
+      catalogMissing: model.catalog.missing.map(entry => decisions.flaggedNcms[entry.sourceRow]
+        ? { sourceRow: entry.sourceRow, action: "FLAG" as const, reason: "" }
+        : { sourceRow: entry.sourceRow, action: "KEEP" as const, reason: reason(decisions.missingDecisions[entry.sourceRow]) }),
+      manufacturers: model.manufacturerChecks.flatMap(check => {
+        const choice = model.manufacturerChoices.get(check.sourceRow);
+        const entry = choice?.chosen ?? check.entry;
+        if (!entry) return [];
+        const country = choice?.listCountry ? decisions.countryChoices[check.sourceRow] : undefined;
+        return [{ sourceRow: check.sourceRow, referenceRow: entry.sourceRow, country: country?.source ?? null, reason: reason(country) }];
+      }),
+      manufacturerMissing: model.manufacturerChecks.filter(check => check.status === "MISSING"
+        && !model.manufacturerChoices.get(check.sourceRow)?.chosen)
+        .map(check => ({ sourceRow: check.sourceRow, reason: reason(decisions.manufacturerMissing[check.sourceRow]) })),
+      prices: [...model.pricePoints.keys()].map(sourceRow => ({ sourceRow, choice: decisions.priceChoices[sourceRow] ?? "ACCEPT" })),
+      packing: model.divergences.map(divergence => ({ key: divergence.key, sourceRow: divergence.invoiceRow,
+        source: decisions.packingChoices[divergence.key]?.source ?? "INVOICE", reason: reason(decisions.packingChoices[divergence.key]) })),
+      poCells: model.unreadLines.map(entry => decisions.splitAccepted[entry.line.sourceRow]
+        ? { sourceRow: entry.line.sourceRow, action: "SPLIT" as const, reason: "" }
+        : { sourceRow: entry.line.sourceRow, action: "KEEP" as const, reason: reason(decisions.poCellKept[entry.line.sourceRow]) }),
+      poChanges: model.rows.filter(row => row.part.poNumber !== row.part.sourcePoNumber)
+        .map(row => ({ sourceRow: row.part.sourceRow, from: row.part.sourcePoNumber, to: row.part.poNumber })),
+      suppliers: model.supplierMismatches.filter(supplier => decisions.supplierConfirmed[supplier]),
+      units: [...model.unitPoints.keys()].filter(sourceRow => decisions.unitConfirmed[sourceRow]),
+    },
+  };
+  return { lines: savedLines, amount: audited.totals.amount, totalQuantity: audited.totals.quantity,
+    totalNetWeightKg: audited.totals.netWeightKg, totalGrossWeightKg: audited.totals.grossWeightKg,
+    countryOfOrigin: model.origin.corrected ?? input.countryOfOrigin, assignments, allocations, lineDecisions, audit,
+    catalogUpdates: { products: input.fills.map(fill => ({ productCode: fill.productCode, ...fill.values })) } };
 }

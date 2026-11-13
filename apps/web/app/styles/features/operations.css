@@ -164,7 +164,6 @@
 .invoice-compare-table thead th { color: var(--color-text-muted); font-weight: 700; }
 .invoice-compare-table tbody th { background: transparent; color: var(--color-text-secondary); white-space: nowrap; }
 .invoice-compare-differs td { background: var(--color-warning-bg); color: var(--color-warning-text); font-weight: 700; }
-.invoice-compare-legend { color: var(--color-text-muted); font-size: var(--fs-xs); margin: 6px 0 0; }
 
 /* Follow-up */
 .followup-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); margin: 12px 0; }

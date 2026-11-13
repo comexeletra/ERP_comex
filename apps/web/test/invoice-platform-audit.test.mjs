@@ -122,7 +122,7 @@ test("a PO of another importer carries the importers where it is registered, and
   assert.match(screen, /importerSwitch=\{reviewInvoiceId \? undefined : \{ names: importerNames, codes: importers, change: changeImporter \}\}/u);
 });
 
-test("the IP screen shows the audit subsection, and Compras audits without the review that saves the IP", async () => {
+test("the IP screen shows the audit subsection, and Compras audits without confirming the distribution", async () => {
   const screen = await source("../components/NewOperationalRecord.tsx");
   const subsection = await source("../components/InvoicePlatformAudit.tsx");
   const directory = await source("../components/ProcessDirectory.tsx");
@@ -132,8 +132,12 @@ test("the IP screen shows the audit subsection, and Compras audits without the r
   assert.match(screen, /if \(!canSaveIp\) \{ setInvoiceError\(!invoiceImporter \? importerWarning : ""\); return; \}/u);
   assert.match(screen, /<InvoicePlatformAudit key=\{`\$\{invoiceDraft\.fileSha256\}\|\$\{importer\}`\} draft=\{invoiceDraft\}/u);
   assert.match(screen, /\{canSaveIp && <button className="button" disabled=\{saving/u);
-  // Until stage 6 the IP is still saved by the review that exists today (user decision, 2026-11-12).
-  assert.match(screen, /invoiceSavePayload\(/u);
+  // Phase B2 (stage 6): the IP is saved with the audited invoice of the subsection, while it is the file of the current
+  // decisions; the subsection itself never calls the save route.
+  assert.match(screen, /const saved = invoiceAuditSavePayload\(\{ lines: invoiceDraft\.lines,/u);
+  assert.match(screen, /onAudited=\{setAuditedInvoice\}/u);
+  assert.match(subsection, /const current = Boolean\(downloaded && downloaded\.decisions === decisions\);/u);
+  assert.match(subsection, /onAudited\?\.\(current && downloaded \? \{ \.\.\.downloaded\.file, decisions: downloaded\.decisions,/u);
   assert.doesNotMatch(subsection, /method: "PUT"|import-invoice/u);
   assert.match(subsection, /"\/api\/v1\/purchase-orders\/invoice-candidates\/batch", \{ importer, revisingIpNumber: systemIp \|\| undefined, poNumbers \}/u);
   assert.match(subsection, /"\/api\/v1\/purchase-orders\/invoice-candidates\/by-product", \{ importer, revisingIpNumber: systemIp \|\| undefined, products \}/u);
@@ -144,10 +148,12 @@ test("the IP screen shows the audit subsection, and Compras audits without the r
   assert.match(subsection, /if \(event\.key === "Enter" && event\.target instanceof HTMLInputElement\) event\.preventDefault\(\);/u);
   assert.match(screen, /if \(element\.closest\("\.invoice-platform-audit"\) \|\| element\.checkValidity\(\)\) continue;/u);
   assert.match(screen, /if \(kind === "ip" && \(!canSaveIp \|\| !reportIpFormValidity\(event\.currentTarget\)\)\) return;/u);
-  assert.match(screen, /\|\| \(importerCnpjMismatch && !confirmImporterCnpjMismatch\)\)\)\} formNoValidate>/u);
+  assert.match(screen, /&& !\(importerCnpjMismatch && !confirmImporterCnpjMismatch\);/u);
+  assert.match(screen, /\|\| Boolean\(invoiceDraft && \(invoiceError \|\| !invoiceIpReady\)\)\} formNoValidate>/u);
+  assert.match(screen, /canConfirm=\{canSaveIp\}/u);
   // Compras sees the CNPJ that differs from the chosen importer, without the confirmation of who saves.
   assert.match(screen, /\{!canSaveIp && importerCnpjMismatch && <p className="notice warning" role="alert">/u);
-  assert.match(subsection, /\}, \[importer, ipNumber, requests\]\);/u);
+  assert.match(subsection, /\}, \[importer, ipNumber, requests, reload\]\);/u);
   assert.match(directory, /: roles\.includes\("Compras"\) && <Link className="button" href="\/processes\/new">\{t\.auditInvoice\}<\/Link>/u);
   const styles = await source("../app/styles/features/operations.css");
   assert.match(styles, /\.invoice-platform-audit \{/u);

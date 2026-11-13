@@ -8,6 +8,7 @@ import { exporterMatchesAlias } from "./exporter-alias.js";
 import { parseInvoicePoCell } from "./invoice-po-cell.js";
 import { invoicePriceDifference } from "./invoice-price.js";
 import { invoiceIpWithoutPrefix, invoiceSaveIpNumber } from "./invoice-ip-number.js";
+import { checkInvoiceAudit, invoiceAuditCitedByPo, invoiceAuditSchema } from "./invoice-audit-check.js";
 
 const quantity = z.string().trim().regex(/^(?:0|[1-9]\d{0,15})(?:[.,]\d{1,8})?$/u)
   .refine(value => !/^0(?:[.,]0+)?$/u.test(value)).transform(value => value.replace(",", "."));
@@ -266,9 +267,13 @@ async function findDuplicateInvoiceIpNumbers(queryable: Pool | PoolClient, invoi
          OR ($2::text IS NOT NULL AND document.notes LIKE '%' || $2 || '%'))`,
     [normalizeSupplier(invoiceNumber), fileSha256 ?? null, ipNumber]);
   return [...new Set(potentialDuplicates.rows.filter(candidate => {
-    let savedHash: unknown;
-    try { savedHash = JSON.parse(candidate.notes).fileSha256; } catch { savedHash = undefined; }
-    return Boolean(fileSha256 && savedHash === fileSha256)
+    // The audited file sent later as the original is the same invoice (phase B2).
+    let savedHashes: unknown[] = [];
+    try {
+      const notes = JSON.parse(candidate.notes) as { fileSha256?: unknown; audit?: { auditedFileSha256?: unknown } };
+      savedHashes = [notes.fileSha256, notes.audit?.auditedFileSha256];
+    } catch { savedHashes = []; }
+    return Boolean(fileSha256 && savedHashes.includes(fileSha256))
       || (normalizeSupplier(candidate.number) === normalizeSupplier(invoiceNumber)
         && normalizeSupplier(candidate.supplier_text) === normalizeSupplier(exporterText));
   }).map(candidate => candidate.ip_number))];
@@ -1188,6 +1193,14 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
             throw new BusinessError(400, "INVOICE_TOTAL_MISMATCH", "A quantidade total não confere com as linhas.");
           }
         }
+        // Phase B2: the lines are those of the audited file; the original lines and the decisions come with them.
+        const parsedAudit = invoiceAuditSchema.safeParse(body.invoice.metadata.audit);
+        if (!parsedAudit.success) {
+          throw new BusinessError(400, "INVALID_INVOICE_AUDIT",
+            "Audite a invoice na tela do IP e baixe a invoice auditada antes de confirmar a distribuição.");
+        }
+        const audit = parsedAudit.data;
+        const originalLineByRow = new Map(audit.originalLines.map(line => [line.sourceRow, line]));
         // What the analyst destined from each line; a line without a decision destines its whole quantity.
         const lineDecisions = z.array(z.object({ sourceRow: z.number().int().positive(),
           invoiceQuantity: nonnegative, destinedQuantity: nonnegative, confirmQuantityMismatch: z.boolean(),
@@ -1223,16 +1236,13 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
           const rowPo = `${assignment.sourceRow}|${normalizePoNumber(assignment.sourcePoNumber)}`;
           assignedByRowPo.set(rowPo, (assignedByRowPo.get(rowPo) ?? 0n) + decimalUnits(assignment.quantity));
         }
-        // A split cell cites a quantity for each PO; destining another quantity to a PO is a decision as well.
+        // A split cell cites a quantity for each PO; destining another quantity to a PO is a decision as well. The
+        // quantities are those the supplier wrote (the original cell), with the PO changes the audit accepted.
         const rowsWithPartMismatch = new Set<number>();
         for (const line of invoiceLines.data) {
-          const parts = parseInvoicePoCell(line.poCell);
-          if (!parts.length || parts.some(part => part.quantity === null)) continue;
-          const citedByPo = new Map<string, bigint>();
-          for (const part of parts) {
-            const po = normalizePoNumber(part.poNumber);
-            citedByPo.set(po, (citedByPo.get(po) ?? 0n) + decimalUnits(part.quantity!));
-          }
+          const citedByPo = invoiceAuditCitedByPo(originalLineByRow.get(line.sourceRow)?.poCell ?? line.poCell,
+            audit.decisions.poChanges.filter(change => change.sourceRow === line.sourceRow), decimalUnits);
+          if (!citedByPo) continue;
           if ([...citedByPo].some(([po, cited]) => (assignedByRowPo.get(`${line.sourceRow}|${po}`) ?? 0n) !== cited)) {
             rowsWithPartMismatch.add(line.sourceRow);
           }
@@ -1289,6 +1299,29 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         const poProductCodes = new Set(invoiceAssignments.data.map(item => item.poProductCode.toLocaleUpperCase("en-US")));
         if (catalogUpdates.products.some(update => !poProductCodes.has(update.productCode.toLocaleUpperCase("en-US")))) {
           throw new BusinessError(400, "INVOICE_CATALOG_UPDATE_MISMATCH", "As atualizações de cadastro precisam ser de produtos destinados por esta invoice.");
+        }
+        // R7 (phase B2): the product is completed with the audited values of a destined line of it, never with an NCM
+        // flagged as not found in the DATABASE.
+        const flaggedRows = new Set(audit.decisions.catalogMissing.filter(decision => decision.action === "FLAG")
+          .map(decision => decision.sourceRow));
+        const destinedRows = new Set(invoiceAssignments.data.map(assignment => assignment.sourceRow));
+        const lineText = (line: Record<string, unknown>, field: string) =>
+          typeof line[field] === "string" ? String(line[field]).trim() : "";
+        for (const update of catalogUpdates.products) {
+          const code = update.productCode.trim().toLocaleUpperCase("en-US");
+          const productLines = invoiceLines.data.filter(line => destinedRows.has(line.sourceRow)
+            && line.productCode.trim().toLocaleUpperCase("en-US") === code);
+          if (update.ncmCode !== null && productLines.some(line => flaggedRows.has(line.sourceRow))) {
+            throw new BusinessError(400, "INVOICE_FLAGGED_NCM_TO_CATALOG",
+              `O produto ${update.productCode} tem NCM sinalizada como não encontrada na DATABASE, e ela não vai para o cadastro.`);
+          }
+          if (!productLines.some(line => (update.ncmCode === null || lineText(line, "ncm") === update.ncmCode)
+            && (update.manufacturer === null || lineText(line, "manufacturer") === update.manufacturer)
+            && (update.manufacturerAddress === null || lineText(line, "manufacturerAddress") === update.manufacturerAddress)
+            && (update.manufacturerCountry === null || lineText(line, "manufacturerCountry") === update.manufacturerCountry))) {
+            throw new BusinessError(400, "INVOICE_CATALOG_UPDATE_MISMATCH",
+              `O cadastro do produto ${update.productCode} só recebe os valores auditados de uma linha destinada da invoice.`);
+          }
         }
         const aggregated = new Map<string, number>();
         for (const allocation of body.allocations) {
@@ -1385,6 +1418,41 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
                 ? "PO sem preço" : `${priceDifference.percent}%`}).`);
           }
         }
+        // Phase B2: every value the audit changed has its decision and its source, in the latest reference loads.
+        const latestLoads = await client.query<{ kind: string; id: string }>(
+          `SELECT DISTINCT ON (kind) kind, id FROM catalog.reference_load ORDER BY kind, loaded_at DESC, id DESC`);
+        const latestLoad = (kind: string) => latestLoads.rows.find(row => row.kind === kind)?.id ?? null;
+        if (audit.references.productDatabaseLoadId !== latestLoad("PRODUCT_DATABASE")
+          || audit.references.manufacturerListLoadId !== latestLoad("MANUFACTURER_LIST")) {
+          throw new BusinessError(409, "INVOICE_AUDIT_REFERENCE_OUTDATED",
+            "A DATABASE ou a lista de fabricantes foi carregada de novo depois da auditoria. Audite a invoice outra vez.");
+        }
+        const productRows = audit.references.productDatabaseLoadId
+          ? await client.query<{ code: string; ncm: string; description: string }>(
+            `SELECT upper(btrim(product_code)) AS code, ncm, description FROM catalog.reference_product_row
+             WHERE load_id = $1 AND upper(btrim(product_code)) = ANY($2::text[])`,
+            [audit.references.productDatabaseLoadId,
+              [...new Set(invoiceLines.data.map(line => line.productCode.trim().toLocaleUpperCase("en-US")))]]) : null;
+        const referenceRows = [...new Set(audit.decisions.manufacturers.flatMap(decision =>
+          decision.referenceRow === null ? [] : [decision.referenceRow]))];
+        const manufacturerRows = audit.references.manufacturerListLoadId
+          ? await client.query<{ source_row: number; name: string; address: string; country: string }>(
+            `SELECT source_row, name, address, country FROM catalog.reference_manufacturer_row
+             WHERE load_id = $1 AND source_row = ANY($2::int[])`, [audit.references.manufacturerListLoadId, referenceRows]) : null;
+        const itemsByRow = new Map<number, { unitPrice: string | null; currency: string | null }[]>();
+        for (const assignment of invoiceAssignments.data) {
+          const item = byItemId.get(assignment.itemId)!;
+          itemsByRow.set(assignment.sourceRow, [...(itemsByRow.get(assignment.sourceRow) ?? []),
+            { unitPrice: item.unit_price, currency: item.currency_code }]);
+        }
+        const auditCheck = checkInvoiceAudit({ lines: invoiceLines.data, audit,
+          countryOfOrigin: typeof body.invoice.metadata.countryOfOrigin === "string" ? body.invoice.metadata.countryOfOrigin : "",
+          lineDecisions: decisionByRow,
+          products: productRows ? new Map(productRows.rows.map(row => [row.code, { ncm: row.ncm, description: row.description }])) : null,
+          manufacturers: manufacturerRows ? new Map(manufacturerRows.rows.map(row => [Number(row.source_row),
+            { name: row.name, address: row.address, country: row.country }])) : null,
+          itemsByRow });
+        if (auditCheck.problem) throw new BusinessError(auditCheck.problem.status, auditCheck.problem.code, auditCheck.problem.detail);
         const supplierIdsForProcess = new Set([...supplierByItemId.values()].map(item => item.supplierEntryId));
         const processSupplierEntryId = [...supplierByItemId.values()].every(item => item.matchesExporter && item.supplierEntryId)
           && supplierIdsForProcess.size === 1 ? [...supplierIdsForProcess][0] : null;
@@ -1576,7 +1644,10 @@ export async function registerOperationalRoutes(app: FastifyInstance, pool: Pool
         await record(client, "IMPORT_PROCESS", processId, "PROCESS_DOCUMENT", documentId, "CREATE", null,
           { kind: "INVOICE", number: body.invoice.number, issueDate: body.invoice.issueDate,
             amount: body.invoice.amount, currency: body.invoice.currency, fileName: body.invoice.fileName,
-            ...(auditedLineDecisions.length ? { lineDecisions: auditedLineDecisions } : {}) }, auth.actor, body.process.reason);
+            ...(auditedLineDecisions.length ? { lineDecisions: auditedLineDecisions } : {}),
+            audit: { auditedFileSha256: audit.auditedFileSha256, auditedFileName: audit.auditedFileName,
+              references: audit.references, changedFields: auditCheck.changedFields, decisions: audit.decisions } },
+          auth.actor, body.process.reason);
         for (const update of catalogUpdates.products) {
           const found = await client.query<Record<string, unknown>>(
             `SELECT * FROM catalog.entry WHERE kind = 'PRODUCT' AND importer IS NULL

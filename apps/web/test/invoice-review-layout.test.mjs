@@ -4,12 +4,16 @@ import test from "node:test";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
 
 const component = await readFile(new URL("../components/NewOperationalRecord.tsx", import.meta.url), "utf8");
+// Phase B2 (2026-11-12): the invoice lines are reviewed in the audit subsection, with the shared review of the audit page.
+const review = await readFile(new URL("../components/InvoiceAuditReview.tsx", import.meta.url), "utf8");
+const subsection = await readFile(new URL("../components/InvoicePlatformAudit.tsx", import.meta.url), "utf8");
+const mapping = await readFile(new URL("../lib/china-invoice-mapping.ts", import.meta.url), "utf8");
 const styles = await readFile(new URL("../app/styles/features/operations.css", import.meta.url), "utf8");
 const processWorkspace = await readFile(new URL("../components/ProcessWorkspace.tsx", import.meta.url), "utf8");
 const newProcessPage = await readFile(new URL("../app/processes/new/page.tsx", import.meta.url), "utf8");
 
 test("invoice review uses a fluid, readable table layout", () => {
-  assert.match(component, /className="totvs-import-table-wrap invoice-match-table-wrap"><table className="totvs-import-table invoice-match-table"/u);
+  assert.match(review, /className="totvs-import-table-wrap invoice-match-table-wrap"><table className="totvs-import-table invoice-match-table"/u);
   assert.match(styles, /\.ip-entry-section\s*\{[^}]*max-width:\s*none;[^}]*width:\s*100%/u);
   assert.match(styles, /\.invoice-match-table\s*\{[^}]*min-width:\s*0;[^}]*table-layout:\s*fixed;[^}]*width:\s*100%/u);
   assert.match(styles, /\.invoice-match-table-wrap\s*\{\s*max-height:\s*min\(62vh, 720px\);/u);
@@ -30,28 +34,26 @@ test("IP review entry fixes the IP and shows allocation changes and orphan PO ch
   assert.equal(ptBR.newRecord.removeLink, "Remover vínculo");
 });
 
+// The action of each row is now in the audit: the PO balance, destine 0, the suggested PO or the importer of the PO; the
+// links to open or create a PO in another tab left with the review below the subsection.
 test("invoice review shows per-row PO action and duplicate confirmation", () => {
-  assert.match(component, /classifyInvoiceDestination\(match\.candidates, match\.poExists/u);
-  assert.match(component, /t\.insufficient\(formatNumber\(destinationIssue\.requested\)/u);
-  assert.match(ptBR.newRecord.insufficient("10", "5"), /^Saldo insuficiente: quantidade pedida 10, disponível 5\.$/u);
-  assert.match(component, /href=\{`\/purchase-orders\/\$\{match\.poId\}`\} target="_blank"/u);
-  assert.match(component, /href="\/purchase-orders\/new" target="_blank"/u);
-  assert.match(component, /\{t\.revalidate\}<\/button>/u);
-  assert.equal(ptBR.newRecord.revalidate, "Revalidar POs e saldos");
+  assert.match(mapping, /classifyInvoiceDestination\(part\.keyItems, part\.poExists, part\.quantity, partDistribution, part\.poStatus\)/u);
+  assert.match(review, /t\.insufficient\(formatNumber\(issue\.requested\), formatNumber\(issue\.available\)\)/u);
+  assert.match(ptBR.invoiceAudit.platform.insufficient("10", "5"), /^Saldo insuficiente na PO: pedido 10, disponível 5\.$/u);
+  assert.match(review, /onClick=\{\(\) => change\("poChoices", current => \(\{ \.\.\.current, \[part\.key\]: suggestion\.poNumber \}\)\)\}/u);
+  assert.match(subsection, /onClick=\{readAgain\}>\{t\.readAgain\}<\/button>/u);
+  assert.equal(ptBR.invoiceAudit.platform.readAgain, "Reler POs e saldos (refaz as decisões de destino, preço e pesos)");
   assert.match(component, /\{t\.confirmDuplicateInvoice\}<\/label>/u);
   assert.equal(ptBR.newRecord.confirmDuplicateInvoice, "Confirmo a duplicidade desta invoice.");
 });
 
+// The checklist of each row has the pending and settled states; the count of what is pending is the one of the whole audit.
 test("invoice audit points form a checklist with pending and confirmed states", () => {
-  assert.match(component, /<section className="invoice-audit" aria-label=\{t\.auditPoints\}>/u);
-  assert.match(component, /t\.auditProgress\(progress\.confirmed, progress\.required\)/u);
-  assert.match(component, /className=\{`notice \$\{point\.confirmed === null \? "" : point\.confirmed \? "success" : "error"\}`\}/u);
-  assert.match(component, /<dl className="invoice-audit-values">/u);
-  assert.match(component, /<label className="invoice-audit-confirm"><input type="checkbox"/u);
-  assert.equal(ptBR.newRecord.auditProgress(1, 2), "1 de 2 confirmados");
+  assert.match(review, /className=\{`notice \$\{point\.confirmed \? "success" : "error"\}`\}/u);
+  assert.match(review, /<dl className="invoice-audit-values">/u);
+  assert.match(review, /<label className="invoice-audit-confirm"><input type="checkbox"/u);
+  assert.match(review, /\{pending \? t\.pending\(pending\) : t\.ready\}/u);
   assert.equal(ptBR.newRecord.auditKind.SUPPLIER, "Fornecedor");
-  assert.equal(ptBR.newRecord.auditStatus.pending, "Pendente");
-  assert.equal(ptBR.newRecord.auditStatus.confirmed, "Confirmado");
 });
 
 test("invoice audit confirmations and registry updates keep the checkbox beside its text", () => {
@@ -61,11 +63,12 @@ test("invoice audit confirmations and registry updates keep the checkbox beside 
   assert.match(styles, /\.invoice-match-table td:nth-child\(4\) > \.operational-fields input\[type="checkbox"\]\s*\{[^}]*width:\s*auto/u);
 });
 
-test("invoice comparison is a table with highlighted divergent fields", () => {
-  assert.match(component, /<table className="invoice-compare-table">/u);
-  assert.match(component, /className=\{row\.differs \? "invoice-compare-differs" : undefined\}/u);
-  assert.match(styles, /\.invoice-match-table \.invoice-compare-table th, \.invoice-match-table \.invoice-compare-table td(?:,[^{]+)?\s*\{[^}]*position:\s*static;[^}]*width:\s*auto/u);
-  assert.equal(ptBR.newRecord.compareField.ncm, "NCM");
+// The invoice × PO × product comparison gave way to the audited values: the DATABASE and the manufacturer list correct the
+// file, and each correction is listed with the invoice value and the reference value.
+test("invoice comparison is a table with the invoice and the reference values", () => {
+  assert.match(review, /<table className="totvs-import-table invoice-catalog-table">/u);
+  assert.match(review, /<td>\{point\.invoiceValue \|\| "—"\}<\/td><td>\{point\.databaseValue\}<\/td>/u);
+  assert.match(styles, /\.invoice-catalog-table[\s,{.]/u);
 });
 
 // The form stretches every label as a grid, so a bare checkbox in a notice became a field as wide as the notice.
@@ -77,8 +80,8 @@ test("confirmations inside the invoice notices keep the checkbox beside its text
 });
 
 test("the price point shows the difference in percent against the tolerance", () => {
-  assert.match(component, /\{point\.difference && <><dt>\{t\.auditDifference\}<\/dt><dd>\{t\.priceDifference\(/u);
-  assert.match(component, /formatPercentChange\(point\.difference\.percent\)/u);
+  assert.match(review, /\{pricePoint\.difference && <><dt>\{m\.newRecord\.auditDifference\}<\/dt><dd>\{m\.newRecord\.priceDifference\(/u);
+  assert.match(review, /formatPercentChange\(pricePoint\.difference\.percent\)/u);
   assert.equal(ptBR.newRecord.priceDifference("−16,09%", true, 20), "−16,09% · dentro da tolerância de 20%");
   assert.equal(ptBR.newRecord.priceDifference("+25,00%", false, 20), "+25,00% · acima da tolerância de 20%");
   assert.equal(ptBR.newRecord.priceDifference(null, false, 20), "PO sem preço · acima da tolerância de 20%");

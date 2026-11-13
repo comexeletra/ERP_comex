@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { ChinaInvoiceDraft } from "../lib/china-invoice-xlsx";
 import { invoiceAuditCorrectionInput, invoiceAuditModel, type InvoiceAuditCandidate, type InvoiceAuditDecisions,
+  type InvoiceAuditedFile,
   type InvoiceAuditSource, InvoiceCatalogMissing, InvoiceCatalogPoint, InvoicePackingChoice, invoicePackingChoiceReady,
   invoicePoCellSettled, invoicePriceChoiceReady, invoicePriceTolerancePercent, InvoiceQuantityDecision, invoiceQuantityDecisionReady,
   invoiceManufacturerId, classifyInvoiceDestination } from "../lib/china-invoice-mapping";
@@ -21,6 +22,12 @@ import InvoiceManufacturerAudit from "./InvoiceManufacturerAudit";
 
 const noDecision: InvoiceQuantityDecision = { confirmed: false, reason: "" };
 export type InvoiceAuditDecisionsUpdate = (update: (current: InvoiceAuditDecisions) => InvoiceAuditDecisions) => void;
+/** The downloaded file of the audit, without the reference loads (the screen that saves adds them). */
+export type InvoiceAuditDownload<T extends InvoiceAuditCandidate> = Omit<InvoiceAuditedFile<T>, "references" | "decisions">;
+
+async function sha256(bytes: ArrayBuffer): Promise<string> {
+  return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), byte => byte.toString(16).padStart(2, "0")).join("");
+}
 
 /**
  * The invoice audit shared by the audit page (POs of the Follow Up) and the IP screen (POs of the platform), user
@@ -28,10 +35,12 @@ export type InvoiceAuditDecisionsUpdate = (update: (current: InvoiceAuditDecisio
  * The decisions belong to the screen that shows it, which clears them when the invoice or the POs change.
  */
 export default function InvoiceAuditReview<T extends InvoiceAuditCandidate>({ draft, bytes, source, summary, reference,
-  importer, user, decisions, onDecisions, onDownloaded, onBusy, importerSwitch }: {
+  importer, user, decisions, onDecisions, onDownloaded, onBusy, importerSwitch, supplierAlias }: {
   draft: ChinaInvoiceDraft; bytes: ArrayBuffer; source: InvoiceAuditSource<T>; summary: InvoiceAuditSourceSummary;
   reference: AuditReference | null; importer: string; user: string; decisions: InvoiceAuditDecisions;
-  onDecisions: InvoiceAuditDecisionsUpdate; onDownloaded?: () => void;
+  onDecisions: InvoiceAuditDecisionsUpdate;
+  /** The file the analyst downloaded, with the model of that moment (phase B2: the IP saves exactly this file). */
+  onDownloaded?: (file: InvoiceAuditDownload<T>) => void;
   /** While the file is written, the screen keeps the invoice from being replaced. */
   onBusy?: (busy: boolean) => void;
   /**
@@ -39,6 +48,8 @@ export default function InvoiceAuditReview<T extends InvoiceAuditCandidate>({ dr
    * (the screen then audits the invoice again with the POs of that importer).
    */
   importerSwitch?: { names: Readonly<Record<string, string>>; codes: readonly string[]; change: (code: string) => void };
+  /** The Exporter name offered as an alias of a PO supplier that does not match it (supplier editors on the IP screen). */
+  supplierAlias?: { suggestion: string; busy: boolean; canRegister: (supplier: string) => boolean; register: (supplier: string) => void };
 }) {
   const { m } = useI18n();
   const t = invoiceAuditTexts(m, summary.kind);
@@ -70,6 +81,7 @@ export default function InvoiceAuditReview<T extends InvoiceAuditCandidate>({ dr
       const input = invoiceAuditCorrectionInput(model, decisions);
       const corrections = invoiceLineCorrections(draft.lines, input.parts, input.prices, input.weights, input.reference);
       const changedCells = invoiceChangedCells(corrections, draft.layout, draft.packingList);
+      const fileName = `${draft.fileName.replace(/\.xlsx$/iu, "")} - ${messages.invoiceAudit.fileSuffix}.xlsx`;
       const written = await writeCorrectedInvoice(bytes, draft.layout, corrections, invoiceCorrectedTotals(corrections),
         invoiceAuditSheet(messages, { draft, model, decisions, corrections, changedCells, database, manufacturerList, importer, user,
           source: summary, ncmFlagCells: row => invoiceNcmFlagCells(draft.layout, row) },
@@ -79,10 +91,10 @@ export default function InvoiceAuditReview<T extends InvoiceAuditCandidate>({ dr
       const link = document.createElement("a");
       link.href = URL.createObjectURL(new Blob([written], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
-      link.download = `${draft.fileName.replace(/\.xlsx$/iu, "")} - ${messages.invoiceAudit.fileSuffix}.xlsx`;
+      link.download = fileName;
       link.click();
       URL.revokeObjectURL(link.href);
-      onDownloaded?.();
+      onDownloaded?.({ model, corrections, totals: invoiceCorrectedTotals(corrections), sha256: await sha256(written), fileName });
     } catch (cause) { setError(cause instanceof Error ? cause.message : messages.common.unexpectedError); }
     finally { setReading(false); onBusy?.(false); }
   }
@@ -115,6 +127,9 @@ export default function InvoiceAuditReview<T extends InvoiceAuditCandidate>({ dr
       <label className="invoice-audit-confirm"><input type="checkbox" checked={Boolean(decisions.supplierConfirmed[supplier])}
         onChange={event => { const checked = event.target.checked; change("supplierConfirmed", current => ({ ...current, [supplier]: checked })); }} />
         {t.confirmSupplier(supplier)}</label>
+      {supplierAlias?.canRegister(supplier) && <div className="button-row">
+        <button className="button secondary" type="button" disabled={supplierAlias.busy || reading}
+          onClick={() => supplierAlias.register(supplier)}>{m.exporterAliases.invoiceAdd(supplierAlias.suggestion, supplier)}</button></div>}
     </div>)}
     {!database ? <p className="notice warning">{t.noDatabase}</p> : <CatalogAudit t={t} points={catalog.points}
       missing={catalog.missing} missingDecisions={decisions.missingDecisions} flagged={decisions.flaggedNcms}

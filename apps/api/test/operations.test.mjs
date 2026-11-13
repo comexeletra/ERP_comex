@@ -9,6 +9,31 @@ const secondItemId = "00000000-0000-4000-8000-000000000005";
 const body = { importer: "ELETRA MATRIZ", number: "PO-TESTE", supplierText: "SUP-TESTE",
   orderDate: null, notes: "", reason: "Pedido conferido" };
 
+const auditFields = ["quantity", "poCell", "unitPrice", "netWeightKg", "grossWeightKg", "amount", "ncm", "description",
+  "manufacturer", "manufacturerAddress", "manufacturerCountry"];
+/** The decisions of an audit that changed nothing (phase B2: the screen always sends the audit of the invoice). */
+export function emptyAuditDecisions() {
+  return { catalogMissing: [], manufacturers: [], manufacturerMissing: [], prices: [], packing: [], poCells: [], poChanges: [],
+    suppliers: [], units: [] };
+}
+/**
+ * Phase B2: the invoice is saved with its audit. Without other changes in a test, the original lines are the saved
+ * ones (nothing was changed by the audit) and no reference load is cited.
+ */
+export function withAudit(payload, audit = {}) {
+  const metadata = payload?.invoice?.metadata;
+  if (!metadata || !Array.isArray(metadata.lines) || "audit" in metadata) return payload;
+  const text = value => typeof value === "string" ? value : value === undefined || value === null ? "" : String(value);
+  return { ...payload, invoice: { ...payload.invoice, metadata: { ...metadata, audit: {
+    auditedFileSha256: "c".repeat(64), auditedFileName: "invoice - auditada.xlsx",
+    references: { productDatabaseLoadId: null, manufacturerListLoadId: null },
+    originalHeader: { countryOfOrigin: text(metadata.countryOfOrigin) },
+    originalLines: metadata.lines.map(line => ({ sourceRow: line.sourceRow, lineNumber: text(line.lineNumber),
+      productCode: text(line.productCode), unit: text(line.unit),
+      ...Object.fromEntries(auditFields.map(field => [field, text(line[field])])) })),
+    decisions: emptyAuditDecisions(), ...audit } } } };
+}
+
 async function invoiceImportApp(t, client, { preflightDuplicate = false, preflightOtherImporterIp = false } = {}) {
   const pool = {
     async query(sql, params) {
@@ -37,6 +62,10 @@ async function invoiceImportApp(t, client, { preflightDuplicate = false, preflig
     };
   });
   await registerOperationalRoutes(app, pool);
+  // The tests of the other rules send an invoice whose audit changed nothing.
+  const inject = app.inject.bind(app);
+  app.inject = options => inject(options.url === "/api/v1/processes/import-invoice"
+    ? { ...options, payload: withAudit(options.payload) } : options);
   return app;
 }
 
@@ -106,7 +135,8 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true,
   canceledItem = false, duplicateKind = null, poUnit = null, poUnitPrice = null, poCurrency = null,
   linkedOrphanPo = false, draft = false, insufficientBalance = false, purchaseOrderStatus = "ACTIVE",
   previousAllocationPoStatus = "ACTIVE", recordStatus = "ACTIVE", shipped = false, exporterAliases = [],
-  catalogProduct = null, secondItem = false, codesInPo = [], storedIps = [], unknownOperationalValues = [] } = {}) {
+  catalogProduct = null, secondItem = false, codesInPo = [], storedIps = [], unknownOperationalValues = [],
+  referenceLoads = [], referenceProducts = [], referenceManufacturers = [] } = {}) {
   const processId = "00000000-0000-4000-8000-000000000021";
   const oldDocumentId = "00000000-0000-4000-8000-000000000022";
   const oldAllocationId = "00000000-0000-4000-8000-000000000023";
@@ -128,7 +158,8 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true,
       }
       if (sql.includes("FROM imports.process_document document") && sql.includes("document.notes LIKE")) {
         return duplicateKind ? { rows: [{ number: duplicateKind === "number" ? "INV-1" : "OTHER-INV",
-          notes: JSON.stringify({ fileSha256: duplicateKind === "hash" ? "a".repeat(64) : "b".repeat(64) }),
+          notes: JSON.stringify({ fileSha256: duplicateKind === "hash" ? "a".repeat(64) : "b".repeat(64),
+            ...(duplicateKind === "audited" ? { audit: { auditedFileSha256: "a".repeat(64) } } : {}) }),
           ip_number: "IPH/OTHER", importer: "ELETRA MATRIZ", supplier_text: "Exporter Ltd" }], rowCount: 1 }
           : { rows: [], rowCount: 0 };
       }
@@ -172,6 +203,15 @@ function invoiceImportClient({ revision = false, supplierMatchesExporter = true,
           purchase_order_item_id: poId, quantity: "5", status: "ACTIVE",
           lifecycle_status: previousAllocationPoStatus }], rowCount: 1 }
           : { rows: [], rowCount: 0 };
+      }
+      if (sql.includes("FROM catalog.reference_load ORDER BY kind")) return { rows: referenceLoads, rowCount: referenceLoads.length };
+      if (sql.includes("FROM catalog.reference_product_row")) {
+        const rows = referenceProducts.filter(row => params[1].includes(row.code));
+        return { rows, rowCount: rows.length };
+      }
+      if (sql.includes("FROM catalog.reference_manufacturer_row")) {
+        const rows = referenceManufacturers.filter(row => params[1].includes(row.source_row));
+        return { rows, rowCount: rows.length };
       }
       if (sql.includes("SELECT * FROM catalog.entry WHERE kind = 'PRODUCT'")) {
         return catalogProduct ? { rows: [catalogProduct], rowCount: 1 } : { rows: [], rowCount: 0 };
@@ -260,7 +300,7 @@ test("invoice import does not require a price confirmation for a non-CNY PO", as
   assert.equal(response.statusCode, 201, response.body);
 });
 
-for (const duplicateKind of ["hash", "number"]) {
+for (const duplicateKind of ["hash", "number", "audited"]) {
   test(`invoice import requires audited confirmation for duplicate ${duplicateKind}`, async t => {
     const { client, queries } = invoiceImportClient({ duplicateKind });
     const app = await invoiceImportApp(t, client);
@@ -551,7 +591,7 @@ test("invoice import requires explicit confirmation for a PO supplier mismatch",
 
   const response = await app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
     headers: { "x-test-subject": "writer", "idempotency-key": "invoice-supplier-check" },
-    payload: {
+    payload: withAudit({
       process: { importer: "ELETRA MATRIZ", ipNumber: "IPH/TEST", supplierText: "Exporter Ltd",
         logisticsStatus: "WAITING SHIPMENT", transportMode: "SEA", portLoading: null, portDischarge: null,
         priority: null, notes: "", reason: "Invoice review" },
@@ -562,7 +602,7 @@ test("invoice import requires explicit confirmation for a PO supplier mismatch",
             poProductCode: "PO-CODE", productCode: "PO-CODE", quantity: "5",
             confirmSupplierMismatch: false }] } },
       allocations: [{ itemId: poId, quantity: "5", notes: "Invoice row 16" }],
-    },
+    }),
   });
 
   assert.equal(response.statusCode, 400);
@@ -1157,12 +1197,17 @@ test("the invoice never overwrites the PO item and only fills empty product fiel
   const app = await invoiceImportApp(t, client);
   const send = (key, catalogUpdates) => {
     const payload = invoicePayload();
+    Object.assign(payload.invoice.metadata.lines[0], lineValues);
+    payload.invoice.metadata.countryOfOrigin = "BR";
     payload.invoice.metadata.catalogUpdates = catalogUpdates;
     return app.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
       headers: { "x-test-subject": "writer", "idempotency-key": key }, payload });
   };
   const fill = { productCode: "PO-CODE", ncmCode: "40169990", manufacturer: "Hangzhou Shunhesheng",
     manufacturerAddress: "Hangzhou", manufacturerCountry: "BR" };
+  // Phase B2 (R7): the values come from the audited line that the product receives.
+  const lineValues = { ncm: "40169990", manufacturer: "Hangzhou Shunhesheng", manufacturerAddress: "Hangzhou",
+    manufacturerCountry: "BR" };
 
   const poItem = await send("invoice-po-item-update", { products: [], poItems: [{ itemId: poId,
     description: "Invoice text", unitPrice: "1", currency: "CNY", ncmCode: null }] });
@@ -1185,6 +1230,8 @@ test("the invoice never overwrites the PO item and only fills empty product fiel
     manufacturer: "Other", manufacturer_address: "Somewhere" } });
   const fullApp = await invoiceImportApp(t, fullClient);
   const payload = invoicePayload();
+  Object.assign(payload.invoice.metadata.lines[0], lineValues);
+  payload.invoice.metadata.countryOfOrigin = "BR";
   payload.invoice.metadata.catalogUpdates = { products: [fill] };
   const unchanged = await fullApp.inject({ method: "POST", url: "/api/v1/processes/import-invoice",
     headers: { "x-test-subject": "writer", "idempotency-key": "invoice-product-complete" }, payload });
@@ -1433,4 +1480,239 @@ test("a price difference within the tolerance still needs the acceptance and is 
   assert.ok(queries.some(query => query.sql.includes("INSERT INTO audit.audit_log") && query.params.some(value =>
     typeof value === "string" && value.includes('"confirmedPriceMismatch":true')
       && value.includes('"priceDifferencePercent":"-0.0021"') && value.includes('"priceWithinTolerance":true'))));
+});
+
+/*
+ * Phase B2 (docs/PLANO_INVOICE_IP_AUDITORIA_DISTRIBUICAO.md, user decisions of 2026-11-12): the IP is saved with the invoice
+ * audited on the IP screen, and the API checks every changed value again against its decision and its source.
+ */
+const databaseLoad = "00000000-0000-4000-8000-0000000000d1";
+const listLoad = "00000000-0000-4000-8000-0000000000d2";
+const oldLoad = "00000000-0000-4000-8000-0000000000d0";
+
+/** An invoice whose line had `before` in the original file and `after` in the audited file. */
+function auditedInvoice({ before = () => {}, after = () => {}, decisions = {}, references } = {}) {
+  const payload = invoicePayload();
+  before(payload.invoice.metadata.lines[0], payload);
+  const audited = withAudit(payload);
+  after(audited.invoice.metadata.lines[0], audited);
+  Object.assign(audited.invoice.metadata.audit.decisions, decisions);
+  if (references) audited.invoice.metadata.audit.references = references;
+  return audited;
+}
+
+test("the invoice is saved only with its audit, whose original lines are the saved ones", async t => {
+  const { client, queries } = invoiceImportClient();
+  const app = await invoiceImportApp(t, client);
+  const missing = invoicePayload();
+  missing.invoice.metadata.audit = null;
+  const refused = await sendInvoice(app, "invoice-audit-missing", missing);
+  assert.equal(refused.statusCode, 400, refused.body);
+  assert.equal(refused.json().code, "INVALID_INVOICE_AUDIT");
+  const otherRow = auditedInvoice();
+  otherRow.invoice.metadata.audit.originalLines[0].sourceRow = 17;
+  const mismatch = await sendInvoice(app, "invoice-audit-other-row", otherRow);
+  assert.equal(mismatch.statusCode, 400, mismatch.body);
+  assert.equal(mismatch.json().code, "INVALID_INVOICE_AUDIT");
+  assert.equal(queries.some(query => /^\s*(?:UPDATE|INSERT)\b/u.test(query.sql)), false);
+});
+
+test("a value changed by the audit without its decision or its source is refused", async t => {
+  const { client, queries } = invoiceImportClient();
+  const app = await invoiceImportApp(t, client);
+  for (const [name, payload, code] of [
+    ["NCM without a DATABASE", auditedInvoice({ after: line => { line.ncm = "39269090"; } }), "INVOICE_AUDIT_CHANGE_UNJUSTIFIED"],
+    ["description without a DATABASE", auditedInvoice({ after: line => { line.description = "Other"; } }), "INVOICE_AUDIT_CHANGE_UNJUSTIFIED"],
+    ["manufacturer without a list", auditedInvoice({ after: line => { line.manufacturerAddress = "Hangzhou Road"; } }),
+      "INVOICE_AUDIT_CHANGE_UNJUSTIFIED"],
+    ["quantity without a decision", auditedInvoice({ before: line => { line.quantity = "8"; }, after: line => { line.quantity = "5"; } }),
+      "INVOICE_AUDIT_CHANGE_UNJUSTIFIED"],
+    ["weights without the PKL", auditedInvoice({ after: line => { line.grossWeightKg = "1.6"; } }), "INVOICE_AUDIT_CHANGE_UNJUSTIFIED"],
+    ["weights with the INV choice", auditedInvoice({ after: line => { line.grossWeightKg = "1.6"; },
+      decisions: { packing: [{ key: "inv:16", sourceRow: 16, source: "INVOICE", reason: "Mantida a INV" }] } }),
+    "INVOICE_AUDIT_CHANGE_UNJUSTIFIED"],
+    ["PO out of the cell", auditedInvoice({ before: line => { line.poCell = "PO030305"; }, after: line => { line.poCell = "PO030201"; } }), "INVOICE_AUDIT_PO_NOT_IN_CELL"],
+    ["change from a PO out of the cell", auditedInvoice({ before: line => { line.poCell = "PO030305"; }, after: line => { line.poCell = "PO030201"; },
+      decisions: { poChanges: [{ sourceRow: 16, from: "PO099999", to: "PO030201" }] } }), "INVOICE_AUDIT_PO_NOT_IN_CELL"],
+    ["split with a PO out of the cell", auditedInvoice({ before: line => { line.poCell = "PO 030888&030777"; },
+      after: line => { line.poCell = "PO 030201 = 5 UNIT"; }, decisions: { poCells: [{ sourceRow: 16, action: "SPLIT", reason: "" }] } }),
+    "INVOICE_AUDIT_PO_NOT_IN_CELL"],
+    ["cited load without a load", auditedInvoice({ references: { productDatabaseLoadId: databaseLoad, manufacturerListLoadId: null } }),
+      "INVOICE_AUDIT_REFERENCE_OUTDATED"],
+  ]) {
+    const response = await sendInvoice(app, `invoice-audit-${name.replaceAll(" ", "-")}`, payload);
+    assert.equal(response.json().code, code, `${name}: ${response.body}`);
+    assert.match(response.json().detail, /16|DATABASE|PO/u, name);
+  }
+  assert.equal(queries.some(query => /^\s*(?:UPDATE|INSERT)\b/u.test(query.sql)), false);
+});
+
+test("the audit changes with their decisions are saved, and the IP audit keeps the summary", async t => {
+  const { client, queries } = invoiceImportClient();
+  const app = await invoiceImportApp(t, client);
+  for (const [name, payload] of [
+    ["quantity", auditedInvoice({ before: line => { line.quantity = "8"; },
+      after: (line, audited) => { line.quantity = "5"; audited.invoice.metadata.lineDecisions = [{ sourceRow: 16, invoiceQuantity: "5", destinedQuantity: "5",
+        confirmQuantityMismatch: true, quantityMismatchReason: "Saldo no próximo embarque" }]; } })],
+    ["PO change", auditedInvoice({ before: line => { line.poCell = "PO030305"; }, after: line => { line.poCell = "PO030201"; },
+      decisions: { poChanges: [{ sourceRow: 16, from: "PO030305", to: "PO030201" }] } })],
+    ["split", auditedInvoice({ before: line => { line.poCell = "PO 030888&030201"; },
+      after: line => { line.poCell = "PO 030201 = 5 UNIT"; }, decisions: { poCells: [{ sourceRow: 16, action: "SPLIT", reason: "" }] } })],
+    ["weights", auditedInvoice({ after: line => { line.grossWeightKg = "1.6"; },
+      decisions: { packing: [{ key: "inv:16", sourceRow: 16, source: "PACKING", reason: "Peso bruto da PKL" }] } })],
+  ]) {
+    const response = await sendInvoice(app, `invoice-audit-saved-${name.replaceAll(" ", "-")}`, payload);
+    assert.equal(response.statusCode, 201, `${name}: ${response.body}`);
+  }
+  const document = queries.find(query => query.sql.includes("INSERT INTO imports.process_document"));
+  const notes = JSON.parse(document.params[6]);
+  assert.equal(notes.fileSha256, "a".repeat(64));
+  assert.equal(notes.audit.auditedFileSha256, "c".repeat(64));
+  assert.equal(notes.audit.originalLines[0].quantity, "8");
+  const record = queries.find(query => query.sql.includes("INSERT INTO audit.audit_log")
+    && query.params.some(value => typeof value === "string" && value.includes('"kind":"INVOICE"')));
+  const summary = JSON.parse(record.params[7]).audit;
+  assert.equal(summary.auditedFileSha256, "c".repeat(64));
+  assert.deepEqual(summary.changedFields, { quantity: 1 });
+  assert.deepEqual(summary.references, { productDatabaseLoadId: null, manufacturerListLoadId: null });
+});
+
+test("NCM and description are those of the latest DATABASE, and a product out of it needs a decision", async t => {
+  const references = { productDatabaseLoadId: databaseLoad, manufacturerListLoadId: null };
+  const { client } = invoiceImportClient({ referenceLoads: [{ kind: "PRODUCT_DATABASE", id: databaseLoad }],
+    referenceProducts: [{ code: "PO-CODE", ncm: "39269090", description: "BOTAO SILICONE" }] });
+  const app = await invoiceImportApp(t, client);
+  const corrected = line => { line.ncm = "39269090"; line.description = "BOTAO SILICONE"; };
+  const saved = await sendInvoice(app, "invoice-database-corrected", auditedInvoice({ before: line => {
+    line.ncm = "40169990"; line.description = "Botao silicone"; }, after: corrected, references }));
+  assert.equal(saved.statusCode, 201, saved.body);
+  for (const [name, payload, code] of [
+    ["other NCM", auditedInvoice({ after: line => { corrected(line); line.ncm = "11111111"; }, references }),
+      "INVOICE_AUDIT_CHANGE_UNJUSTIFIED"],
+    ["kept invoice values", auditedInvoice({ before: line => { line.ncm = "40169990"; line.description = "Botao"; }, references }),
+      "INVOICE_AUDIT_CHANGE_UNJUSTIFIED"],
+    ["outdated load", auditedInvoice({ after: corrected, references: { ...references, productDatabaseLoadId: oldLoad } }),
+      "INVOICE_AUDIT_REFERENCE_OUTDATED"],
+  ]) {
+    const response = await sendInvoice(app, `invoice-database-${name.replaceAll(" ", "-")}`, payload);
+    assert.equal(response.json().code, code, `${name}: ${response.body}`);
+    assert.equal(response.statusCode, code.endsWith("OUTDATED") ? 409 : 400, name);
+  }
+
+  const { client: outside } = invoiceImportClient({ referenceLoads: [{ kind: "PRODUCT_DATABASE", id: databaseLoad }] });
+  const outsideApp = await invoiceImportApp(t, outside);
+  const undecided = await sendInvoice(outsideApp, "invoice-database-outside", auditedInvoice({ references }));
+  assert.equal(undecided.json().code, "INVOICE_AUDIT_CHANGE_UNJUSTIFIED", undecided.body);
+  const shortReason = await sendInvoice(outsideApp, "invoice-database-outside-short", auditedInvoice({ references,
+    decisions: { catalogMissing: [{ sourceRow: 16, action: "KEEP", reason: "ok" }] } }));
+  assert.equal(shortReason.json().code, "INVOICE_AUDIT_CHANGE_UNJUSTIFIED", shortReason.body);
+  for (const decision of [{ action: "KEEP", reason: "Produto novo, fora da DATABASE" }, { action: "FLAG", reason: "" }]) {
+    const kept = await sendInvoice(outsideApp, `invoice-database-outside-${decision.action}`, auditedInvoice({ references,
+      decisions: { catalogMissing: [{ sourceRow: 16, ...decision }] } }));
+    assert.equal(kept.statusCode, 201, kept.body);
+  }
+});
+
+test("the manufacturer takes the name, address and country of the cited row of the latest list", async t => {
+  const references = { productDatabaseLoadId: null, manufacturerListLoadId: listLoad };
+  const { client } = invoiceImportClient({ referenceLoads: [{ kind: "MANUFACTURER_LIST", id: listLoad }],
+    referenceManufacturers: [{ source_row: 7, name: "HEXING ELECTRICAL CO., LTD", address: "Hangzhou Road 1418", country: "China" }] });
+  const app = await invoiceImportApp(t, client);
+  const original = line => { line.manufacturer = "Hexing Electrical"; line.manufacturerAddress = "Hangzhou Rd 1418";
+    line.manufacturerCountry = "Taiwan"; };
+  const header = (_line, payload) => { payload.invoice.metadata.countryOfOrigin = "TAIWAN"; };
+  const fromList = (line, payload) => { line.manufacturer = "HEXING ELECTRICAL CO., LTD"; line.manufacturerAddress = "Hangzhou Road 1418";
+    line.manufacturerCountry = "CHINA"; payload.invoice.metadata.countryOfOrigin = "TAIWAN, CHINA"; };
+  const listCountry = { manufacturers: [{ sourceRow: 16, referenceRow: 7, country: "LIST", reason: "País da lista conferido" }] };
+  const saved = await sendInvoice(app, "invoice-manufacturer-list", auditedInvoice({ before: (line, payload) => {
+    original(line); header(line, payload); }, after: fromList, decisions: listCountry, references }));
+  assert.equal(saved.statusCode, 201, saved.body);
+  for (const [name, after, decisions] of [
+    ["address out of the row", (line, payload) => { fromList(line, payload); line.manufacturerAddress = "Other"; }, listCountry],
+    ["list country kept by the analyst", fromList, { manufacturers: [{ ...listCountry.manufacturers[0], country: "INVOICE" }] }],
+    ["row out of the list", fromList, { manufacturers: [{ ...listCountry.manufacturers[0], referenceRow: 8 }] }],
+    ["header without the line country", (line, payload) => { fromList(line, payload);
+      payload.invoice.metadata.countryOfOrigin = "TAIWAN"; }, listCountry],
+  ]) {
+    const response = await sendInvoice(app, `invoice-manufacturer-${name.replaceAll(" ", "-")}`, auditedInvoice({
+      before: (line, payload) => { original(line); header(line, payload); }, after, decisions, references }));
+    assert.equal(response.statusCode, 400, `${name}: ${response.body}`);
+    assert.equal(response.json().code, "INVOICE_AUDIT_CHANGE_UNJUSTIFIED", name);
+  }
+});
+
+test("a corrected price is the one CNY price of the PO items that receive the line", async t => {
+  const { client } = invoiceImportClient({ poUnit: "PCS", poUnitPrice: "2", poCurrency: "CNY" });
+  const app = await invoiceImportApp(t, client);
+  const original = (line, payload) => { Object.assign(line, { unit: "PCS", unitPrice: "3", amount: "15" }); payload.invoice.amount = "15"; };
+  const corrected = (price, amount) => (line, payload) => { Object.assign(line, { unitPrice: price, amount });
+    payload.invoice.amount = amount; payload.invoice.metadata.assignments[0].confirmPriceMismatch = price !== "2"; };
+  const saved = await sendInvoice(app, "invoice-price-corrected", auditedInvoice({ before: original, after: corrected("2", "10"),
+    decisions: { prices: [{ sourceRow: 16, choice: "CORRECT" }] } }));
+  assert.equal(saved.statusCode, 201, saved.body);
+  for (const [name, after, choice] of [["accepted", corrected("2", "10"), "ACCEPT"], ["other price", corrected("2.5", "12.5"), "CORRECT"]]) {
+    const response = await sendInvoice(app, `invoice-price-${name.replaceAll(" ", "-")}`, auditedInvoice({ before: original, after,
+      decisions: { prices: [{ sourceRow: 16, choice }] } }));
+    assert.equal(response.statusCode, 400, `${name}: ${response.body}`);
+    assert.equal(response.json().code, "INVOICE_AUDIT_PRICE_MISMATCH", name);
+  }
+});
+
+test("the product is completed only with audited values, never with a flagged NCM", async t => {
+  const product = { id: "00000000-0000-4000-8000-000000000031", name: "BOTAO SILICONE", product_ncm_code: null,
+    manufacturer: null, manufacturer_address: null, manufacturer_country: null };
+  const { client, queries } = invoiceImportClient({ catalogProduct: product });
+  const app = await invoiceImportApp(t, client);
+  const update = { productCode: "PO-CODE", ncmCode: "39269090", manufacturer: null, manufacturerAddress: null, manufacturerCountry: null };
+  const withLine = line => { line.ncm = "39269090"; };
+  const flagged = await sendInvoice(app, "invoice-catalog-flagged", auditedInvoice({ before: withLine,
+    after: (_line, payload) => { payload.invoice.metadata.catalogUpdates = { products: [update] }; },
+    decisions: { catalogMissing: [{ sourceRow: 16, action: "FLAG", reason: "" }] } }));
+  assert.equal(flagged.statusCode, 400, flagged.body);
+  assert.equal(flagged.json().code, "INVOICE_FLAGGED_NCM_TO_CATALOG");
+  const notAudited = await sendInvoice(app, "invoice-catalog-not-audited", auditedInvoice({ before: withLine,
+    after: (_line, payload) => { payload.invoice.metadata.catalogUpdates = { products: [{ ...update, ncmCode: "40169990" }] }; } }));
+  assert.equal(notAudited.statusCode, 400, notAudited.body);
+  assert.equal(notAudited.json().code, "INVOICE_CATALOG_UPDATE_MISMATCH");
+  assert.equal(queries.some(query => query.sql.includes("UPDATE catalog.entry")), false);
+  const audited = await sendInvoice(app, "invoice-catalog-audited", auditedInvoice({ before: withLine,
+    after: (_line, payload) => { payload.invoice.metadata.catalogUpdates = { products: [update] }; } }));
+  assert.equal(audited.statusCode, 201, audited.body);
+  assert.ok(queries.some(query => query.sql.includes("UPDATE catalog.entry") && query.params[1] === "39269090"));
+});
+
+test("the payload built by the web screen from the audited invoice is accepted by the invoice route", async t => {
+  const { emptyInvoiceAuditDecisions, invoiceAuditModel, invoiceAuditSavePayload } = await import("../../web/lib/china-invoice-mapping.ts");
+  const { invoiceCorrectedTotals, invoiceLineCorrections } = await import("../../web/lib/invoice-correction-xlsx.ts");
+  const lines = [{ sourceRow: 16, lineNumber: "1", ncm: "39269090", productCode: "PO-CODE", description: "Part A", manufacturer: "M",
+    manufacturerAddress: "A", manufacturerCountry: "CHINA", quantity: "8", unit: "PCS", unitPrice: "2", netWeightKg: "1",
+    grossWeightKg: "2", amount: "16", poCell: "PO030201", poAssignments: [{ poNumber: "030201", quantity: "8", explicitQuantity: false }],
+    issues: [] }];
+  const draft = { fileName: "INV.xlsx", ipNumber: "IPH/TEST", exporterText: "Exporter Ltd", countryOfOrigin: "CHINA",
+    packingList: { status: "MISSING" }, lines };
+  const items = [{ id: poId, lineNumber: 1, poNumber: "PO030201", productCode: "PO-CODE", remainingQuantity: "10", unit: "PCS",
+    unitPrice: null, currency: null, supplier: "EXPORTER", supplierValues: ["Exporter Ltd", "EXPORTER"] }];
+  const source = { purchaseOrder: po => po === "030201" ? { poExists: true, items } : { poExists: false, items: [] }, suggestions: () => [] };
+  // The analyst destines 5 of the 8 of the line, with the confirmation and the reason.
+  const decisions = { ...emptyInvoiceAuditDecisions, quantities: { "16:0": "5" },
+    quantityDecisions: { 16: { confirmed: true, reason: "Saldo no próximo embarque" } } };
+  const model = invoiceAuditModel({ draft, source, products: null, manufacturers: null, decisions });
+  assert.equal(model.pending, 0);
+  const corrections = invoiceLineCorrections(lines, model.rows.map(row => ({ sourceRow: row.part.sourceRow, poNumber: row.part.poNumber,
+    quantity: row.part.quantity })), {}, {});
+  const saved = invoiceAuditSavePayload({ lines, countryOfOrigin: "CHINA", invoiceLabel: "INV-1", fills: [], audited: { model, decisions,
+    corrections, totals: invoiceCorrectedTotals(corrections), sha256: "d".repeat(64), fileName: "INV - auditada.xlsx",
+    references: { productDatabaseLoadId: null, manufacturerListLoadId: null } } });
+  const payload = invoicePayload();
+  payload.invoice.amount = saved.amount;
+  Object.assign(payload.invoice.metadata, { lines: saved.lines, assignments: saved.assignments, lineDecisions: saved.lineDecisions,
+    audit: saved.audit, catalogUpdates: saved.catalogUpdates, countryOfOrigin: saved.countryOfOrigin, totalQuantity: saved.totalQuantity });
+  payload.allocations = saved.allocations;
+  const { client, queries } = invoiceImportClient();
+  const app = await invoiceImportApp(t, client);
+  const response = await sendInvoice(app, "invoice-web-audited", payload);
+  assert.equal(response.statusCode, 201, response.body);
+  assert.ok(queries.some(query => query.sql.includes("INSERT INTO procurement.po_item_allocation") && query.params[3] === 5));
+  const notes = JSON.parse(queries.find(query => query.sql.includes("INSERT INTO imports.process_document")).params[6]);
+  assert.deepEqual([notes.lines[0].quantity, notes.lines[0].amount, notes.audit.originalLines[0].quantity], ["5", "10", "8"]);
 });

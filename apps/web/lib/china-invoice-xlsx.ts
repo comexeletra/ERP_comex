@@ -23,6 +23,8 @@ export type ChinaInvoiceLine = {
   poCell: string;
   poAssignments: InvoicePoAssignment[];
   issues: string[];
+  /** The issue of a PO cell the reader cannot split (also in `issues`): the audit on the IP screen settles it (phase B2). */
+  poCellIssue?: string;
 };
 
 export type InvoicePackingLine = { sourceRow: number; lineNumber: string; quantity: string; netWeightKg: string; grossWeightKg: string;
@@ -283,9 +285,10 @@ function parseLine(sheet: Worksheet, rowNumber: number, columns: Map<string, num
   if (!get("po")) issues.push(t.poEmpty);
 
   let poAssignments: InvoicePoAssignment[] = [];
+  let poCellIssue: string | undefined;
   if (quantity && get("po")) {
     try { poAssignments = parseInvoicePoAssignments(get("po"), quantity, m); }
-    catch (error) { issues.push(error instanceof Error ? error.message : t.poInvalid); }
+    catch (error) { poCellIssue = error instanceof Error ? error.message : t.poInvalid; issues.push(poCellIssue); }
   }
 
   if (quantityNumber !== null && amountNumber !== null && unitPrice) {
@@ -301,7 +304,7 @@ function parseLine(sheet: Worksheet, rowNumber: number, columns: Map<string, num
     quantity, unit: get("qty unit"), unitPrice,
     netWeightKg: decimalCell(sheet.getRow(rowNumber).getCell(columns.get("net weight kg")!)),
     grossWeightKg: decimalCell(sheet.getRow(rowNumber).getCell(columns.get("gross weight kg")!)),
-    amount, poCell: get("po"), poAssignments, issues,
+    amount, poCell: get("po"), poAssignments, issues, ...(poCellIssue ? { poCellIssue } : {}),
   };
 }
 

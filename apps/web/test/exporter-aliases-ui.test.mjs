@@ -4,7 +4,7 @@ import test from "node:test";
 
 const read = path => readFile(new URL(path, import.meta.url), "utf8");
 const [aliases, invoice, values, catalogCss] = await Promise.all([
-  read("../components/SupplierExporterAliases.tsx"), read("../components/NewOperationalRecord.tsx"),
+  read("../components/SupplierExporterAliases.tsx"), read("../components/InvoicePlatformAudit.tsx"),
   read("../app/catalog/values/page.tsx"), read("../app/styles/features/catalog.css"),
 ]);
 
@@ -22,9 +22,15 @@ test("each supplier of the catalog shows its Exporter aliases, editable by suppl
   assert.match(catalogCss, /\.supplier-alias \{/u);
 });
 
-test("the invoice review offers the Exporter name as an alias and revalidates the lines after saving it", () => {
-  assert.match(invoice, /invoiceExporterAliasSuggestion\(invoiceDraft\?\.exporterText \?\? ""\)/u);
-  assert.match(invoice, /await createExporterAlias\(supplierId, exporterAliasSuggestion\)/u);
-  assert.match(invoice, /await createExporterAlias[\s\S]{0,400}await revalidateInvoiceMatches\(\)/u);
-  assert.match(invoice, /\["Master", "Administrador", "Compras"\]/u);
+// Phase B2: the audit subsection is the invoice review of the IP screen, and the alias is offered in its supplier notice.
+test("the invoice review offers the Exporter name as an alias and reads the POs again after saving it", async () => {
+  const screen = await read("../components/NewOperationalRecord.tsx");
+  const review = await read("../components/InvoiceAuditReview.tsx");
+  assert.match(invoice, /const aliasSuggestion = invoiceExporterAliasSuggestion\(draft\.exporterText\);/u);
+  assert.match(invoice, /await createExporterAlias\(supplierId, aliasSuggestion\)/u);
+  assert.match(invoice, /await createExporterAlias[\s\S]{0,200}setCandidates\(null\); setReload\(value => value \+ 1\);/u);
+  assert.match(invoice, /supplierAlias=\{canEditSuppliers && aliasSuggestion\.replace\(\/\[\^A-Za-z0-9\]\/gu, ""\)\.length >= 8/u);
+  assert.match(review, /\{m\.exporterAliases\.invoiceAdd\(supplierAlias\.suggestion, supplier\)\}/u);
+  assert.match(screen, /\["Master", "Administrador", "Compras"\]/u);
+  assert.match(screen, /canEditSuppliers=\{canEditSuppliers\}/u);
 });

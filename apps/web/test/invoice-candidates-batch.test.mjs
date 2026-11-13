@@ -2,11 +2,16 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const component = await readFile(new URL("../components/NewOperationalRecord.tsx", import.meta.url), "utf8");
+const read = path => readFile(new URL(path, import.meta.url), "utf8");
+const [component, subsection] = await Promise.all([read("../components/NewOperationalRecord.tsx"),
+  read("../components/InvoicePlatformAudit.tsx")]);
 
-test("invoice load and revalidation share the batch candidate endpoint", () => {
-  assert.match(component, /async function loadInvoiceCandidates\(/u);
-  assert.match(component, /\/api\/v1\/purchase-orders\/invoice-candidates\/batch/u);
-  assert.equal((component.match(/await loadInvoiceCandidates\(/gu) ?? []).length, 2);
-  assert.doesNotMatch(component, /invoice-candidates\?/u);
+// Phase B2: the audit subsection reads the candidates of the invoice once per load and per "read again"; the IP screen no
+// longer has a second reading of the same POs.
+test("invoice load and read again share the batch candidate endpoint of the audit subsection", () => {
+  assert.equal((subsection.match(/\/api\/v1\/purchase-orders\/invoice-candidates\/batch/gu) ?? []).length, 1);
+  assert.match(subsection, /\}, \[importer, ipNumber, requests, reload\]\);/u);
+  assert.match(subsection, /setDecisions\(invoiceAuditPathReset\); setReload\(value => value \+ 1\);/u);
+  assert.doesNotMatch(component, /invoice-candidates|loadInvoiceCandidates/u);
+  assert.doesNotMatch(subsection, /invoice-candidates\?/u);
 });

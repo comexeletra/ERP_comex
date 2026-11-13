@@ -89,7 +89,8 @@ test("the IP screen sends the mode and ports chosen and saves into the IP of the
   assert.match(screen, /invoiceProcessPort\(existing\?\.portLoading, draft\.originText, "loading", listed\("port_loading"\)\)/u);
   assert.match(screen, /invoiceProcessPort\(existing\?\.portDischarge, draft\.destinationText, "discharge", listed\("port_discharge"\)\)/u);
   assert.match(screen, /listed\("transport_mode"\)\.includes\(existing\.transportMode\)/u);
-  assert.match(screen, /\|\| !transportMode/u);
+  // The mode is required to confirm the distribution (phase B2: with the audited invoice of the current decisions).
+  assert.match(screen, /const invoiceIpReady = Boolean\(auditedInvoice\) && Boolean\(transportMode\)/u);
   // The status shown stays the one calculated from the IP dates (af2f77b).
   assert.match(screen, /<label>\{t\.logisticsStatus\}<input readOnly value="WAITING SHIPMENT" \/><\/label>/u);
 });

@@ -110,15 +110,20 @@ test("the destined value at the invoice price is set against the PO price, only 
   assert.equal(invoiceValueByPo([{ quantity: "1", invoicePrice: "1", poPrice: "0", poCurrency: "CNY" }]).percent, null);
 });
 
+// Phase B2 (2026-11-12): the conference is in the audit of the IP screen; a pending INV × PKL choice keeps the audited invoice
+// from being downloaded, so the IP cannot be confirmed, and the choices go with the audit of the saved invoice.
 test("the conference panel is shown in the audit, blocks the save on pending INV × PKL divergences and sends the decisions", async () => {
   const record = await readFile(new URL("../components/NewOperationalRecord.tsx", import.meta.url), "utf8");
+  const review = await readFile(new URL("../components/InvoiceAuditReview.tsx", import.meta.url), "utf8");
+  const mapping = await readFile(new URL("../lib/china-invoice-mapping.ts", import.meta.url), "utf8");
   const panel = await readFile(new URL("../components/InvoiceConference.tsx", import.meta.url), "utf8");
   const styles = await readFile(new URL("../app/styles/features/operations.css", import.meta.url), "utf8");
-  assert.match(record, /<InvoiceConference draft=\{invoiceDraft\} divergences=\{packingDivergences\} decisions=\{packingDecisions\}/u);
-  assert.match(record, /if \(!packingDecisionsReady\) throw new Error\(t\.conference\.decisionsPending\);/u);
-  assert.match(record, /\|\| !invoiceLinesReady \|\| !packingDecisionsReady/u);
-  assert.match(record, /packingListDecisions: invoicePackingListDecisions\(packingDivergences, packingDecisions\)/u);
-  assert.equal((record.match(/setPackingDecisions\(\{\}\)/gu) ?? []).length, 2);
+  assert.match(review, /<InvoiceConference draft=\{draft\} divergences=\{divergences\}/u);
+  assert.match(review, /decisionReady=\{divergence => invoicePackingChoiceReady\(divergence, decisions\.packingChoices\[divergence\.key\]\)\}/u);
+  assert.match(mapping, /divergences\.filter\(divergence => !invoicePackingChoiceReady\(divergence, decisions\.packingChoices\[divergence\.key\]\)\)\.length/u);
+  assert.match(record, /if \(!auditedInvoice\) throw new Error\(t\.auditBeforeConfirm\);/u);
+  assert.match(mapping, /packing: model\.divergences\.map\(divergence => \(\{ key: divergence\.key, sourceRow: divergence\.invoiceRow,/u);
+  assert.doesNotMatch(record, /<InvoiceConference|packingDecisions/u);
   assert.match(panel, /<label className="invoice-audit-confirm"><input type="checkbox" checked=\{decision\.confirmed\}/u);
   assert.match(panel, /<label className="invoice-audit-reason">\{t\.reason\}<input required minLength=\{3\}/u);
   for (const name of ["invoice-conference", "invoice-conference-table", "invoice-conference-checks"]) {
