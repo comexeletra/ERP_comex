@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { emptyInvoiceAuditDecisions, invoiceAuditModel, invoiceAuditProductFills,
-  invoiceAuditSavePayload } from "../lib/china-invoice-mapping.ts";
+  invoiceAuditSavePayload, invoiceProductFillCount, invoiceProductFillSelection } from "../lib/china-invoice-mapping.ts";
 import { followUpAuditSource, parseFollowUpXlsx } from "../lib/audit-reference-xlsx.ts";
 import { parseChinaInvoiceXlsx } from "../lib/china-invoice-xlsx.ts";
 import { invoiceCorrectedTotals, invoiceLineCorrections } from "../lib/invoice-correction-xlsx.ts";
@@ -86,6 +86,28 @@ test("the product is completed with the audited values of its empty fields, neve
   assert.deepEqual(saved.catalogUpdates.products, [{ productCode: "P9", ncmCode: null, manufacturer: "MAKER",
     manufacturerAddress: "ROAD 1", manufacturerCountry: "CHINA" }]);
   assert.deepEqual(saved.audit.decisions.catalogMissing, [{ sourceRow: 16, action: "FLAG", reason: "" }]);
+});
+
+// The IPH034B offers about 90 products: the table shows the value of each field that goes to the record ("—" when null),
+// and "Check all" / "Uncheck all" take every product shown.
+test("check all and uncheck all take every product shown, and the count ignores products no longer shown", () => {
+  const lines = [line(16), line(17, { productCode: "P2" })];
+  const file = audited(lines, emptyInvoiceAuditDecisions, { "030201": { poExists: true, items: [item("i1"),
+    item("i2", { productCode: "P2", productId: "product-2", productNcmCode: "85044090", manufacturer: "OLD MAKER" })] } });
+  const fills = invoiceAuditProductFills(file);
+  // P2 already has the NCM and the manufacturer: those cells show "—" and only its address and country go to the record.
+  assert.deepEqual(fills.map(fill => [fill.productCode, fill.values]), [
+    ["P1", { ncmCode: "85044090", manufacturer: "MAKER", manufacturerAddress: "ROAD 1", manufacturerCountry: "CHINA" }],
+    ["P2", { ncmCode: null, manufacturer: null, manufacturerAddress: "ROAD 1", manufacturerCountry: "CHINA" }]]);
+  assert.deepEqual(invoiceProductFillSelection(fills, true), { P1: true, P2: true });
+  assert.deepEqual(invoiceProductFillSelection(fills, false), { P1: false, P2: false });
+  assert.equal(invoiceProductFillCount(fills, {}), 0);
+  assert.equal(invoiceProductFillCount(fills, { P1: true, P2: false, GONE: true }), 1);
+  const all = invoiceProductFillSelection(fills, true);
+  assert.equal(invoiceProductFillCount(fills, all), 2);
+  const saved = invoiceAuditSavePayload({ lines, countryOfOrigin: "CHINA", invoiceLabel: "INV-1", audited: file,
+    fills: fills.filter(fill => all[fill.productCode]) });
+  assert.deepEqual(saved.catalogUpdates.products.map(product => product.productCode), ["P1", "P2"]);
 });
 
 // Acceptance 2 and 3: with the real invoices, read back by the reader, the downloaded file has the lines and totals of the

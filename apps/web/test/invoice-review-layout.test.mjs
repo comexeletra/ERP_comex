@@ -79,6 +79,31 @@ test("confirmations inside the invoice notices keep the checkbox beside its text
   assert.match(styles, /\.invoice-match-table \.invoice-audit-confirm, \.notice > \.invoice-audit-confirm \{[^}]*display: flex;/u);
 });
 
+// The IPH034B offers about 90 products to complete: the label inside a list of the notice took the grid of .stack-form label
+// and left the checkbox alone above its text. One row per product, with the checkbox beside the code and the values.
+const productFill = component.slice(component.indexOf("aria-label={t.productFillTitle}"), component.indexOf("aria-label={t.beforeAfterAria}"));
+
+test("the product completion is a table with the checkbox beside the code and the values that go to the record", () => {
+  assert.match(component, /<section className="notice invoice-catalog" aria-label=\{t\.productFillTitle\}>/u);
+  assert.match(productFill, /<table className="totvs-import-table invoice-catalog-table">/u);
+  for (const column of ["product", "ncm", "manufacturer", "manufacturerAddress", "manufacturerCountry"]) {
+    assert.match(productFill, new RegExp(String.raw`<th scope="col">\{t\.productFillColumn\.${column}\}</th>`, "u"), column);
+  }
+  assert.match(productFill, /<td><label className="invoice-audit-confirm"><input type="checkbox" checked=\{Boolean\(productFills\[fill\.productCode\]\)\}[\s\S]{0,200}?\/>\{fill\.productCode\}<\/label><\/td>/u);
+  for (const field of ["ncmCode", "manufacturer", "manufacturerAddress", "manufacturerCountry"]) {
+    assert.match(productFill, new RegExp(String.raw`<td>\{fill\.values\.${field} \?\? "—"\}</td>`, "u"), field);
+  }
+  assert.doesNotMatch(component, /t\.productFill\(|t\.fillField/u);
+  assert.match(styles, /\.invoice-catalog-table \.invoice-audit-confirm, [^{]*\{[^}]*display: flex;[^}]*font-weight: 400/u);
+});
+
+test("check all and uncheck all act on the products shown, with the count of the checked ones", () => {
+  assert.match(productFill, /onClick=\{\(\) => setProductFills\(invoiceProductFillSelection\(productFillOptions, true\)\)\}>\{t\.selectAllFills\}<\/button>/u);
+  assert.match(productFill, /onClick=\{\(\) => setProductFills\(invoiceProductFillSelection\(productFillOptions, false\)\)\}>\{t\.clearAllFills\}<\/button>/u);
+  assert.match(productFill, /\{t\.productFillCount\(invoiceProductFillCount\(productFillOptions, productFills\), productFillOptions\.length\)\}/u);
+  assert.equal(ptBR.newRecord.productFillCount(3, 90), "3 de 90 produtos marcados");
+});
+
 test("the price point shows the difference in percent against the tolerance", () => {
   assert.match(review, /\{pricePoint\.difference && <><dt>\{m\.newRecord\.auditDifference\}<\/dt><dd>\{m\.newRecord\.priceDifference\(/u);
   assert.match(review, /formatPercentChange\(pricePoint\.difference\.percent\)/u);

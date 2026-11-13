@@ -73,7 +73,8 @@ test("the invoice review texts exist in the three languages", () => {
   for (const messages of [ptBR, en, zhCN]) {
     const t = messages.newRecord;
     for (const text of [t.confirmQuantity, t.quantityReason, t.codeNotInPo, t.poSummary, t.auditBeforeConfirm, t.ipChecksPending,
-      t.confirmDistribution, t.productFillTitle, t.productFillHelp, t.productFill("2050101801", "NCM"),
+      t.confirmDistribution, t.productFillTitle, t.productFillHelp, t.productFillCount(3, 90), t.selectAllFills, t.clearAllFills,
+      ...Object.values(t.productFillColumn),
       messages.invoiceAudit.invalidQuantity, messages.invoiceAudit.platform.readAgain, messages.invoiceAudit.platform.helpSave,
       messages.invoiceAudit.platform.downloadedConfirm, ...Object.values(t.poSummaryColumn)]) {
       assert.equal(typeof text, "string");

@@ -152,7 +152,7 @@
 .invoice-suggestions { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
 .invoice-suggestions li { align-items: center; display: flex; flex-wrap: wrap; gap: 6px 10px; }
 .invoice-po-changed { display: grid; font-size: var(--fs-xs); gap: 6px; justify-items: start; margin-bottom: 6px; }
-.invoice-match-table .invoice-audit-confirm, .notice > .invoice-audit-confirm { align-items: flex-start; cursor: pointer; display: flex; font-weight: 400; gap: 7px; }
+.invoice-catalog-table .invoice-audit-confirm, .invoice-match-table .invoice-audit-confirm, .notice > .invoice-audit-confirm {align-items: flex-start; cursor: pointer; display: flex; font-weight: 400; gap: 7px; }
 .invoice-audit-confirm input { flex: 0 0 auto; margin: 1px 0 0; }
 .invoice-match-table .invoice-audit-reason, .notice > .invoice-audit-reason { display: grid; font-weight: 400; gap: 4px; }
 .invoice-audit-reason input { min-width: 0; width: 100%; }

@@ -32,7 +32,7 @@ import { getMessages, useI18n } from "./I18nProvider";
 import { fieldLabel } from "../lib/i18n/labels";
 import PageHeader from "./PageHeader";
 import { invoiceAuditProductFills, invoiceAuditSavePayload, invoiceBeforeAfterRows, invoiceIpSearchText, invoicePoCodeSummary,
-  invoiceSaveIpNumber } from "../lib/china-invoice-mapping";
+  invoiceProductFillCount, invoiceProductFillSelection, invoiceSaveIpNumber } from "../lib/china-invoice-mapping";
 import { invoiceProcessPort } from "../lib/invoice-ports";
 import InvoicePlatformAudit, { type InvoicePlatformAuditedFile } from "./InvoicePlatformAudit";
 
@@ -1171,15 +1171,29 @@ export default function NewOperationalRecord({ kind, returnHref, reviewInvoiceId
                   <td>{formatNumber(row.shipped)}</td><td>{formatNumber(row.thisInvoice)}</td><td>{formatNumber(row.balanceAfter)}</td>
                 </tr>)}</tbody>
               </table></div>}
-            {productFillOptions.length > 0 && <section className="notice" aria-label={t.productFillTitle}>
+            {productFillOptions.length > 0 && <section className="notice invoice-catalog" aria-label={t.productFillTitle}>
               <h3>{t.productFillTitle}</h3>
               <p className="muted">{t.productFillHelp}</p>
-              <ul className="invoice-audit-list">{productFillOptions.map(fill => <li key={fill.productCode}>
-                <label className="invoice-audit-confirm"><input type="checkbox" checked={Boolean(productFills[fill.productCode])}
-                  onChange={event => { const checked = event.target.checked;
-                    setProductFills(current => ({ ...current, [fill.productCode]: checked })); }} />
-                  {t.productFill(fill.productCode, fill.fields.map(field => t.fillField[field]).join(", "))}</label>
-              </li>)}</ul>
+              <div className="button-row">
+                <button className="button secondary" type="button"
+                  onClick={() => setProductFills(invoiceProductFillSelection(productFillOptions, true))}>{t.selectAllFills}</button>
+                <button className="button secondary" type="button"
+                  onClick={() => setProductFills(invoiceProductFillSelection(productFillOptions, false))}>{t.clearAllFills}</button>
+                <span className="muted" role="status">
+                  {t.productFillCount(invoiceProductFillCount(productFillOptions, productFills), productFillOptions.length)}</span>
+              </div>
+              <div className="totvs-import-table-wrap"><table className="totvs-import-table invoice-catalog-table">
+                <thead><tr><th scope="col">{t.productFillColumn.product}</th><th scope="col">{t.productFillColumn.ncm}</th>
+                  <th scope="col">{t.productFillColumn.manufacturer}</th><th scope="col">{t.productFillColumn.manufacturerAddress}</th>
+                  <th scope="col">{t.productFillColumn.manufacturerCountry}</th></tr></thead>
+                <tbody>{productFillOptions.map(fill => <tr key={fill.productCode}>
+                  <td><label className="invoice-audit-confirm"><input type="checkbox" checked={Boolean(productFills[fill.productCode])}
+                    onChange={event => { const checked = event.target.checked;
+                      setProductFills(current => ({ ...current, [fill.productCode]: checked })); }} />{fill.productCode}</label></td>
+                  <td>{fill.values.ncmCode ?? "—"}</td><td>{fill.values.manufacturer ?? "—"}</td>
+                  <td>{fill.values.manufacturerAddress ?? "—"}</td><td>{fill.values.manufacturerCountry ?? "—"}</td>
+                </tr>)}</tbody>
+              </table></div>
             </section>}
             {invoiceExistingProcess && auditedInvoice && <section className="notice" aria-label={t.beforeAfterAria}>
               <h3>{t.beforeAfter}</h3>

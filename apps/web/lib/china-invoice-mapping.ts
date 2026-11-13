@@ -1287,6 +1287,18 @@ export function invoiceAuditProductFills<T extends InvoicePlatformCandidate>(aud
   return [...fills.values()];
 }
 
+/** "Check all" or "Uncheck all" of the product completion: every product shown, and only them. */
+export function invoiceProductFillSelection(fills: readonly Pick<InvoiceAuditProductFill, "productCode">[],
+  checked: boolean): Record<string, boolean> {
+  return Object.fromEntries(fills.map(fill => [fill.productCode, checked]));
+}
+
+/** How many of the products shown are checked; a product of an earlier audit that is no longer shown does not count. */
+export function invoiceProductFillCount(fills: readonly Pick<InvoiceAuditProductFill, "productCode">[],
+  selection: Readonly<Record<string, boolean>>): number {
+  return fills.filter(fill => selection[fill.productCode]).length;
+}
+
 /**
  * What the IP saves from the audited invoice: the lines and totals of the downloaded file, the destinations of the audit
  * with their confirmations, the line decisions and `audit` (original lines, reference loads and decisions with reasons).

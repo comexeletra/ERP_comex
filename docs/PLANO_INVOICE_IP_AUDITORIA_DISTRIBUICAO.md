@@ -440,4 +440,12 @@ anteriores ficaram canceladas pela revisão. Alterações gravadas: a célula da
 DATABASE. As 8 NCMs fora da DATABASE (linhas 16 a 23) foram sinalizadas, e nenhuma NCM foi ao cadastro; "Completar o cadastro" preencheu
 o fabricante vazio de 11 produtos.
 
+Ajuste da seção "Completar o cadastro do produto" (2026-11-13, só web, pedido do usuário depois da captura da IPH034B, com cerca de 90
+produtos): a lista virou tabela (`section.notice.invoice-catalog` com `invoice-catalog-table`), uma linha por produto, com a caixa ao lado
+do código e os valores que vão para o cadastro (NCM, fabricante, endereço, país; "—" quando o cadastro já tem o valor ou a invoice não o
+traz). "Marcar todos" e "Desmarcar todos" (`invoiceProductFillSelection`) valem só para os produtos exibidos, com o contador
+(`invoiceProductFillCount`). Causa do layout anterior: o label estava em `ul > li` dentro do `.notice`, a regra
+`.notice > .invoice-audit-confirm` não o alcançava e ele herdava o grid de `.stack-form label` (caixa numa linha, texto na outra). O payload
+e a API não mudaram.
+
 Pendências com o usuário: o teste da IPH034B, que revisa o `034B/2026`; a etapa 6b (dúvida 1 aprovada; dúvida 4 em aberto); a versão certa de `invoices_tests/DATABASE - Renew.xlsx`.
