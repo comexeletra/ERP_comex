@@ -1,5 +1,38 @@
 # API ERP na VPS Hostinger
 
+## Fase B2: gravação da invoice auditada na tela do IP no HML (2026-11-13)
+
+O commit `000f84e` muda a gravação da invoice (`POST /api/v1/processes/import-invoice`): `metadata.audit` passa a ser obrigatório
+(SHA-256 do arquivo auditado, cargas de referência usadas, linhas originais e decisões), e `apps/api/src/invoice-audit-check.ts`
+confere cada valor alterado pela auditoria (DATABASE e lista da última carga, preço único CNY da PO, PKL, quantidade com motivo, POs da
+célula original ou trocas aceitas); carga que não é a última responde 409. A web anterior manda a invoice sem auditoria e é recusada:
+API e web sobem e voltam juntas. Não há migration.
+
+O release `/opt/import-erp/apps/api/hml-release-000f84e` (`git -c core.autocrlf=false archive 000f84e:apps/api`, SHA-256 `74022c0f…cd25`,
+nenhuma fonte com CR; `deploy.tar` com os três arquivos do worker e `rehearse-invoice-save.mjs`, SHA-256 `60bbd104…3bbe`) reaproveita o
+`node_modules` de `hml-release-9e3a9a4` (lockfile e migrations iguais; ledger 82).
+- **Antes, só leitura:** candidatos das POs das invoices pelo `dist` de `9e3a9a4` (`rehearse-invoice-candidates.mjs`, contagens iguais
+  antes e depois), estado dos IPs e linhas das últimas cargas (DATABASE `3c9b5202…`, 487 linhas; lista `a874732f…`, 575 linhas) em
+  transações `READ ONLY`. O `invoices_tests/reference-hml.json` local é de cargas anteriores e não serve para montar payloads.
+- **Payloads** montados no repositório pelas funções da tela (`invoicePlatformAuditSource`, `invoiceAuditModel`, `invoiceAuditSavePayload`)
+  com os pontos resolvidos como a analista (`apps/web/test/support/invoice-audit-settle.mjs`): IPH034B (91 linhas, 195 KB; 83 descrições e
+  10 NCMs da DATABASE, 55 preços corrigidos, 9 endereços da lista, linha 92 trocada de 029720 para 030631) e IPH037D original (linha 20
+  dividida 20 + 60, 8 NCMs fora da DATABASE mantidas com motivo). O limite de corpo da API (1 MB) comporta cerca de 500 linhas.
+- **Testes no release** (com `--test-skip-pattern="built by the web"`; `invoice-audit-check` e os que importam a web rodaram no
+  repositório): `operations` (57), `web-route-contract` (1) e `api-error-response` (2).
+- **Ensaio com ROLLBACK antes de ativar:** a IPH034B revisou o `034B/2026` (201, embarcado, 91 alocações, 1.031 comandos, 1,7 s) e a IPH037D
+  original revisou o `IPH037D/2026` (201, 12 alocações); recusas: NCM fora da DATABASE (400 `INVOICE_AUDIT_CHANGE_UNJUSTIFIED`), lista
+  desatualizada (409 `INVOICE_AUDIT_REFERENCE_OUTDATED`) e invoice sem auditoria (400 `INVALID_INVOICE_AUDIT`). Contagens iguais antes e
+  depois (alocações 6.348, documentos 424, auditoria 22.532).
+- **Ativação:** drop-in de 81 `z` `…-release-000f84e.conf`; worker movido com `enable-homologation-export-worker.sh 000f84e`. Drop-ins
+  anteriores: `/var/backups/import-erp/hml-invoice-audited-save-000f84e-predeploy`.
+- **Conferência depois de ativar:** `/health/live` 200, `import-invoice` sem sessão 401, API e worker ativos no `000f84e`, RSS 137 MB.
+- **Rollback somente do código:** remova o drop-in `000f84e`, execute `systemctl daemon-reload`, reinicie `import-erp-hml-api` (volta a
+  `hml-release-9e3a9a4`) e rode `enable-homologation-export-worker.sh 9e3a9a4`; volte a web junto. Scripts, payloads e log em
+  `/root/claude-release-000f84e`; leituras em `/root/claude-b2-read`.
+
+Produção, `main` e as variáveis da Vercel não foram alteradas.
+
 ## Fase B1: modal e portos do IP pela invoice e revisão do IP do Follow Up no HML (2026-11-12)
 
 O commit `9e3a9a4` muda a gravação da invoice (`POST /api/v1/processes/import-invoice`): o `process` passa a exigir `transportMode` e

@@ -4,7 +4,7 @@
 |---|---|
 | Data | 2026-11-12 |
 | Branch de trabalho | `homologacao` |
-| Status | Especificação aprovada em 2026-11-12; etapa 0 (recarga do HML) feita em 2026-11-12; fase A (etapas 1 a 5, sem a confirmação) publicada no Preview em 2026-11-12; fase B1 (campos do IP e revisão do IP sem `IPH`) aprovada em 2026-11-12; fase B2 (gravação da invoice auditada) com especificação aprovada em 2026-11-12 |
+| Status | Especificação aprovada em 2026-11-12; etapa 0 (recarga do HML) feita em 2026-11-12; fase A (etapas 1 a 5, sem a confirmação) publicada no Preview em 2026-11-12; fase B1 (campos do IP e revisão do IP sem `IPH`) aprovada em 2026-11-12; fase B2 (gravação da invoice auditada) publicada no HML e no Preview em 2026-11-13 (`000f84e`) |
 
 ## Contexto
 
@@ -298,7 +298,7 @@ começando pela especificação para aprovação.
 
 # Fase B2: gravação da invoice auditada (etapa 6)
 
-Status: especificação aprovada em 2026-11-12.
+Status: especificação aprovada em 2026-11-12; implementada e no HML em 2026-11-13 (`000f84e`), aguardando o teste do usuário no Preview.
 
 Decisões do usuário (2026-11-12):
 1. Especificação aprovada como está (uma revisão só; a API recusa gravação sem `metadata.audit`; API e web sobem juntas).
@@ -414,3 +414,23 @@ descrição ao cadastro; produção e `main`.
 4. Ensaio no HML com `rehearse-invoice-save.mjs` (payload montado pelas funções da tela a partir das invoices reais e das cargas do HML).
 5. Release da API (roteiro de `hml-release-9e3a9a4`), push, Preview `Ready`, teste do usuário.
 6. Atualizar este plano, `AGENTS.md` e `deploy/hostinger/README.md`.
+
+## Resultado da fase B2 (2026-11-13)
+
+| Etapa | Commit | O que mudou |
+|---|---|---|
+| 1 a 3 | `000f84e` | API: `invoice-audit-check.ts` (schema `.strict()` de `metadata.audit`, conferência de cada valor alterado, espelhos com paridade), última carga ou 409, quantidades da célula dividida pela célula original, cadastro só com valores auditados e sem NCM sinalizada, duplicada também pelo SHA do arquivo auditado. Web: `invoiceAuditSavePayload` e `invoiceAuditProductFills`; a subseção entrega o arquivo baixado (com SHA-256) enquanto ele é o das decisões atuais, relê POs e saldos e oferece o apelido do Exporter; a revisão de baixo saiu; cabeçalho só leitura; célula PO ilegível sem bloqueio (`poCellIssue` no leitor); 33 textos sem uso removidos dos três dicionários. |
+| 4 e 5 | `000f84e` | Ensaio com ROLLBACK e release `hml-release-000f84e` ativo (`deploy/hostinger/README.md`). |
+
+Diferença da especificação: o botão "Confirmar distribuição" ficou no fim da tela, junto dos campos do IP (modal, portos, decisões das
+POs sem alocação), e não dentro da subseção; a subseção diz, depois do download, que a distribuição é confirmada no fim da tela. A
+regra (R4) é a mesma.
+
+Testes: API 73 arquivos (o novo `invoice-audit-check` confere com as IPH034B, 034C e 037D reais que o resultado da auditoria da tela passa
+na conferência da API); web 488 testes, 6 pulados por arquivos ausentes e a falha anterior e alheia `reads the real DATABASE`. Os testes
+da revisão que saiu foram levados para a subseção, com a mesma regra (lista no commit). O novo `invoice-audit-save.test.mjs` relê pelo
+leitor o arquivo auditado das três invoices reais e confere que o payload grava as mesmas linhas e totais; na IPH037D, a linha 20 vai
+20 para a 030888 e 60 para a 030201. Type-check, lint (sem erro; avisos já existentes) e builds passaram.
+
+Pendências com o usuário: o teste no Preview (por exemplo a IPH034B, que revisa o `034B/2026`, e a IPH037D original, sem baixar e subir de
+novo); a etapa 6b (dúvida 1 aprovada; dúvida 4 em aberto); a versão certa de `invoices_tests/DATABASE - Renew.xlsx`.
