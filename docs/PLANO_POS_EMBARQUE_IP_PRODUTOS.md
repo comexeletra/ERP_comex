@@ -112,7 +112,7 @@ Seguem a recomendação, salvo objeção do usuário:
 - **D6 — Sequência das datas.** Bloquear somente o fisicamente impossível entre datas efetivas, e apenas quando a edição altera uma das datas envolvidas: chegada antes da Departure, entrega antes da chegada e ETA antes do ETD. Os demais casos geram só aviso, porque existem no histórico: chegada antes do ETD, desembaraço antes da chegada e ETE antes da ETA. "BL date depois da Departure" não virou aviso: o BL costuma ser emitido no embarque ou logo depois.
 - **D7 — Custos ficam no IP.** Frete, impostos e demurrage não aparecem por produto. Um eventual rateio é tarefa separada.
 - **D8 — ETA/ETE calculadas.** Manter a regra atual e mostrar "confirmada" e "calculada" lado a lado. A planilha também projeta a ETE sem ETD (hoje + 10 + trânsito + 10); essa projeção só será replicada se a operação confirmar.
-- **D9 — Saldo sem IP na carteira por produto.** Mostrar uma linha "A distribuir" com a quantidade restante e sem datas.
+- **D9 — Saldo sem IP na carteira por produto.** Mostrar uma linha "A distribuir" com a quantidade restante e sem datas. Desde 2026-11-13 essa linha tem o status "Aguardando produção", como no BI, e o filtro "Distribuição em IP" a separa (`docs/PLANO_SEM_IP_AGUARDANDO_PRODUCAO.md`).
 
 ## 7. Spec
 

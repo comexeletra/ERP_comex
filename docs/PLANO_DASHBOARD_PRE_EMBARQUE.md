@@ -74,7 +74,9 @@ cruzado do End to End (`E2eOverviewCharts`).
 1. **Cancelados entram:** toda linha de PO `CANCELLED` e o saldo de item cancelado no TOTVS
    (`source_status` CANCELLED/CANCELED) contam como CANCELADO. A alocação de item cancelado no TOTVS mantém o
    status do IP, porque o material já foi destinado. As POs `DELETED` ficam fora. As outras telas não mudam.
-2. **A distribuir entra no aging:** o aging conta A distribuir, Ag. produção e Ag. embarque.
+2. **A distribuir entra no aging:** o aging conta A distribuir, Ag. produção e Ag. embarque. Desde 2026-11-13 o
+   A distribuir faz parte do Ag. produção (`docs/PLANO_SEM_IP_AGUARDANDO_PRODUCAO.md`): o aging conta as mesmas linhas,
+   há um cartão a menos e o filtro "Distribuição em IP" separa o saldo sem IP.
 3. **Filtro "Date" = necessidade:** período da necessidade, com o seletor de período do End to End.
 
 ## Plano

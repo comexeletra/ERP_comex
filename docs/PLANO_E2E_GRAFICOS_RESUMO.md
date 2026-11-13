@@ -11,7 +11,9 @@
 
 O painel do Power BI tem dois gráficos de pizza que vão para o topo de `/end-to-end`:
 
-1. **Quantidade de itens por status**: soma da quantidade de itens em cada status da linha, de *A distribuir* até *Entregue*. No Power BI o título é "Priorities Resume", que está errado; não use esse nome.
+1. **Quantidade de itens por status**: soma da quantidade de itens em cada status da linha, de *Aguardando produção* até *Entregue*. No Power BI o título é "Priorities Resume", que está errado; não use esse nome.
+
+> **Atualização de 2026-11-13:** o status *A distribuir* foi juntado ao *Aguardando produção*, como no BI e no Follow Up, e o filtro "Distribuição em IP" separa o saldo sem IP. O gráfico tem 5 status. As menções a *A distribuir* abaixo são o registro da versão anterior; regras e decisão de cor em `docs/PLANO_SEM_IP_AGUARDANDO_PRODUCAO.md`.
 2. **Quantidade por situação do prazo**: soma da quantidade de itens em *No prazo*, *No limite*, *Atrasado* e *Sem dados*, pela fórmula `in_time_late` do Power BI (seção 3).
 
 Os dois gráficos **somam a quantidade dos itens** (`quantity` de cada linha), não contam linhas. Cada fatia mostra o valor compacto e o percentual, por exemplo `729,05 mil (78%)`, com a legenda acima do gráfico. Os gráficos seguem os filtros aplicados (PO, importador, produto, IP, status, ETA e situação) e **não** mudam com a etapa selecionada nem com a animação, igual às contagens dos cards.
@@ -140,7 +142,7 @@ A paleta parte das cores da logo: o azul da marca (`--color-primary`, `#037599`)
 
 | Token | Uso | Claro | Escuro |
 |---|---|---|---|
-| `--color-chart-status-1` | A distribuir | `#b0457f` | `#c0609a` |
+| `--color-chart-status-1` | A distribuir até 2026-11-13; hoje só no Pós Embarque | `#b0457f` | `#c0609a` |
 | `--color-chart-status-2` | Aguardando produção | `#b97400` | `#bb8524` |
 | `--color-chart-status-3` | Aguardando embarque | `#037599` | `#2f96c2` |
 | `--color-chart-status-4` | Aguardando chegada | `#d0603a` | `#d27650` |
@@ -157,6 +159,8 @@ Como as cores foram conferidas (validador de paletas da skill `dataviz`, simula�
   - contraste ≥ 3:1 com a superfície (WCAG 1.4.11);
   - diferença ≥ 15 para visão normal (pior par: 19,4);
   - diferença ≥ 8 com protanopia e deuteranopia simuladas (pior par: 13,3).
+
+  Desde 2026-11-13 o gráfico tem 5 status e fecha com Aguardando produção (ocre) ao lado de Entregue (verde). Esse par reprova no validador (deutan 1,1 no escuro; visão normal 12,6), e o usuário decidiu manter o ocre. A legenda e o contorno de 2 px passam a ser o que separa essas duas fatias. A alternativa validada é usar `--color-chart-status-1` em Aguardando produção (`docs/PLANO_SEM_IP_AGUARDANDO_PRODUCAO.md`).
 
   Não reordene as cores.
 - **Prazo:** testadas todas contra todas, porque há só quatro. Verde, ocre e vermelho passam em tudo nos dois temas. O verde puxa para o verde-azulado para não se confundir com o vermelho no daltonismo vermelho-verde, e é diferente do verde de Entregue, do outro gráfico.

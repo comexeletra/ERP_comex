@@ -185,6 +185,11 @@ Se algo essencial não estiver claro, pergunte antes de supor.
 - O tipo de demanda é da PO, não do produto: a HQ planeja o pedido inteiro a partir do estoque (MTS, 30 dias no T3) ou sob encomenda (Não MTS, 45 dias). Ele fica só em `procurement.purchase_order.demand_type` (M071), e todo produto da PO o herda nas leituras (`po.demand_type`). Não volte a gravá-lo no produto nem a oferecê-lo como campo do produto; as rotas de produto o recusam.
 - Ele é diferente da origem da demanda (`DEMAND`: plano comercial, pós-venda, projetos), que continua sendo campo do produto.
 
+## Status da linha de produto (saldo sem IP)
+
+- O saldo de um produto ainda sem IP tem o status AGUARDANDO PRODUÇÃO, como o *Waiting Production* do BI e do Follow Up (decisão de 2026-11-13). Não recrie um status próprio para ele: o filtro `ip=with|without` ("Distribuição em IP") separa saldo e alocações em todas as telas e exportações. Regras e decisão de cor em `docs/PLANO_SEM_IP_AGUARDANDO_PRODUCAO.md`.
+- Na rosca de status, Aguardando produção (ocre) fica ao lado de Entregue (verde), um par que reprova no validador de daltonismo; o usuário manteve o ocre. Nunca remova a legenda nem o contorno entre as fatias desse gráfico.
+
 ## Fornecedor da PO e SC
 
 - Uma PO ligada a uma SC recebe o fornecedor da SC pelo gatilho `catalog.sync_supplier_entity_reference` (M041), em toda gravação; limpar ou trocar o fornecedor dessa PO não tem efeito. "PO sem fornecedor" só acontece em PO sem SC, e a correção pela Qualidade recusa PO com SC (`PO_HAS_SC`). Para testar ou corrigir o fornecedor, use uma PO sem SC ou altere a SC.
