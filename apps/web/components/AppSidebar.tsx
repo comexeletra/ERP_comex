@@ -3,16 +3,17 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { MouseEvent, ReactNode } from "react";
+import { useState, type MouseEvent, type ReactNode } from "react";
 import { productName } from "../lib/brand";
 import { roleLabel } from "../lib/i18n/labels";
 import type { Messages } from "../lib/i18n/pt-BR";
+import { toggleSidebarGroup, withActiveSidebarGroup } from "../lib/sidebar-groups";
 import { useI18n } from "./I18nProvider";
 import LanguageSwitcher from "./LanguageSwitcher";
 import { Tooltip } from "./Tooltip";
 
 type IconName = "orders" | "ship" | "flow" | "reports" | "sheet" | "requests" | "catalog"
-  | "sc" | "noIp" | "noPo" | "quality" | "audit" | "users" | "events" | "collapse" | "password" | "logout" | "sun" | "moon";
+  | "sc" | "noIp" | "noPo" | "quality" | "audit" | "users" | "events" | "collapse" | "chevron" | "password" | "logout" | "sun" | "moon";
 type SidebarItem = {
   label: keyof Messages["sidebar"]["items"]; href: string; icon: IconName; match?: string[]; exclude?: string[]; exact?: boolean;
 };
@@ -65,6 +66,7 @@ const icons: Record<IconName, ReactNode> = {
   users: <><circle cx="9" cy="8" r="3" /><path d="M3 20v-1a6 6 0 0 1 12 0v1zM16 5a3 3 0 0 1 0 6m2 3a5 5 0 0 1 3 5v1h-3" /></>,
   events: <><path d="M4 19V5m0 14h16" /><path d="m7 14 3-4 3 2 5-6" /><circle cx="18" cy="6" r="2" /></>,
   collapse: <><path d="m14 6-6 6 6 6" /></>,
+  chevron: <><path d="m6 9 6 6 6-6" /></>,
   password: <><circle cx="8" cy="15" r="4" /><path d="m11 12 8-8 2 2-2 2 2 2-3 3-2-2-3 3" /></>,
   logout: <><path d="M10 17l5-5-5-5M15 12H3" /><path d="M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7" /></>,
   sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" /></>,
@@ -95,6 +97,14 @@ export default function AppSidebar({ collapsed, isMaster, displayName, roles, im
     ...(isMaster ? [adminGroup] : []),
     ...(isMaster || roles.includes("Administrador") || roles.includes("PCM") ? [pcmGroup] : []),
   ];
+  const activeGroup = visibleGroups.find(group => group.items.some(item => isItemActive(pathname, item)))?.label;
+  const [openGroups, setOpenGroups] = useState<readonly string[]>(() => withActiveSidebarGroup([], activeGroup));
+  const [shownActiveGroup, setShownActiveGroup] = useState(activeGroup);
+  if (activeGroup !== shownActiveGroup) {
+    // Navigating to a page of a closed section opens it, so the current page stays visible.
+    setShownActiveGroup(activeGroup);
+    setOpenGroups(open => withActiveSidebarGroup(open, activeGroup));
+  }
   const userName = displayName ?? t.authenticatedUser;
   const initials = userName.split(/\s+/u).filter(Boolean).slice(0, 2).map(name => name[0]).join("").toLocaleUpperCase(locale);
   const roleText = roles.length > 0 ? roles.map(role => roleLabel(m, role)).join(", ") : t.noRole;
@@ -112,9 +122,15 @@ export default function AppSidebar({ collapsed, isMaster, displayName, roles, im
       </button>
     </Tooltip>
     <nav className="sidebar-navigation" aria-label={t.navigation}>
-      {visibleGroups.map(group => <section className="sidebar-group" key={group.label}>
-        <h2>{t.groups[group.label]}</h2>
-        <ul>{group.items.map(item => {
+      {visibleGroups.map(group => {
+        const open = openGroups.includes(group.label);
+        const listId = `sidebar-group-${group.label}`;
+        return <section className={open ? "sidebar-group is-open" : "sidebar-group"} key={group.label}>
+        <h2><button className="sidebar-group-toggle" type="button" aria-expanded={open} aria-controls={listId}
+          onClick={() => setOpenGroups(current => toggleSidebarGroup(current, group.label))}>
+          <span>{t.groups[group.label]}</span><SidebarIcon name="chevron" />
+        </button></h2>
+        <ul id={listId}>{group.items.map(item => {
           const active = isItemActive(pathname, item);
           const label = `${t.groups[group.label]}: ${t.items[item.label]}`;
           return <li key={item.href}><Tooltip content={collapsed ? label : undefined} placement="right">
@@ -124,7 +140,8 @@ export default function AppSidebar({ collapsed, isMaster, displayName, roles, im
             </Link>
           </Tooltip></li>;
       })}</ul>
-      </section>)}
+      </section>;
+      })}
     </nav>
     <section className="sidebar-account" aria-label={t.account}>
       <Tooltip content={collapsed ? `${userName} · ${t.role(roleText)} · ${t.importers(importerText)}` : undefined} placement="right">
