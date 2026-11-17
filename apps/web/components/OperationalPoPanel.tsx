@@ -644,7 +644,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
         </div>}
         {data.allocations.length > 0 && <p className="muted">{t.allocationsBlock}</p>}
       </section>}
-      {canEditPo && data.sourceKind === "MANUAL_TOTVS_REFERENCE" && <section className="card" aria-label={t.reimportTitle}>
+      {canEditPo && data.sourceKind === "MANUAL_TOTVS_REFERENCE" && <section className="card po-reimport" aria-label={t.reimportTitle}>
         <h3>{t.reimportTitle}</h3>
         <p className="muted">{t.reimportHelp}</p>
         <label>{t.excelFile}<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -800,7 +800,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
             <PurchaseOrderCalculatedFields quantity={draft.orderedQuantity} unitPrice={draft.unitPrice} currency={draft.currency} />
             <button className="button" disabled={saving || commonFieldsTouched.size > 0}>{t.saveItemFields}</button>
           </form> : <p>{formatItemQuantity(item.orderedQuantity)}{item.unit ? ` ${item.unit}` : ""} · {item.description}</p>}
-          {canEditPo && !canceled && <section aria-label={t.removeItemAria(item.lineNumber)}>
+          {canEditPo && !canceled && <section className="po-item-removal" aria-label={t.removeItemAria(item.lineNumber)}>
             {itemAllocations.length > 0
               ? <p className="muted">{t.cancelAllocationsFirst}</p>
               : <>

@@ -8,7 +8,7 @@ export default function ShippedChangeConfirmation({ value, onChange }: {
   value: ShippedChange; onChange: (value: ShippedChange) => void;
 }) {
   const t = useI18n().m.shippedChange;
-  return <fieldset className="operational-help">
+  return <fieldset className="operational-help shipped-change">
     <legend>{t.title}</legend>
     <p className="notice warning">{t.notice}</p>
     <label className="invoice-audit-confirm"><input type="checkbox" checked={value.confirmed}

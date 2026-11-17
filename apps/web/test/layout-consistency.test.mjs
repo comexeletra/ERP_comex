@@ -126,8 +126,26 @@ test("the PO cycle card spaces its title, reason, buttons and notice evenly", ()
   const panel = components["components/OperationalPoPanel.tsx"];
   const css = styles["app/styles/features/operations.css"];
   assert.match(panel, /<section className="card po-lifecycle">\s*<h3>\{t\.lifecycleTitle\}<\/h3>/u);
-  assert.match(css, /\.po-lifecycle \{[^}]*display: grid;[^}]*gap: 14px;[^}]*\}/u);
-  assert.match(css, /\.po-lifecycle > :is\(h3, p\) \{[^}]*margin: 0;[^}]*\}/u);
+  assert.match(css, /\.po-lifecycle(?:, [^{]+)? \{[^}]*display: grid;[^}]*gap: 14px;[^}]*\}/u);
+  assert.match(css, /\.po-lifecycle > :is\(h3, p\)(?:, [^{]+)? \{[^}]*margin: 0;[^}]*\}/u);
+});
+
+// The same reason box touched its button in the TOTVS reimport and in the item removal of the PO,
+// and the shipped change confirmation stacked its notice, checkbox and reason without space.
+test("other reason boxes keep space before their buttons", () => {
+  const panel = components["components/OperationalPoPanel.tsx"];
+  const shipped = components["components/ShippedChangeConfirmation.tsx"];
+  const css = styles["app/styles/features/operations.css"];
+  const rule = selector => [...withoutComments(css).matchAll(/([^{}]*)\{([^{}]*)\}/gu)]
+    .find(([, list]) => list.split(",").map(entry => entry.trim()).includes(selector))?.[2] ?? "";
+  assert.match(panel, /<section className="card po-reimport" aria-label=\{t\.reimportTitle\}>/u);
+  assert.match(panel, /<section className="po-item-removal" aria-label=\{t\.removeItemAria\(item\.lineNumber\)\}>/u);
+  assert.match(shipped, /<fieldset className="operational-help shipped-change">/u);
+  for (const container of [".po-reimport", ".po-item-removal", ".shipped-change"]) {
+    assert.match(rule(container), /display: grid;[^}]*gap: \d+px;/u, container);
+  }
+  for (const label of [".po-reimport > label", ".po-item-removal > label"]) assert.match(rule(label), /display: grid;/u, label);
+  for (const button of [".po-reimport > .button", ".po-item-removal > .button"]) assert.match(rule(button), /justify-self: start;/u, button);
 });
 
 test("portfolio filter inputs and selects fill their columns", () => {

@@ -13,9 +13,12 @@
 .operational-panel h3 { margin: 8px 0 0; }
 .operational-panel details { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 14px 18px; }
 .operational-panel details form { margin-top: 16px; }
-.po-lifecycle { display: grid; gap: 14px; }
-.po-lifecycle > :is(h3, p) { margin: 0; }
-.po-lifecycle-reason { display: grid; font-weight: 700; gap: 6px; }
+.po-lifecycle, .po-reimport, .po-item-removal { display: grid; gap: 14px; }
+.po-lifecycle > :is(h3, p), .po-reimport > :is(h3, p) { margin: 0; }
+.po-lifecycle-reason, .po-reimport > label, .po-item-removal > label { display: grid; font-weight: 700; gap: 6px; }
+.po-reimport > .button, .po-item-removal > .button { justify-self: start; }
+.shipped-change { display: grid; gap: 12px; }
+.shipped-change > .notice { margin: 0; }
 
 /* Record fields */
 .operational-fields { display: grid; gap: 12px; grid-template-columns: repeat(8, minmax(0, 1fr)); max-width: 100%; min-width: 0; }
