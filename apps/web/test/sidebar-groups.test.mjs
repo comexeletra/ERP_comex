@@ -35,3 +35,7 @@ test("a closed section hides its items, except in the icon-only sidebar, which h
   assert.match(layout, /\.sidebar-group:not\(\.is-open\) ul \{ display: none; \}/u);
   assert.match(layout, /\.app-sidebar\.is-collapsed \.sidebar-group ul \{[^}]*display: grid;/u);
 });
+
+test("closed sections stay together at the top instead of spreading over the sidebar height", () => {
+  assert.match(layout, /\.sidebar-navigation \{ align-content: start; display: grid; flex: 1 0 auto;/u);
+});
