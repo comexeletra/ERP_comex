@@ -121,6 +121,15 @@ test("text boxes start one line tall across the width and grow with the text", (
   assert.doesNotMatch(styles["app/styles/features/operations.css"], /\.po-lifecycle-reason \{[^}]*max-width/u);
 });
 
+// User request (2026-11-17): the PO cycle reason box touched the buttons below it.
+test("the PO cycle card spaces its title, reason, buttons and notice evenly", () => {
+  const panel = components["components/OperationalPoPanel.tsx"];
+  const css = styles["app/styles/features/operations.css"];
+  assert.match(panel, /<section className="card po-lifecycle">\s*<h3>\{t\.lifecycleTitle\}<\/h3>/u);
+  assert.match(css, /\.po-lifecycle \{[^}]*display: grid;[^}]*gap: 14px;[^}]*\}/u);
+  assert.match(css, /\.po-lifecycle > :is\(h3, p\) \{[^}]*margin: 0;[^}]*\}/u);
+});
+
 test("portfolio filter inputs and selects fill their columns", () => {
   const css = styles["app/styles/components.css"];
   assert.match(css, /\.portfolio-filter :is\(input, select\)[^{]*\{[^}]*min-width:\s*0;[^}]*width:\s*100%;/u);

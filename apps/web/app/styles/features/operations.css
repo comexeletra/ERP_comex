@@ -13,6 +13,8 @@
 .operational-panel h3 { margin: 8px 0 0; }
 .operational-panel details { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 14px 18px; }
 .operational-panel details form { margin-top: 16px; }
+.po-lifecycle { display: grid; gap: 14px; }
+.po-lifecycle > :is(h3, p) { margin: 0; }
 .po-lifecycle-reason { display: grid; font-weight: 700; gap: 6px; }
 
 /* Record fields */

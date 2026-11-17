@@ -624,7 +624,7 @@ export default function OperationalPoPanel({ id, onChanged }: { id: string; onCh
           : data.lifecycleStatus === "CANCELLED" ? t.cancelledNotice : t.deletedNotice}
         {data.lifecycleReason && t.reasonInline(data.lifecycleReason)}
       </p>}
-      {lifecycleSupported && (lifecycleActions.length > 0 || data.lifecycleStatus === "DELETED") && <section className="card">
+      {lifecycleSupported && (lifecycleActions.length > 0 || data.lifecycleStatus === "DELETED") && <section className="card po-lifecycle">
         <h3>{t.lifecycleTitle}</h3>
         {lifecycleActions.length > 0 && <label className="po-lifecycle-reason"><span>{t.actionReason}</span><textarea required minLength={3} maxLength={1000} value={lifecycleReason}
           onChange={event => setLifecycleReason(event.target.value)} /></label>}
