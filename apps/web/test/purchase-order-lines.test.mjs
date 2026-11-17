@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { activeProductLineFilterCount, e2eDeadlineStatuses, e2eDelayRanges, e2eOverviewFilterCount, e2eStageCodes, e2eStageFilterBody,
-  e2eSummaryQuery, emptyE2eStageFilter, emptyProductLineFilters, itemShipmentSummary, nextChartSelection, parseE2eStageFilter,
+  e2eSummaryQuery, emptyE2eStageFilter, emptyProductLineFilters, nextChartSelection, parseE2eStageFilter,
   parseProductLineFilters, productLineFilterBody, productLineQuery, productLineStatuses, withE2eLists,
   withProductLineStatus } from "../lib/purchase-order-lines.ts";
 
@@ -92,22 +92,6 @@ test("a chart click keeps only its category, Ctrl+click adds or removes it, as i
   assert.deepEqual(nextChartSelection(["ENTREGUE"], "ENTREGUE", false), []);
   assert.deepEqual(nextChartSelection(["DESEMBARAÇO"], "ENTREGUE", true), ["DESEMBARAÇO", "ENTREGUE"]);
   assert.deepEqual(nextChartSelection(["DESEMBARAÇO", "ENTREGUE"], "ENTREGUE", true), ["DESEMBARAÇO"]);
-});
-
-test("an item split across IPs shows how much is in each status and how much is still without IP", () => {
-  const summary = itemShipmentSummary("100.00000000", false, [
-    { quantity: "60.00000000", status: "ENTREGUE", eta: "2026-09-01" },
-    { quantity: "25.5", status: "AGUARDANDO CHEGADA", eta: "2026-11-10" },
-    { quantity: "4.5", status: "AGUARDANDO EMBARQUE", eta: "2026-10-30" },
-  ]);
-  assert.equal(summary.withoutIp, "10");
-  assert.deepEqual(summary.byStatus, [
-    { status: "AGUARDANDO EMBARQUE", quantity: "4.5" }, { status: "AGUARDANDO CHEGADA", quantity: "25.5" },
-    { status: "ENTREGUE", quantity: "60" },
-  ]);
-  assert.equal(summary.nextEta, "2026-10-30");
-  assert.equal(itemShipmentSummary("10", true, []).withoutIp, "0");
-  assert.equal(itemShipmentSummary("10", false, []).nextEta, null);
 });
 
 test("the End to End stage filter round-trips through the URL and joins the line filters", () => {

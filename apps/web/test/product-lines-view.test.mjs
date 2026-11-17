@@ -27,9 +27,11 @@ test("the product lines view reads the API lines and exports the filtered lines 
   }
 });
 
-test("the PO screen shows the balance without IP as waiting for production and its quantity as Sem IP", async () => {
+test("the PO screen shows the balance without IP as waiting for production and Sem IP in the IP column", async () => {
   const panel = await readFile(new URL("../components/FollowupPanel.tsx", import.meta.url), "utf8");
-  assert.match(panel, /<th>\{t\.ordered\}<\/th><th>\{t\.noIp\}<\/th><th>\{t\.byStatus\}<\/th>/u);
+  // The per-item summary repeated the lines per IP and was removed; the balance is a line of its own.
+  assert.doesNotMatch(panel, /itemShipmentSummary|t\.itemSummary\b/u);
+  assert.match(panel, /<span className="po-ip-pending">\{t\.noIp\}<\/span>/u);
   assert.match(panel, /const balanceStatus = "AGUARDANDO PRODUÇÃO";/u);
   assert.match(panel, /\? t\.lineCancelled : statusLabel\(m, balanceStatus\)\}<\/td>/u);
   assert.doesNotMatch(panel, /toDistribute/u);

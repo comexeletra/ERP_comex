@@ -204,35 +204,3 @@ export function productLineQuery(filters: ProductLineFilters, page: number, page
   query.set("pageSize", String(pageSize));
   return query;
 }
-
-// Quantities have up to 8 decimals; integer units avoid floating-point drift in sums.
-function units(value: string | number | null | undefined): bigint {
-  const match = /^(\d+)(?:[.,](\d{1,8}))?$/u.exec(String(value ?? "").trim());
-  return match ? BigInt(match[1]) * 100_000_000n + BigInt((match[2] ?? "").padEnd(8, "0")) : 0n;
-}
-function quantityText(value: bigint): string {
-  const fraction = String(value % 100_000_000n).padStart(8, "0").replace(/0+$/u, "");
-  return `${value / 100_000_000n}${fraction ? `.${fraction}` : ""}`;
-}
-
-export type ItemShipment = { quantity: string; status: string; eta: string | null };
-
-/** Where the ordered quantity of one PO item is: per shipment status, still without IP, and the next ETA. */
-export function itemShipmentSummary(orderedQuantity: string, cancelledAtSource: boolean, shipments: ItemShipment[]) {
-  const byStatus = new Map<string, bigint>();
-  let allocated = 0n;
-  for (const shipment of shipments) {
-    const quantity = units(shipment.quantity);
-    allocated += quantity;
-    byStatus.set(shipment.status, (byStatus.get(shipment.status) ?? 0n) + quantity);
-  }
-  const remaining = units(orderedQuantity) - allocated;
-  const nextEta = shipments.filter(shipment => !["ENTREGUE", "CANCELADO"].includes(shipment.status) && shipment.eta)
-    .map(shipment => shipment.eta as string).sort()[0] ?? null;
-  return {
-    withoutIp: quantityText(cancelledAtSource || remaining < 0n ? 0n : remaining),
-    byStatus: productLineStatuses.filter(status => byStatus.has(status))
-      .map(status => ({ status, quantity: quantityText(byStatus.get(status)!) })),
-    nextEta,
-  };
-}
