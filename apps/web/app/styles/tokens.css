@@ -113,6 +113,12 @@
   --sidebar-danger-text: #ffd0c8;
   --sidebar-danger-icon: #ffb2a5;
   --sidebar-danger-hover: #59352f;
+  --sidebar-scrollbar-thumb: #3a6578;
+  --sidebar-scrollbar-thumb-hover: #5b8597;
+
+  /* Scrollbars (base.css): a thumb over a transparent track, in both themes */
+  --scrollbar-thumb: var(--color-border-hover);
+  --scrollbar-thumb-hover: var(--color-text-subtle);
 
   /* Tooltips (components/Tooltip.tsx) */
   --color-tooltip-bg: #0f2a3a;

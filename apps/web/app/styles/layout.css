@@ -17,7 +17,7 @@
 .app-layout { --app-sidebar-width: 256px; display: grid; grid-template-columns: var(--app-sidebar-width) minmax(0, 1fr); min-height: 100vh; }
 .app-layout.sidebar-collapsed { --app-sidebar-width: 76px; }
 .app-main { background: var(--color-page); min-width: 0; }
-.app-sidebar { background: var(--sidebar-bg); color: var(--sidebar-text); display: flex; flex-direction: column; height: 100vh; min-width: 0; overflow-x: hidden; overflow-y: auto; padding: 17px 12px; position: sticky; top: 0; z-index: var(--z-sidebar); }
+.app-sidebar { --scrollbar-thumb: var(--sidebar-scrollbar-thumb); --scrollbar-thumb-hover: var(--sidebar-scrollbar-thumb-hover); background: var(--sidebar-bg); color: var(--sidebar-text); display: flex; flex-direction: column; height: 100vh; min-width: 0; overflow-x: hidden; overflow-y: auto; padding: 17px 12px; position: sticky; top: 0; z-index: var(--z-sidebar); }
 .sidebar-brand { align-items: center; color: inherit; display: flex; gap: 11px; margin: 0 4px 22px; min-height: 44px; text-decoration: none; }
 .sidebar-brand-mark { background: var(--sidebar-mark-bg); border-radius: var(--radius-md); display: block; flex: 0 0 40px; height: 40px; object-fit: contain; padding: 4px; width: 40px; }
 .sidebar-brand-copy { color: var(--sidebar-text-strong); display: grid; font-size: var(--fs-base); font-weight: 700; gap: 3px; white-space: nowrap; }
