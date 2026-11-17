@@ -14,7 +14,8 @@ test("the IP cycle shows the actions first and then a wide reason box with its l
   assert.ok(buttons > 0 && reason > buttons, "reason after the buttons");
   assert.ok(hint > reason, "hint right after the reason");
   assert.match(styles, /\.process-lifecycle-reason \{[^}]*display: grid;[^}]*\}/u);
-  assert.match(styles, /\.process-lifecycle-reason textarea \{[^}]*min-height: 92px;[^}]*width: 100%;[^}]*\}/u);
+  // The box itself follows the global text box rule (one line, full width, grows with the text).
+  assert.doesNotMatch(styles, /\.process-lifecycle-reason textarea \{/u);
 });
 
 // Each PO of the cancel form sat in the eight-column .operational-fields grid, so its quantity list

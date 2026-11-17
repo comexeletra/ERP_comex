@@ -104,6 +104,23 @@ test("form controls stay inside their grid columns", () => {
   assert.match(controls, /min-width:\s*0/u);
 });
 
+// User request (2026-11-17): text boxes were tall and narrow; they start as one line across the
+// whole width, grow with the text and can still be resized by dragging.
+test("text boxes start one line tall across the width and grow with the text", () => {
+  const base = styles["app/styles/base.css"];
+  const textarea = withoutComments(base).match(/(?:^|\})\s*textarea \{([^}]*)\}/u)?.[1] ?? "";
+  for (const declaration of ["field-sizing: content", "min-height: 44px", "resize: vertical", "width: 100%"]) {
+    assert.ok(textarea.includes(declaration), `textarea needs ${declaration}`);
+  }
+  // Screens do not bring back their own fixed heights.
+  for (const [path, css] of featureStyles.filter(([path]) => path !== "app/styles/base.css")) {
+    for (const [, selector, body] of withoutComments(css).matchAll(/([^{}]*)\{([^{}]*)\}/gu)) {
+      if (/\btextarea\b/u.test(selector)) assert.doesNotMatch(body, /(?:^|;)\s*(?:min-)?height\s*:/u, `${path}: ${selector.trim()}`);
+    }
+  }
+  assert.doesNotMatch(styles["app/styles/features/operations.css"], /\.po-lifecycle-reason \{[^}]*max-width/u);
+});
+
 test("portfolio filter inputs and selects fill their columns", () => {
   const css = styles["app/styles/components.css"];
   assert.match(css, /\.portfolio-filter :is\(input, select\)[^{]*\{[^}]*min-width:\s*0;[^}]*width:\s*100%;/u);

@@ -113,7 +113,6 @@ table :is(input, select, textarea, [contenteditable]) { cursor: auto; }
 .stack-form label { display: grid; font-weight: 700; gap: 6px; }
 .stack-form > label, .ip-entry-grid > label, .operational-fields > label { color: var(--color-text-secondary); font-size: var(--fs-sm); line-height: 1.4; }
 .stack-form input:not([type="checkbox"]):not([type="radio"]), .stack-form select, .stack-form textarea { max-width: 100%; min-width: 0; width: 100%; }
-.stack-form textarea { min-height: 88px; }
 .stack-form > button { justify-self: start; min-width: 170px; }
 .quality-filter, .review-form { display: grid; gap: 14px; }
 .quality-filter { align-items: end; grid-template-columns: 180px minmax(180px, 1fr) minmax(180px, 1fr) auto; }
@@ -123,10 +122,8 @@ table :is(input, select, textarea, [contenteditable]) { cursor: auto; }
 }
 .quality-filter :is(input, select), .review-form :is(input, select, textarea), .portfolio-filter :is(input, select),
 .request-form :is(input, select, textarea) { min-width: 0; width: 100%; }
-.review-form textarea { min-height: 92px; }
 .request-form { max-width: var(--width-form); }
 .request-form h3 { margin: 4px 0 0; }
-.request-form textarea { min-height: 78px; }
 .request-line { border: 1px solid var(--color-border); border-radius: var(--radius-sm); display: grid; gap: 14px; padding: 16px; }
 .request-line legend { color: var(--color-link); font-weight: 700; padding: 0 6px; }
 .scope-list { border: 1px solid var(--color-border); border-radius: var(--radius-sm); display: grid; gap: 10px; padding: 16px; }
@@ -261,7 +258,6 @@ table :is(input, select, textarea, [contenteditable]) { cursor: auto; }
 .dialog-body h2 { font-size: var(--fs-lg); margin: 0; }
 .dialog-body p { color: var(--color-text-secondary); line-height: 1.5; margin: 0; }
 .dialog-body label { color: var(--color-text-secondary); display: grid; font-size: var(--fs-sm); font-weight: 700; gap: 6px; }
-.dialog-body textarea { min-height: 92px; width: 100%; }
 .dialog-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 6px; }
 
 /* Export column choice (components/ExportColumnsDialog.tsx): wider than the other dialogs, and the
