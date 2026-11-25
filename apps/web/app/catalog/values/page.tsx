@@ -769,7 +769,7 @@ export default function OperationalValuesPage() {
     </section>
   </main>;
   if (entity === "ncm") return <main className="shell">
-    <PageHeader back={{ href: "/catalog", label: t.allEntries }} eyebrow={m.sidebar.groups.management} title={t.title}>
+    <PageHeader help="ncm" back={{ href: "/catalog", label: t.allEntries }} eyebrow={m.sidebar.groups.management} title={t.title}>
       <p>{t.intro}</p>
     </PageHeader>
     {error && <p className="notice error" role="alert">{error}</p>}

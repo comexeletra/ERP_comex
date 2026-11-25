@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { productName } from "../lib/brand";
-import { ONBOARDING_CHAPTERS, onboardingStorageKey, parseOnboardingProgress, visitChapter, writeOnboardingProgress,
-  type OnboardingChapter, type OnboardingProgress, type OnboardingScreenKey } from "../lib/onboarding";
+import { isOnboardingScreenKey, ONBOARDING_CHAPTERS, onboardingStorageKey, parseOnboardingProgress, visitChapter,
+  writeOnboardingProgress, type OnboardingChapter, type OnboardingHelpTopic, type OnboardingProgress } from "../lib/onboarding";
 import { useI18n } from "./I18nProvider";
+import OnboardingNcm from "./OnboardingNcm";
 import OnboardingProcess from "./OnboardingProcess";
 import OnboardingPurpose from "./OnboardingPurpose";
 import OnboardingScreens from "./OnboardingScreens";
@@ -44,21 +45,24 @@ function saveProgress(progress: OnboardingProgress) {
 }
 
 /**
- * Onboarding guide: what the platform is for, the import process and the screens, one chapter at a time.
- * `initialScreen` comes from the help link of a screen and opens the screens chapter on its walkthrough.
+ * Onboarding guide: what the platform is for, the import process, the screens and NCM, one chapter at a time.
+ * `initialHelp` comes from the help link of a screen: it opens the screens chapter on that screen's walkthrough,
+ * or the chapter it names.
  */
-export default function OnboardingGuide({ initialScreen }: { initialScreen: OnboardingScreenKey | null }) {
+export default function OnboardingGuide({ initialHelp }: { initialHelp: OnboardingHelpTopic | null }) {
   const { m } = useI18n();
   const t = m.onboarding;
   // The server renders the first chapter; the browser then restores where the viewer stopped.
   const progress = parseOnboardingProgress(useSyncExternalStore(subscribe, storedProgress, () => ""));
-  // A help link shows the screens chapter from the first render until the viewer picks another chapter.
-  const [followHelp, setFollowHelp] = useState(initialScreen !== null);
-  const chapter = followHelp ? "screens" : progress.chapter;
+  const initialScreen = initialHelp !== null && isOnboardingScreenKey(initialHelp) ? initialHelp : null;
+  const helpChapter: OnboardingChapter | null = initialHelp === "ncm" ? "ncm" : initialScreen ? "screens" : null;
+  // A help link shows its chapter from the first render until the viewer picks another chapter.
+  const [followHelp, setFollowHelp] = useState(helpChapter !== null);
+  const chapter = followHelp && helpChapter ? helpChapter : progress.chapter;
   useEffect(() => {
     // The stored progress lives in the browser: record the chapter the help link opened.
-    if (initialScreen !== null) saveProgress(visitChapter(parseOnboardingProgress(storedProgress()), "screens"));
-  }, [initialScreen]);
+    if (helpChapter !== null) saveProgress(visitChapter(parseOnboardingProgress(storedProgress()), helpChapter));
+  }, [helpChapter]);
 
   function open(next: OnboardingChapter) {
     setFollowHelp(false);
@@ -94,6 +98,7 @@ export default function OnboardingGuide({ initialScreen }: { initialScreen: Onbo
       {chapter === "purpose" && <OnboardingPurpose />}
       {chapter === "process" && <OnboardingProcess />}
       {chapter === "screens" && <OnboardingScreens initialScreen={initialScreen} />}
+      {chapter === "ncm" && <OnboardingNcm fromHelp={initialHelp === "ncm"} />}
     </section>
 
     <div className="onboarding-pager">

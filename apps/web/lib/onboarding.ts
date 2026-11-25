@@ -5,7 +5,7 @@
  * It imports no values from other `lib/` modules, so `node --test` can load it on its own.
  */
 
-export const ONBOARDING_CHAPTERS = ["purpose", "process", "screens"] as const;
+export const ONBOARDING_CHAPTERS = ["purpose", "process", "screens", "ncm"] as const;
 export type OnboardingChapter = typeof ONBOARDING_CHAPTERS[number];
 
 export const ONBOARDING_STAGES = ["T0", "T1", "T2", "T3", "T4", "T5"] as const;
@@ -53,6 +53,13 @@ export const ONBOARDING_SHOT_SIZES = {
   "quality-current-list": { width: 1752, height: 914 },
   "quality-load": { width: 1751, height: 886 },
   "quality-load-list": { width: 1752, height: 907 },
+  "catalog-list": { width: 1752, height: 913 },
+  "ncm-sync": { width: 1752, height: 899 },
+  "ncm-attributes": { width: 1748, height: 899 },
+  "ncm-official-search": { width: 1741, height: 899 },
+  "ncm-manual": { width: 1752, height: 545 },
+  "ncm-rates": { width: 1745, height: 915 },
+  "ncm-icms": { width: 1752, height: 908 },
 } as const;
 export type OnboardingShot = keyof typeof ONBOARDING_SHOT_SIZES;
 
@@ -171,21 +178,33 @@ export const ONBOARDING_SCREENS: readonly OnboardingScreen[] = [
   },
 ];
 
-/** Query parameter that opens the guide on the walkthrough of one screen: `/onboarding?tela=<key>`. */
-export const onboardingScreenParam = "tela";
+/**
+ * What a help link can open: the walkthrough of a screen of chapter 3, or the NCM chapter. Keys are unique across
+ * the guide, so one query parameter keeps working for the links that already exist.
+ */
+export const ONBOARDING_HELP_TOPICS = [...ONBOARDING_SCREEN_KEYS, "ncm"] as const;
+export type OnboardingHelpTopic = typeof ONBOARDING_HELP_TOPICS[number];
 
-export function onboardingHelpHref(screen: OnboardingScreenKey): string {
-  return `/onboarding?${onboardingScreenParam}=${screen}`;
+export function isOnboardingScreenKey(value: OnboardingHelpTopic): value is OnboardingScreenKey {
+  return (ONBOARDING_SCREEN_KEYS as readonly string[]).includes(value);
 }
 
-/** The screen asked in the query, or null when the value is missing, repeated or unknown. */
-export function parseOnboardingScreen(value: string | string[] | undefined): OnboardingScreenKey | null {
-  return typeof value === "string" && (ONBOARDING_SCREEN_KEYS as readonly string[]).includes(value)
-    ? value as OnboardingScreenKey : null;
+/** Query parameter that opens the guide on the walkthrough of one screen or chapter: `/onboarding?tela=<key>`. */
+export const onboardingScreenParam = "tela";
+
+export function onboardingHelpHref(topic: OnboardingHelpTopic): string {
+  return `/onboarding?${onboardingScreenParam}=${topic}`;
+}
+
+/** The screen or chapter asked in the query, or null when the value is missing, repeated or unknown. */
+export function parseOnboardingHelp(value: string | string[] | undefined): OnboardingHelpTopic | null {
+  return typeof value === "string" && (ONBOARDING_HELP_TOPICS as readonly string[]).includes(value)
+    ? value as OnboardingHelpTopic : null;
 }
 
 // Address prefixes of each screen, detail pages included; the longest prefix wins (product lines before POs).
-const screenPaths: readonly [string, OnboardingScreenKey][] = [
+// Cadastros and entity values are not here: they show the NCM link only while NCM is the open choice.
+const screenPaths: readonly [string, OnboardingHelpTopic][] = [
   ["/purchase-orders/lines", "productPortfolio"],
   ["/purchase-orders", "preShipment"],
   ["/processes", "postShipment"],
@@ -193,10 +212,11 @@ const screenPaths: readonly [string, OnboardingScreenKey][] = [
   ["/end-to-end", "endToEnd"],
   ["/reports", "indicators"],
   ["/quality", "dataQuality"],
+  ["/catalog/ncm-rates", "ncm"],
 ];
 
-/** Screen of the guide that explains the page at `pathname`, or null when the guide has no walkthrough for it. */
-export function onboardingScreenForPath(pathname: string): OnboardingScreenKey | null {
+/** Part of the guide that explains the page at `pathname`, or null when the guide has no walkthrough for it. */
+export function onboardingHelpForPath(pathname: string): OnboardingHelpTopic | null {
   if (pathname === "/") return "preShipment";
   const match = screenPaths.find(([prefix]) => pathname === prefix || pathname.startsWith(`${prefix}/`));
   return match ? match[1] : null;
@@ -220,11 +240,44 @@ export const ONBOARDING_PROCESS_STEPS: readonly OnboardingProcessStep[] = [
   { stage: null, screen: "endToEnd", shot: "e2e-table", box: { x: 3.1, y: 9.3, w: 95.4, h: 90.7 } },
 ];
 
+/** Screens of the NCM cycle that a step of chapter 4 opens. */
+export const ONBOARDING_NCM_TARGETS = {
+  catalog: "/catalog",
+  entityValues: "/catalog/values",
+  ncmRates: "/catalog/ncm-rates",
+  invoiceAudit: "/invoices/audit",
+} as const;
+export type OnboardingNcmTarget = keyof typeof ONBOARDING_NCM_TARGETS;
+
+/**
+ * Chapter 4 walkthrough: the NCM cycle over HML prints, from the Cadastros shortcuts to the official search, the
+ * attributes, the synchronisation, the reference rates and ICMS, ending where the invoice audit uses the NCM.
+ */
+export type OnboardingNcmStep = OnboardingStep & { target: OnboardingNcmTarget };
+export const ONBOARDING_NCM_STEPS: readonly OnboardingNcmStep[] = [
+  { target: "catalog", shot: "catalog-list", box: { x: 1.1, y: 16.6, w: 98.2, h: 13.4 } },
+  { target: "catalog", shot: "catalog-list", box: { x: 1.1, y: 32.2, w: 98.2, h: 12.8 } },
+  { target: "entityValues", shot: "ncm-sync", box: { x: 2.3, y: 27.6, w: 52.6, h: 17.1 } },
+  { target: "entityValues", shot: "ncm-sync", box: { x: 2.3, y: 44.9, w: 52.6, h: 22.1 } },
+  { target: "entityValues", shot: "ncm-sync", box: { x: 2.6, y: 82.5, w: 52.2, h: 17.5 } },
+  { target: "entityValues", shot: "ncm-attributes", box: { x: 3.4, y: 12.5, w: 50.9, h: 24.9 } },
+  { target: "entityValues", shot: "ncm-attributes", box: { x: 4.9, y: 37.4, w: 49, h: 62.6 } },
+  { target: "entityValues", shot: "ncm-official-search", box: { x: 2.3, y: 1.6, w: 53.3, h: 36.7 } },
+  { target: "entityValues", shot: "ncm-official-search", box: { x: 2.6, y: 41.2, w: 52.6, h: 55.2 } },
+  { target: "entityValues", shot: "ncm-manual", box: { x: 2.3, y: 1.1, w: 25.1, h: 80 } },
+  { target: "ncmRates", shot: "ncm-rates", box: { x: 0.7, y: 14.4, w: 99.2, h: 8.7 } },
+  { target: "ncmRates", shot: "ncm-rates", box: { x: 2.3, y: 31.7, w: 96.3, h: 8.7 } },
+  { target: "ncmRates", shot: "ncm-rates", box: { x: 2.3, y: 41.3, w: 96.3, h: 16.4 } },
+  { target: "ncmRates", shot: "ncm-icms", box: { x: 2.6, y: 2.4, w: 96.1, h: 36.8 } },
+  { target: "ncmRates", shot: "ncm-icms", box: { x: 78.5, y: 20.5, w: 16.6, h: 73.1 } },
+  { target: "invoiceAudit", shot: "invoice-audit-corrections", box: { x: 2.7, y: 0.9, w: 97.3, h: 49.9 } },
+];
+
 /**
  * Videos recorded by the team, one slot per chapter or screen. A slot without a link shows that the video is
  * still being recorded. Only corporate hosts are accepted (see `isAllowedVideoUrl`); add the shared link here.
  */
-export type OnboardingVideoSlot = "purpose" | "process" | OnboardingScreenKey;
+export type OnboardingVideoSlot = "purpose" | "process" | OnboardingScreenKey | "ncm";
 export const ONBOARDING_VIDEO_URLS: Readonly<Record<OnboardingVideoSlot, string | null>> = {
   purpose: null,
   process: null,
@@ -235,6 +288,7 @@ export const ONBOARDING_VIDEO_URLS: Readonly<Record<OnboardingVideoSlot, string 
   endToEnd: null,
   indicators: null,
   dataQuality: null,
+  ncm: null,
 };
 
 const allowedVideoHosts = [/^[a-z0-9-]+\.sharepoint\.com$/u, /^([a-z0-9-]+\.)?stream\.microsoft\.com$/u];

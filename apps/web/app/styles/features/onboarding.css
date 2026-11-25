@@ -55,6 +55,14 @@
 .onboarding-glossary dt { color: var(--color-text-strong); font-weight: 700; }
 .onboarding-glossary dd { color: var(--color-text-secondary); margin: 2px 0 0; }
 
+/* Questions whose answer surprises (NCM chapter) */
+.onboarding-faq { display: grid; gap: 8px; }
+.onboarding-faq-item {
+  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 10px 14px;
+}
+.onboarding-faq-item summary { color: var(--color-text-strong); cursor: pointer; font-weight: 700; }
+.onboarding-faq-item p { color: var(--color-text-secondary); margin: 8px 0 0; max-width: 90ch; }
+
 /* Video slot */
 .onboarding-video {
   align-items: center; background: var(--color-surface-muted); border: 1px dashed var(--color-border-strong);
