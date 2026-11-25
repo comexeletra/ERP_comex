@@ -1,0 +1,145 @@
+/*
+ * Onboarding guide (/onboarding): chapters, the information flow, the screen walkthroughs and their schematic
+ * drawings. The process chapter reuses the End to End flow styles from e2e.css. Colors come from the tokens,
+ * so the dark theme needs no rules of its own.
+ */
+@keyframes onboarding-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes onboarding-pulse { from { opacity: .9; transform: scale(1); } to { opacity: 0; transform: scale(2); } }
+@media (prefers-reduced-motion: reduce) { .onboarding * { animation: none !important; transition: none !important; } }
+
+/* Chapters */
+.onboarding-chapters .tab { align-items: center; display: inline-flex; gap: 8px; }
+.onboarding-chapter-number {
+  align-items: center; background: var(--color-surface-sunken); border-radius: 50%; color: var(--color-text-secondary);
+  display: inline-flex; font-size: var(--fs-xs); height: 22px; justify-content: center; width: 22px;
+}
+.onboarding-chapter-number.is-done { background: var(--color-accent-tint); color: var(--color-accent-text); }
+.tab.active .onboarding-chapter-number { background: var(--color-primary); color: var(--color-on-primary); }
+.onboarding-chapter { display: grid; gap: 18px; }
+.onboarding-chapter > .eyebrow { margin: 0; }
+.onboarding-chapter > h2 { font-size: var(--fs-xl); letter-spacing: -.015em; margin: -10px 0 0; }
+.onboarding-lead { color: var(--color-text-secondary); font-size: var(--fs-base); margin: 0; max-width: 90ch; }
+.onboarding-subheading { font-size: var(--fs-lg); margin: 8px 0 0; }
+.onboarding-pager {
+  border-top: 1px solid var(--color-divider); display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between;
+  margin-top: 28px; padding-top: 18px;
+}
+.onboarding-pager .button:only-child { margin-left: auto; }
+
+/* Chapter 1: information flow, benefits and glossary */
+.onboarding-flow { display: grid; gap: 14px; margin: 0; }
+.onboarding-flow-columns { display: grid; gap: 40px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.onboarding-flow-column {
+  animation: onboarding-rise .5s cubic-bezier(.22, 1, .36, 1) both; background: var(--color-surface-muted);
+  border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 16px 18px; position: relative;
+}
+.onboarding-flow-column:nth-child(2) { background: var(--color-primary-soft); border-color: var(--color-primary-border); }
+.onboarding-flow-column + .onboarding-flow-column::before {
+  border-right: 3px solid var(--brand-green); border-top: 3px solid var(--brand-green); content: ""; height: 14px;
+  left: -28px; position: absolute; top: calc(50% - 7px); transform: rotate(45deg); width: 14px;
+}
+.onboarding-flow-column h3 {
+  color: var(--color-accent-text); font-size: var(--fs-xs); letter-spacing: .08em; margin: 0 0 10px; text-transform: uppercase;
+}
+.onboarding-flow-column ul { display: grid; gap: 6px; margin: 0; padding-left: 18px; }
+.onboarding-benefits { display: grid; gap: 14px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.onboarding-benefit { border-top: 3px solid var(--brand-green); margin: 0; }
+.onboarding-benefit h4 { font-size: var(--fs-base); margin: 0 0 6px; }
+.onboarding-benefit p { color: var(--color-text-secondary); margin: 0; }
+.onboarding-glossary { display: grid; gap: 12px 28px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; }
+.onboarding-glossary > div { border-left: 3px solid var(--color-primary-border); padding: 4px 0 4px 12px; }
+.onboarding-glossary dt { color: var(--color-text-strong); font-weight: 700; }
+.onboarding-glossary dd { color: var(--color-text-secondary); margin: 2px 0 0; }
+
+/* Video slot */
+.onboarding-video {
+  align-items: center; background: var(--color-surface-muted); border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-md); display: flex; gap: 12px; padding: 12px 16px;
+}
+.onboarding-video p { margin: 0; }
+.onboarding-video-icon {
+  align-items: center; background: var(--color-primary-soft); border-radius: 50%; color: var(--color-primary);
+  display: inline-flex; flex: none; height: 34px; justify-content: center; width: 34px;
+}
+
+/* Chapter 2: the End to End flow inside the chapter grid, and the screens of the selected stage */
+.onboarding-process { min-width: 0; }
+.onboarding-where { display: grid; gap: 10px; }
+.onboarding-where h3 { font-size: var(--fs-base); margin: 0; }
+.onboarding-where-links { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
+
+/* Chapter 3: screen list and walkthrough */
+.onboarding-screens { align-items: start; display: grid; gap: 18px; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); }
+.onboarding-screen-list { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.onboarding-screen-option {
+  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); color: var(--color-text);
+  cursor: pointer; display: grid; font: inherit; gap: 6px; padding: 12px 14px; text-align: left;
+  transition: background .2s ease, border-color .2s ease; width: 100%;
+}
+.onboarding-screen-option:hover { background: var(--color-primary-subtle); border-color: var(--color-primary-border); }
+.onboarding-screen-option.is-current { background: var(--color-primary-soft); border-color: var(--color-primary); box-shadow: inset 3px 0 0 var(--color-primary); }
+.onboarding-stage-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.onboarding-screen { display: grid; gap: 14px; margin: 0; }
+.onboarding-screen > p { color: var(--color-text-secondary); margin: 0; }
+.onboarding-screen-head { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
+.onboarding-screen-head h3 { font-size: var(--fs-lg); margin: 0; }
+.onboarding-screen-body { align-items: start; display: grid; gap: 22px; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); }
+.onboarding-figure { display: grid; gap: 8px; margin: 0; }
+.onboarding-figure figcaption { font-size: var(--fs-sm); min-height: 2.6em; }
+.onboarding-screen-copy h4 { color: var(--color-text-muted); font-size: var(--fs-xs); letter-spacing: .06em; margin: 0 0 4px; text-transform: uppercase; }
+.onboarding-screen-copy > p { margin: 0 0 16px; }
+.onboarding-steps-head { align-items: center; display: flex; gap: 8px; justify-content: space-between; margin-bottom: 8px; }
+.onboarding-steps-head .button { align-items: center; display: inline-flex; gap: 6px; }
+.onboarding-steps { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.onboarding-step {
+  align-items: flex-start; background: transparent; border: 1px solid transparent; border-radius: var(--radius-md); color: var(--color-text);
+  cursor: pointer; display: flex; font: inherit; gap: 10px; padding: 8px 10px; text-align: left;
+  transition: background .2s ease, border-color .2s ease; width: 100%;
+}
+.onboarding-step:hover { background: var(--color-surface-muted); }
+.onboarding-step.is-current { background: var(--color-primary-soft); border-color: var(--color-primary-border); }
+.onboarding-step-number {
+  align-items: center; background: var(--color-surface-sunken); border-radius: 50%; color: var(--color-text-secondary); display: inline-flex;
+  flex: none; font-size: var(--fs-xs); font-weight: 700; height: 22px; justify-content: center; width: 22px;
+}
+.onboarding-step.is-current .onboarding-step-number { background: var(--color-primary); color: var(--color-on-primary); }
+
+/* Schematic drawings */
+.onboarding-sketch { display: block; height: auto; width: 100%; }
+.onboarding-sketch-frame { fill: var(--color-surface-muted); stroke: var(--color-border); }
+.onboarding-sketch-strong { fill: var(--color-text-muted); }
+.onboarding-sketch-line { fill: var(--color-border-strong); }
+.onboarding-sketch-primary { fill: var(--color-primary); }
+.onboarding-sketch-accent { fill: var(--brand-green); }
+.onboarding-sketch-soft { fill: var(--color-primary-tint); }
+.onboarding-sketch-warn { fill: var(--color-chart-on-limit); }
+.onboarding-sketch-field { fill: var(--color-field-bg); stroke: var(--color-border-strong); }
+.onboarding-sketch-tile { fill: var(--color-surface); stroke: var(--color-border); }
+.onboarding-sketch-header { fill: var(--color-surface-sunken); }
+.onboarding-sketch-divider { fill: var(--color-divider); }
+.onboarding-sketch-drop { fill: var(--color-primary-subtle); stroke: var(--color-primary-border); stroke-dasharray: 5 4; }
+.onboarding-sketch-arrow { fill: none; stroke: var(--color-primary); stroke-linecap: round; stroke-linejoin: round; stroke-width: 2.5; }
+.onboarding-sketch-ring { fill: none; stroke: var(--color-surface-sunken); stroke-width: 12; }
+.onboarding-sketch-ring-primary { fill: none; stroke: var(--color-primary); stroke-width: 12; }
+.onboarding-sketch-ring-accent { fill: none; stroke: var(--brand-green); stroke-width: 12; }
+.onboarding-sketch-point { transition: opacity .2s ease; }
+.onboarding-sketch-dot { fill: var(--color-primary-strong); stroke: var(--color-surface); stroke-width: 2; }
+.onboarding-sketch-point.is-current .onboarding-sketch-dot { fill: var(--brand-green); }
+.onboarding-sketch-number { fill: var(--color-on-primary); font-size: var(--fs-2xs); font-weight: 700; }
+.onboarding-sketch-point.is-current .onboarding-sketch-number { fill: var(--color-on-accent); }
+.onboarding-sketch-pulse {
+  animation: onboarding-pulse 1.6s ease-out infinite; fill: none; stroke: var(--brand-green); stroke-width: 2;
+  transform-box: fill-box; transform-origin: center;
+}
+
+@media (max-width: 1100px) {
+  .onboarding-screens { grid-template-columns: 1fr; }
+  .onboarding-screen-list { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+}
+@media (max-width: 760px) {
+  .onboarding-flow-columns { gap: 32px; grid-template-columns: 1fr; }
+  .onboarding-flow-column + .onboarding-flow-column::before { left: calc(50% - 7px); top: -24px; transform: rotate(135deg); }
+  .onboarding-benefits { grid-template-columns: 1fr; }
+  .onboarding-glossary { grid-template-columns: 1fr; }
+  .onboarding-screen-body { grid-template-columns: 1fr; }
+}

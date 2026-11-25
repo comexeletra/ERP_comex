@@ -8,6 +8,7 @@ import "./styles/features/catalog.css";
 import "./styles/features/source-audit.css";
 import "./styles/features/analysis.css";
 import "./styles/features/e2e.css";
+import "./styles/features/onboarding.css";
 import AuthGate from "../components/AuthGate";
 import I18nProvider from "../components/I18nProvider";
 import TableDragScroll from "../components/TableDragScroll";
