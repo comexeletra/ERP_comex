@@ -37,6 +37,12 @@ cadastros e o que a plataforma faz com a NCM.
    perguntas frequentes (NCM do produto que mudou, IPI NT, estimativa, limite do Siscomex, qualidade
    dos dados e quem altera cada parte). Os capítulos 4 e 5 usam o mesmo componente,
    `components/OnboardingTopic.tsx`.
+4c. Layout dos capítulos 4 e 5 (decisão do usuário, 2026-11-25): iguais ao capítulo 3. A lista lateral
+   mostra as telas que o capítulo percorre, com as etapas em chips (as de cadastro servem a todas as
+   etapas; Auditoria de invoice mantém T3), e ao lado ficam o nome, o botão Abrir, o resumo, "Quando
+   usar" e só os passos daquela tela. `onboardingTopicScreens` agrupa os passos consecutivos que abrem
+   a mesma tela; resumo e "Quando usar" ficam em `onboarding.<capítulo>.screens` nos três dicionários.
+   Aviso, perguntas frequentes e vídeo continuam no capítulo.
 5. Espaço para vídeo em cada capítulo e em cada tela, aberto por link.
 5a. Ajuda dentro das telas (2026-11-25): o `PageHeader` mostra "Como usar esta tela" nas telas do
    capítulo 3, inclusive nas de detalhe (PO, IP, análise por PO). O link abre

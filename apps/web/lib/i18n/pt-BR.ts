@@ -3588,6 +3588,16 @@ export const ptBR = {
       lead: "Os cadastros guardam as opções que aparecem nas telas: importadoras, Incoterms, modais, portos, moedas, analistas, despachantes, fornecedores, produtos e outros. O passo a passo usa um campo como exemplo; os demais funcionam do mesmo jeito.",
       notice: "Toda inclusão, edição ou exclusão fica no histórico de auditoria, com o valor antes e depois, quem alterou e quando. Os valores das entidades são mantidos por Master, Administrador e Compras; os demais perfis consultam.",
       name: "Cadastros",
+      screens: {
+        catalog: {
+          summary: "Os produtos e as NCMs cadastrados, com histórico de alterações e preço de referência das POs, e os atalhos para os demais cadastros.",
+          when: "Para conferir ou corrigir um produto, ver o preço de cada PO ou chegar aos outros cadastros.",
+        },
+        entityValues: {
+          summary: "As listas de opções de cada campo da PO, do IP e do produto: importadoras, Incoterms, modais, portos, moedas, analistas, despachantes, fornecedores e outros.",
+          when: "Quando falta uma opção numa lista ou uma opção está escrita errado.",
+        },
+      },
       steps: [
         "Os atalhos de Cadastros levam a Produtos e NCM, Valores das entidades, Alíquotas por NCM e Cargas de referência. POs e IPs são cadastrados nas próprias telas. Cada atalho aparece para quem pode usá-lo.",
         "A lista de produtos mostra código, descrição, preço de referência das POs, situação, vigência e versão. “Histórico” mostra cada alteração com antes e depois; “Preços”, o preço de cada PO; “Editar” fica com Master, Administrador e Compras.",
@@ -3608,9 +3618,27 @@ export const ptBR = {
     },
     ncm: {
       heading: "NCM, do cadastro às alíquotas",
-      lead: "A NCM é a classificação fiscal de cada produto importado. A plataforma traz a NCM do catálogo oficial do Siscomex, mostra o que a importação exige dela, mantém descrição e vigência em dia e mostra as alíquotas de referência. Siga o passo a passo; cada passo abre a tela do print.",
+      lead: "A NCM é a classificação fiscal de cada produto importado. A plataforma traz a NCM do catálogo oficial do Siscomex, mostra o que a importação exige dela, mantém descrição e vigência em dia e mostra as alíquotas de referência. Escolha uma tela ao lado e siga o passo a passo dela.",
       notice: "As alíquotas mostradas na plataforma são de referência e não são o imposto devido: origem, Ex-tarifário, cota, regime e benefício podem mudar o valor de cada operação. O simulador dá uma estimativa, que não substitui o cálculo do despacho.",
       name: "ciclo da NCM",
+      screens: {
+        catalog: {
+          summary: "As NCMs cadastradas, com situação, vigência, versão e o histórico de cada alteração.",
+          when: "Para conferir se uma NCM já está cadastrada e o que mudou nela.",
+        },
+        entityValues: {
+          summary: "O cadastro da NCM: a busca no catálogo oficial do Siscomex, as informações exigidas para importar e a sincronização.",
+          when: "Para trazer uma NCM nova, ver o que a importação exige dela ou conferir a última sincronização.",
+        },
+        ncmRates: {
+          summary: "II, IPI, PIS/COFINS e ICMS de referência de cada NCM vigente, com o simulador de tributos da importação.",
+          when: "Para consultar as alíquotas de referência de uma NCM ou estimar os tributos de uma importação.",
+        },
+        invoiceAudit: {
+          summary: "Onde a DATABASE de produtos corrige a NCM da invoice antes de ela ser gravada no IP.",
+          when: "Quando a invoice chega, antes de gravá-la no IP.",
+        },
+      },
       steps: [
         "Em Cadastros, “Produtos e NCM” leva à lista desta tela, “Valores das entidades” ao cadastro com a busca oficial e “Alíquotas por NCM” a II, IPI, PIS/COFINS e ICMS.",
         "Escolha NCM para ver as NCMs cadastradas, com situação, vigência e versão. “Histórico” mostra cada alteração, com o valor antes e depois, quem alterou e quando.",

@@ -3585,6 +3585,16 @@ export const en: Messages = {
       lead: "Master data holds the options shown on the screens: importers, Incoterms, transport modes, ports, currencies, analysts, customs brokers, suppliers, products and others. The walkthrough uses one field as an example; the others work the same way.",
       notice: "Every addition, edit or deletion goes to the audit history, with the value before and after, who changed it and when. Entity values are maintained by Master, Administrator and Purchasing; the other profiles can view them.",
       name: "Master data",
+      screens: {
+        catalog: {
+          summary: "The registered products and NCMs, with the change history and the reference price from the POs, and the shortcuts to the other master data.",
+          when: "To check or fix a product, see the price on each PO or reach the other master data.",
+        },
+        entityValues: {
+          summary: "The option lists of each field of the PO, the IP and the product: importers, Incoterms, modes, ports, currencies, analysts, customs brokers, suppliers and others.",
+          when: "When a list is missing an option or an option is misspelled.",
+        },
+      },
       steps: [
         "The Master data shortcuts lead to Products and NCM, Entity values, Rates by NCM and Reference loads. POs and IPs are registered on their own screens. Each shortcut appears to those who can use it.",
         "The product list shows code, description, reference price from the POs, status, validity and version. “History” shows each change with before and after; “Prices”, the price on each PO; “Edit” is for Master, Administrator and Purchasing.",
@@ -3605,9 +3615,27 @@ export const en: Messages = {
     },
     ncm: {
       heading: "NCM, from registration to tax rates",
-      lead: "The NCM is the tax classification of each imported product. The platform brings the NCM from the official Siscomex catalog, shows what the import requires for it, keeps its description and validity up to date and shows the reference tax rates. Follow the walkthrough; each step opens the screen in the print.",
+      lead: "The NCM is the tax classification of each imported product. The platform brings the NCM from the official Siscomex catalog, shows what the import requires for it, keeps its description and validity up to date and shows the reference tax rates. Choose a screen on the side and follow its walkthrough.",
       notice: "The rates shown in the platform are references and not the tax due: origin, Ex-tariff, quota, regime and benefits can change the amount of each operation. The simulator gives an estimate, which does not replace the customs clearance calculation.",
       name: "NCM cycle",
+      screens: {
+        catalog: {
+          summary: "The registered NCMs, with status, validity, version and the history of each change.",
+          when: "To check whether an NCM is already registered and what changed in it.",
+        },
+        entityValues: {
+          summary: "NCM registration: the search in the official Siscomex catalog, the information required to import and the synchronisation.",
+          when: "To bring in a new NCM, see what imports require of it or check the last synchronisation.",
+        },
+        ncmRates: {
+          summary: "Reference II, IPI, PIS/COFINS and ICMS for each NCM in force, with the import tax simulator.",
+          when: "To look up the reference rates of an NCM or estimate the taxes of an import.",
+        },
+        invoiceAudit: {
+          summary: "Where the product DATABASE corrects the invoice NCM before it is recorded in the IP.",
+          when: "When the invoice arrives, before recording it in the IP.",
+        },
+      },
       steps: [
         "In Master data, “Products and NCM” leads to the list on this screen, “Entity values” to the registration with the official search and “Rates by NCM” to II, IPI, PIS/COFINS and ICMS.",
         "Choose NCM to see the registered NCMs, with status, validity and version. “History” shows each change, with the value before and after, who changed it and when.",

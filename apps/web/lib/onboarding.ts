@@ -300,6 +300,30 @@ export const ONBOARDING_TOPIC_STEPS: Readonly<Record<OnboardingTopic, readonly O
 };
 
 /**
+ * A screen of the Cadastros or NCM chapter, listed beside the walkthrough like the screens of chapter 3: the run of
+ * consecutive steps that open it, from `first` in the chapter's step texts. A screen of the menu keeps its stages;
+ * the master data screens support every stage (empty list).
+ */
+export type OnboardingTopicScreen = {
+  target: OnboardingStepTarget;
+  stages: readonly OnboardingStage[];
+  first: number;
+  steps: readonly OnboardingTopicStep[];
+};
+
+export function onboardingTopicScreens(topic: OnboardingTopic): OnboardingTopicScreen[] {
+  const screens: { target: OnboardingStepTarget; stages: readonly OnboardingStage[]; first: number;
+    steps: OnboardingTopicStep[] }[] = [];
+  ONBOARDING_TOPIC_STEPS[topic].forEach((step, index) => {
+    const last = screens[screens.length - 1];
+    if (last?.target === step.target) { last.steps.push(step); return; }
+    const stages = ONBOARDING_SCREENS.find(screen => screen.key === step.target)?.stages ?? [];
+    screens.push({ target: step.target, stages, first: index, steps: [step] });
+  });
+  return screens;
+}
+
+/**
  * Videos recorded by the team, one slot per chapter or screen. A slot without a link shows that the video is
  * still being recorded. Only corporate hosts are accepted (see `isAllowedVideoUrl`); add the shared link here.
  */

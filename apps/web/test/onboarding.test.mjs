@@ -7,7 +7,7 @@ import { zhCN } from "../lib/i18n/zh-CN.ts";
 import { focusBadgePlacement, isAllowedVideoUrl, ONBOARDING_CATALOG_STEPS, ONBOARDING_CHAPTERS, ONBOARDING_HELP_TOPICS,
   ONBOARDING_NCM_STEPS, ONBOARDING_PROCESS_STEPS, ONBOARDING_SCREEN_KEYS, ONBOARDING_SCREENS, ONBOARDING_SHOT_SIZES,
   ONBOARDING_STAGES, ONBOARDING_STEP_TARGETS, ONBOARDING_TOPIC_STEPS, ONBOARDING_TOPICS, ONBOARDING_VIDEO_URLS, onboardingShotSrc, onboardingHelpForPath, onboardingHelpHref,
-  onboardingStorageKey, onboardingVideoUrl, parseOnboardingHelp, parseOnboardingProgress, visitChapter,
+  onboardingStorageKey, onboardingTopicScreens, onboardingVideoUrl, parseOnboardingHelp, parseOnboardingProgress, visitChapter,
   writeOnboardingProgress } from "../lib/onboarding.ts";
 
 const source = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
@@ -109,9 +109,9 @@ test("the Cadastros and NCM walkthroughs open the screen of each step and are to
   assert.deepEqual([...new Set(ONBOARDING_CATALOG_STEPS.map(step => step.target))], ["catalog", "entityValues"]);
   assert.deepEqual([...new Set(ONBOARDING_NCM_STEPS.map(step => step.target))], Object.keys(ONBOARDING_STEP_TARGETS));
   assert.ok(ONBOARDING_CATALOG_STEPS.length >= 5 && ONBOARDING_NCM_STEPS.length >= 10);
-  assert.match(topic, /<OnboardingWalkthrough steps=\{steps\} texts=\{texts\.steps\} name=\{texts\.name\}/u);
-  assert.match(topic, /const steps = ONBOARDING_TOPIC_STEPS\[topic\];/u);
-  assert.match(topic, /href=\{ONBOARDING_STEP_TARGETS\[target\]\}/u);
+  assert.match(topic, /<OnboardingWalkthrough steps=\{screen\.steps\} texts=\{steps\} name=\{name\} \/>/u);
+  assert.match(topic, /const steps = texts\.steps\.slice\(screen\.first, screen\.first \+ screen\.steps\.length\);/u);
+  assert.match(topic, /href=\{ONBOARDING_STEP_TARGETS\[screen\.target\]\}/u);
   assert.match(topic, /<OnboardingVideo slot=\{topic\} \/>/u);
   for (const item of ONBOARDING_TOPICS) {
     assert.ok(item in ONBOARDING_VIDEO_URLS, item);
@@ -122,6 +122,38 @@ test("the Cadastros and NCM walkthroughs open the screen of each step and are to
       assert.equal(t.faq.length, ptBR.onboarding[item].faq.length, `${name}.${item}: questions`);
       for (const question of t.faq) assert.ok(question.question && question.answer, `${name}.${item}`);
     }
+  }
+});
+
+// User decision (2026-11-25): Cadastros and NCM follow the layout of chapter 3, with the screens of the chapter and
+// their stages on the side and, beside them, what the chosen screen is for and its part of the walkthrough.
+test("the Cadastros and NCM chapters list their screens with stages beside the walkthrough, like chapter 3", () => {
+  assert.deepEqual(onboardingTopicScreens("catalog").map(screen => [screen.target, screen.first, screen.steps.length]),
+    [["catalog", 0, 2], ["entityValues", 2, 4]]);
+  assert.deepEqual(onboardingTopicScreens("ncm").map(screen => [screen.target, screen.first, screen.steps.length]),
+    [["catalog", 0, 2], ["entityValues", 2, 8], ["ncmRates", 10, 5], ["invoiceAudit", 15, 1]]);
+  const invoiceAudit = ONBOARDING_SCREENS.find(screen => screen.key === "invoiceAudit");
+  for (const item of ONBOARDING_TOPICS) {
+    const list = onboardingTopicScreens(item);
+    // Each screen appears once: the steps that open it are consecutive, and together they cover the chapter.
+    assert.equal(new Set(list.map(screen => screen.target)).size, list.length, item);
+    assert.deepEqual(list.flatMap(screen => screen.steps), [...ONBOARDING_TOPIC_STEPS[item]], item);
+    for (const screen of list) {
+      // A menu screen keeps its stages; master data serves every stage.
+      assert.deepEqual(screen.stages, screen.target === "invoiceAudit" ? invoiceAudit.stages : [], screen.target);
+    }
+    for (const [name, m] of Object.entries(dictionaries)) {
+      assert.deepEqual(Object.keys(m.onboarding[item].screens), list.map(screen => screen.target), `${name}.${item}`);
+      for (const texts of Object.values(m.onboarding[item].screens)) assert.ok(texts.summary && texts.when, `${name}.${item}`);
+    }
+  }
+  // Same pieces and classes as the list of chapter 3.
+  for (const piece of [/<div className="onboarding-screens" ref=\{screensRef\}>/u, /<ul className="onboarding-screen-list"/u,
+    /"onboarding-screen-option is-current" : "onboarding-screen-option"/u, /<span className="onboarding-stage-chips">/u,
+    /<article className="card onboarding-screen" aria-labelledby=\{titleId\}>/u,
+    /<p><strong>\{t\.screens\.when\}:<\/strong> \{item\.when\}<\/p>/u]) {
+    assert.match(topic, piece);
+    assert.match(screens, piece);
   }
 });
 
