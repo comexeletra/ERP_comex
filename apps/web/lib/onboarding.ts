@@ -1,7 +1,7 @@
 /**
  * Content model of the onboarding guide (/onboarding). The texts live in the dictionaries under `onboarding`;
- * this module holds what is not text: the chapter order, which screen supports which stage, the schematic
- * drawing of each screen with its numbered points, and the links of the videos recorded by the team.
+ * this module holds what is not text: the chapter order, which screen supports which stage, the HML prints of
+ * each walkthrough step with the area to highlight, and the links of the videos recorded by the team.
  * It imports no values from other `lib/` modules, so `node --test` can load it on its own.
  */
 
@@ -16,85 +16,158 @@ export const ONBOARDING_SCREEN_KEYS = ["preShipment", "productPortfolio", "postS
   "endToEnd", "indicators", "dataQuality"] as const;
 export type OnboardingScreenKey = typeof ONBOARDING_SCREEN_KEYS[number];
 
-/** Pieces of a schematic screen drawing, in a 320 × 200 canvas. `n` counts the repeated parts (fields, rows, tiles). */
-export type SketchKind = "title" | "button" | "tabs" | "filters" | "kpis" | "table" | "bars" | "donut" | "rail"
-  | "upload" | "checklist" | "form";
-export type SketchBlock = { kind: SketchKind; x: number; y: number; w: number; h: number; n?: number };
-export type SketchPoint = { x: number; y: number };
+/**
+ * Prints taken in HML (dark theme, pt-BR), cropped without the sidebar and kept in `public/onboarding/<name>.png`.
+ * The sizes let the page reserve the space of each image before it loads.
+ */
+export const ONBOARDING_SHOT_SIZES = {
+  "po-portfolio": { width: 1752, height: 905 },
+  "po-portfolio-list": { width: 1752, height: 906 },
+  "po-detail": { width: 1759, height: 901 },
+  "po-data": { width: 1752, height: 904 },
+  "po-quantities": { width: 1752, height: 910 },
+  "po-lines": { width: 1752, height: 901 },
+  "po-ip-data": { width: 1752, height: 907 },
+  "product-lines": { width: 1752, height: 901 },
+  "product-lines-without-ip": { width: 1752, height: 904 },
+  "ip-list": { width: 1752, height: 907 },
+  "ip-detail": { width: 1752, height: 900 },
+  "ip-distribution": { width: 1752, height: 899 },
+  "ip-post-shipment": { width: 1752, height: 910 },
+  "ip-documents": { width: 1752, height: 866 },
+  "invoice-audit-files": { width: 1752, height: 892 },
+  "invoice-audit-summary": { width: 1752, height: 899 },
+  "invoice-audit-conference": { width: 1752, height: 897 },
+  "invoice-audit-corrections": { width: 1752, height: 896 },
+  "invoice-audit-lines": { width: 1752, height: 899 },
+  "e2e-stages": { width: 1752, height: 904 },
+  "e2e-horizon": { width: 1752, height: 895 },
+  "e2e-charts": { width: 1752, height: 909 },
+  "e2e-table": { width: 1752, height: 904 },
+  "reports-pre": { width: 1752, height: 905 },
+  "reports-pre-table": { width: 1748, height: 909 },
+  "reports-post": { width: 1747, height: 909 },
+  "reports-post-charts": { width: 1752, height: 907 },
+  "reports-clearance": { width: 1752, height: 892 },
+  "quality-current": { width: 1752, height: 899 },
+  "quality-current-list": { width: 1752, height: 914 },
+  "quality-load": { width: 1751, height: 886 },
+  "quality-load-list": { width: 1752, height: 907 },
+} as const;
+export type OnboardingShot = keyof typeof ONBOARDING_SHOT_SIZES;
 
-export const SKETCH_WIDTH = 320;
-export const SKETCH_HEIGHT = 200;
+export function onboardingShotSrc(shot: OnboardingShot): string {
+  return `/onboarding/${shot}.png`;
+}
+
+/** Area of a print highlighted in a step, in percent of the image width and height. */
+export type OnboardingFocus = { x: number; y: number; w: number; h: number };
+export type OnboardingStep = { shot: OnboardingShot; box: OnboardingFocus };
+
+/**
+ * Where the step number sits so it never covers the highlighted control: above the area, below it when the area
+ * starts at the top of the print, and inside only when the area fills the print from top to bottom.
+ */
+export function focusBadgePlacement(box: OnboardingFocus): "above" | "below" | "inside" {
+  if (box.y >= 8) return "above";
+  return box.y + box.h <= 92 ? "below" : "inside";
+}
 
 export type OnboardingScreen = {
   key: OnboardingScreenKey;
   href: string;
   /** Stages of the T0–T5 flow this screen follows; empty for a screen that supports every stage. */
   stages: readonly OnboardingStage[];
-  sketch: readonly SketchBlock[];
-  /** One numbered point per step of the walkthrough, in the order of the steps in the dictionaries. */
-  points: readonly SketchPoint[];
+  /** One print and highlighted area per step, in the order of the steps in the dictionaries. */
+  steps: readonly OnboardingStep[];
 };
-
-const header: SketchBlock[] = [
-  { kind: "title", x: 16, y: 14, w: 150, h: 18 },
-];
 
 export const ONBOARDING_SCREENS: readonly OnboardingScreen[] = [
   {
     key: "preShipment", href: "/", stages: ["T1", "T2", "T3"],
-    sketch: [...header, { kind: "button", x: 232, y: 14, w: 72, h: 16 },
-      { kind: "kpis", x: 16, y: 42, w: 288, h: 30, n: 4 },
-      { kind: "filters", x: 16, y: 82, w: 288, h: 14, n: 5 },
-      { kind: "table", x: 16, y: 106, w: 288, h: 82, n: 5 }],
-    points: [{ x: 20, y: 86 }, { x: 20, y: 132 }, { x: 300, y: 18 }],
+    steps: [
+      { shot: "po-portfolio", box: { x: 1.4, y: 19.6, w: 98.3, h: 27 } },
+      { shot: "po-portfolio", box: { x: 1.4, y: 48.7, w: 98.3, h: 12.4 } },
+      { shot: "po-portfolio-list", box: { x: 2.9, y: 9.1, w: 14.2, h: 4.6 } },
+      { shot: "po-portfolio-list", box: { x: 84.8, y: 24.9, w: 8.2, h: 4.9 } },
+      { shot: "po-detail", box: { x: 1.5, y: 26.7, w: 97.9, h: 5.8 } },
+      { shot: "po-detail", box: { x: 3, y: 55.9, w: 95.1, h: 27.1 } },
+      { shot: "po-data", box: { x: 2.7, y: 59.7, w: 95.4, h: 20.1 } },
+      { shot: "po-quantities", box: { x: 3, y: 35.3, w: 95.4, h: 36.4 } },
+      { shot: "po-lines", box: { x: 2.9, y: 42.2, w: 95.4, h: 17.5 } },
+      { shot: "po-ip-data", box: { x: 3, y: 8.6, w: 95.4, h: 84 } },
+    ],
   },
   {
     key: "productPortfolio", href: "/purchase-orders/lines", stages: ["T2", "T3"],
-    sketch: [...header, { kind: "button", x: 232, y: 14, w: 72, h: 16 },
-      { kind: "tabs", x: 16, y: 42, w: 180, h: 14, n: 3 },
-      { kind: "filters", x: 16, y: 66, w: 288, h: 14, n: 4 },
-      { kind: "table", x: 16, y: 90, w: 288, h: 98, n: 6 }],
-    points: [{ x: 20, y: 46 }, { x: 20, y: 70 }, { x: 300, y: 18 }],
+    steps: [
+      { shot: "product-lines", box: { x: 1.6, y: 21.2, w: 98.2, h: 39.7 } },
+      { shot: "product-lines-without-ip", box: { x: 26.7, y: 33, w: 23.9, h: 8.1 } },
+      { shot: "product-lines-without-ip", box: { x: 3, y: 78.1, w: 95.4, h: 21.9 } },
+      { shot: "product-lines-without-ip", box: { x: 3, y: 71.7, w: 14, h: 4.6 } },
+    ],
   },
   {
     key: "postShipment", href: "/processes", stages: ["T3", "T4", "T5"],
-    sketch: [...header, { kind: "tabs", x: 16, y: 42, w: 200, h: 14, n: 4 },
-      { kind: "form", x: 16, y: 66, w: 180, h: 74, n: 6 },
-      { kind: "upload", x: 208, y: 66, w: 96, h: 74 },
-      { kind: "table", x: 16, y: 150, w: 288, h: 38, n: 2 }],
-    points: [{ x: 20, y: 18 }, { x: 20, y: 70 }, { x: 212, y: 70 }],
+    steps: [
+      { shot: "ip-list", box: { x: 1.7, y: 18.7, w: 98.2, h: 21.4 } },
+      { shot: "ip-list", box: { x: 3.1, y: 50.6, w: 95.4, h: 49.2 } },
+      { shot: "ip-list", box: { x: 95.1, y: 10.7, w: 4.8, h: 4.6 } },
+      { shot: "ip-detail", box: { x: 1.6, y: 35.3, w: 98.2, h: 38.8 } },
+      { shot: "ip-distribution", box: { x: 3, y: 32.3, w: 95.4, h: 26.1 } },
+      { shot: "ip-distribution", box: { x: 3, y: 65.6, w: 95.5, h: 22.2 } },
+      { shot: "ip-post-shipment", box: { x: 3, y: 55.5, w: 95.4, h: 44.5 } },
+      { shot: "ip-documents", box: { x: 3.1, y: 28.9, w: 95.4, h: 33.5 } },
+    ],
   },
   {
     key: "invoiceAudit", href: "/invoices/audit", stages: ["T3"],
-    sketch: [...header, { kind: "upload", x: 16, y: 42, w: 288, h: 40 },
-      { kind: "checklist", x: 16, y: 92, w: 196, h: 96, n: 5 },
-      { kind: "kpis", x: 222, y: 92, w: 82, h: 58, n: 1 },
-      { kind: "button", x: 222, y: 166, w: 82, h: 18 }],
-    points: [{ x: 20, y: 46 }, { x: 20, y: 96 }, { x: 300, y: 170 }],
+    steps: [
+      { shot: "invoice-audit-files", box: { x: 3.1, y: 26.9, w: 95.4, h: 8.6 } },
+      { shot: "invoice-audit-files", box: { x: 3.1, y: 38.1, w: 64.8, h: 10.3 } },
+      { shot: "invoice-audit-summary", box: { x: 2.9, y: 36.7, w: 95.4, h: 41.2 } },
+      { shot: "invoice-audit-conference", box: { x: 3.2, y: 2.8, w: 95.4, h: 27.1 } },
+      { shot: "invoice-audit-conference", box: { x: 3.2, y: 31.7, w: 95.4, h: 45.5 } },
+      { shot: "invoice-audit-corrections", box: { x: 2.7, y: 1.1, w: 96.9, h: 85.5 } },
+      { shot: "invoice-audit-lines", box: { x: 3.2, y: 7.8, w: 95.4, h: 63 } },
+      { shot: "invoice-audit-lines", box: { x: 3.2, y: 74.1, w: 95.4, h: 13.8 } },
+    ],
   },
   {
     key: "endToEnd", href: "/end-to-end", stages: ["T0", "T1", "T2", "T3", "T4", "T5"],
-    sketch: [...header, { kind: "filters", x: 16, y: 42, w: 288, h: 14, n: 3 },
-      { kind: "rail", x: 16, y: 64, w: 288, h: 18 },
-      { kind: "kpis", x: 16, y: 88, w: 288, h: 40, n: 6 },
-      { kind: "table", x: 16, y: 138, w: 288, h: 50, n: 3 }],
-    points: [{ x: 20, y: 92 }, { x: 20, y: 46 }, { x: 20, y: 156 }],
+    steps: [
+      { shot: "e2e-stages", box: { x: 1.5, y: 23.6, w: 18.4, h: 4.8 } },
+      { shot: "e2e-stages", box: { x: 1.5, y: 32.1, w: 98.3, h: 4.9 } },
+      { shot: "e2e-stages", box: { x: 1.5, y: 72.9, w: 98.3, h: 26.7 } },
+      { shot: "e2e-horizon", box: { x: 1.3, y: 17.3, w: 98.3, h: 26.3 } },
+      { shot: "e2e-horizon", box: { x: 1.3, y: 50.1, w: 98.3, h: 47.4 } },
+      { shot: "e2e-charts", box: { x: 1.5, y: 26.6, w: 98.3, h: 72.4 } },
+      { shot: "e2e-table", box: { x: 3.1, y: 9.3, w: 95.4, h: 90.7 } },
+    ],
   },
   {
     key: "indicators", href: "/reports/pre", stages: ["T3", "T4", "T5"],
-    sketch: [...header, { kind: "tabs", x: 16, y: 42, w: 120, h: 14, n: 2 },
-      { kind: "filters", x: 16, y: 64, w: 288, h: 14, n: 4 },
-      { kind: "kpis", x: 16, y: 86, w: 288, h: 26, n: 4 },
-      { kind: "bars", x: 16, y: 120, w: 186, h: 68, n: 8 },
-      { kind: "donut", x: 212, y: 120, w: 92, h: 68 }],
-    points: [{ x: 20, y: 46 }, { x: 20, y: 68 }, { x: 20, y: 124 }],
+    steps: [
+      { shot: "reports-pre", box: { x: 1.4, y: 14.9, w: 16.3, h: 4.9 } },
+      { shot: "reports-pre", box: { x: 1.4, y: 21.7, w: 98.3, h: 6 } },
+      { shot: "reports-pre", box: { x: 1.4, y: 29.4, w: 98.3, h: 63.8 } },
+      { shot: "reports-pre-table", box: { x: 1.4, y: 0.7, w: 98.5, h: 98.9 } },
+      { shot: "reports-post", box: { x: 1.2, y: 29.4, w: 98.6, h: 23.7 } },
+      { shot: "reports-post-charts", box: { x: 1.5, y: 36.9, w: 98.3, h: 43.2 } },
+      { shot: "reports-clearance", box: { x: 1.7, y: 16.3, w: 98.3, h: 63 } },
+    ],
   },
   {
     key: "dataQuality", href: "/quality", stages: [],
-    sketch: [...header, { kind: "tabs", x: 16, y: 42, w: 120, h: 14, n: 2 },
-      { kind: "kpis", x: 16, y: 64, w: 288, h: 26, n: 3 },
-      { kind: "checklist", x: 16, y: 98, w: 288, h: 90, n: 5 }],
-    points: [{ x: 20, y: 68 }, { x: 20, y: 102 }, { x: 20, y: 46 }],
+    steps: [
+      { shot: "quality-current", box: { x: 1.3, y: 16.1, w: 17, h: 5 } },
+      { shot: "quality-current", box: { x: 1.3, y: 26.6, w: 98.3, h: 12.7 } },
+      { shot: "quality-current", box: { x: 1.3, y: 41.4, w: 98.3, h: 43.2 } },
+      { shot: "quality-current-list", box: { x: 1.4, y: 0.9, w: 98.3, h: 12.7 } },
+      { shot: "quality-current-list", box: { x: 1.9, y: 19.5, w: 97.7, h: 11.9 } },
+      { shot: "quality-load", box: { x: 1.3, y: 42.6, w: 98.3, h: 28.6 } },
+      { shot: "quality-load-list", box: { x: 1.4, y: 19.6, w: 98.3, h: 12 } },
+    ],
   },
 ];
 

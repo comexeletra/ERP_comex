@@ -1,21 +1,28 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
 import { en } from "../lib/i18n/en.ts";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
 import { zhCN } from "../lib/i18n/zh-CN.ts";
-import { isAllowedVideoUrl, ONBOARDING_CHAPTERS, ONBOARDING_SCREEN_KEYS, ONBOARDING_SCREENS, ONBOARDING_STAGES,
-  ONBOARDING_VIDEO_URLS, onboardingStorageKey, onboardingVideoUrl, parseOnboardingProgress, screensForStage,
-  SKETCH_HEIGHT, SKETCH_WIDTH, visitChapter, writeOnboardingProgress } from "../lib/onboarding.ts";
+import { focusBadgePlacement, isAllowedVideoUrl, ONBOARDING_CHAPTERS, ONBOARDING_SCREEN_KEYS, ONBOARDING_SCREENS, ONBOARDING_SHOT_SIZES,
+  ONBOARDING_STAGES, ONBOARDING_VIDEO_URLS, onboardingShotSrc, onboardingStorageKey, onboardingVideoUrl,
+  parseOnboardingProgress, screensForStage, visitChapter, writeOnboardingProgress } from "../lib/onboarding.ts";
 
 const source = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const dictionaries = { ptBR, en, zhCN };
-const [sidebar, page, guide, process, screens, sketch, video, styles, layout] = await Promise.all([
+const [sidebar, page, guide, process, screens, video, styles, layout] = await Promise.all([
   source("components/AppSidebar.tsx"), source("app/onboarding/page.tsx"), source("components/OnboardingGuide.tsx"),
   source("components/OnboardingProcess.tsx"), source("components/OnboardingScreens.tsx"),
-  source("components/OnboardingSketch.tsx"), source("components/OnboardingVideo.tsx"),
-  source("app/styles/features/onboarding.css"), source("app/layout.tsx"),
+  source("components/OnboardingVideo.tsx"), source("app/styles/features/onboarding.css"), source("app/layout.tsx"),
 ]);
+const shotsFolder = new URL("../public/onboarding/", import.meta.url);
+
+/** Width and height of a PNG, read from its IHDR chunk. */
+async function pngSize(url) {
+  const bytes = await readFile(url);
+  assert.equal(bytes.toString("latin1", 1, 4), "PNG", url.pathname);
+  return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+}
 
 test("the guide opens from the top of the sidebar for every role", () => {
   assert.match(page, /<OnboardingGuide \/>/u);
@@ -48,20 +55,37 @@ test("every stage of the flow points to at least one screen", () => {
   assert.deepEqual(screensForStage("T0").map(screen => screen.key), ["endToEnd"]);
 });
 
-test("each walkthrough step has a numbered point inside the drawing, in all three languages", () => {
+test("each walkthrough step has a print and a highlighted area inside it, in all three languages", () => {
   for (const screen of ONBOARDING_SCREENS) {
+    assert.ok(screen.steps.length >= 2, screen.key);
     for (const [name, m] of Object.entries(dictionaries)) {
       const item = m.onboarding.screens.items[screen.key];
       assert.ok(item.summary && item.when, `${name}.${screen.key}`);
-      assert.equal(Object.keys(item.steps).length, screen.points.length, `${name}.${screen.key}: steps × points`);
+      assert.equal(Object.keys(item.steps).length, screen.steps.length, `${name}.${screen.key}: texts × prints`);
     }
-    for (const point of screen.points) {
-      assert.ok(point.x >= 0 && point.x <= SKETCH_WIDTH && point.y >= 0 && point.y <= SKETCH_HEIGHT, `${screen.key}: point`);
+    for (const [k, { shot, box }] of screen.steps.entries()) {
+      assert.ok(shot in ONBOARDING_SHOT_SIZES, `${screen.key} ${k + 1}: ${shot}`);
+      assert.ok(box.x >= 0 && box.y >= 0 && box.w > 0 && box.h > 0 && box.x + box.w <= 100 && box.y + box.h <= 100,
+        `${screen.key} ${k + 1}: the highlight leaves the print`);
     }
-    for (const block of screen.sketch) {
-      assert.ok(block.x >= 0 && block.y >= 0 && block.x + block.w <= SKETCH_WIDTH && block.y + block.h <= SKETCH_HEIGHT,
-        `${screen.key}: ${block.kind} leaves the drawing`);
-    }
+  }
+});
+
+test("the step number sits outside the highlighted control whenever the print leaves room for it", () => {
+  assert.equal(focusBadgePlacement({ x: 95, y: 10.7, w: 4.8, h: 4.6 }), "above");
+  assert.equal(focusBadgePlacement({ x: 3, y: .9, w: 95, h: 12.7 }), "below");
+  assert.equal(focusBadgePlacement({ x: 3, y: .7, w: 95, h: 98.9 }), "inside");
+  assert.match(screens, /<span className=\{badgeClass\[focusBadgePlacement\(step\.box\)\]\}>/u);
+});
+
+test("every print exists with the declared size and every print in the folder is used", async () => {
+  const used = new Set(ONBOARDING_SCREENS.flatMap(screen => screen.steps.map(step => step.shot)));
+  assert.deepEqual([...used].sort(), Object.keys(ONBOARDING_SHOT_SIZES).sort());
+  const files = (await readdir(shotsFolder)).sort();
+  assert.deepEqual(files, Object.keys(ONBOARDING_SHOT_SIZES).map(shot => `${shot}.png`).sort());
+  for (const [shot, size] of Object.entries(ONBOARDING_SHOT_SIZES)) {
+    assert.equal(onboardingShotSrc(shot), `/onboarding/${shot}.png`);
+    assert.deepEqual(await pngSize(new URL(`${shot}.png`, shotsFolder)), { ...size }, shot);
   }
 });
 
@@ -77,9 +101,11 @@ test("the process chapter takes the stages and deadlines from the End to End mod
   }
 });
 
-test("drawings are described for screen readers and carry a caption; videos open only corporate links", () => {
-  assert.match(sketch, /role="img" aria-label=\{label\}/u);
-  assert.match(screens, /<figcaption/u);
+test("prints are described for screen readers and carry the step as caption; videos open only corporate links", () => {
+  assert.match(screens, /alt=\{t\.screens\.figure\(name, current \+ 1\)\}/u);
+  assert.match(screens, /<span className="sr-only">\{t\.screens\.enlarge\}<\/span>/u);
+  assert.match(screens, /<figcaption aria-live="polite">/u);
+  assert.match(screens, /<span className="onboarding-shot-focus" aria-hidden="true"/u);
   assert.match(video, /target="_blank" rel="noopener noreferrer"/u);
   assert.match(video, /onboardingVideoUrl\(slot\)/u);
   for (const [slot, url] of Object.entries(ONBOARDING_VIDEO_URLS)) {
@@ -96,7 +122,11 @@ test("drawings are described for screen readers and carry a caption; videos open
 });
 
 test("the walkthrough animation stands still with reduced motion and loads after the shared styles", () => {
-  assert.match(styles, /@media \(prefers-reduced-motion: reduce\) \{ \.onboarding [^{]*\{ animation: none !important; transition: none !important; \} \}/u);
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\) \{ \.onboarding \*, \.onboarding \*::after \{ animation: none !important; transition: none !important; \} \}/u);
+  // The highlight slides between areas and pulses; the print fades in when the step changes to another print.
+  assert.match(styles, /\.onboarding-shot-focus \{[^}]*transition: left/u);
+  assert.match(styles, /\.onboarding-shot-focus::after \{[^}]*animation: onboarding-pulse/u);
+  assert.match(styles, /\.onboarding-shot-image \{[^}]*animation: onboarding-fade/u);
   assert.match(layout, /import "\.\/styles\/features\/onboarding\.css";/u);
 });
 
