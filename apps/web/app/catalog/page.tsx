@@ -156,8 +156,6 @@ export default function CatalogPage() {
 
   const canWrite = roles.includes("Master") || roles.includes("Administrador")
     || roles.includes(resource === "ncms" ? "Fiscal" : "Compras");
-  const canRegisterPo = roles.some(role => ["Master", "Administrador", "Importação", "Compras"].includes(role));
-  const canRegisterIp = roles.some(role => ["Master", "Administrador", "Importação"].includes(role));
   const canLoadReferences = roles.some(role => ["Master", "Administrador"].includes(role));
   return <main className="shell">
     {/* The NCM view is explained in the NCM chapter of the guide; the address opens the Cadastros chapter. */}
@@ -169,8 +167,6 @@ export default function CatalogPage() {
         <Link className="button secondary" href="/catalog/values">{t.entityValues}</Link>
         <Link className="button secondary" href="/catalog/ncm-rates">{t.ncmRates}</Link>
         {canLoadReferences && <Link className="button secondary" href="/catalog/reference-loads">{t.referenceLoads}</Link>}
-        {canRegisterPo && <Link className="button secondary" href="/purchase-orders/new">{t.registerPo}</Link>}
-        {canRegisterIp && <Link className="button secondary" href="/processes/new?from=catalog">{t.registerIp}</Link>}
       </nav>
     </section>
     <section className="card catalog-controls" id="catalog-controls">

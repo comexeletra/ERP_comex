@@ -2839,8 +2839,6 @@ export const en: Messages = {
     entityValues: "Entity values",
     ncmRates: "Rates by NCM",
     referenceLoads: "Reference loads",
-    registerPo: "Register TOTVS PO",
-    registerIp: "Register IP",
     entryType: "Record type",
     search: "Search code or name",
     loading: "Loading master data…",
@@ -3588,7 +3586,7 @@ export const en: Messages = {
       notice: "Every addition, edit or deletion goes to the audit history, with the value before and after, who changed it and when. Entity values are maintained by Master, Administrator and Purchasing; the other profiles can view them.",
       name: "Master data",
       steps: [
-        "The Master data shortcuts lead to Products and NCM, Entity values, Rates by NCM and Reference loads, as well as Register TOTVS PO and Register IP. Each shortcut appears to those who can use it.",
+        "The Master data shortcuts lead to Products and NCM, Entity values, Rates by NCM and Reference loads. POs and IPs are registered on their own screens. Each shortcut appears to those who can use it.",
         "The product list shows code, description, reference price from the POs, status, validity and version. “History” shows each change with before and after; “Prices”, the price on each PO; “Edit” is for Master, Administrator and Purchasing.",
         "In Entity values, choose the field. Each field is the list of options of a PO, IP or product data item. The example uses Importer.",
         "The list shows the registered values of the field, with a search. Importer has code, short name, full name, type (Import/Cons) and CNPJ; most fields only have the value.",

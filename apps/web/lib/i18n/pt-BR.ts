@@ -2842,8 +2842,6 @@ export const ptBR = {
     entityValues: "Valores das entidades",
     ncmRates: "Alíquotas por NCM",
     referenceLoads: "Cargas de referência",
-    registerPo: "Cadastrar PO do TOTVS",
-    registerIp: "Cadastrar IP",
     entryType: "Tipo de cadastro",
     search: "Pesquisar código ou nome",
     loading: "Carregando cadastros…",
@@ -3591,7 +3589,7 @@ export const ptBR = {
       notice: "Toda inclusão, edição ou exclusão fica no histórico de auditoria, com o valor antes e depois, quem alterou e quando. Os valores das entidades são mantidos por Master, Administrador e Compras; os demais perfis consultam.",
       name: "Cadastros",
       steps: [
-        "Os atalhos de Cadastros levam a Produtos e NCM, Valores das entidades, Alíquotas por NCM e Cargas de referência, além de Cadastrar PO do TOTVS e Cadastrar IP. Cada atalho aparece para quem pode usá-lo.",
+        "Os atalhos de Cadastros levam a Produtos e NCM, Valores das entidades, Alíquotas por NCM e Cargas de referência. POs e IPs são cadastrados nas próprias telas. Cada atalho aparece para quem pode usá-lo.",
         "A lista de produtos mostra código, descrição, preço de referência das POs, situação, vigência e versão. “Histórico” mostra cada alteração com antes e depois; “Preços”, o preço de cada PO; “Editar” fica com Master, Administrador e Compras.",
         "Em Valores das entidades, escolha o campo. Cada campo é a lista de opções de um dado da PO, do IP ou do produto. O exemplo usa Importadora.",
         "A lista mostra os valores cadastrados do campo, com a busca. Importadora traz código, nome curto, nome completo, tipo (Import/Cons) e CNPJ; na maioria dos campos há só o valor.",
