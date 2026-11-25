@@ -10,9 +10,11 @@ importação (T0–T5, Brasil → China → Brasil) e qual tela usar em cada eta
 1. Rota `/onboarding`, no grupo "Comece aqui", no topo do menu, visível a todos os papéis.
 2. Capítulo 1 – Para que serve: entradas → plataforma → áreas, benefícios e glossário (SC, PO,
    produto, IP, invoice e packing list, DUIMP, MTS/Não MTS, data de necessidade).
-3. Capítulo 2 – O processo: o fluxo T0–T5 com as mesmas peças e prazos do End to End
-   (`lib/e2e-flow.ts`, `E2eModelPanels`, `E2eFlowRail`) e as telas que acompanham a etapa
-   selecionada.
+3. Capítulo 2 – O processo: no mesmo padrão do capítulo 3 (pedido do usuário em 2026-11-25), um
+   passo a passo sobre os prints do HML que percorre T0 a T5 e mostra onde cada etapa é registrada
+   (`ONBOARDING_PROCESS_STEPS`). Responsável e prazo de cada etapa vêm do modelo do End to End
+   (`lib/e2e-flow.ts`), e cada passo abre a tela do print. Os dois capítulos usam o mesmo
+   componente, `OnboardingWalkthrough`.
 4. Capítulo 3 – As telas: uma tela por vez, com resumo, "quando usar" e o passo a passo sobre prints
    do HML. Em cada passo a área do controle fica iluminada, o resto escurece, um contorno pulsa e o
    número do passo fica ao lado; o destaque desliza entre áreas do mesmo print, e o print troca com

@@ -156,7 +156,7 @@ Se algo essencial não estiver claro, pergunte antes de supor.
 ## Guia de primeiros passos (onboarding)
 
 - A rota `/onboarding` ("Comece aqui" no topo do menu) explica a finalidade da plataforma, o fluxo T0–T5 e as telas do dia a dia. Regras e decisões em `docs/PLANO_ONBOARDING.md`.
-- O capítulo do processo usa o modelo do End to End (`lib/e2e-flow.ts`); os textos do guia não citam prazos em dias. As telas são mostradas com prints do HML em `public/onboarding/` (decisão do usuário em 2026-11-25), e cada passo destaca uma área do print em porcentagem (`lib/onboarding.ts`).
+- Os capítulos do processo e das telas usam o mesmo passo a passo (`OnboardingWalkthrough`); no processo, responsável e prazo de cada etapa vêm do modelo do End to End (`lib/e2e-flow.ts`), e os textos do guia não citam prazos em dias. As telas são mostradas com prints do HML em `public/onboarding/` (decisão do usuário em 2026-11-25), e cada passo destaca uma área do print em porcentagem (`lib/onboarding.ts`).
 - Tela do dia a dia nova ou renomeada no menu entra em `ONBOARDING_SCREENS`, com a mesma chave e endereço do menu e um print e uma área por passo, e os textos nos três dicionários. Mudou o layout de uma tela: refaça o print com o mesmo nome e confira as áreas dos passos que o usam. Vídeos são links do SharePoint ou do Stream em `ONBOARDING_VIDEO_URLS`, nunca arquivos no repositório.
 
 ## Exportações Excel
