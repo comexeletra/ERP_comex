@@ -20,6 +20,10 @@ importação (T0–T5, Brasil → China → Brasil) e qual tela usar em cada eta
    número do passo fica ao lado; o destaque desliza entre áreas do mesmo print, e o print troca com
    um fade quando o passo usa outro. A animação percorre os passos e para com movimento reduzido.
 5. Espaço para vídeo em cada capítulo e em cada tela, aberto por link.
+5a. Ajuda dentro das telas (2026-11-25): o `PageHeader` mostra "Como usar esta tela" nas telas do
+   capítulo 3, inclusive nas de detalhe (PO, IP, análise por PO). O link abre
+   `/onboarding?tela=<chave>`, que vai direto para o passo a passo daquela tela. A tela é descoberta
+   pelo endereço (`onboardingScreenForPath`); telas sem passo a passo não mostram o link.
 6. Capítulo aberto e capítulos vistos lembrados no navegador (`localStorage`), sem gravar no banco.
 7. Três idiomas, tema claro e escuro, tokens e breakpoints do projeto.
 
