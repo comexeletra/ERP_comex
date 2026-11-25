@@ -3420,6 +3420,8 @@ export const zhCN: Messages = {
     next: (name: string) => `下一章：${name}`,
     finish: "从 PO 清单开始",
     open: (name: string) => `打开${name}`,
+    help: "如何使用此页面",
+    helpAria: (name: string) => `如何使用此页面：入门指南中“${name}”的操作步骤`,
     purpose: {
       heading: "平台的用途",
       lead: "平台将 Eletra 的进口跟踪集中在一处：每份采购申请、每个采购订单、每个产品和每个进口流程（IP），并将每个阶段的期限与物料必须到达工厂的日期进行比较。",

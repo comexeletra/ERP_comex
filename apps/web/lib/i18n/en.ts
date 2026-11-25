@@ -3425,6 +3425,8 @@ export const en: Messages = {
     next: (name: string) => `Next: ${name}`,
     finish: "Start with the PO portfolio",
     open: (name: string) => `Open ${name}`,
+    help: "How to use this screen",
+    helpAria: (name: string) => `How to use this screen: ${name} step by step in the getting started guide`,
     purpose: {
       heading: "What the platform is for",
       lead: "The platform brings Eletra's import tracking into one place: every purchase request, every purchase order, every product and every import process (IP), with the deadline of each stage compared with the date the material must be at the factory.",

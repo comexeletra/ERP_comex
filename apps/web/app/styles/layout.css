@@ -12,6 +12,7 @@
 .page-header h1 { color: var(--color-text-strong); font-size: var(--fs-2xl); letter-spacing: -.035em; line-height: 1.15; margin: 4px 0 10px; overflow-wrap: anywhere; }
 .page-header-copy > p:not(.eyebrow) { color: var(--color-text-muted); line-height: 1.5; margin: 8px 0 0; }
 .page-header-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 10px 16px; }
+.page-header-actions:empty { display: none; }
 
 /* Sidebar layout */
 .app-layout { --app-sidebar-width: 256px; display: grid; grid-template-columns: var(--app-sidebar-width) minmax(0, 1fr); min-height: 100vh; }

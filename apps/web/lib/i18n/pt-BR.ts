@@ -3428,6 +3428,8 @@ export const ptBR = {
     next: (name: string) => `Próximo: ${name}`,
     finish: "Começar pela Carteira de POs",
     open: (name: string) => `Abrir ${name}`,
+    help: "Como usar esta tela",
+    helpAria: (name: string) => `Como usar esta tela: passo a passo de ${name} no guia de primeiros passos`,
     purpose: {
       heading: "Para que serve a plataforma",
       lead: "A plataforma reúne num só lugar o acompanhamento das importações da Eletra: cada Solicitação de Compra, cada Purchase Order, cada produto e cada processo de importação (IP), com o prazo de cada etapa comparado com a data em que o material precisa estar na fábrica.",

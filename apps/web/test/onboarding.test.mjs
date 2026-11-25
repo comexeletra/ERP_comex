@@ -6,11 +6,13 @@ import { ptBR } from "../lib/i18n/pt-BR.ts";
 import { zhCN } from "../lib/i18n/zh-CN.ts";
 import { focusBadgePlacement, isAllowedVideoUrl, ONBOARDING_CHAPTERS, ONBOARDING_PROCESS_STEPS, ONBOARDING_SCREEN_KEYS,
   ONBOARDING_SCREENS, ONBOARDING_SHOT_SIZES, ONBOARDING_STAGES, ONBOARDING_VIDEO_URLS, onboardingShotSrc,
-  onboardingStorageKey, onboardingVideoUrl, parseOnboardingProgress, visitChapter, writeOnboardingProgress } from "../lib/onboarding.ts";
+  onboardingHelpHref, onboardingScreenForPath, onboardingStorageKey, onboardingVideoUrl, parseOnboardingProgress,
+  parseOnboardingScreen, visitChapter, writeOnboardingProgress } from "../lib/onboarding.ts";
 
 const source = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const dictionaries = { ptBR, en, zhCN };
-const [sidebar, page, guide, process, screens, walkthrough, video, styles, layout] = await Promise.all([
+const [header, help, sidebar, page, guide, process, screens, walkthrough, video, styles, layout] = await Promise.all([
+  source("components/PageHeader.tsx"), source("components/ScreenHelpLink.tsx"),
   source("components/AppSidebar.tsx"), source("app/onboarding/page.tsx"), source("components/OnboardingGuide.tsx"),
   source("components/OnboardingProcess.tsx"), source("components/OnboardingScreens.tsx"),
   source("components/OnboardingWalkthrough.tsx"), source("components/OnboardingVideo.tsx"),
@@ -26,7 +28,7 @@ async function pngSize(url) {
 }
 
 test("the guide opens from the top of the sidebar for every role", () => {
-  assert.match(page, /<OnboardingGuide \/>/u);
+  assert.match(page, /<OnboardingGuide key=\{initialScreen \?\? ""\} initialScreen=\{initialScreen\} \/>/u);
   assert.match(sidebar, /\{ label: "start", items: \[\s*\{ label: "onboarding", href: "\/onboarding", icon: "guide" \}/u);
   assert.match(sidebar, /const groups: SidebarGroup\[\] = \[\s*\{ label: "start"/u);
   for (const [name, m] of Object.entries(dictionaries)) {
@@ -46,6 +48,34 @@ test("each screen of the guide is the sidebar item with the same name and addres
   for (const screen of ONBOARDING_SCREENS) {
     assert.match(sidebar, new RegExp(`\\{ label: "${screen.key}", href: "${screen.href.replace(/\//gu, "\\/")}"`, "u"), screen.key);
   }
+});
+
+test("each screen of the guide is found from its address, detail pages included, and only those", () => {
+  const cases = {
+    "/": "preShipment", "/purchase-orders/abc-123": "preShipment", "/purchase-orders/new": "preShipment",
+    "/purchase-orders/lines": "productPortfolio", "/processes": "postShipment", "/processes/abc-123": "postShipment",
+    "/invoices/audit": "invoiceAudit", "/end-to-end": "endToEnd", "/end-to-end/po": "endToEnd",
+    "/reports/pre": "indicators", "/reports/post": "indicators", "/quality": "dataQuality",
+    "/onboarding": null, "/catalog": null, "/requests": null, "/purchase-orders-old": null, "/qualityx": null,
+  };
+  for (const [path, screen] of Object.entries(cases)) assert.equal(onboardingScreenForPath(path), screen, path);
+  // The address of every screen in the guide leads back to it.
+  for (const screen of ONBOARDING_SCREENS) assert.equal(onboardingScreenForPath(screen.href), screen.key, screen.href);
+});
+
+test("the help link opens the guide on the walkthrough of the screen, and odd queries are ignored", () => {
+  assert.equal(onboardingHelpHref("invoiceAudit"), "/onboarding?tela=invoiceAudit");
+  assert.equal(parseOnboardingScreen("invoiceAudit"), "invoiceAudit");
+  for (const value of [undefined, "", "catalog", "__proto__", ["endToEnd", "quality"]]) {
+    assert.equal(parseOnboardingScreen(value), null, String(value));
+  }
+  assert.match(header, /<ScreenHelpLink \/>/u);
+  assert.match(help, /onboardingScreenForPath\(usePathname\(\)\)/u);
+  assert.match(help, /href=\{onboardingHelpHref\(screen\)\}/u);
+  assert.match(page, /parseOnboardingScreen\(\(await searchParams\)\[onboardingScreenParam\]\)/u);
+  assert.match(page, /<OnboardingGuide key=\{initialScreen \?\? ""\} initialScreen=\{initialScreen\} \/>/u);
+  assert.match(guide, /<OnboardingScreens initialScreen=\{initialScreen\} \/>/u);
+  for (const [name, m] of Object.entries(dictionaries)) assert.ok(m.onboarding.help && m.onboarding.helpAria("x"), name);
 });
 
 test("the process walkthrough goes through T0 to T5 in order, opening a screen of the menu at each step", () => {

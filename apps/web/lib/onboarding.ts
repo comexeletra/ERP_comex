@@ -171,6 +171,37 @@ export const ONBOARDING_SCREENS: readonly OnboardingScreen[] = [
   },
 ];
 
+/** Query parameter that opens the guide on the walkthrough of one screen: `/onboarding?tela=<key>`. */
+export const onboardingScreenParam = "tela";
+
+export function onboardingHelpHref(screen: OnboardingScreenKey): string {
+  return `/onboarding?${onboardingScreenParam}=${screen}`;
+}
+
+/** The screen asked in the query, or null when the value is missing, repeated or unknown. */
+export function parseOnboardingScreen(value: string | string[] | undefined): OnboardingScreenKey | null {
+  return typeof value === "string" && (ONBOARDING_SCREEN_KEYS as readonly string[]).includes(value)
+    ? value as OnboardingScreenKey : null;
+}
+
+// Address prefixes of each screen, detail pages included; the longest prefix wins (product lines before POs).
+const screenPaths: readonly [string, OnboardingScreenKey][] = [
+  ["/purchase-orders/lines", "productPortfolio"],
+  ["/purchase-orders", "preShipment"],
+  ["/processes", "postShipment"],
+  ["/invoices/audit", "invoiceAudit"],
+  ["/end-to-end", "endToEnd"],
+  ["/reports", "indicators"],
+  ["/quality", "dataQuality"],
+];
+
+/** Screen of the guide that explains the page at `pathname`, or null when the guide has no walkthrough for it. */
+export function onboardingScreenForPath(pathname: string): OnboardingScreenKey | null {
+  if (pathname === "/") return "preShipment";
+  const match = screenPaths.find(([prefix]) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  return match ? match[1] : null;
+}
+
 /**
  * Chapter 2 walkthrough: the T0–T5 flow over the same HML prints, one step per place where a stage is recorded
  * or followed. `stage` links the step to the End to End model (owner and deadline); null marks the overview steps.

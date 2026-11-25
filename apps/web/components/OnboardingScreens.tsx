@@ -1,22 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ONBOARDING_SCREENS, type OnboardingScreen, type OnboardingScreenKey } from "../lib/onboarding";
 import { useI18n } from "./I18nProvider";
 import OnboardingVideo from "./OnboardingVideo";
 import OnboardingWalkthrough from "./OnboardingWalkthrough";
 
 /** Chapter 3: one screen at a time, with what it is for, when to use it and a walkthrough over HML prints. */
-export default function OnboardingScreens() {
+export default function OnboardingScreens({ initialScreen = null }: { initialScreen?: OnboardingScreenKey | null }) {
   const { m } = useI18n();
   const t = m.onboarding.screens;
-  const [selected, setSelected] = useState<OnboardingScreenKey>(ONBOARDING_SCREENS[0].key);
+  const [selected, setSelected] = useState<OnboardingScreenKey>(initialScreen ?? ONBOARDING_SCREENS[0].key);
+  const screensRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // Coming from a screen's help link, the walkthrough is what the viewer asked for: bring it into view.
+    if (initialScreen !== null) screensRef.current?.scrollIntoView({ block: "start" });
+  }, [initialScreen]);
   const screen = ONBOARDING_SCREENS.find(item => item.key === selected) ?? ONBOARDING_SCREENS[0];
   return <>
     <h2 id="onboarding-screens">{t.heading}</h2>
     <p className="onboarding-lead">{t.lead}</p>
-    <div className="onboarding-screens">
+    <div className="onboarding-screens" ref={screensRef}>
       <ul className="onboarding-screen-list" aria-label={t.listLabel}>
         {ONBOARDING_SCREENS.map(item => <li key={item.key}>
           <button type="button" aria-pressed={item.key === selected} onClick={() => setSelected(item.key)}
