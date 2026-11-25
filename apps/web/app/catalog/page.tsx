@@ -160,7 +160,7 @@ export default function CatalogPage() {
   const canRegisterIp = roles.some(role => ["Master", "Administrador", "Importação"].includes(role));
   const canLoadReferences = roles.some(role => ["Master", "Administrador"].includes(role));
   return <main className="shell">
-    {/* The NCM view is explained in the NCM chapter of the guide; products wait for their own chapter. */}
+    {/* The NCM view is explained in the NCM chapter of the guide; the address opens the Cadastros chapter. */}
     <PageHeader eyebrow={m.sidebar.groups.management} title={t.title} help={resource === "ncms" ? "ncm" : undefined} />
     <section className="card" aria-labelledby="registration-options-title">
       <h2 id="registration-options-title">{t.newEntry}</h2>

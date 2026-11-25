@@ -4,21 +4,21 @@ import test from "node:test";
 import { en } from "../lib/i18n/en.ts";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
 import { zhCN } from "../lib/i18n/zh-CN.ts";
-import { focusBadgePlacement, isAllowedVideoUrl, ONBOARDING_CHAPTERS, ONBOARDING_HELP_TOPICS, ONBOARDING_NCM_STEPS,
-  ONBOARDING_NCM_TARGETS, ONBOARDING_PROCESS_STEPS, ONBOARDING_SCREEN_KEYS, ONBOARDING_SCREENS, ONBOARDING_SHOT_SIZES,
-  ONBOARDING_STAGES, ONBOARDING_VIDEO_URLS, onboardingShotSrc, onboardingHelpForPath, onboardingHelpHref,
+import { focusBadgePlacement, isAllowedVideoUrl, ONBOARDING_CATALOG_STEPS, ONBOARDING_CHAPTERS, ONBOARDING_HELP_TOPICS,
+  ONBOARDING_NCM_STEPS, ONBOARDING_PROCESS_STEPS, ONBOARDING_SCREEN_KEYS, ONBOARDING_SCREENS, ONBOARDING_SHOT_SIZES,
+  ONBOARDING_STAGES, ONBOARDING_STEP_TARGETS, ONBOARDING_TOPIC_STEPS, ONBOARDING_TOPICS, ONBOARDING_VIDEO_URLS, onboardingShotSrc, onboardingHelpForPath, onboardingHelpHref,
   onboardingStorageKey, onboardingVideoUrl, parseOnboardingHelp, parseOnboardingProgress, visitChapter,
   writeOnboardingProgress } from "../lib/onboarding.ts";
 
 const source = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const dictionaries = { ptBR, en, zhCN };
-const [header, help, sidebar, page, guide, process, screens, walkthrough, video, styles, layout, ncm, catalogPage,
+const [header, help, sidebar, page, guide, process, screens, walkthrough, video, styles, layout, topic, catalogPage,
   valuesPage] = await Promise.all([
   source("components/PageHeader.tsx"), source("components/ScreenHelpLink.tsx"),
   source("components/AppSidebar.tsx"), source("app/onboarding/page.tsx"), source("components/OnboardingGuide.tsx"),
   source("components/OnboardingProcess.tsx"), source("components/OnboardingScreens.tsx"),
   source("components/OnboardingWalkthrough.tsx"), source("components/OnboardingVideo.tsx"),
-  source("app/styles/features/onboarding.css"), source("app/layout.tsx"), source("components/OnboardingNcm.tsx"),
+  source("app/styles/features/onboarding.css"), source("app/layout.tsx"), source("components/OnboardingTopic.tsx"),
   source("app/catalog/page.tsx"), source("app/catalog/values/page.tsx"),
 ]);
 const shotsFolder = new URL("../public/onboarding/", import.meta.url);
@@ -39,8 +39,8 @@ test("the guide opens from the top of the sidebar for every role", () => {
   }
 });
 
-test("the guide has four chapters in order: purpose, process, screens and NCM", () => {
-  assert.deepEqual([...ONBOARDING_CHAPTERS], ["purpose", "process", "screens", "ncm"]);
+test("the guide has five chapters in order: purpose, process, screens, Cadastros and NCM", () => {
+  assert.deepEqual([...ONBOARDING_CHAPTERS], ["purpose", "process", "screens", "catalog", "ncm"]);
   for (const [name, m] of Object.entries(dictionaries)) {
     for (const chapter of ONBOARDING_CHAPTERS) assert.ok(m.onboarding.chapters[chapter], `${name}.${chapter}`);
   }
@@ -59,9 +59,11 @@ test("each screen of the guide is found from its address, detail pages included,
     "/purchase-orders/lines": "productPortfolio", "/processes": "postShipment", "/processes/abc-123": "postShipment",
     "/invoices/audit": "invoiceAudit", "/end-to-end": "endToEnd", "/end-to-end/po": "endToEnd",
     "/reports/pre": "indicators", "/reports/post": "indicators", "/quality": "dataQuality",
-    "/onboarding": null, "/catalog": null, "/requests": null, "/purchase-orders-old": null, "/qualityx": null,
-    // NCM rates is only about NCM; Cadastros and entity values show the link while NCM is the open choice.
-    "/catalog/ncm-rates": "ncm", "/catalog/values": null, "/catalog/ncm-ratesx": null,
+    "/onboarding": null, "/requests": null, "/purchase-orders-old": null, "/qualityx": null,
+    // NCM rates is only about NCM; the other Cadastros pages open the Cadastros chapter, and pass `help="ncm"`
+    // to the header while NCM is the open choice.
+    "/catalog/ncm-rates": "ncm", "/catalog/ncm-rates/x": "ncm", "/catalog": "catalog", "/catalog/values": "catalog",
+    "/catalog/reference-loads": "catalog", "/catalogx": null, "/catalog/ncm-ratesx": "catalog",
   };
   for (const [path, screen] of Object.entries(cases)) assert.equal(onboardingHelpForPath(path), screen, path);
   // The address of every screen in the guide leads back to it.
@@ -69,12 +71,14 @@ test("each screen of the guide is found from its address, detail pages included,
 });
 
 test("the help link opens the guide on the walkthrough of the screen, and odd queries are ignored", () => {
-  assert.deepEqual([...ONBOARDING_HELP_TOPICS], [...ONBOARDING_SCREEN_KEYS, "ncm"]);
+  assert.deepEqual([...ONBOARDING_TOPICS], ["catalog", "ncm"]);
+  assert.deepEqual([...ONBOARDING_HELP_TOPICS], [...ONBOARDING_SCREEN_KEYS, "catalog", "ncm"]);
   assert.equal(onboardingHelpHref("invoiceAudit"), "/onboarding?tela=invoiceAudit");
   assert.equal(onboardingHelpHref("ncm"), "/onboarding?tela=ncm");
   assert.equal(parseOnboardingHelp("invoiceAudit"), "invoiceAudit");
   assert.equal(parseOnboardingHelp("ncm"), "ncm");
-  for (const value of [undefined, "", "catalog", "__proto__", "toString", ["endToEnd", "quality"]]) {
+  assert.equal(parseOnboardingHelp("catalog"), "catalog");
+  for (const value of [undefined, "", "Catalog", "__proto__", "toString", ["endToEnd", "quality"]]) {
     assert.equal(parseOnboardingHelp(value), null, String(value));
   }
   assert.match(header, /<ScreenHelpLink topic=\{help\} \/>/u);
@@ -83,7 +87,7 @@ test("the help link opens the guide on the walkthrough of the screen, and odd qu
   assert.match(page, /parseOnboardingHelp\(\(await searchParams\)\[onboardingScreenParam\]\)/u);
   assert.match(page, /<OnboardingGuide key=\{initialHelp \?\? ""\} initialHelp=\{initialHelp\} \/>/u);
   assert.match(guide, /<OnboardingScreens initialScreen=\{initialScreen\} \/>/u);
-  assert.match(guide, /<OnboardingNcm fromHelp=\{initialHelp === "ncm"\} \/>/u);
+  assert.match(guide, /<OnboardingTopic key=\{chapter\} topic=\{chapter\} fromHelp=\{initialHelp === chapter\} \/>/u);
   for (const [name, m] of Object.entries(dictionaries)) assert.ok(m.onboarding.help && m.onboarding.helpAria("x"), name);
 });
 
@@ -95,29 +99,34 @@ test("Cadastros and entity values show the help link of the NCM chapter while NC
   assert.match(valuesPage, /if \(entity === "ncm"\) return <main className="shell">\s*<PageHeader help="ncm"/u);
 });
 
-test("the NCM walkthrough opens the screen of each step and is told in all three languages", async () => {
-  assert.ok(ONBOARDING_NCM_STEPS.length >= 10);
-  assert.deepEqual(Object.keys(ONBOARDING_NCM_TARGETS), ["catalog", "entityValues", "ncmRates", "invoiceAudit"]);
-  for (const href of Object.values(ONBOARDING_NCM_TARGETS)) {
+test("the Cadastros and NCM walkthroughs open the screen of each step and are told in all three languages", async () => {
+  assert.deepEqual(Object.keys(ONBOARDING_STEP_TARGETS), ["catalog", "entityValues", "ncmRates", "invoiceAudit"]);
+  for (const href of Object.values(ONBOARDING_STEP_TARGETS)) {
     await readFile(new URL(`../app${href}/page.tsx`, import.meta.url));
   }
-  // Every screen of the cycle appears, in its order: Cadastros, entity values, rates and invoice audit.
-  assert.deepEqual([...new Set(ONBOARDING_NCM_STEPS.map(step => step.target))], Object.keys(ONBOARDING_NCM_TARGETS));
-  assert.match(ncm, /<OnboardingWalkthrough steps=\{ONBOARDING_NCM_STEPS\} texts=\{t\.ncm\.steps\}/u);
-  assert.match(ncm, /href=\{ONBOARDING_NCM_TARGETS\[target\]\}/u);
-  assert.match(ncm, /<OnboardingVideo slot="ncm" \/>/u);
-  assert.ok("ncm" in ONBOARDING_VIDEO_URLS);
-  for (const [name, m] of Object.entries(dictionaries)) {
-    const t = m.onboarding.ncm;
-    assert.ok(m.onboarding.chapters.ncm && t.heading && t.lead && t.name && t.faqTitle, name);
-    assert.equal(t.steps.length, ONBOARDING_NCM_STEPS.length, `${name}: texts × prints`);
-    assert.equal(t.faq.length, ptBR.onboarding.ncm.faq.length, `${name}: questions`);
-    for (const item of t.faq) assert.ok(item.question && item.answer, name);
+  assert.deepEqual(ONBOARDING_TOPIC_STEPS, { catalog: ONBOARDING_CATALOG_STEPS, ncm: ONBOARDING_NCM_STEPS });
+  // Cadastros uses one generic example of entity values; NCM goes through its whole cycle, in order.
+  assert.deepEqual([...new Set(ONBOARDING_CATALOG_STEPS.map(step => step.target))], ["catalog", "entityValues"]);
+  assert.deepEqual([...new Set(ONBOARDING_NCM_STEPS.map(step => step.target))], Object.keys(ONBOARDING_STEP_TARGETS));
+  assert.ok(ONBOARDING_CATALOG_STEPS.length >= 5 && ONBOARDING_NCM_STEPS.length >= 10);
+  assert.match(topic, /<OnboardingWalkthrough steps=\{steps\} texts=\{texts\.steps\} name=\{texts\.name\}/u);
+  assert.match(topic, /const steps = ONBOARDING_TOPIC_STEPS\[topic\];/u);
+  assert.match(topic, /href=\{ONBOARDING_STEP_TARGETS\[target\]\}/u);
+  assert.match(topic, /<OnboardingVideo slot=\{topic\} \/>/u);
+  for (const item of ONBOARDING_TOPICS) {
+    assert.ok(item in ONBOARDING_VIDEO_URLS, item);
+    for (const [name, m] of Object.entries(dictionaries)) {
+      const t = m.onboarding[item];
+      assert.ok(m.onboarding.chapters[item] && t.heading && t.lead && t.notice && t.name && t.faqTitle, `${name}.${item}`);
+      assert.equal(t.steps.length, ONBOARDING_TOPIC_STEPS[item].length, `${name}.${item}: texts × prints`);
+      assert.equal(t.faq.length, ptBR.onboarding[item].faq.length, `${name}.${item}: questions`);
+      for (const question of t.faq) assert.ok(question.question && question.answer, `${name}.${item}`);
+    }
   }
 });
 
 test("the NCM chapter says that a reference rate is not the tax due", () => {
-  assert.match(ncm, /<p className="notice warning">\{t\.ncm\.notice\}<\/p>/u);
+  assert.match(topic, /<p className=\{topic === "ncm" \? "notice warning" : "notice"\}>\{texts\.notice\}<\/p>/u);
   assert.match(ptBR.onboarding.ncm.notice, /não são o imposto devido/u);
   assert.match(en.onboarding.ncm.notice, /not the tax due/u);
   assert.match(zhCN.onboarding.ncm.notice, /不是应纳税额/u);
@@ -144,7 +153,7 @@ test("the process walkthrough goes through T0 to T5 in order, opening a screen o
 });
 
 test("each walkthrough step has a print and a highlighted area inside it, in all three languages", () => {
-  for (const [chapter, steps] of Object.entries({ process: ONBOARDING_PROCESS_STEPS, ncm: ONBOARDING_NCM_STEPS })) {
+  for (const [chapter, steps] of Object.entries({ process: ONBOARDING_PROCESS_STEPS, ...ONBOARDING_TOPIC_STEPS })) {
     for (const [k, { shot, box }] of steps.entries()) {
       assert.ok(shot in ONBOARDING_SHOT_SIZES, `${chapter} ${k + 1}: ${shot}`);
       assert.ok(box.x >= 0 && box.y >= 0 && box.w > 0 && box.h > 0 && box.x + box.w <= 100 && box.y + box.h <= 100,
@@ -175,7 +184,7 @@ test("the step number sits outside the highlighted control whenever the print le
 
 test("every print exists with the declared size and every print in the folder is used", async () => {
   const used = new Set([...ONBOARDING_SCREENS.flatMap(screen => screen.steps), ...ONBOARDING_PROCESS_STEPS,
-    ...ONBOARDING_NCM_STEPS].map(step => step.shot));
+    ...ONBOARDING_CATALOG_STEPS, ...ONBOARDING_NCM_STEPS].map(step => step.shot));
   assert.deepEqual([...used].sort(), Object.keys(ONBOARDING_SHOT_SIZES).sort());
   const files = (await readdir(shotsFolder)).sort();
   assert.deepEqual(files, Object.keys(ONBOARDING_SHOT_SIZES).map(shot => `${shot}.png`).sort());

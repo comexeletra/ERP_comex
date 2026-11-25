@@ -5,7 +5,7 @@
  * It imports no values from other `lib/` modules, so `node --test` can load it on its own.
  */
 
-export const ONBOARDING_CHAPTERS = ["purpose", "process", "screens", "ncm"] as const;
+export const ONBOARDING_CHAPTERS = ["purpose", "process", "screens", "catalog", "ncm"] as const;
 export type OnboardingChapter = typeof ONBOARDING_CHAPTERS[number];
 
 export const ONBOARDING_STAGES = ["T0", "T1", "T2", "T3", "T4", "T5"] as const;
@@ -54,6 +54,8 @@ export const ONBOARDING_SHOT_SIZES = {
   "quality-load": { width: 1751, height: 886 },
   "quality-load-list": { width: 1752, height: 907 },
   "catalog-list": { width: 1752, height: 913 },
+  "entity-values": { width: 1736, height: 906 },
+  "entity-values-add": { width: 1686, height: 434 },
   "ncm-sync": { width: 1752, height: 899 },
   "ncm-attributes": { width: 1748, height: 899 },
   "ncm-official-search": { width: 1741, height: 899 },
@@ -178,11 +180,15 @@ export const ONBOARDING_SCREENS: readonly OnboardingScreen[] = [
   },
 ];
 
+/** Chapters told as one walkthrough of their own, with questions: Cadastros and NCM. */
+export const ONBOARDING_TOPICS = ["catalog", "ncm"] as const;
+export type OnboardingTopic = typeof ONBOARDING_TOPICS[number];
+
 /**
- * What a help link can open: the walkthrough of a screen of chapter 3, or the NCM chapter. Keys are unique across
+ * What a help link can open: the walkthrough of a screen of chapter 3, or a topic chapter. Keys are unique across
  * the guide, so one query parameter keeps working for the links that already exist.
  */
-export const ONBOARDING_HELP_TOPICS = [...ONBOARDING_SCREEN_KEYS, "ncm"] as const;
+export const ONBOARDING_HELP_TOPICS = [...ONBOARDING_SCREEN_KEYS, ...ONBOARDING_TOPICS] as const;
 export type OnboardingHelpTopic = typeof ONBOARDING_HELP_TOPICS[number];
 
 export function isOnboardingScreenKey(value: OnboardingHelpTopic): value is OnboardingScreenKey {
@@ -202,8 +208,9 @@ export function parseOnboardingHelp(value: string | string[] | undefined): Onboa
     ? value as OnboardingHelpTopic : null;
 }
 
-// Address prefixes of each screen, detail pages included; the longest prefix wins (product lines before POs).
-// Cadastros and entity values are not here: they show the NCM link only while NCM is the open choice.
+// Address prefixes of each screen, detail pages included; the first match wins, so longer prefixes come first
+// (product lines before POs, NCM rates before Cadastros). Cadastros and entity values pass `help="ncm"` to the
+// header while NCM is the open choice.
 const screenPaths: readonly [string, OnboardingHelpTopic][] = [
   ["/purchase-orders/lines", "productPortfolio"],
   ["/purchase-orders", "preShipment"],
@@ -213,6 +220,7 @@ const screenPaths: readonly [string, OnboardingHelpTopic][] = [
   ["/reports", "indicators"],
   ["/quality", "dataQuality"],
   ["/catalog/ncm-rates", "ncm"],
+  ["/catalog", "catalog"],
 ];
 
 /** Part of the guide that explains the page at `pathname`, or null when the guide has no walkthrough for it. */
@@ -240,21 +248,34 @@ export const ONBOARDING_PROCESS_STEPS: readonly OnboardingProcessStep[] = [
   { stage: null, screen: "endToEnd", shot: "e2e-table", box: { x: 3.1, y: 9.3, w: 95.4, h: 90.7 } },
 ];
 
-/** Screens of the NCM cycle that a step of chapter 4 opens. */
-export const ONBOARDING_NCM_TARGETS = {
+/** Screens that a step of the Cadastros and NCM chapters opens. */
+export const ONBOARDING_STEP_TARGETS = {
   catalog: "/catalog",
   entityValues: "/catalog/values",
   ncmRates: "/catalog/ncm-rates",
   invoiceAudit: "/invoices/audit",
 } as const;
-export type OnboardingNcmTarget = keyof typeof ONBOARDING_NCM_TARGETS;
+export type OnboardingStepTarget = keyof typeof ONBOARDING_STEP_TARGETS;
+export type OnboardingTopicStep = OnboardingStep & { target: OnboardingStepTarget };
 
 /**
- * Chapter 4 walkthrough: the NCM cycle over HML prints, from the Cadastros shortcuts to the official search, the
+ * Chapter 4 walkthrough: Cadastros with one generic example. The shortcuts and the product list, then one field of
+ * entity values (Importadora) from choosing it to adding a value; the other fields work the same way.
+ */
+export const ONBOARDING_CATALOG_STEPS: readonly OnboardingTopicStep[] = [
+  { target: "catalog", shot: "catalog-list", box: { x: 1.1, y: 16.6, w: 98.2, h: 13.4 } },
+  { target: "catalog", shot: "catalog-list", box: { x: 1.1, y: 47.1, w: 98.2, h: 52.9 } },
+  { target: "entityValues", shot: "entity-values", box: { x: 2.3, y: 28.5, w: 25.3, h: 8.6 } },
+  { target: "entityValues", shot: "entity-values", box: { x: 2.3, y: 38.6, w: 53.5, h: 56.7 } },
+  { target: "entityValues", shot: "entity-values", box: { x: 2.6, y: 50.3, w: 52.8, h: 6.4 } },
+  { target: "entityValues", shot: "entity-values-add", box: { x: 1.4, y: 6, w: 38.4, h: 75.6 } },
+];
+
+/**
+ * Chapter 5 walkthrough: the NCM cycle over HML prints, from the Cadastros shortcuts to the official search, the
  * attributes, the synchronisation, the reference rates and ICMS, ending where the invoice audit uses the NCM.
  */
-export type OnboardingNcmStep = OnboardingStep & { target: OnboardingNcmTarget };
-export const ONBOARDING_NCM_STEPS: readonly OnboardingNcmStep[] = [
+export const ONBOARDING_NCM_STEPS: readonly OnboardingTopicStep[] = [
   { target: "catalog", shot: "catalog-list", box: { x: 1.1, y: 16.6, w: 98.2, h: 13.4 } },
   { target: "catalog", shot: "catalog-list", box: { x: 1.1, y: 32.2, w: 98.2, h: 12.8 } },
   { target: "entityValues", shot: "ncm-sync", box: { x: 2.3, y: 27.6, w: 52.6, h: 17.1 } },
@@ -273,11 +294,16 @@ export const ONBOARDING_NCM_STEPS: readonly OnboardingNcmStep[] = [
   { target: "invoiceAudit", shot: "invoice-audit-corrections", box: { x: 2.7, y: 0.9, w: 97.3, h: 49.9 } },
 ];
 
+export const ONBOARDING_TOPIC_STEPS: Readonly<Record<OnboardingTopic, readonly OnboardingTopicStep[]>> = {
+  catalog: ONBOARDING_CATALOG_STEPS,
+  ncm: ONBOARDING_NCM_STEPS,
+};
+
 /**
  * Videos recorded by the team, one slot per chapter or screen. A slot without a link shows that the video is
  * still being recorded. Only corporate hosts are accepted (see `isAllowedVideoUrl`); add the shared link here.
  */
-export type OnboardingVideoSlot = "purpose" | "process" | OnboardingScreenKey | "ncm";
+export type OnboardingVideoSlot = "purpose" | "process" | OnboardingScreenKey | OnboardingTopic;
 export const ONBOARDING_VIDEO_URLS: Readonly<Record<OnboardingVideoSlot, string | null>> = {
   purpose: null,
   process: null,
@@ -288,6 +314,7 @@ export const ONBOARDING_VIDEO_URLS: Readonly<Record<OnboardingVideoSlot, string 
   endToEnd: null,
   indicators: null,
   dataQuality: null,
+  catalog: null,
   ncm: null,
 };
 
