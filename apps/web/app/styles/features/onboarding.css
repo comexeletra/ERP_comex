@@ -63,11 +63,6 @@
   display: inline-flex; flex: none; height: 34px; justify-content: center; width: 34px;
 }
 
-/* Chapter 2: the End to End flow inside the chapter grid, and the screens of the selected stage */
-.onboarding-process { min-width: 0; }
-.onboarding-where { display: grid; gap: 10px; }
-.onboarding-where h3 { font-size: var(--fs-base); margin: 0; }
-.onboarding-where-links { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
 
 /* Chapter 3: screen list and walkthrough */
 .onboarding-screens { align-items: start; display: grid; gap: 18px; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); }
@@ -92,12 +87,14 @@
 .onboarding-steps-title { color: var(--color-text-muted); font-size: var(--fs-xs); letter-spacing: .06em; margin: 4px 0 0; text-transform: uppercase; }
 .onboarding-step-controls { align-items: center; display: flex; gap: 8px; }
 .onboarding-step-controls .button { align-items: center; display: inline-flex; gap: 6px; }
+.onboarding-step-action { margin-left: auto; }
 .onboarding-steps { display: grid; gap: 6px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); list-style: none; margin: 0; padding: 0; }
 .onboarding-step {
   align-items: flex-start; background: transparent; border: 1px solid transparent; border-radius: var(--radius-md); color: var(--color-text);
   cursor: pointer; display: flex; font: inherit; gap: 10px; padding: 8px 10px; text-align: left;
   transition: background .2s ease, border-color .2s ease; width: 100%;
 }
+.onboarding-step-text { display: grid; gap: 4px; justify-items: start; }
 .onboarding-step:hover { background: var(--color-surface-muted); }
 .onboarding-step.is-current { background: var(--color-primary-soft); border-color: var(--color-primary-border); }
 .onboarding-step-number {

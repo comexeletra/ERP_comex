@@ -171,10 +171,23 @@ export const ONBOARDING_SCREENS: readonly OnboardingScreen[] = [
   },
 ];
 
-/** Screens that follow a stage of the flow, in the order of the guide. */
-export function screensForStage(stage: OnboardingStage): OnboardingScreen[] {
-  return ONBOARDING_SCREENS.filter(screen => screen.stages.includes(stage));
-}
+/**
+ * Chapter 2 walkthrough: the T0–T5 flow over the same HML prints, one step per place where a stage is recorded
+ * or followed. `stage` links the step to the End to End model (owner and deadline); null marks the overview steps.
+ * `screen` is the sidebar screen that the step's button opens.
+ */
+export type OnboardingProcessStep = OnboardingStep & { stage: OnboardingStage | null; screen: OnboardingScreenKey };
+export const ONBOARDING_PROCESS_STEPS: readonly OnboardingProcessStep[] = [
+  { stage: null, screen: "endToEnd", shot: "e2e-stages", box: { x: 1.5, y: 72.9, w: 98.3, h: 26.7 } },
+  { stage: "T0", screen: "preShipment", shot: "po-quantities", box: { x: 51, y: 8.4, w: 11.3, h: 9.5 } },
+  { stage: "T1", screen: "preShipment", shot: "po-quantities", box: { x: 15, y: 8.4, w: 35.4, h: 9.5 } },
+  { stage: "T2", screen: "preShipment", shot: "po-quantities", box: { x: 3, y: 19.3, w: 11.3, h: 7.3 } },
+  { stage: "T3", screen: "preShipment", shot: "po-data", box: { x: 2.7, y: 69.7, w: 95.4, h: 10.2 } },
+  { stage: "T3", screen: "preShipment", shot: "po-ip-data", box: { x: 15.8, y: 47.6, w: 34.5, h: 9.5 } },
+  { stage: "T4", screen: "preShipment", shot: "po-ip-data", box: { x: 51, y: 47.6, w: 22.8, h: 9.5 } },
+  { stage: "T5", screen: "preShipment", shot: "po-ip-data", box: { x: 4.1, y: 58.4, w: 58, h: 7.7 } },
+  { stage: null, screen: "endToEnd", shot: "e2e-table", box: { x: 3.1, y: 9.3, w: 95.4, h: 90.7 } },
+];
 
 /**
  * Videos recorded by the team, one slot per chapter or screen. A slot without a link shows that the video is

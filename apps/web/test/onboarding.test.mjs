@@ -4,16 +4,17 @@ import test from "node:test";
 import { en } from "../lib/i18n/en.ts";
 import { ptBR } from "../lib/i18n/pt-BR.ts";
 import { zhCN } from "../lib/i18n/zh-CN.ts";
-import { focusBadgePlacement, isAllowedVideoUrl, ONBOARDING_CHAPTERS, ONBOARDING_SCREEN_KEYS, ONBOARDING_SCREENS, ONBOARDING_SHOT_SIZES,
-  ONBOARDING_STAGES, ONBOARDING_VIDEO_URLS, onboardingShotSrc, onboardingStorageKey, onboardingVideoUrl,
-  parseOnboardingProgress, screensForStage, visitChapter, writeOnboardingProgress } from "../lib/onboarding.ts";
+import { focusBadgePlacement, isAllowedVideoUrl, ONBOARDING_CHAPTERS, ONBOARDING_PROCESS_STEPS, ONBOARDING_SCREEN_KEYS,
+  ONBOARDING_SCREENS, ONBOARDING_SHOT_SIZES, ONBOARDING_STAGES, ONBOARDING_VIDEO_URLS, onboardingShotSrc,
+  onboardingStorageKey, onboardingVideoUrl, parseOnboardingProgress, visitChapter, writeOnboardingProgress } from "../lib/onboarding.ts";
 
 const source = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const dictionaries = { ptBR, en, zhCN };
-const [sidebar, page, guide, process, screens, video, styles, layout] = await Promise.all([
+const [sidebar, page, guide, process, screens, walkthrough, video, styles, layout] = await Promise.all([
   source("components/AppSidebar.tsx"), source("app/onboarding/page.tsx"), source("components/OnboardingGuide.tsx"),
   source("components/OnboardingProcess.tsx"), source("components/OnboardingScreens.tsx"),
-  source("components/OnboardingVideo.tsx"), source("app/styles/features/onboarding.css"), source("app/layout.tsx"),
+  source("components/OnboardingWalkthrough.tsx"), source("components/OnboardingVideo.tsx"),
+  source("app/styles/features/onboarding.css"), source("app/layout.tsx"),
 ]);
 const shotsFolder = new URL("../public/onboarding/", import.meta.url);
 
@@ -47,15 +48,32 @@ test("each screen of the guide is the sidebar item with the same name and addres
   }
 });
 
-test("every stage of the flow points to at least one screen", () => {
-  for (const stage of ONBOARDING_STAGES) assert.ok(screensForStage(stage).length > 0, stage);
+test("the process walkthrough goes through T0 to T5 in order, opening a screen of the menu at each step", () => {
+  const stages = ONBOARDING_PROCESS_STEPS.map(step => step.stage).filter(stage => stage !== null);
+  assert.deepEqual([...new Set(stages)], [...ONBOARDING_STAGES]);
+  assert.deepEqual(stages, [...stages].sort());
+  for (const step of ONBOARDING_PROCESS_STEPS) assert.ok(ONBOARDING_SCREEN_KEYS.includes(step.screen), step.screen);
+  for (const [name, m] of Object.entries(dictionaries)) {
+    const texts = Object.values(m.onboarding.process.steps);
+    assert.equal(texts.length, ONBOARDING_PROCESS_STEPS.length, `${name}: texts × prints`);
+    // The first step of each stage starts with its code, so texts and highlighted prints stay in the same order.
+    ONBOARDING_PROCESS_STEPS.forEach((step, k) => {
+      if (step.stage !== null && ONBOARDING_PROCESS_STEPS[k - 1]?.stage !== step.stage) {
+        assert.ok(texts[k].startsWith(step.stage), `${name} ${k + 1}`);
+      }
+    });
+  }
   for (const screen of ONBOARDING_SCREENS) {
     for (const stage of screen.stages) assert.ok(ONBOARDING_STAGES.includes(stage), `${screen.key}: ${stage}`);
   }
-  assert.deepEqual(screensForStage("T0").map(screen => screen.key), ["endToEnd"]);
 });
 
 test("each walkthrough step has a print and a highlighted area inside it, in all three languages", () => {
+  for (const [k, { shot, box }] of ONBOARDING_PROCESS_STEPS.entries()) {
+    assert.ok(shot in ONBOARDING_SHOT_SIZES, `process ${k + 1}: ${shot}`);
+    assert.ok(box.x >= 0 && box.y >= 0 && box.w > 0 && box.h > 0 && box.x + box.w <= 100 && box.y + box.h <= 100,
+      `process ${k + 1}: the highlight leaves the print`);
+  }
   for (const screen of ONBOARDING_SCREENS) {
     assert.ok(screen.steps.length >= 2, screen.key);
     for (const [name, m] of Object.entries(dictionaries)) {
@@ -75,11 +93,11 @@ test("the step number sits outside the highlighted control whenever the print le
   assert.equal(focusBadgePlacement({ x: 95, y: 10.7, w: 4.8, h: 4.6 }), "above");
   assert.equal(focusBadgePlacement({ x: 3, y: .9, w: 95, h: 12.7 }), "below");
   assert.equal(focusBadgePlacement({ x: 3, y: .7, w: 95, h: 98.9 }), "inside");
-  assert.match(screens, /<span className=\{badgeClass\[focusBadgePlacement\(step\.box\)\]\}>/u);
+  assert.match(walkthrough, /<span className=\{badgeClass\[focusBadgePlacement\(step\.box\)\]\}>/u);
 });
 
 test("every print exists with the declared size and every print in the folder is used", async () => {
-  const used = new Set(ONBOARDING_SCREENS.flatMap(screen => screen.steps.map(step => step.shot)));
+  const used = new Set([...ONBOARDING_SCREENS.flatMap(screen => screen.steps), ...ONBOARDING_PROCESS_STEPS].map(step => step.shot));
   assert.deepEqual([...used].sort(), Object.keys(ONBOARDING_SHOT_SIZES).sort());
   const files = (await readdir(shotsFolder)).sort();
   assert.deepEqual(files, Object.keys(ONBOARDING_SHOT_SIZES).map(shot => `${shot}.png`).sort());
@@ -90,11 +108,11 @@ test("every print exists with the declared size and every print in the folder is
 });
 
 test("the process chapter takes the stages and deadlines from the End to End model", () => {
-  assert.match(process, /buildE2eFlow\(DEFAULT_E2E_FLOW_CONFIG, \{ mts, air \}, m\)/u);
-  assert.match(process, /<E2eModelSummary flow=\{model\}/u);
-  assert.match(process, /<E2eFlowRail phases=\{model\.phases\}/u);
-  assert.match(process, /<E2eModelDetails flow=\{model\}/u);
-  assert.match(process, /className="e2e-flow onboarding-process"/u);
+  assert.match(process, /buildE2eFlow\(DEFAULT_E2E_FLOW_CONFIG, \{ mts: false, air: false \}, m\)/u);
+  assert.match(process, /\{phase\.code\} · \{phase\.owner\} · \{phase\.lt\}/u);
+  // Both chapters use the same walkthrough over HML prints.
+  assert.match(process, /<OnboardingWalkthrough steps=\{ONBOARDING_PROCESS_STEPS\} texts=\{t\.process\.steps\}/u);
+  assert.match(screens, /<OnboardingWalkthrough steps=\{screen\.steps\} texts=\{item\.steps\} name=\{name\} \/>/u);
   // No deadline is written in the guide texts: a change of target in e2e-flow.ts reaches the guide by itself.
   for (const [name, m] of Object.entries(dictionaries)) {
     assert.doesNotMatch(JSON.stringify(m.onboarding), /\d+\s*(dias|days|d\b|天)/u, name);
@@ -102,10 +120,10 @@ test("the process chapter takes the stages and deadlines from the End to End mod
 });
 
 test("prints are described for screen readers and carry the step as caption; videos open only corporate links", () => {
-  assert.match(screens, /alt=\{t\.screens\.figure\(name, current \+ 1\)\}/u);
-  assert.match(screens, /<span className="sr-only">\{t\.screens\.enlarge\}<\/span>/u);
-  assert.match(screens, /<figcaption aria-live="polite">/u);
-  assert.match(screens, /<span className="onboarding-shot-focus" aria-hidden="true"/u);
+  assert.match(walkthrough, /alt=\{t\.figure\(name, current \+ 1\)\}/u);
+  assert.match(walkthrough, /<span className="sr-only">\{t\.enlarge\}<\/span>/u);
+  assert.match(walkthrough, /<figcaption aria-live="polite">/u);
+  assert.match(walkthrough, /<span className="onboarding-shot-focus" aria-hidden="true"/u);
   assert.match(video, /target="_blank" rel="noopener noreferrer"/u);
   assert.match(video, /onboardingVideoUrl\(slot\)/u);
   for (const [slot, url] of Object.entries(ONBOARDING_VIDEO_URLS)) {
