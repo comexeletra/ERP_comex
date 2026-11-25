@@ -3,7 +3,8 @@
 ## Objetivo
 
 Uma tela que explica a quem chega para que serve a plataforma, como funciona o processo de
-importação (T0–T5, Brasil → China → Brasil) e qual tela usar em cada etapa.
+importação (T0–T5, Brasil → China → Brasil), qual tela usar em cada etapa e o que a plataforma faz
+com a NCM.
 
 ## Requisitos
 
@@ -19,11 +20,23 @@ importação (T0–T5, Brasil → China → Brasil) e qual tela usar em cada eta
    do HML. Em cada passo a área do controle fica iluminada, o resto escurece, um contorno pulsa e o
    número do passo fica ao lado; o destaque desliza entre áreas do mesmo print, e o print troca com
    um fade quando o passo usa outro. A animação percorre os passos e para com movimento reduzido.
+4a. Capítulo 4 – NCM (2026-11-25, `ONBOARDING_NCM_STEPS`, `components/OnboardingNcm.tsx`): no padrão do
+   capítulo 2, um passo a passo sobre os prints do HML que percorre o ciclo da NCM. Começa nos atalhos de
+   Cadastros e segue pela lista e pelo histórico, pela NCM em Valores das entidades (sincronização,
+   vigência, informações exigidas, busca oficial e cadastro manual), por Alíquotas por NCM (fontes, II
+   aplicado e condicionais, ICMS por UF e "não revisado") e termina na auditoria de invoice, onde a
+   DATABASE manda na NCM. Cada passo abre a tela do print (`ONBOARDING_NCM_TARGETS`). Antes do passo a
+   passo, um aviso diz que a alíquota é de referência e não é o imposto devido; depois dele vêm as
+   perguntas frequentes (NCM do produto que mudou, IPI NT, estimativa, limite do Siscomex, qualidade
+   dos dados e quem altera cada parte).
 5. Espaço para vídeo em cada capítulo e em cada tela, aberto por link.
 5a. Ajuda dentro das telas (2026-11-25): o `PageHeader` mostra "Como usar esta tela" nas telas do
    capítulo 3, inclusive nas de detalhe (PO, IP, análise por PO). O link abre
    `/onboarding?tela=<chave>`, que vai direto para o passo a passo daquela tela. A tela é descoberta
-   pelo endereço (`onboardingScreenForPath`); telas sem passo a passo não mostram o link.
+   pelo endereço (`onboardingHelpForPath`); telas sem passo a passo não mostram o link. `?tela=ncm`
+   abre o capítulo NCM: Alíquotas por NCM o acha pelo endereço, e Cadastros e Valores das entidades
+   passam `help="ncm"` ao `PageHeader` só enquanto a NCM está escolhida, porque o endereço delas não
+   diz o que a tela mostra.
 6. Capítulo aberto e capítulos vistos lembrados no navegador (`localStorage`), sem gravar no banco.
 7. Três idiomas, tema claro e escuro, tokens e breakpoints do projeto.
 
@@ -33,6 +46,11 @@ importação (T0–T5, Brasil → China → Brasil) e qual tela usar em cada eta
   ele mesmo tirou (tema escuro, pt-BR). Os prints mostram dados da homologação e ficam iguais nos três
   idiomas; os textos dos passos são traduzidos.
 - Vídeos: animações na própria página e espaço para vídeo gravado pela equipe, aberto por link.
+- NCM (pedido do usuário): os prints de NCM entraram primeiro, num capítulo próprio. Os prints não
+  mostram CNPJ nem nomes de pessoas, e nada foi borrado. Um capítulo de Cadastros (entidades,
+  importadora, fornecedor e apelidos, produto e Cargas de referência) fica para quando houver os
+  prints dessas telas; ao entrar, ele vem antes do capítulo NCM, e Cadastros e Valores das entidades
+  passam a mostrar o link também fora da NCM.
 
 ## Prints
 
