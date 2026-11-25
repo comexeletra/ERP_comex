@@ -153,6 +153,12 @@ Se algo essencial não estiver claro, pergunte antes de supor.
 - Toda tabela rola arrastando com o mouse, na horizontal e na vertical, por `components/TableDragScroll.tsx`, montado uma vez no layout raiz (lógica em `lib/drag-scroll.ts`). Não crie arrasto próprio numa tela. Controles (links, botões, campos, `label`, `summary`) não iniciam arrasto, Alt + arrastar seleciona texto, e `data-drag-scroll="off"` exclui um elemento.
 - `test/layout-consistency.test.mjs` verifica essas regras e o contraste AA dos tokens nos dois temas.
 
+## Guia de primeiros passos (onboarding)
+
+- A rota `/onboarding` ("Comece aqui" no topo do menu) explica a finalidade da plataforma, o fluxo T0–T5 e as telas do dia a dia. Regras e decisões em `docs/PLANO_ONBOARDING.md`.
+- O capítulo do processo usa o modelo do End to End (`lib/e2e-flow.ts`); os textos do guia não citam prazos em dias. As telas são desenhos SVG esquemáticos definidos em `lib/onboarding.ts`, nunca capturas com dados reais.
+- Tela do dia a dia nova ou renomeada no menu entra em `ONBOARDING_SCREENS`, com a mesma chave e endereço do menu e um ponto do desenho por passo, e os textos nos três dicionários. Vídeos são links do SharePoint ou do Stream em `ONBOARDING_VIDEO_URLS`, nunca arquivos no repositório.
+
 ## Exportações Excel
 
 - Exportações existentes: Carteira de POs (`/`), Carteira por produto (`/purchase-orders/lines`), End to End (`/end-to-end`), Pré Embarque (`/reports/pre`, tipo `pre-shipment-xlsx`) e Pós Embarque (`/reports/post`, tipo `post-shipment-xlsx`). Todas passam pela fila `jobs.export_job` e pelo worker. Colunas com regra de cor na tela levam a mesma cor no arquivo (`tone` no catálogo da API). Mapeamento e decisões em `docs/PLANO_EXPORTACAO_COLUNAS.md`.
