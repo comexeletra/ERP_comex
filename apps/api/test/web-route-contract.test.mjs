@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 import Fastify from "fastify";
 import { registerAuthRoutes } from "../dist/auth.js";
@@ -13,7 +14,6 @@ import { registerCatalogRoutes } from "../dist/catalog.js";
 import { registerTaxTreatmentRoutes } from "../dist/tax-treatments.js";
 import { registerTaxRateRoutes } from "../dist/tax-rates.js";
 import { registerIcmsRateRoutes } from "../dist/icms-rates.js";
-import { registerRequestRoutes } from "../dist/requests.js";
 import { registerSourceAuditRoutes } from "../dist/source-audit.js";
 import { registerAdminOutboxRoutes } from "../dist/admin-outbox.js";
 import { registerOperationalRoutes } from "../dist/operations.js";
@@ -93,9 +93,6 @@ const webRoutes = [
   ["POST", "/api/v1/processes/:id/documents"],
   ["PATCH", "/api/v1/processes/:id/documents/:docId"],
   ["DELETE", "/api/v1/processes/:id/documents/:docId"],
-  ["GET", "/api/v1/requests"], ["POST", "/api/v1/requests"],
-  ["GET", "/api/v1/requests/:id"], ["PATCH", "/api/v1/requests/:id"],
-  ["GET", "/api/v1/requests/:id/history"],
   ["GET", "/api/v1/operational-values"], ["POST", "/api/v1/operational-values"],
   ["DELETE", "/api/v1/operational-values/:id"],
   ["GET", "/api/v1/data-issues"], ["POST", "/api/v1/data-issues/:id/resolve"],
@@ -146,7 +143,6 @@ test("all Next.js API calls have a registered API method and path", async t => {
   await registerTaxTreatmentRoutes(app, unusedPool);
   await registerTaxRateRoutes(app, unusedPool);
   await registerIcmsRateRoutes(app, unusedPool);
-  await registerRequestRoutes(app, unusedPool);
   await registerSourceAuditRoutes(app, unusedPool);
   await registerAdminOutboxRoutes(app, unusedPool);
   await registerOperationalRoutes(app, unusedPool);
@@ -161,4 +157,14 @@ test("all Next.js API calls have a registered API method and path", async t => {
   for (const [method, url] of webRoutes) {
     assert.equal(app.hasRoute({ method, url }), true, `${method} ${url} is missing`);
   }
+});
+
+// Decision of 2026-11-26: no import request flow; records enter only after export from Protheus.
+// The tables of M011–M013 stay in the database, but no route or permission reaches them.
+test("the API has no native import request routes or permissions", async () => {
+  const server = await readFile(new URL("../src/server.ts", import.meta.url), "utf8");
+  const authorization = await readFile(new URL("../src/authorization.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(server, /registerRequestRoutes|"\.\/requests\.js"/u);
+  assert.doesNotMatch(authorization, /"requests\.(read|write)"/u);
+  await assert.rejects(access(new URL("../src/requests.ts", import.meta.url)));
 });

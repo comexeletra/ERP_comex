@@ -1,5 +1,11 @@
 # Solicitações nativas — M011
 
+> **Descontinuado em 2026-11-26.** Por decisão do usuário, a plataforma não tem fluxo de
+> solicitação de importação: um registro só entra depois de exportado do Protheus. A tela
+> `/requests`, as rotas `/api/v1/requests` e as permissões `requests.read`/`requests.write`
+> foram removidas. As tabelas da M011–M013 continuam no banco, sem uso, com os dados
+> preservados. O texto abaixo é só o registro histórico.
+
 ## Corte implementado
 
 M011 cria `procurement.import_request` e `procurement.import_request_item`,

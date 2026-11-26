@@ -72,12 +72,9 @@ try {
   assert.ok(me.importerScopes.includes(importer));
   csrf = expectStatus(await call("GET", "/auth/csrf"), 200).token;
 
-  const sc = expectStatus(await call("POST", "/api/v1/requests", {
-    importer, requesterReference: `CI-GW-SC-${suffix}`, reason,
-    notes: "Solicitação do teste integrado",
-    items: [{ description: "Produto solicitado", purposeText: null, costCenterText: null }],
-  }), 201);
-  assert.equal(expectStatus(await call("GET", `/api/v1/requests/${sc.id}`), 200).requestNumber, sc.requestNumber);
+  // There is no native request flow (2026-11-26): the SC number is free text, as it comes from Protheus.
+  const sc = { requestNumber: `CI-GW-SC-${suffix}` };
+  expectStatus(await call("GET", "/api/v1/requests"), 404);
 
   const completePo = expectStatus(await call("POST", "/api/v1/purchase-orders/complete", {
     header: { importer, number: `CI-GW-COMPLETE-${suffix}`, supplierText: "Fornecedor CI",

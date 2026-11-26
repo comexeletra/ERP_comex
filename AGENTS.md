@@ -188,6 +188,10 @@ Se algo essencial não estiver claro, pergunte antes de supor.
 - Itens de POs `CLOSED` ou `CANCELLED` são imutáveis pelo gatilho do ciclo de vida. Uma carga que precise alterá-los não desativa gatilhos: reabre a PO na mesma transação e devolve status, data, autor e motivo.
 - Ao gerar scripts pelo terminal, não escreva barra invertida em texto Python dentro de heredoc: a sequência pode chegar alterada ao arquivo. Grave o script com a ferramenta de escrita de arquivo.
 
+## Sem fluxo de solicitação antes do Protheus
+
+- A plataforma não tem pedido de importação nativo (decisão de 2026-11-26): um registro só entra depois de exportado do Protheus. A seção Solicitações (`/requests`, `/api/v1/requests`, permissões `requests.*`) foi removida; `test/no-native-requests.test.mjs` da web e `web-route-contract.test.mjs` da API falham se ela voltar. As tabelas `procurement.import_request*` (M011–M013) ficam no banco, sem uso, e ainda impedem excluir uma importadora que as cite. Não confunda com as Solicitações de Compra (SCs do Protheus, `/pcm`), que continuam.
+
 ## Tipo de demanda (MTS / Não MTS)
 
 - O tipo de demanda é da PO, não do produto: a HQ planeja o pedido inteiro a partir do estoque (MTS, 30 dias no T3) ou sob encomenda (Não MTS, 45 dias). Ele fica só em `procurement.purchase_order.demand_type` (M071), e todo produto da PO o herda nas leituras (`po.demand_type`). Não volte a gravá-lo no produto nem a oferecê-lo como campo do produto; as rotas de produto o recusam.

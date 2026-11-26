@@ -89,9 +89,7 @@
 .quality-heading { align-items: center; display: flex; gap: 16px; justify-content: space-between; }
 .quality-heading h2 { font-size: var(--fs-lg); margin: 4px 0 0; }
 
-/* Requests and PCM */
-.request-guidance { color: var(--color-text-muted); font-size: var(--fs-md); }
-.request-guidance p { line-height: 1.5; max-width: 720px; }
+/* PCM */
 .sc-list-filter { display: grid; font-weight: 700; gap: 8px; margin: 0 0 16px; max-width: 320px; }
 .sc-list-filter select { min-height: 42px; width: 100%; }
 

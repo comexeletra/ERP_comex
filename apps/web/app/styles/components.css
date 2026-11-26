@@ -104,9 +104,6 @@ details[open] > summary::before { transform: rotate(45deg); }
 table :is(input, select, textarea, [contenteditable]) { cursor: auto; }
 .table-drag-scrolling, .table-drag-scrolling * { cursor: grabbing; user-select: none; }
 .pagination { align-items: center; color: var(--color-text-muted); display: flex; font-size: var(--fs-md); font-variant-numeric: tabular-nums; gap: 12px; justify-content: flex-end; margin: 18px 0 0; }
-.field-list { display: grid; gap: 8px 20px; grid-template-columns: minmax(140px, 1fr) 2fr; margin: 22px 0 0; }
-.field-list dt { font-weight: 700; }
-.field-list dd { margin: 0; }
 
 /* Forms */
 .stack-form { display: grid; gap: 18px; }
@@ -117,15 +114,11 @@ table :is(input, select, textarea, [contenteditable]) { cursor: auto; }
 .quality-filter, .review-form { display: grid; gap: 14px; }
 .quality-filter { align-items: end; grid-template-columns: 180px minmax(180px, 1fr) minmax(180px, 1fr) auto; }
 .portfolio-filter { align-items: end; display: grid; gap: 16px; grid-template-columns: repeat(5, minmax(0, 1fr)); }
-.quality-filter label, .review-form label, .portfolio-filter label, .request-line label {
+.quality-filter label, .review-form label, .portfolio-filter label {
   color: var(--color-text-muted); display: grid; font-size: var(--fs-md); font-weight: 700; gap: 6px;
 }
-.quality-filter :is(input, select), .review-form :is(input, select, textarea), .portfolio-filter :is(input, select),
-.request-form :is(input, select, textarea) { min-width: 0; width: 100%; }
-.request-form { max-width: var(--width-form); }
-.request-form h3 { margin: 4px 0 0; }
-.request-line { border: 1px solid var(--color-border); border-radius: var(--radius-sm); display: grid; gap: 14px; padding: 16px; }
-.request-line legend { color: var(--color-link); font-weight: 700; padding: 0 6px; }
+.quality-filter :is(input, select), .review-form :is(input, select, textarea),
+.portfolio-filter :is(input, select) { min-width: 0; width: 100%; }
 .scope-list { border: 1px solid var(--color-border); border-radius: var(--radius-sm); display: grid; gap: 10px; padding: 16px; }
 .scope-list label { display: block; font-weight: 400; }
 .file-upload-input { background: var(--color-field-bg); border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); color: var(--color-text-secondary); cursor: pointer; font: inherit; max-width: 100%; min-height: 44px; padding: 5px; width: 100%; }

@@ -24,8 +24,6 @@ export type Permission =
   | "catalog.write"
   | "purchase-requests.read"
   | "purchase-requests.write"
-  | "requests.read"
-  | "requests.write"
   | "users.manage"
   | "e2e-targets.manage"
   | "tax-rates.manage"
@@ -35,15 +33,15 @@ export type Permission =
 type Role = "Master" | "Administrador" | "PCM" | "Importação" | "Compras" | "Fiscal" | "Logística" | "Gestor" | "Consulta";
 
 const rolePermissions: Readonly<Record<Role, ReadonlySet<Permission>>> = {
-  Master: new Set(["purchase-orders.read", "purchase-orders.write", "purchase-orders.lifecycle.manage", "processes.read", "processes.write", "processes.lifecycle.manage", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "purchase-requests.read", "purchase-requests.write", "requests.read", "requests.write", "users.manage", "e2e-targets.manage", "tax-rates.manage", "icms-rates.manage", "reference-loads.manage"]),
-  Administrador: new Set(["purchase-orders.read", "purchase-orders.write", "purchase-orders.lifecycle.manage", "processes.read", "processes.write", "processes.lifecycle.manage", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "purchase-requests.read", "purchase-requests.write", "requests.read", "requests.write", "e2e-targets.manage", "tax-rates.manage", "icms-rates.manage", "reference-loads.manage"]),
+  Master: new Set(["purchase-orders.read", "purchase-orders.write", "purchase-orders.lifecycle.manage", "processes.read", "processes.write", "processes.lifecycle.manage", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "purchase-requests.read", "purchase-requests.write", "users.manage", "e2e-targets.manage", "tax-rates.manage", "icms-rates.manage", "reference-loads.manage"]),
+  Administrador: new Set(["purchase-orders.read", "purchase-orders.write", "purchase-orders.lifecycle.manage", "processes.read", "processes.write", "processes.lifecycle.manage", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "purchase-requests.read", "purchase-requests.write", "e2e-targets.manage", "tax-rates.manage", "icms-rates.manage", "reference-loads.manage"]),
   PCM: new Set(["catalog.read", "purchase-requests.read", "purchase-requests.write"]),
-  Importação: new Set(["purchase-orders.read", "purchase-orders.write", "processes.read", "processes.write", "quality.read", "quality.resolve", "catalog.read", "purchase-requests.read", "requests.read", "requests.write"]),
-  Compras: new Set(["purchase-orders.read", "purchase-orders.write", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "purchase-requests.read", "requests.read"]),
-  Fiscal: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "requests.read", "tax-rates.manage"]),
-  Logística: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "requests.read"]),
-  Gestor: new Set(["purchase-orders.read", "processes.read", "quality.read", "catalog.read", "requests.read"]),
-  Consulta: new Set(["purchase-orders.read", "processes.read", "quality.read", "catalog.read", "requests.read"]),
+  Importação: new Set(["purchase-orders.read", "purchase-orders.write", "processes.read", "processes.write", "quality.read", "quality.resolve", "catalog.read", "purchase-requests.read"]),
+  Compras: new Set(["purchase-orders.read", "purchase-orders.write", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "purchase-requests.read"]),
+  Fiscal: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read", "catalog.write", "tax-rates.manage"]),
+  Logística: new Set(["purchase-orders.read", "processes.read", "quality.read", "quality.resolve", "catalog.read"]),
+  Gestor: new Set(["purchase-orders.read", "processes.read", "quality.read", "catalog.read"]),
+  Consulta: new Set(["purchase-orders.read", "processes.read", "quality.read", "catalog.read"]),
 };
 
 export type AuthorizationContext = {
