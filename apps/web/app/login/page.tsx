@@ -4,10 +4,14 @@ import { FormEvent, useState } from "react";
 import Image from "next/image";
 import { useI18n } from "../../components/I18nProvider";
 import LanguageSwitcher from "../../components/LanguageSwitcher";
+import { Tooltip } from "../../components/Tooltip";
+import { useThemeToggle } from "../../components/useThemeToggle";
 
 export default function LoginPage() {
   const { m } = useI18n();
   const t = m.login;
+  const { theme, toggleTheme } = useThemeToggle();
+  const themeLabel = theme === "dark" ? m.theme.lightAria : m.theme.darkAria;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -49,7 +53,18 @@ export default function LoginPage() {
         <p>{t.brandTagline}</p>
       </div>
       <div className="auth-form-panel">
-        <LanguageSwitcher className="auth-language" />
+        <div className="auth-toolbar">
+          <LanguageSwitcher className="auth-language" />
+          <Tooltip content={themeLabel}>
+            <button className="auth-theme-toggle" type="button" onClick={toggleTheme} aria-label={themeLabel} aria-pressed={theme === "dark"}>
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                {theme === "dark"
+                  ? <><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" /></>
+                  : <path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5 8.5 8.5 0 1 0 20.5 14.5Z" />}
+              </svg>
+            </button>
+          </Tooltip>
+        </div>
         <p className="eyebrow">{t.secureAccess}</p>
         <h2>{t.welcome}</h2>
         <p className="muted">{t.instructions}</p>

@@ -2,12 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MouseEvent, ReactNode, useEffect, useState } from "react";
-import { flushSync } from "react-dom";
+import { ReactNode, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
-import { rippleGeometry } from "../lib/theme-ripple";
 import AppSidebar from "./AppSidebar";
 import { useI18n } from "./I18nProvider";
+import { useThemeToggle } from "./useThemeToggle";
 
 type Identity = {
   authenticated: boolean;
@@ -24,14 +23,10 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const { theme, toggleTheme } = useThemeToggle();
 
   useEffect(() => {
     setSidebarCollapsed(window.localStorage.getItem("erp-comex-sidebar-collapsed") === "true");
-    const savedTheme = window.localStorage.getItem("erp-comex-theme");
-    const nextTheme = savedTheme === "dark" ? "dark" : "light";
-    setTheme(nextTheme);
-    document.documentElement.dataset.theme = nextTheme;
   }, []);
 
   useEffect(() => {
@@ -70,29 +65,6 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       const next = !current;
       window.localStorage.setItem("erp-comex-sidebar-collapsed", String(next));
       return next;
-    });
-  }
-
-  function toggleTheme(event: MouseEvent<HTMLButtonElement>) {
-    const nextTheme = theme === "dark" ? "light" : "dark";
-    const root = document.documentElement;
-    const apply = () => {
-      flushSync(() => setTheme(nextTheme));
-      root.dataset.theme = nextTheme;
-    };
-    window.localStorage.setItem("erp-comex-theme", nextTheme);
-    if (typeof document.startViewTransition !== "function" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      apply();
-      return;
-    }
-    const ripple = rippleGeometry(event, event.currentTarget.getBoundingClientRect(), { width: window.innerWidth, height: window.innerHeight });
-    root.style.setProperty("--ripple-x", `${ripple.x}px`);
-    root.style.setProperty("--ripple-y", `${ripple.y}px`);
-    root.style.setProperty("--ripple-end", `${ripple.radius}px`);
-    root.dataset.themeRipple = "";
-    document.startViewTransition(apply).finished.finally(() => {
-      delete root.dataset.themeRipple;
-      for (const name of ["--ripple-x", "--ripple-y", "--ripple-end"]) root.style.removeProperty(name);
     });
   }
 

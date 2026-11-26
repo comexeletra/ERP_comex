@@ -30,7 +30,23 @@ test("the stylesheet animates the radius the script sets", async () => {
   assert.match(css, /@property --ripple-radius\s*\{[^}]*syntax:\s*"<length>"/u);
   assert.match(css, /::view-transition-new\(root\)\s*\{[^}]*animation:\s*theme-ripple/u);
   assert.match(css, new RegExp(`--ripple-radius\\) - ${rippleWaveWidth}px`, "u"));
+  const hook = await readFile(new URL("../components/useThemeToggle.ts", import.meta.url), "utf8");
+  for (const name of ["--ripple-x", "--ripple-y", "--ripple-end"]) assert.match(hook, new RegExp(name, "u"));
+  assert.match(hook, /prefers-reduced-motion: reduce/u);
+});
+
+test("the theme toggle is in the side menu and on the login page, sharing one hook", async () => {
+  const hook = await readFile(new URL("../components/useThemeToggle.ts", import.meta.url), "utf8");
   const gate = await readFile(new URL("../components/AuthGate.tsx", import.meta.url), "utf8");
-  for (const name of ["--ripple-x", "--ripple-y", "--ripple-end"]) assert.match(gate, new RegExp(name, "u"));
-  assert.match(gate, /prefers-reduced-motion: reduce/u);
+  const login = await readFile(new URL("../app/login/page.tsx", import.meta.url), "utf8");
+  const sidebar = await readFile(new URL("../components/AppSidebar.tsx", import.meta.url), "utf8");
+  assert.match(hook, /"erp-comex-theme"/u);
+  for (const file of [gate, login]) {
+    assert.match(file, /useThemeToggle\(\)/u);
+    assert.doesNotMatch(file, /erp-comex-theme/u);
+  }
+  assert.match(login, /className="auth-theme-toggle"[^>]*onClick=\{toggleTheme\}/u);
+  assert.match(login, /aria-pressed=\{theme === "dark"\}/u);
+  assert.match(login, /m\.theme\.(lightAria|darkAria)/u);
+  assert.match(sidebar, /m\.theme/u);
 });

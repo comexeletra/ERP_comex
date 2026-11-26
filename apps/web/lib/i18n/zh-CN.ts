@@ -69,12 +69,14 @@ export const zhCN: Messages = {
     noImporters: "未分配",
     role: (roles: string) => `角色：${roles}`,
     importers: (importers: string) => `进口商：${importers}`,
-    lightThemeAria: "切换为浅色主题",
-    darkThemeAria: "切换为深色主题",
-    lightTheme: "浅色主题",
-    darkTheme: "深色主题",
     changePassword: "修改密码",
     logout: "退出",
+  },
+  theme: {
+    lightAria: "切换为浅色主题",
+    darkAria: "切换为深色主题",
+    light: "浅色主题",
+    dark: "深色主题",
   },
   login: {
     brandTagline: "运营与进口一体化管理。",

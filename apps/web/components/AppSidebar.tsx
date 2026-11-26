@@ -11,6 +11,7 @@ import { toggleSidebarGroup, withActiveSidebarGroup } from "../lib/sidebar-group
 import { useI18n } from "./I18nProvider";
 import LanguageSwitcher from "./LanguageSwitcher";
 import { Tooltip } from "./Tooltip";
+import type { Theme } from "./useThemeToggle";
 
 type IconName = "guide" | "orders" | "ship" | "flow" | "reports" | "sheet" | "catalog"
   | "sc" | "noIp" | "noPo" | "quality" | "audit" | "users" | "events" | "collapse" | "chevron" | "password" | "logout" | "sun" | "moon";
@@ -89,7 +90,7 @@ function isItemActive(pathname: string, item: SidebarItem) {
 
 export default function AppSidebar({ collapsed, isMaster, displayName, roles, importerScopes, theme, onToggleTheme, onToggle, onLogout }: {
   collapsed: boolean; isMaster: boolean; displayName: string | null; roles: string[];
-  importerScopes: string[]; theme: "light" | "dark"; onToggleTheme: (event: MouseEvent<HTMLButtonElement>) => void; onToggle: () => void; onLogout: () => void;
+  importerScopes: string[]; theme: Theme; onToggleTheme: (event: MouseEvent<HTMLButtonElement>) => void; onToggle: () => void; onLogout: () => void;
 }) {
   const pathname = usePathname();
   const { locale, m } = useI18n();
@@ -153,11 +154,11 @@ export default function AppSidebar({ collapsed, isMaster, displayName, roles, im
         </div>
       </Tooltip>
       <LanguageSwitcher className="sidebar-language" />
-      <Tooltip content={collapsed ? (theme === "dark" ? t.lightThemeAria : t.darkThemeAria) : undefined} placement="right">
+      <Tooltip content={collapsed ? (theme === "dark" ? m.theme.lightAria : m.theme.darkAria) : undefined} placement="right">
         <button className="sidebar-account-action" type="button" onClick={onToggleTheme}
-          aria-label={theme === "dark" ? t.lightThemeAria : t.darkThemeAria} aria-pressed={theme === "dark"}>
+          aria-label={theme === "dark" ? m.theme.lightAria : m.theme.darkAria} aria-pressed={theme === "dark"}>
           <SidebarIcon name={theme === "dark" ? "sun" : "moon"} />
-          <span>{theme === "dark" ? t.lightTheme : t.darkTheme}</span>
+          <span>{theme === "dark" ? m.theme.light : m.theme.dark}</span>
         </button>
       </Tooltip>
       <Tooltip content={collapsed ? t.changePassword : undefined} placement="right">

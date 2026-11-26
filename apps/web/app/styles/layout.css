@@ -87,7 +87,11 @@
 .auth-form-panel .stack-form input:not([type="checkbox"]) { margin-top: 2px; min-height: 48px; padding: 12px 14px; }
 .auth-submit { box-shadow: var(--shadow-md); font-size: var(--fs-base); min-height: 48px; width: 100%; }
 .auth-help { border-top: 1px solid var(--color-divider); color: var(--color-text-subtle); font-size: var(--fs-xs); line-height: 1.5; margin: 28px 0 0; padding-top: 18px; }
-.auth-language { justify-self: end; margin: 0 0 22px auto; max-width: 190px; }
+.auth-toolbar { align-items: center; display: flex; gap: 6px; justify-content: flex-end; margin: 0 0 22px; }
+.auth-language { flex: 0 1 150px; }
+.auth-theme-toggle { align-items: center; background: transparent; border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); color: var(--color-text-secondary); cursor: pointer; display: inline-flex; flex: 0 0 auto; height: 30px; justify-content: center; padding: 0; width: 30px; }
+.auth-theme-toggle:hover { background: var(--color-primary-soft); }
+.auth-theme-toggle svg { height: 16px; width: 16px; }
 
 @media (max-width: 760px) {
   .shell { padding: 26px 14px; }

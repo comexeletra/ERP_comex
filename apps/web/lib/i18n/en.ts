@@ -69,12 +69,14 @@ export const en: Messages = {
     noImporters: "None assigned",
     role: (roles: string) => `Role: ${roles}`,
     importers: (importers: string) => `Importers: ${importers}`,
-    lightThemeAria: "Switch to light theme",
-    darkThemeAria: "Switch to dark theme",
-    lightTheme: "Light theme",
-    darkTheme: "Dark theme",
     changePassword: "Change password",
     logout: "Sign out",
+  },
+  theme: {
+    lightAria: "Switch to light theme",
+    darkAria: "Switch to dark theme",
+    light: "Light theme",
+    dark: "Dark theme",
   },
   login: {
     brandTagline: "Integrated management of operations and imports.",

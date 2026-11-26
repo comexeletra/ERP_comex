@@ -72,12 +72,14 @@ export const ptBR = {
     noImporters: "Nenhuma atribuída",
     role: (roles: string) => `Papel: ${roles}`,
     importers: (importers: string) => `Importadoras: ${importers}`,
-    lightThemeAria: "Ativar tema claro",
-    darkThemeAria: "Ativar tema escuro",
-    lightTheme: "Tema claro",
-    darkTheme: "Tema escuro",
     changePassword: "Trocar senha",
     logout: "Sair",
+  },
+  theme: {
+    lightAria: "Ativar tema claro",
+    darkAria: "Ativar tema escuro",
+    light: "Tema claro",
+    dark: "Tema escuro",
   },
   login: {
     brandTagline: "Gestão integrada de operações e importações.",
