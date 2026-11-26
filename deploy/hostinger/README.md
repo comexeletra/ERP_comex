@@ -1,5 +1,26 @@
 # API ERP na VPS Hostinger
 
+## Remoção da seção Solicitações no HML (2026-11-26)
+
+O commit `228d3c6` remove a seção Solicitações (decisão do usuário: não há pedido de importação antes do Protheus): a tela
+`/requests`, as rotas `/api/v1/requests` e as permissões `requests.read`/`requests.write`. Não há migration: as tabelas da
+M011–M013 ficam no banco, sem uso (no HML, 0 solicitações e 0 itens antes e depois).
+
+O release `/opt/import-erp/apps/api/hml-release-228d3c6` (`git -c core.autocrlf=false archive 228d3c6:apps/api`, SHA-256 `bb6731d2…6e9d`,
+nenhuma fonte com CR; `deploy.tar` com os três arquivos do worker, SHA-256 `4e7c791f…ec77`) reaproveita o `node_modules` de
+`hml-release-4a655ab` (lockfile, dependências e migrations iguais; o `package.json` só perdeu dois testes do script; ledger 82).
+- **Build:** sem `src/requests.ts` nem `dist/requests.js`; `server.js` só cita `purchase-requests.js`; nenhuma permissão `requests.*`.
+- **Testes no release:** `web-route-contract` (2), `authorization` (14), `api-error-response` (2), `operational-values.delete` (3) e
+  `operational-values.importers` (4).
+- **Ativação:** drop-in de 83 `z` `…-release-228d3c6.conf`; worker movido com `enable-homologation-export-worker.sh 228d3c6`. Drop-ins
+  anteriores: `/var/backups/import-erp/hml-remove-requests-228d3c6-predeploy`.
+- **Conferência depois de ativar:** `/health/live` 200, `GET /api/v1/purchase-requests` sem sessão 401, API e worker ativos no `228d3c6`,
+  RSS 134 MB. O Preview da `homologacao` responde 404 em `/requests`.
+- **Rollback somente do código:** remova o drop-in `228d3c6`, execute `systemctl daemon-reload`, reinicie `import-erp-hml-api` (volta a
+  `hml-release-4a655ab`) e rode `enable-homologation-export-worker.sh 4a655ab`. Script e log em `/root/claude-release-228d3c6`.
+
+Produção, `main` e as variáveis da Vercel não foram alteradas.
+
 ## Saldo sem IP como Aguardando produção e filtro "Sem IP" no HML (2026-11-13)
 
 O commit `88160e6` junta o status A DISTRIBUIR ao AGUARDANDO PRODUÇÃO, como o *Waiting Production* do BI, e cria o filtro
