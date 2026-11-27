@@ -16,6 +16,10 @@ coverage/
 *.tsbuildinfo
 *.zip
 
+# Claude Code: agent worktrees (full repo copies) and personal settings.
+.claude/worktrees/
+.claude/settings.local.json
+
 # Source workbooks are evidence, never source code.
 *.xlsx
 *.xlsm
